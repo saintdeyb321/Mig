@@ -1,0 +1,217 @@
+/* =========================================
+   📦 MÓDULO: CATÁLOGO DE PRODUCTOS
+   ========================================= */
+.inventory-title {
+  font-size: 1rem;
+  margin: 0 0 12px 0;
+  color: var(--text-main);
+}
+.product-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.product-list-card {
+  display: grid; grid-template-columns: 55px 1fr auto; align-items: center; padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius); gap: var(--space-md); background: var(--card-bg); box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border); transition: all 0.2s ease; margin: 0;
+}
+
+.product-list-card.inactive { opacity: 0.6; }
+.product-list-card.active-stock { border-left: 5px solid var(--success); }
+.product-list-card.active-out-of-stock { border-left: 5px solid var(--danger); }
+.product-list-card.inactive-border { border-left: 5px solid var(--text-muted); }
+.product-image-box {
+  width: 55px; height: 55px; border-radius: 8px; overflow: hidden;
+  background: linear-gradient(135deg, var(--primary-light) 0%, #e0e7ff 100%);
+  display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); flex-shrink: 0;
+}
+.product-image-box img { width: 100%; height: 100%; object-fit: cover; }
+.product-image-placeholder { font-size: 1.2rem; font-weight: 900; color: var(--primary); text-transform: uppercase; }
+.product-info-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.product-title-text { margin: 0; font-size: 1rem; font-weight: 700; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.product-title-text.out-of-stock { color: var(--danger); text-decoration: line-through; }
+.product-badges-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.badge-category { background: var(--bg-app); padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
+.badge-stock { padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; white-space: nowrap; }
+.badge-stock.agotado { background: #fee2e2; color: var(--danger); }
+.badge-stock.poco { background: #fef3c7; color: #d97706; }
+.badge-stock.ok { background: var(--bg-app); color: var(--text-muted); }
+.badge-inactive { font-size: 0.7rem; color: var(--danger); font-weight: 700; }
+.product-action-col { display: flex; align-items: center; gap: 10px; }
+.product-price-text { font-size: 1.1rem; font-weight: 900; color: var(--primary); white-space: nowrap; }
+/* 📱 Responsive para Productos */
+@media (max-width: 480px) {
+  .product-list-card { grid-template-columns: 45px 1fr auto; padding: 12px; gap: 10px; }
+  .product-image-box { width: 45px; height: 45px; }
+  .product-action-col { gap: 6px; }
+  .product-price-text { font-size: 1rem; }
+}
+/* =========================================
+   🪹 ESTADO VACÍO (EMPTY STATES)
+   ========================================= */
+.empty-state-dashed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px;
+  background: transparent;
+  border: 2px dashed var(--border);
+  box-shadow: none; /* Quitamos la sombra para que resalte el borde punteado */
+  gap: 12px; /* Espacio entre el icono y el texto */
+}
+
+.empty-icon-lg {
+  font-size: 3rem;
+  opacity: 0.6;
+  line-height: 1;
+}
+.empty-text-muted {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+  max-width: 80%; /* Para que el texto largo no llegue a los bordes y baje de línea bonito */
+}
+
+/* =========================================
+   PANEL DE DISTRIBUCIÓN DE STOCK (V3)
+========================================= */
+.stock-panel {
+  background: #f8fafc;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  margin: 20px 0;
+}
+
+.stock-panel-title {
+  color: var(--primary);
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.stock-panel-empty {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* Cabecera de la tabla */
+.stock-table-header {
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 10px;
+}
+
+.stock-col-title {
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: #64748b;
+}
+
+.stock-col-right {
+  width: 110px;
+  text-align: center;
+}
+
+/* Filas de sucursales */
+.stock-table-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.stock-table-row:last-child {
+  border-bottom: none; /* Magia CSS: Quita el borde de la última fila automáticamente */
+}
+
+/* Textos de la Sede */
+.stock-branch-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding-right: 10px;
+}
+
+.stock-branch-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.stock-current-info {
+  font-size: 0.95rem;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.stock-current-number {
+  color: var(--text-main);
+  font-size: 0.95rem;
+  font-weight: bold;
+}
+
+/* Inputs y previsualización (Centrados y Posicionamiento) */
+.stock-input-wrapper {
+  position: relative;
+  width: 110px;
+}
+
+.stock-adjust-input {
+  width: 100%;
+  padding: 10px 5px;
+  border: 2px solid #cbd5e1;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: bold;
+  font-size: 0.90rem;
+  color: var(--text-main);
+  background: white;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+/* Colores dinámicos para los bordes del input */
+.stock-adjust-input.is-addition { border-color: #22c55e; }
+.stock-adjust-input.is-deduction { border-color: #ef4444; }
+
+.stock-preview-text {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  margin-top: 6px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* Colores dinámicos para el texto flotante */
+.text-addition { color: #22c55e; }
+.text-deduction { color: #ef4444; }
+
+/* Caja de Tips */
+.stock-tip-box {
+  margin-top: 15px;
+  padding: 10px;
+  background: #e0f2fe;
+  border-radius: 6px;
+  border-left: 4px solid #0ea5e9;
+}
+
+.stock-tip-text {
+  font-size: 0.75rem;
+  color: #0369a1;
+  margin: 0;
+  line-height: 1.4;
+}

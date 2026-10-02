@@ -1,0 +1,182 @@
+/* src/modules/contracts/styles/contractsModals.css */
+
+/* ==========================================================================
+   MODAL DE DETALLES DE CONTRATOS (.cd-)
+   ========================================================================== */
+
+/* Overlay y Contenedor Principal */
+.cd-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; z-index: 9999;
+  padding: 20px;
+}
+
+.cd-modal-container {
+  background: #f8fafc; /* Fondo general gris muy claro */
+  width: 100%;
+  max-width: 850px; /* Ancho máximo controlado */
+  max-height: 90vh; /* Alto máximo controlado */
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+/* --- HEADER --- */
+.cd-header {
+  background: #1e1b4b; /* Azul muy oscuro y sólido */
+  padding: 20px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: white;
+}
+.cd-header-void { background: #7f1d1d; } /* Rojo oscuro para anulado */
+
+.cd-header-info { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.cd-header-icon { 
+  font-size: 1.5rem; background: rgba(255,255,255,0.05); padding: 10px; 
+  border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); 
+  display: flex; align-items: center; justify-content: center; flex: 0 0 auto;
+}
+.cd-header-titles { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cd-header-titles h2 { margin: 0; font-size: 1.4rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.5px; }
+.cd-id-badge { align-self: flex-start; background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 6px; font-size: 0.8rem; font-family: monospace; font-weight: 700; white-space: nowrap; color: #e0e7ff; }
+
+.cd-btn-close { 
+  background: transparent; border: none; color: #94a3b8; font-size: 1.2rem; cursor: pointer; 
+  transition: all 0.2s; padding: 4px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; 
+}
+.cd-btn-close:hover { color: #ef4444; }
+
+/* --- TOOLBAR (Acciones debajo del Header) --- */
+.cd-toolbar {
+  background: #ffffff; padding: 12px 28px; border-bottom: 1px solid #e2e8f0;
+  display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.cd-toolbar-status { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; font-weight: 700; color: #64748b; }
+.cd-select { 
+  padding: 8px 16px; border-radius: 8px; font-weight: 800; font-size: 0.9rem; 
+  border: 1px solid #cbd5e1; outline: none; cursor: pointer; background: #ffffff; transition: border-color 0.2s;
+}
+.cd-select:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
+
+.cd-status-pendiente { color: #475569; }
+.cd-status-en_produccion { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+.cd-status-listo_para_entrega { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+.cd-status-entregado { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+
+.cd-toolbar-actions { display: flex; gap: 10px; }
+.cd-btn { 
+  padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 800; cursor: pointer; 
+  border: 1px solid transparent; display: flex; align-items: center; gap: 6px; transition: all 0.2s; 
+}
+.cd-btn-edit { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
+.cd-btn-edit:hover { background: #e2e8f0; color: #0f172a; }
+.cd-btn-danger { background: #fef2f2; color: #b91c1c; border-color: #fca5a5; }
+.cd-btn-danger:hover { background: #fee2e2; color: #991b1b; }
+
+/* --- BODY Y TARJETAS --- */
+.cd-body { padding: 24px 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+
+.cd-alert-void { padding: 16px; background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 12px; font-weight: 700; font-size: 0.95rem; text-align: center; }
+
+/* Las tarjetas blancas contenedoras */
+.cd-card { 
+  background: #ffffff; border-radius: 16px; padding: 24px; border: 1px solid #e2e8f0; 
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03); display: flex; flex-direction: column; gap: 16px;
+}
+/* Limpiamos cualquier borde o pseudoelemento no deseado que venga heredado */
+.cd-card::before, .cd-card::after { display: none; }
+
+.cd-card-title { 
+  margin: 0 0 8px 0; font-size: 1rem; color: #1e1b4b; font-weight: 900; text-transform: uppercase; 
+  letter-spacing: 0.5px; border-bottom: 2px solid #f1f5f9; padding-bottom: 12px; display: flex; align-items: center; gap: 8px;
+}
+
+/* Grids */
+.cd-grid-2-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
+.cd-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+/* Grupos de Información */
+.cd-info-section { display: flex; flex-direction: column; gap: 20px; }
+.cd-data-group { display: flex; flex-direction: column; gap: 6px; }
+.cd-data-group label { font-size: 0.75rem; color: #64748b; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+.cd-data-group p { margin: 0; font-size: 1.05rem; color: #0f172a; font-weight: 600; }
+.cd-data-group small { color: #64748b; font-size: 0.85rem; margin-top: 2px; }
+
+.cd-highlight { font-size: 1.4rem; font-weight: 900; color: #4f46e5; }
+.cd-align-right { align-items: flex-end; text-align: right; }
+
+/* Cajas resaltadas (Fecha, Logística) */
+.cd-data-box { background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 6px; }
+.cd-data-box label { font-size: 0.75rem; color: #64748b; font-weight: 800; text-transform: uppercase; }
+.cd-date-text { margin: 0; font-size: 1.15rem; color: #4f46e5; font-weight: 800; }
+.cd-details-box { background: #f8fafc; padding: 16px; border-radius: 10px; border: 1px solid #e2e8f0; color: #334155; font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; }
+
+/* Foto */
+.cd-photo-section { background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 12px; min-height: 200px; height: 100%;}
+.cd-photo-section img { width: 100%; height: 100%; object-fit: contain; border-radius: 8px; }
+.cd-no-photo { display: flex; flex-direction: column; align-items: center; color: #94a3b8; font-size: 0.95rem; font-weight: 600; gap: 8px; }
+
+.cd-logistics-row { margin-top: 8px; padding-top: 20px; border-top: 1px dashed #cbd5e1; }
+.cd-money-text { font-size: 1.25rem ; font-weight: 900; color: #0f172a ; }
+
+/* --- Finanzas (Resumen) --- */
+.cd-finance-summary { flex-direction: row; justify-content: space-between; align-items: center; }
+.cd-finance-item { display: flex; flex-direction: column; gap: 6px; }
+.cd-finance-item label { font-size: 0.8rem; color: #64748b; font-weight: 800; text-transform: uppercase; }
+.cd-finance-divider { width: 1px; height: 60px; background: #e2e8f0; }
+.cd-total-amount { font-size: 1.8rem; font-weight: 900; color: #0f172a; }
+.cd-status-amount { font-size: 1.6rem; font-weight: 900; }
+.cd-text-void { color: #ef4444; }
+.cd-text-paid { color: #15803d; }
+.cd-text-debt { color: #b91c1c; }
+
+/* --- Tarjeta de Cobro --- */
+.cd-payment-action { background: linear-gradient(135deg, #fffbeb, #ffffff); border-color: #fde68a; box-shadow: 0 4px 15px rgba(217, 119, 6, 0.1); }
+.cd-payment-header { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+.cd-payment-header span { font-size: 2rem; background: #fef3c7; padding: 12px; border-radius: 12px; }
+.cd-payment-header h3 { margin: 0 0 4px 0; font-size: 1.2rem; color: #b45309; font-weight: 900; }
+.cd-payment-header p { margin: 0; font-size: 0.9rem; color: #d97706; }
+
+.cd-payment-controls { display: grid; grid-template-columns: 1fr 1fr auto; gap: 16px; align-items: flex-end; }
+.cd-payment-controls input, .cd-payment-controls select {
+  padding: 12px 16px; border-radius: 10px; border: 2px solid #fde68a; font-size: 1rem; font-weight: 600; outline: none; width: 100%; transition: border-color 0.2s;
+}
+.cd-payment-controls input:focus, .cd-payment-controls select:focus { border-color: #d97706; }
+.cd-btn-confirm-pay {
+  background: #d97706; color: white; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 900; font-size: 1rem; cursor: pointer; transition: background 0.2s; height: 46px;
+}
+.cd-btn-confirm-pay:hover:not(:disabled) { background: #b45309; }
+.cd-btn-confirm-pay:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* --- Auditoría --- */
+.cd-audit-list { display: flex; flex-direction: column; gap: 12px; }
+.cd-audit-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: #f8fafc; border-radius: 10px; border: 1px solid #f1f5f9; }
+.cd-audit-info { display: flex; flex-direction: column; gap: 4px; }
+.cd-audit-info strong { font-size: 0.95rem; color: #1e293b; }
+.cd-audit-info span { color: #64748b; font-size: 0.85rem; font-weight: 600; }
+.cd-audit-info small { color: #94a3b8; font-size: 0.8rem; }
+.cd-audit-amount { font-weight: 900; font-size: 1.2rem; }
+
+
+/* =========================================
+   RESPONSIVE
+   ========================================= */
+@media (max-width: 850px) {
+  .cd-toolbar { flex-direction: column; align-items: stretch; }
+  .cd-toolbar-actions { display: grid; grid-template-columns: 1fr 1fr; margin-top: 10px; }
+  .cd-btn { justify-content: center; }
+  .cd-payment-controls { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .cd-grid-2-1 { grid-template-columns: 1fr; }
+  .cd-grid-2 { grid-template-columns: 1fr; }
+  .cd-finance-summary { flex-direction: column; gap: 16px; align-items: stretch; text-align: center; }
+  .cd-finance-divider { width: 100%; height: 1px; }
+  .cd-align-right { align-items: center; text-align: center; }
+}

@@ -1,0 +1,100 @@
+/* =========================================
+   MÓDULO DE EXPORTACIÓN (ExportSales)
+   ========================================= */
+.export-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-left: 5px solid var(--success);
+}
+
+.export-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.export-description {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.export-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.export-select-wrapper {
+  flex: 1 1 220px;
+}
+
+.export-select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-app);
+  color: var(--text-main);
+  font-size: 0.9rem;
+  cursor: pointer;
+  outline: none;
+}
+
+.export-button-wrapper {
+  flex: 0 0 auto;
+  min-width: 160px;
+}
+
+.export-button {
+  width: 100%;
+  background: var(--success);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.2);
+}
+
+.export-button:hover:not(.disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(16, 185, 129, 0.3);
+}
+
+.export-button.disabled {
+  background: var(--text-muted);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Adaptación para Celulares */
+@media (max-width: 640px) {
+  .export-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .export-select-wrapper {
+    flex: 1;
+    width: 100%;
+  }
+  .export-button-wrapper {
+    width: 100%;
+  }
+}

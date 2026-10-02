@@ -1,0 +1,216 @@
+/* =========================================
+   DISEÑO INTERNO DEL TICKET (Historial)
+   ========================================= */
+.max-container { max-width: 1280px; margin: 0 auto; width: 100%; position: relative; }
+
+/* =========================================
+   ESTADOS VACÍOS Y DE CARGA
+   ========================================= */
+.loading-container {
+  height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-icon {
+  font-size: 3.5rem; 
+  display: block;
+  animation: pulse-animation 1.5s infinite ease-in-out;
+}
+
+.loading-text {
+  color: var(--text-muted, #64748b);
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-top: var(--space-sm, 15px); 
+}
+
+@keyframes pulse-animation {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.empty-state { text-align: center; padding: 60px 20px; border-style: dashed; }
+.empty-icon { font-size: 3rem; opacity: 0.2; display: block; margin-bottom: 15px; }
+.empty-text { color: var(--text-muted); font-size: 1.1rem; font-weight: 500; }
+
+/* Tarjeta del Ticket */
+.history-card { padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; transition: all 0.2s ease; }
+.history-card:hover { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05); transform: translateY(-2px); }
+.card-anulada { opacity: 0.6; filter: grayscale(0.8); border: 2px dashed var(--border); }
+
+/* Cabecera del Ticket */
+.ticket-header { padding: var(--space-md); display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; border-top: 4px solid transparent; background: #ffffff; }
+.border-efectivo { border-top-color: var(--success); }
+.border-yape { border-top-color: #9333ea; }
+.border-anulada { border-top-color: var(--border); border-top-style: dashed; }
+
+.ticket-info { display: flex; flex-direction: column; gap: 4px; }
+.ticket-date-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ticket-date { font-weight: 700; font-size: 1rem; color: var(--text-main); }
+.badge-offline { font-size: 0.65rem; background: var(--bg-app); color: var(--text-muted); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); font-weight: bold; }
+.ticket-id { font-size: 0.75rem; color: var(--text-muted); font-family: monospace; font-weight: 500; }
+
+.ticket-amount { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.ticket-total { font-weight: 900; font-size: 1.25rem; color: var(--text-main); line-height: 1; }
+.card-anulada .ticket-date, .card-anulada .ticket-total { text-decoration: line-through; }
+
+/* Badges de Pago */
+.badge-payment { padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; display: flex; align-items: center; gap: 4px; }
+.badge-efectivo { background: #d1fae5; color: var(--success); }
+.badge-yape { background: #f3e8ff; color: #9333ea; }
+.badge-anulada { background: #fef2f2; color: var(--danger); border: 1px solid #fca5a5; }
+
+/* 🚀 MEJORA: Cuerpo del Ticket más limpio */
+.ticket-body { 
+  background-color: #f8fafc; /* Gris pizarra ultra claro y moderno */
+  border-top: 1px dashed var(--border);
+  padding: var(--space-md); 
+  flex: 1; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 12px; 
+}
+
+.ticket-section-title { font-size: 0.7rem; font-weight: 800; color: var(--text-muted); margin: 0; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.ticket-items-list { display: flex; flex-direction: column; }
+.ticket-item-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--border); }
+.ticket-item-row:last-child { border-bottom: none; }
+
+.ticket-item-left { display: flex; gap: 10px; align-items: center; flex: 1; }
+.item-qty-box { background: #ffffff; border: 1px solid var(--border); color: var(--text-main); font-size: 0.75rem; font-weight: 800; padding: 4px 8px; border-radius: 6px; min-width: 34px; text-align: center; }
+.item-name-text { color: var(--text-main); font-weight: 600; font-size: 0.95rem; line-height: 1.1; }
+.item-subtotal { font-weight: 700; color: var(--text-main); font-size: 0.95rem; white-space: nowrap; margin-left: 10px; }
+.card-anulada .item-name-text, .card-anulada .item-subtotal { text-decoration: line-through; }
+
+/* Vuelto */
+.ticket-change-row { margin-top: auto; padding-top: 12px; border-top: 1px dashed var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: var(--text-muted); }
+.ticket-change-row strong { font-weight: 600; color: var(--text-main); }
+.change-highlight { font-weight: 800; color: var(--success); background: #d1fae5; padding: 2px 8px; border-radius: 4px; }
+
+/* Footer del Ticket */
+.ticket-footer { padding: 12px var(--space-md); border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; background: #ffffff; }
+.ticket-cashier { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 0.85rem; font-weight: 500; }
+.cashier-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+
+/* Categoría sutil */
+.history-item-category {
+  background: #e0e7ff;
+  color: #3b82f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: none;
+}
+
+/* Botón Anular (Compacto) */
+.btn-danger-solid {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 28px;
+  height: 28px;
+  box-shadow: none;
+}
+
+.btn-danger-solid:hover:not(:disabled) {
+  background: var(--danger);
+  color: white;
+  box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn-danger-solid:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: #fca5a5;
+  color: #fca5a5;
+}
+
+/* Modales Complementarios para Historial */
+.modal-danger { border-top: 5px solid var(--danger); padding: 24px; max-width: 400px; }
+.modal-title-danger { margin-top: 0; margin-bottom: 10px; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+.modal-desc { color: var(--text-muted); font-size: 0.95rem; line-height: 1.5; margin-bottom: 24px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.btn-cancel { background: var(--bg-app); color: var(--text-main); border: 1px solid var(--border); padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+.btn-cancel:hover { background: var(--border); }
+.btn-danger { background: var(--danger); color: white; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: opacity 0.2s; }
+.btn-danger:hover { opacity: 0.8; }
+
+/* =========================================
+   📜 MÓDULO: CONTENEDORES DEL HISTORIAL
+   ========================================= */
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: var(--space-md);
+}
+.history-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* =========================================
+   🚀 ESTILOS PARA PAGO MIXTO (DISEÑO PASTEL ELEGANTE)
+   ========================================= */
+.border-mixto { 
+  border-top-color: #3b82f6; /* Azul brillante */
+}
+
+.badge-mixto { 
+  background: #dbeafe; 
+  color: #1d4ed8; 
+  border: 1px solid #bfdbfe; 
+}
+
+/* Contenedor principal de la barra dividida */
+.ticket-split-row {
+  margin-top: auto; 
+  display: flex;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden; 
+  font-size: 0.85rem;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05); /* Borde interno muy sutil */
+}
+
+/* Mitad Izquierda (Efectivo) - Tonos Claros */
+.split-efectivo-box {
+  flex: 1; 
+  background-color: #ecfdf5; /* Esmeralda pastel muy claro */
+  color: #059669; /* Texto verde oscuro para contraste */
+  padding: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+  border-right: 1px dashed #a7f3d0; /* Separador central punteado suave */
+}
+
+/* Mitad Derecha (Yape) - Tonos Claros */
+.split-yape-box {
+  flex: 1; 
+  background-color: #faf5ff; /* Morado pastel muy claro */
+  color: #7e22ce; /* Texto morado oscuro para contraste */
+  padding: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+}

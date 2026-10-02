@@ -1,0 +1,64 @@
+# Dependencies and generated output
+node_modules/
+dist/
+dev-dist/
+frontend/dist/
+frontend/dev-dist/
+build/
+out/
+.next/
+coverage/
+.nyc_output/
+
+# Local environment files (VITE_* values are public browser configuration)
+.env
+.env.*
+*.env
+!.env.example
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+!frontend/.env.example
+
+# Private credentials
+*serviceAccount*.json
+*serviceaccount*.json
+*service-account*.json
+*service_account*.json
+*firebase-adminsdk*.json
+credentials*.json
+credentials*.yaml
+credentials*.yml
+credentials/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Firebase local state; CLI configuration, rules and indexes stay versioned
+.firebase/
+.dataconnect/
+
+# Logs and caches
+logs/
+*.log
+.npm/
+.eslintcache
+.node_repl_history
+*.tsbuildinfo
+*.tgz
+*.pid
+*.pid.lock
+
+# IDE and operating system files
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.suo
+*.ntvs*
+*.njsproj
+*.sw?
+*~

@@ -1,0 +1,155 @@
+/* =========================================
+   1. ESTRUCTURA PRINCIPAL (PC Y MÓVIL)
+   ========================================= */
+.app-layout {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;  
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.app-main-content {
+  background: #fffefa;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-md);
+  padding-bottom: var(--space-lg);
+}
+
+/* =========================================
+   2. ESCRITORIO (CONTENEDOR DEL SIDEBAR)
+   ========================================= */
+.app-sidebar {
+  flex: 0 0 var(--sidebar-w);
+  width: var(--sidebar-w);
+
+  /* 🚀 TEMA: Degradado sutil Morado/Noche */
+  background: linear-gradient(180deg, #341b3a 0%, #43278e 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-md);
+  z-index: 50;
+  height: 100%;
+}
+
+.brand-header h2.brand-title {
+  color: #ffffff;
+  font-size: 1.5rem;
+  margin-bottom: var(--space-lg);
+}
+
+/* =========================================
+   🚀 1. TARJETA DE USUARIO (Efecto Cristal)
+   ========================================= */
+.user-info-sidebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* Fondo casi transparente para dejar ver el morado, con un borde de luz */
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 12px;
+  border-radius: var(--radius);
+  margin-bottom: var(--space-lg);
+  /* Desenfoque de fondo para dar efecto de cristal */
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* El nombre del usuario brilla en blanco */
+.user-info-sidebar .user-name {
+  color: #ffffff;
+  font-weight: 700;
+  display: block;
+}
+
+/* El correo se atenúa para no competir visualmente */
+.user-email {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.858);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+/* La etiqueta (DUEÑO/CAJERO) más elegante */
+.user-badge {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  display: inline-block;
+  margin-top: 6px;
+}
+
+/* =========================================
+   3. SEMÁFORO DE RED (ONLINE/OFFLINE)
+   ========================================= */
+.network-status-pill { display: inline-flex; align-items: center; justify-content: center; transition: all 0.3s ease; white-space: nowrap; }
+.network-status-pill.online { padding: 0; background: transparent; }
+.network-status-pill.offline { gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: 800; text-transform: uppercase; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; box-shadow: 0 0 10px rgba(220, 38, 38, 0.2); }
+.pulse-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.network-status-pill.online .pulse-dot { background-color: #22c55e; box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2); }
+.network-status-pill.offline .pulse-dot { background-color: #dc2626; animation: pulse-red-alert 1.5s infinite; }
+
+@keyframes pulse-red-alert {
+  0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.5); }
+  70% { box-shadow: 0 0 0 5px rgba(220, 38, 38, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+.mobile-header { display: none; }
+
+/* =========================================
+   4. MÓVIL (UNIFICADO Y BLINDADO)
+   ========================================= */
+@media (max-width: 900px) {
+  .app-layout { flex-direction: column; }
+  .app-sidebar { display: none; }
+  div.app-main-content { padding: 0; }
+
+/* 🚀 TEMA: CABECERA MÓVIL (Alineada al color morado oscuro) */
+  header.mobile-header {
+    position: sticky;
+    top: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(90deg, #341b3a 0%, #43278e 100%);
+    padding: 10px 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+    margin: 0;
+    width: 100%;
+    border-radius: 0;
+    gap: 10px;
+  }
+
+  h2.mobile-brand {
+    margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 6px;
+    color: #ffffff; /* Letras blancas */
+    flex-shrink: 0; white-space: nowrap;
+  }
+
+  div.mobile-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 1; min-width: 0; }
+  .network-status-pill.offline + span.mobile-badge { display: none; }
+  span.mobile-badge { margin: 0; font-size: 0.7rem; padding: 3px 6px; flex-shrink: 0; }
+  main.content-area { background: #fffefa; padding: var(--space-md); padding-top: var(--space-lg); padding-bottom: calc(var(--bottom-nav-h) + 25px + env(safe-area-inset-bottom)); flex: 1; }
+
+  /* BOTÓN SALIR MÓVIL */
+  button.mobile-logout-btn { background-color: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; border-radius: 8px; font-size: 0.85rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; height: 34px; min-height: 34px; padding: 0 12px; margin: 0; flex-shrink: 0; white-space: nowrap; }
+}

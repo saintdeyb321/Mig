@@ -1,0 +1,189 @@
+/* src/modules/auth.css (Asegúrate de la ruta correcta) */
+
+.auth-container {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  background: var(--bg-app);
+}
+
+.auth-card {
+  max-width: 420px;
+  width: 100%;
+  padding: clamp(40px, 10vh, 60px) clamp(20px, 5vw, 35px);
+  text-align: center;
+  border-top: 6px solid var(--primary);
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  min-height: min(600px, 85vh);
+  justify-content: space-between;
+}
+
+/* Identidad Visual */
+.auth-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* 🚀 ESTO ES CLAVE: Centra los contenedores hijos (imagen y textos) al medio */
+  justify-content: center;
+  gap: 15px;
+  width: 100%;
+}
+
+.auth-logo {
+  height: 80px;
+  width: auto;
+  object-fit: contain;
+}
+
+.auth-title {
+  color: #b700ff;
+  font-size: clamp(2.4rem, 9vw, 3rem);
+  margin: 0;
+  font-weight: 900;
+  letter-spacing: -1.5px;
+  text-align: center; /* 🚀 Fuerza el texto al centro por seguridad */
+  width: 100%;
+}
+
+.auth-title-highlight {
+  color: #f914b0;
+}
+
+.auth-subtitle {
+  color: var(--text-muted);
+  font-size: 1.05rem; /* Un pelín más grande para que se lea mejor en PC */
+  margin-top: 8px; /* 🚀 FIX 2: Doble espacio respecto al título para separarlo bien */
+  margin-bottom: 10px; /* 🚀 FIX 3: Empuja el cuadro de "Acceso exclusivo" hacia abajo */
+  font-weight: 500;
+  text-align: center;
+  width: 100%;
+  display: block; /* 🚀 FIX 4: Asegura que tome su propia línea y respete sus márgenes */
+}
+
+/* Área de Acción */
+.auth-body {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.auth-notice {
+  background: var(--bg-app);
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-main);
+  border: 1px solid var(--border);
+}
+
+.auth-google-btn {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.1rem;
+  min-height: 60px;
+  border-radius: 16px;
+  box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.auth-google-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.auth-google-icon-wrapper {
+  background: white;
+  border-radius: 50%;
+  padding: 5px;
+  display: flex;
+}
+
+.auth-google-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Pie de página */
+.auth-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  margin-top: 25px;
+}
+
+.auth-security-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.auth-security-icon {
+  font-size: 1.1rem;
+}
+
+.auth-divider {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--border), transparent);
+}
+
+.auth-copyright {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+/* ============================================== */
+/* BOTÓN PWA (Nuevo diseño de élite - INTEGRADO) */
+/* ============================================== */
+.btn-pwa-install {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.05rem;
+  font-weight: 700; /* Misma negrita que el botón de Google para consistencia */
+  min-height: 56px; /* Altura proporcional */
+  border-radius: 16px;
+  
+  /* 🚀 Integración de color: Fondo transparente y acentos del morado intenso de la marca */
+  background-color: transparent;
+  color: #6d28d9; /* Índigo intenso (como el botón de Google) */
+  border: 2px dashed #6d28d9; /* Borde segmentado índigo */
+  
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-top: 0; /* Asegurar que no haya margen extra, gap del padre maneja la separación */
+}
+
+.btn-pwa-install:hover {
+  /* Efecto de llenado sutil al 6% */
+  background-color: rgba(109, 40, 217, 0.06); 
+  
+  /* Cambio a borde sólido para una sensación de 'carga completa' */
+  border-style: solid; 
+  
+  /* Pequeña elevación */
+  transform: translateY(-2px);
+  
+  /* Sombra paralela sutil para consistencia visual */
+  box-shadow: 0 8px 15px -3px rgba(109, 40, 217, 0.1);
+}
+
+.btn-pwa-install:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}

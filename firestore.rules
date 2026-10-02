@@ -1,0 +1,195 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================
+    // 🛡️ 1. FUNCIONES DE SEGURIDAD (Optimizadas para Costos)
+    // =========================================================
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // ⚠️ Costoso: Usa 1 lectura extra. Solo usar para ESCRITURAS (Create/Update/Delete)
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userData() {
+      return userDoc().data;
+    }
+
+    function isSuperAdmin() {
+      return isAuth() && userData().role == 'superadmin';
+    }
+
+    // 🚀 FIX: Validación robusta para que el dueño no sea bloqueado por variaciones de texto
+    function isOwnerOrAdmin() {
+      let r = userData().role;
+      return isAuth() && (
+        r == 'dueño' || r == 'owner' || r == 'admin' || r == 'superadmin' ||
+        r == 'DUEÑO' || r == 'OWNER' || r == 'ADMIN' || r == 'SUPERADMIN' ||
+        r == 'Administrador' || r == 'administrador'
+      );
+    }
+
+    function businessUnchanged() {
+      return request.resource.data.businessId == resource.data.businessId;
+    }
+
+    // =========================================================
+    // ✅ 2. VALIDADORES DE CAMPOS
+    // =========================================================
+
+    function validProduct() {
+      return request.resource.data.keys().hasAll([
+        'businessId', 'name', 'price', 'stock'
+      ]) &&
+      request.resource.data.price is number &&
+      request.resource.data.price >= 0 &&
+      request.resource.data.stock is map;
+    }
+
+    function validSale() {
+      return request.resource.data.keys().hasAll([
+        'businessId', 'branchId', 'items', 'total', 'userId', 'createdAt'
+      ]) &&
+      request.resource.data.total is number &&
+      request.resource.data.total >= 0 &&
+      request.resource.data.createdAt is timestamp &&
+      request.resource.data.items is list &&
+      request.resource.data.items.size() > 0;
+    }
+
+    function validLicense() {
+      return request.resource.data.keys().hasAll([
+        'businessId', 'expiry', 'status'
+      ]) &&
+      request.resource.data.expiry is timestamp &&
+      request.resource.data.status is string;
+    }
+
+    function validContract() {
+      let data = request.resource.data;
+      return data.keys().hasAll([
+        'businessId', 'branchId', 'contractId', 'clientName', 'deliveryDate', 'total', 'status', 'payments'
+      ]) &&
+      data.total is number &&
+      data.total >= 0 &&
+      data.payments is list &&
+      data.status in ['pendiente', 'en_produccion', 'listo_para_entrega', 'entregado', 'cancelado'];
+    }
+
+    // =========================================================
+    // 🏢 3. REGLAS POR COLECCIÓN
+    // =========================================================
+
+    // 🚀 NUEVA COLECCIÓN: AGENDA DE CLIENTES (Módulo VIP)
+    match /customers/{customerId} {
+      allow read: if isAuth(); // Permite a las cajeras leer para el autocompletado
+      allow create, update, delete: if isOwnerOrAdmin(); // Solo dueños administran la agenda
+    }
+
+    match /invites/{emailId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isOwnerOrAdmin();
+    }
+
+    match /licenses/{licenseId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /branches/{branchId} {
+      allow read: if isAuth();
+      allow create: if isOwnerOrAdmin();
+      allow update: if isOwnerOrAdmin() && businessUnchanged();
+      allow delete: if isOwnerOrAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth() && (
+        (request.auth.uid == userId && 
+        request.resource.data.diff(resource.data).changedKeys().hasOnly(["firstName", "lastName"])) ||
+        (isOwnerOrAdmin() && businessUnchanged())
+      );
+      allow delete: if isOwnerOrAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if isAuth();
+      allow create: if isOwnerOrAdmin();
+      allow update: if isOwnerOrAdmin() && businessUnchanged();
+      allow delete: if isOwnerOrAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if isAuth();
+      allow create: if isOwnerOrAdmin() && validProduct();
+      allow delete: if isOwnerOrAdmin();
+      allow update: if isAuth() && businessUnchanged() && (
+          (isOwnerOrAdmin() && validProduct()) ||
+          // 🚀 FIX: lastStockHistory agregado para que las ventas de los cajeros no se bloqueen
+          request.resource.data.diff(resource.data).changedKeys().hasOnly(["stock", "status", "updatedAt", "lastStockHistory"])
+        );
+    }
+
+    match /sales/{saleId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && validSale();
+      allow update: if isAuth() &&
+        businessUnchanged() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'voided', 'updatedAt', 'voidedAt', 'voidReason', 'voidedByName', 'voidedByRole'
+        ]) &&
+        request.resource.data.voided == true;
+      allow delete: if isSuperAdmin();
+    }
+
+    match /contracts/{contractId} {
+      // 🚀 Vista Global de Contratos asegurada
+      allow read: if isAuth();
+      allow create: if isAuth() && validContract();
+      allow update: if isAuth() && businessUnchanged();
+      allow delete: if isOwnerOrAdmin();
+    }
+
+    match /settings/{docId} {
+      allow read: if isAuth();
+      allow create: if isOwnerOrAdmin();
+      allow update: if isOwnerOrAdmin() && businessUnchanged();
+      allow delete: if isOwnerOrAdmin();
+    }
+
+    match /daily_stats/{statId} {
+      allow read: if isAuth();
+      allow create, update: if isAuth();
+      allow delete: if isOwnerOrAdmin();
+    }
+
+    match /cash_sessions/{sessionId} {
+      allow read: if isAuth();
+      allow create, update: if isAuth();
+      allow delete: if isOwnerOrAdmin();
+    }
+
+    match /alerts/{alertId} {
+      allow create: if isAuth();
+      // 👈 Se mantiene la regla: Solo el dueño lee las alertas críticas
+      allow read: if isOwnerOrAdmin(); 
+      allow update: if isOwnerOrAdmin() && businessUnchanged();
+      allow delete: if false; 
+    }
+
+    match /system/{docId} {
+      allow read: if true; 
+      allow write: if isSuperAdmin(); 
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

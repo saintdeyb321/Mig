@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "migapos"
+  },
+  "targets": {
+    "migapos": {
+      "hosting": {
+        "app": [
+          "migapos-peru"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

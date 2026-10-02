@@ -1,0 +1,30 @@
+/* variables.css: SISTEMA DE DISEÑO (SaaS Premium Slate) */
+:root {
+  /* 🔵 Colores Principales Intactos */
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-light: #dbeafe;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  /* 🏢 NUEVOS FONDOS: El secreto del contraste perfecto */
+  --bg-app: #f1f5f9;        /* Gris "Slate" pálido. No ciega y contrasta hermoso. */
+  --header-bg: #ffffff;     /* Cabecera blanca y limpia para dar aire */
+  --card-bg: #ffffff;       /* Tarjetas blancas impecables */
+  /* ⚫ Textos nítidos */
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --border: #e2e8f0;        /* Borde sutil para separar tarjetas del fondo gris */
+  /* Tamaños y Espaciados Fluidos */
+  --space-xs: clamp(6px, 1vw, 10px);
+  --space-sm: clamp(10px, 2vw, 16px);
+  --space-md: clamp(14px, 3vw, 24px);
+  --space-lg: clamp(20px, 4vw, 32px);
+  /* Layout Fluido */
+  --sidebar-w: clamp(200px, 22vw, 260px);
+  --bottom-nav-h: 70px;
+  --radius: clamp(12px, 2vw, 16px);
+  /* Sombras Premium (Hacen que la tarjeta blanca flote sobre el fondo gris) */
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.1), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+}

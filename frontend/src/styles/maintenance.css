@@ -1,0 +1,85 @@
+/* src/styles/maintenance.css */
+
+/* --- MODO MANTENIMIENTO --- */
+.maintenance-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  /* 🚀 EL CAMBIO: El degradado corporativo exacto de tu empresa */
+  background: linear-gradient(180deg, #341b3a 0%, #43278e 100%);
+  text-align: center;
+  padding: 20px;
+}
+
+.maintenance-content {
+  width: 100%;
+  max-width: 450px; /* Un poco más ajustado para celulares */
+  background: #efebeb;
+  padding: 35px 25px;
+  border-radius: 16px;
+  /* Sombra más oscura para que la tarjeta flote sobre el fondo morado */
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  border-top: 6px solid var(--primary);
+  box-sizing: border-box;
+}
+
+/* 🚀 FIX: Contenedor para domar al GIF */
+.maintenance-media-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+/* 🚀 FIX: Escalado perfecto del GIF */
+.maintenance-gif {
+  width: 100%;
+  max-width: 220px; /* Tamaño máximo para que no rompa la pantalla */
+  height: auto;
+  object-fit: cover;
+  border-radius: 12px; /* Bordes redondeaditos para que se vea elegante */
+}
+
+/* (Mantenemos la clase del icono por si algún día quitas el GIF) */
+.maintenance-icon {
+  font-size: 5rem;
+  display: block;
+  margin-bottom: 20px;
+}
+
+.maintenance-footer {
+  margin-top: 25px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* 🚀 NUEVO/REPASO: Clase específica para el botón centralizado */
+.maintenance-btn {
+  margin-top: 30px;
+  padding: 12px 24px;
+  font-size: 1rem;
+  /* El mismo morado/azul del fondo corporativo */
+  background: #43278e; 
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  /* Sombra sutil para darle profundidad */
+  box-shadow: 0 4px 12px rgba(67, 39, 142, 0.25);
+  transition: background 0.2s, transform 0.1s;
+  display: inline-block;
+  box-sizing: border-box;
+}
+
+/* Estado al pasar el ratón (un poco más claro) */
+.maintenance-btn:hover {
+  background: #5438a3; 
+}
+
+/* Estado al presionar (Celular/PC) */
+.maintenance-btn:active {
+  transform: scale(0.97); 
+}

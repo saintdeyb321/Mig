@@ -1,0 +1,345 @@
+/* =========================================
+   1. ANIMACIONES Y CONTENEDORES BASE
+   ========================================= */
+.card {
+background-color: var(--card-bg); /* Esto fuerza el blanco puro */
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  margin-bottom: var(--space-sm);
+  container-type: inline-size;
+}
+
+.fade-in { animation: fadeIn 0.3s ease-in-out; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* =========================================
+   2. BOTONES Y CONTROLES BÁSICOS
+   ========================================= */
+button {
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: clamp(40px, 6vh, 48px);
+}
+
+.btn-primary {
+  background: #730ab5;
+  color: white;
+  border: none;
+  padding: 0 20px;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-icon {
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  padding: 8px;
+  border-radius: 50%;
+  min-height: 40px;
+  min-width: 40px;
+}
+.btn-icon:hover { background: var(--bg-app); }
+
+input:not([type="checkbox"]):not([type="file"]), select {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 1rem;
+  background: white;
+  transition: all 0.2s ease;
+  color: var(--text-main);
+  min-height: clamp(40px, 6vh, 48px);
+}
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+/* =========================================
+   3. BUSCADOR Y FILTROS GLOBALES
+   ========================================= */
+.filter-bar-container {
+  display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: var(--space-md); align-items: center;
+}
+
+.search-container {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card-bg); padding: 0 16px; border-radius: 50px;
+  border: 1px solid var(--border); flex: 1 1 200px; height: clamp(40px, 6vh, 48px);
+}
+
+.search-icon { font-size: 1.2rem; opacity: 0.5; }
+
+div.search-container input.search-input {
+  border: none;
+  background: transparent;
+  width: 100%;
+  outline: none;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  min-height: auto;
+  padding: 0;
+  box-shadow: none;
+}
+
+.btn-clear-search {
+  background: none; border: none; color: var(--text-muted); padding: 0; cursor: pointer; min-height: auto;
+}
+
+.toggle-label {
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  font-size: 0.85rem; color: var(--text-muted); font-weight: 700; background: var(--card-bg);
+  padding: 0 16px; border-radius: 50px; border: 1px solid var(--border);
+  transition: all 0.2s ease; user-select: none; white-space: nowrap; height: clamp(40px, 6vh, 48px);
+}
+.toggle-label:hover { background: var(--bg-app); }
+
+input[type="checkbox"].toggle-checkbox {
+  width: 16px; height: 16px; accent-color: var(--primary); margin-right: 8px; min-height: auto;
+}
+
+/* ========================================
+   4. MODALES (VENTANAS EMERGENTES)
+   ========================================= */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px); z-index: 9999; display: flex; justify-content: center; align-items: center; padding: var(--space-md);
+}
+
+.modal-content { width: 100%; max-width: 500px; border-top: 5px solid var(--primary); max-height: 90vh; overflow-y: auto; background: var(--card-bg); }
+.modal-header-title { margin: 0 0 20px 0; color: var(--text-main); font-size: 1.2rem; }
+.modal-actions-footer { display: flex; gap: 10px; margin-top: 10px; }
+.btn-cancel { flex: 1; background: transparent; border: 1px solid var(--border); color: var(--text-main); }
+.flex-1 { flex: 1; }
+
+
+
+/* =========================================
+   5. CABECERAS DE MÓDULOS
+   ========================================= */
+.module-header {
+  margin-bottom: var(--space-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.module-title {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: clamp(1.2rem, 4vw, 1.6rem);
+  white-space: nowrap;
+  line-height: 1.2;
+  color: var(--text-main);
+}
+
+.module-title-icon {
+  font-size: 1.6em;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-top: -0.18em;
+}
+
+.module-title-text { font-weight: 700; overflow: hidden; text-overflow: ellipsis; display: block; }
+.btn-add-smart { white-space: nowrap; flex-shrink: 0; }
+
+@media (max-width: 600px) {
+  .module-title-icon { margin-top: -0.28em; }
+  .module-title { gap: 8px; }
+  .module-header .btn-add-smart {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    min-height: 36px;
+    height: 36px;
+    border-radius: 6px;
+  }
+}
+
+/* =========================================
+   6. FORMULARIOS (SMART FORMS Y UPLOAD)
+   ========================================= */
+
+.smart-form { display: flex; flex-direction: column; gap: 15px; }
+.form-group { display: flex; flex-direction: column; min-width: 0; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+
+.form-label {
+  font-size: 0.8rem; font-weight: 700; color: var(--text-muted);
+  display: block; margin-bottom: 5px; text-transform: uppercase;
+}
+
+.smart-form input.input-highlight { color: var(--primary); font-weight: bold; }
+
+.upload-zone {
+  display: flex; gap: 15px; align-items: center; background: var(--bg-app);
+  padding: 15px; border-radius: 8px; border: 1px dashed var(--border);
+}
+
+.upload-preview-box {
+  width: 70px; height: 70px; border-radius: 8px; overflow: hidden;
+  background: #e2e8f0; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+
+.preview-img { width: 100%; height: 100%; object-fit: cover; }
+.preview-placeholder { font-size: 2rem; color: #94a3b8; }
+.upload-actions-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.hidden-input { display: none; }
+.upload-buttons-row { display: flex; gap: 10px; align-items: center; width: 100%; }
+
+.upload-buttons-row .btn-upload-file,
+.upload-buttons-row .btn-remove-img {
+  flex: 1; display: inline-flex; justify-content: center; align-items: center;
+  height: 38px; min-height: 38px; margin: 0; padding: 0 10px;
+  box-sizing: border-box; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; transition: all 0.2s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; gap: 6px; text-decoration: none;
+}
+
+
+
+.upload-buttons-row .btn-upload-file { background: white; border: 1px solid var(--border); color: var(--text-main); }
+.upload-buttons-row .btn-upload-file:hover { background: var(--bg-app); border-color: var(--text-muted); }
+.upload-buttons-row .btn-remove-img { background: #fef2f2; border: 1px solid #fca5a5; color: var(--danger); }
+.upload-buttons-row .btn-remove-img:hover { background: #fee2e2; border-color: #f87171; }
+
+
+
+/* =========================================
+   7. TARJETAS DE LISTA (Genéricas para Usuarios/Categorías)
+   ========================================= */
+.list-card {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 15px;
+  padding: 16px 20px; background: var(--card-bg); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm); container-type: inline-size;
+}
+
+.list-card-content { display: flex; align-items: center; gap: 15px; flex: 1 1 250px; min-width: 0; }
+.list-card-info { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.list-card-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.avatar-box { min-width: 50px; min-height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
+
+
+
+@container (max-width: 480px) {
+  .list-card-actions { flex: 1 1 100%; justify-content: stretch; border-top: 1px dashed var(--border); padding-top: 15px; margin-top: 5px; }
+  .list-card-actions button { flex: 1; justify-content: center; }
+}
+
+
+
+/* =========================================
+
+   8. WIDGETS GLOBALES (Header, User Info, Network)
+
+   ========================================= */
+
+.user-info-sidebar { display: flex; align-items: center; gap: 12px; background: var(--bg-app); padding: 12px; border-radius: var(--radius); margin-bottom: var(--space-lg); }
+.user-badge { background: var(--primary-light); color: var(--primary); font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 20px; text-transform: uppercase; }
+.network-status-pill { display: inline-flex; align-items: center; justify-content: center; }
+.network-status-pill.offline { gap: 6px; padding: 4px 10px; border-radius: 20px; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; font-size: 0.65rem; font-weight: 800; text-transform: uppercase;}
+
+
+/* =========================================
+   ASIDE / APP LAYOUT STYLES
+========================================= */
+.sidebar-brand-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.sidebar-brand-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  user-select: none;
+  font-size: 1.4rem;
+}
+
+.user-details-container {
+  min-width: 0;
+}
+
+.user-role-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.user-badge.no-margin {
+  margin: 0;
+}
+
+.assigned-branch-desktop {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: #fef2f2;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* =========================================
+   MOBILE HEADER STYLES
+========================================= */
+.mobile-brand-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+.mobile-header-actions-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+/* =========================================
+   BOTTOM NAV STYLES
+========================================= */
+.app-bottom-nav {
+  position: relative; /* Necesario para que el absolute funcione dentro */
+}
+
+.assigned-branch-mobile {
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #fef2f2;
+  font-size: 1rem;
+  font-weight: 600;
+  pointer-events: none; /* Para que no interfiera con los clics */
+}

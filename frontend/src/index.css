@@ -1,0 +1,21 @@
+@import './styles/variables.css';
+@import './styles/base.css';
+@import './styles/components.css';
+@import './styles/layout.css';
+@import './styles/pos.css';
+@import './styles/history.css'; 
+@import './styles/settings.css'; 
+@import './styles/reports.css'; 
+@import './styles/users.css';
+@import './styles/exportSales.css'; 
+@import './styles/BottomNav.css'; /* Nuevo archivo para estilos específicos del BottomNav */
+@import './styles/products.css'; /* Nuevo archivo para estilos específicos del Catálogo de Productos */
+@import './styles/loaders.css'; /* Nuevo archivo para estilos de loaders */
+@import './styles/maintenance.css'; /* Nuevo archivo para estilos de mantenimiento */
+@import './styles/auth.css'; /* Nuevo archivo para estilos de autenticación */
+@import './styles/notificationBell.css'; /* Nuevo archivo para estilos de la campana de notificaciones */
+@import './styles/termsModal.css'; /* Nuevo archivo para estilos del modal de términos y condiciones */ 
+@import './styles/contracts.css'; /* Nuevo archivo para estilos de la sección de contratos */
+@import './styles/contractsModals.css'; /* Nuevo archivo para estilos del modal de detalles de contrato */
+@import './styles/contractCancelModal.css'; /* Nuevo archivo para estilos del modal de cancelación de contrato */
+@import './styles/contractFormModal.css'; /* Nuevo archivo para estilos del modal de formulario de contrato */

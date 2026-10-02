@@ -1,0 +1,135 @@
+
+/* src/modules/contracts/styles/contractCancelModal.css */
+
+/* ==========================================================================
+   MODAL DE ANULACIÓN (Aislado y Altamente Específico)
+   ========================================================================== */
+
+.cancel-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center; z-index: 9999;
+  padding: 20px;
+}
+
+.cancel-modal-container {
+  background: #ffffff;
+  width: 100%;
+  max-width: 500px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(220, 38, 38, 0.4);
+  border: 1px solid #fca5a5;
+  overflow: hidden;
+  font-family: inherit;
+}
+
+/* --- Cabecera --- */
+.cancel-modal-container .cancel-header {
+  display: flex; gap: 16px; padding: 24px;
+  background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+  align-items: center;
+}
+
+.cancel-modal-container .cancel-icon {
+  font-size: 2rem; background: rgba(255, 255, 255, 0.1); width: 56px; height: 56px;
+  border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.2); flex: 0 0 auto;
+}
+
+.cancel-modal-container .cancel-title-group {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0; text-align: left;
+}
+
+.cancel-modal-container .cancel-title-group h2 {
+  margin: 0; color: #ffffff; font-size: 1.3rem; font-weight: 900; line-height: 1.2; letter-spacing: -0.5px;
+}
+
+.cancel-modal-container .cancel-id {
+  align-self: flex-start; background: rgba(255,255,255,0.2); color: white;
+  padding: 2px 8px; border-radius: 6px; font-size: 0.8rem; font-family: monospace; font-weight: 700;
+}
+
+/* --- Cuerpo --- */
+.cancel-modal-container .cancel-body {
+  padding: 24px; display: flex; flex-direction: column; gap: 24px; align-items: stretch;
+}
+
+.cancel-modal-container .cancel-warning {
+  background: #fffbeb; border: 1px solid #fcd34d; color: #b45309; padding: 16px;
+  border-radius: 12px; font-size: 0.95rem; line-height: 1.5; text-align: left;
+}
+
+.cancel-modal-container .cancel-warning strong {
+  color: #991b1b; font-weight: 800;
+}
+
+/* 🚀 FIX: Forzar la estructura del Input para vencer estilos globales */
+.cancel-modal-container .cancel-input-wrapper {
+  display: flex; flex-direction: column; gap: 8px; width: 100%; align-items: stretch; text-align: left;
+}
+
+.cancel-modal-container .cancel-input-wrapper label {
+  font-size: 0.85rem; font-weight: 800; color: #7f1d1d; margin: 0; display: block; width: 100%;
+}
+
+.cancel-modal-container .cancel-input-wrapper .req { 
+  color: #dc2626; 
+}
+
+.cancel-modal-container .cancel-input-wrapper textarea {
+  width: 100%; min-width: 100%; max-width: 100%; height: 100px; padding: 12px;
+  border-radius: 10px; border: 2px solid #fca5a5; background: #fef2f2; color: #7f1d1d;
+  font-size: 0.95rem; font-family: inherit; resize: vertical; outline: none; 
+  transition: all 0.2s; box-sizing: border-box; display: block; margin: 0;
+}
+
+.cancel-modal-container .cancel-input-wrapper textarea:focus {
+  border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+}
+
+.cancel-modal-container .cancel-input-wrapper small {
+  color: #ef4444; font-size: 0.8rem; font-weight: 600; margin: 0; display: block;
+}
+
+/* --- Pie y Botones --- */
+/* --- Pie y Botones --- */
+.cancel-modal-container .cancel-footer {
+  background: #f8fafc; 
+  padding: 20px 24px; 
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: center; /* 🚀 FIX: Centra los botones horizontalmente */
+  gap: 16px; 
+  align-items: center;
+}
+
+.cancel-modal-container .cancel-btn-back {
+  background: #ffffff; border: 1px solid #cbd5e1; color: #475569; padding: 10px 20px;
+  border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer; 
+  transition: all 0.2s; margin: 0; display: inline-flex; justify-content: center; align-items: center;
+}
+.cancel-modal-container .cancel-btn-back:hover { 
+  background: #f1f5f9; color: #0f172a; border-color: #94a3b8; 
+}
+
+.cancel-modal-container .cancel-btn-confirm {
+  background: #ef4444; border: none; color: white; padding: 10px 24px; 
+  border-radius: 10px; font-weight: 800; font-size: 0.95rem; cursor: pointer; 
+  transition: all 0.2s; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2); margin: 0; 
+  display: inline-flex; justify-content: center; align-items: center;
+}
+.cancel-modal-container .cancel-btn-confirm:hover:not(:disabled) { 
+  background: #dc2626; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(220, 38, 38, 0.3); 
+}
+.cancel-modal-container .cancel-btn-confirm:disabled { 
+  background: #fca5a5; cursor: not-allowed; transform: none; box-shadow: none; 
+}
+
+/* Responsivo */
+@media (max-width: 600px) {
+  .cancel-modal-container .cancel-footer { flex-direction: column; }
+  .cancel-modal-container .cancel-btn-back, 
+  .cancel-modal-container .cancel-btn-confirm { width: 100%; text-align: center; }
+}
