@@ -1,7 +1,8 @@
 import { getDailyStats, subscribeDailyStats } from '../infrastructure/dailyStatsRepository';
-import { getContractsForReport } from '../../contracts/infrastructure/contractRepository';
+import { getPaymentsInPeriod } from '../../payments/infrastructure/paymentRepository';
+import { paymentAmounts } from '../../payments/domain/paymentTotals';
+import { saleDay } from '../../sales/domain/saleModel';
 import { createSubscriptionScope } from '../../../shared/utils/subscriptionScope';
-import { toMillisSafe } from '../../../core/dates/dateValues';
 // src/hooks/useReports.js
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTenantData } from '../../branches/context/TenantContext';
@@ -140,41 +141,16 @@ export const useReports = (user) => {
       });
 
       try {
-        const contractDocuments = await getContractsForReport(user.businessId, activeBranchId);
-        const startMs = new Date(startDateStr + "T00:00:00").getTime();
-        const endMs = new Date(endDateStr + "T23:59:59").getTime();
-
-        contractDocuments.forEach(contract => {
-          if (!contract.payments) return;
-
-          contract.payments.forEach(pay => {
-            const payMs = toMillisSafe(pay.date);
-
-            if (payMs >= startMs && payMs <= endMs) {
-              // 'adelanto' -> Ocurrió en la Sede de creación (branchId)
-              // 'abono' o 'reembolso' -> Ocurrió en la Sede de entrega (deliveryType)
-              const sedeDelPagoFisico = pay.type === 'adelanto' ? contract.branchId : contract.deliveryType;
-
-              // Si NO estamos en "Global" y este pago NO le pertenece a la Sede actual, LO IGNORAMOS
-              if (activeBranchId !== 'global' && sedeDelPagoFisico !== activeBranchId) {
-                return;
-              }
-
-              const amount = Number(pay.amount);
-              t += amount;
-
-              if (pay.method === 'efectivo' || pay.method === 'efectivo_taller') c += amount;
-              else if (pay.method === 'yape' || pay.method === 'plin' || pay.method === 'yape_taller') y += amount;
-
-              const payDateObj = new Date(payMs);
-              const dayKey = getLocalDateStr(payDateObj);
-              const bucketKey = timeFilter === 'todo' ? dayKey.substring(0, 7) : dayKey;
-
-              if (groupedChart[bucketKey]) {
-                groupedChart[bucketKey].ventas += amount;
-              }
-            }
-          });
+        const payments = await getPaymentsInPeriod(user.businessId,
+          new Date(startDateStr + 'T00:00:00-05:00'), new Date(endDateStr + 'T23:59:59.999-05:00'), activeBranchId);
+        payments.forEach(payment => {
+          const amounts = paymentAmounts(payment);
+          t += payment.amount;
+          c += amounts.efectivo;
+          y += amounts.yape;
+          const dayKey = saleDay({ createdAt: payment.occurredAt });
+          const bucketKey = timeFilter === 'todo' ? dayKey.substring(0, 7) : dayKey;
+          if (groupedChart[bucketKey]) groupedChart[bucketKey].ventas += payment.amount;
         });
       } catch (err) {
         console.error("Error fusionando contratos al reporte:", err);

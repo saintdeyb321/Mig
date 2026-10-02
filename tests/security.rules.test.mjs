@@ -38,6 +38,11 @@ const contract = (businessId = 'tenant-a', branchId = 'a-1') => ({
   businessId, branchId, contractId: 'PED-TEST', clientName: 'Cliente',
   deliveryDate: now, deliveryType: 'a-2', total: 10, payments: [], status: 'pendiente',
 });
+const payment = (businessId = 'tenant-a', branchId = 'a-1') => ({
+  businessId, branchId, sessionId: 'session-a', userId: 'cashier-a', cashierName: 'Nombre Apellido',
+  sourceType: 'contract', sourceId: 'contract-a', contractNumber: 'PED-TEST',
+  type: 'payment', method: 'efectivo', amount: 5, occurredAt: now, createdAt: now, operationId: 'payment-a',
+});
 const profile = (businessId, role, branchId = 'global', status = 'activo') => ({
   businessId, role, branchId, status, email: `${role}-${businessId}@example.test`,
   firstName: 'Nombre', lastName: 'Apellido', createdAt: isoDate,
@@ -60,6 +65,8 @@ before(async () => {
   });
   await env.withSecurityRulesDisabled(async ctx => {
     await uploadBytes(ref(ctx.storage(), 'private/fixture.txt'), new Uint8Array([1, 2, 3]));
+    await uploadBytes(ref(ctx.storage(), 'contracts/tenant-a/contract-a/fixture.jpg'), new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' });
+    await uploadBytes(ref(ctx.storage(), 'contracts/tenant-b/contract-b/fixture.jpg'), new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' });
   });
 });
 
@@ -98,6 +105,9 @@ beforeEach(async () => {
       'sales/sale-b': sale('tenant-b', 'b-1', 'cashier-b'),
       'contracts/contract-a': contract(),
       'contracts/contract-b': contract('tenant-b', 'b-1'),
+      'payments/payment-a': payment(),
+      'payments/payment-a2': payment('tenant-a', 'a-2'),
+      'payments/payment-b': payment('tenant-b', 'b-1'),
       'daily_stats/stat-a': { businessId: 'tenant-a', branchId: 'a-1', date: '2026-10-02', totalOrders: 1 },
       'daily_stats/stat-a2': { businessId: 'tenant-a', branchId: 'a-2', date: '2026-10-02', totalOrders: 1 },
       'daily_stats/stat-b': { businessId: 'tenant-b', branchId: 'b-1', date: '2026-10-02', totalOrders: 1 },
@@ -381,13 +391,53 @@ describe('Financial backend boundary and query compatibility', () => {
     await assertSucceeds(updateDoc(doc(ownerDb(), 'alerts/VOIDED_SALE_real'), { read: true }));
     await assertFails(updateDoc(doc(ownerDb(), 'alerts/VOIDED_SALE_real'), { notes: 'Forged' }));
   });
-  it('existing contract reads and delivery states remain compatible', async () => {
-    await assertSucceeds(setDoc(doc(cashierDb(), 'contracts/new'), contract('tenant-a', 'a-2')));
-    const target = doc(cashierDb(), 'contracts/new');
-    for (const status of ['entregado', 'entregado_con_deuda', 'entregado']) await assertSucceeds(updateDoc(target, { status }));
-    await assertFails(updateDoc(target, { status: 'invalid' }));
-    await assertFails(setDoc(doc(cashierDb(), 'contracts/foreign'), contract('tenant-b', 'b-1')));
+  it('contract reads remain compatible and all client mutations require Functions', async () => {
+    await assertSucceeds(getDoc(doc(cashierDb(), 'contracts/contract-a')));
+    for (const actor of [cashierDb(), ownerDb(), adminDb()]) {
+      await assertFails(setDoc(doc(actor, 'contracts/new'), contract()));
+      await assertFails(updateDoc(doc(actor, 'contracts/contract-a'), { status: 'entregado' }));
+      await assertFails(deleteDoc(doc(actor, 'contracts/contract-a')));
+    }
     await assertFails(getDoc(doc(cashierDb(), 'contracts/contract-b')));
+  });
+  it('contract projections, embedded payments and commercial edits cannot bypass the backend', async () => {
+    for (const change of [
+      { paidTotal: 10 }, { balance: 0 }, { total: 1 }, { payments: [{ amount: 10 }] },
+      { businessId: 'tenant-b' }, { createdBy: 'admin' }, { voidedBy: 'owner-a' }, { clientName: 'Cambio' },
+    ]) await assertFails(updateDoc(doc(ownerDb(), 'contracts/contract-a'), change));
+  });
+  it('no client role can create, alter or delete ledger movements including refunds', async () => {
+    for (const actor of [cashierDb(), ownerDb(), adminDb()]) {
+      await assertFails(setDoc(doc(actor, 'payments/new'), payment()));
+      await assertFails(setDoc(doc(actor, 'payments/refund'), { ...payment(), type: 'refund', amount: -5 }));
+      await assertFails(updateDoc(doc(actor, 'payments/payment-a'), { amount: 999 }));
+      await assertFails(deleteDoc(doc(actor, 'payments/payment-a')));
+    }
+  });
+  it('ledger queries require tenant and cashier branch while owner sees the whole tenant', async () => {
+    await assertSucceeds(getDoc(doc(ownerDb(), 'payments/payment-a2')));
+    await assertSucceeds(getDocs(query(collection(ownerDb(), 'payments'), where('businessId', '==', 'tenant-a'))));
+    await assertFails(getDoc(doc(db('owner-b'), 'payments/payment-a')));
+    await assertFails(getDoc(doc(cashierDb(), 'payments/payment-a2')));
+    await assertFails(getDoc(doc(cashierDb(), 'payments/payment-b')));
+    await assertFails(getDocs(query(collection(cashierDb(), 'payments'), where('businessId', '==', 'tenant-a'))));
+    const result = await assertSucceeds(getDocs(query(collection(cashierDb(), 'payments'),
+      where('businessId', '==', 'tenant-a'), where('branchId', '==', 'a-1'))));
+    assert.deepEqual(result.docs.map(snapshot => snapshot.id), ['payment-a']);
+    await assertSucceeds(getDoc(doc(adminDb(), 'payments/payment-b')));
+  });
+  it('VOIDED_CONTRACT audit is backend-only and only its read acknowledgement is mutable', async () => {
+    for (const actor of [cashierDb(), ownerDb(), adminDb()]) {
+      await assertFails(setDoc(doc(actor, 'alerts/forged-contract'), { businessId: 'tenant-a', type: 'VOIDED_CONTRACT' }));
+      await assertFails(setDoc(doc(actor, 'alerts/VOIDED_CONTRACT_fake'), { businessId: 'tenant-a', type: 'CASH_DISCREPANCY' }));
+      await assertFails(setDoc(doc(actor, 'alerts/hidden-contract'), { businessId: 'tenant-a', contractId: 'contract-a' }));
+    }
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'alerts/VOIDED_CONTRACT_real'), {
+      businessId: 'tenant-a', type: 'VOIDED_CONTRACT', contractId: 'contract-a', notes: 'Original', read: false,
+    }));
+    await assertSucceeds(updateDoc(doc(ownerDb(), 'alerts/VOIDED_CONTRACT_real'), { read: true }));
+    await assertFails(updateDoc(doc(ownerDb(), 'alerts/VOIDED_CONTRACT_real'), { notes: 'Forged' }));
+    await assertFails(updateDoc(doc(ownerDb(), 'alerts/alert-a'), { type: 'VOIDED_CONTRACT' }));
   });
 });
 describe('Alerts, platform and Storage', () => {
@@ -423,10 +473,52 @@ describe('Alerts, platform and Storage', () => {
     }
     await assertFails(deleteDoc(doc(adminDb(), 'sales/sale-b')));
   });
-  it('Storage denies reads and writes even for authenticated platform users', async () => {
+  it('Storage outside the contracts namespace stays inaccessible to every client role', async () => {
     for (const actor of [env.unauthenticatedContext(), context('cashier-a'), context('admin')]) {
       await assertFails(getBytes(ref(actor.storage(), 'private/fixture.txt')));
       await assertFails(uploadBytes(ref(actor.storage(), 'private/new.txt'), new Uint8Array([1])));
     }
+  });
+});
+
+describe('Contract Storage authorization', () => {
+  const image = new Uint8Array([255, 216, 255, 1]);
+  const object = (uid, path = 'contracts/tenant-a/contract-a/fixture.jpg') => ref(context(uid).storage(), path);
+  it('tenant A uploads both optimized image and thumbnail in its own contract path', async () => {
+    await assertSucceeds(uploadBytes(object('cashier-a', 'contracts/tenant-a/contract-a/new.jpg'), image, { contentType: 'image/jpeg' }));
+    await assertSucceeds(uploadBytes(object('owner-a', 'contracts/tenant-a/contract-a/thumbs/new.jpg'), image, { contentType: 'image/jpeg' }));
+  });
+  it('uploads before a new contract exists are allowed only inside the actor tenant', async () => {
+    await assertSucceeds(uploadBytes(object('cashier-a', 'contracts/tenant-a/new-document/new.png'), image, { contentType: 'image/png' }));
+    await assertFails(uploadBytes(object('cashier-a', 'contracts/tenant-b/new-document/new.jpg'), image, { contentType: 'image/jpeg' }));
+  });
+  it('cross-tenant paths and a foreign document ID hidden under the actor tenant are rejected', async () => {
+    await assertFails(uploadBytes(object('cashier-a', 'contracts/tenant-b/contract-b/attack.jpg'), image, { contentType: 'image/jpeg' }));
+    await assertFails(uploadBytes(object('cashier-a', 'contracts/tenant-a/contract-b/attack.jpg'), image, { contentType: 'image/jpeg' }));
+  });
+  it('unauthenticated, suspended and profile-less users cannot access contract images', async () => {
+    await assertFails(getBytes(ref(env.unauthenticatedContext().storage(), 'contracts/tenant-a/contract-a/fixture.jpg')));
+    for (const uid of ['suspended', 'stranger']) {
+      await assertFails(getBytes(object(uid)));
+      await assertFails(uploadBytes(object(uid, 'contracts/tenant-a/contract-a/blocked.jpg'), image, { contentType: 'image/jpeg' }));
+    }
+  });
+  it('MIME restrictions, extension matching and empty objects are enforced', async () => {
+    await assertFails(uploadBytes(object('owner-a', 'contracts/tenant-a/contract-a/not-image.jpg'), image, { contentType: 'text/plain' }));
+    await assertFails(uploadBytes(object('owner-a', 'contracts/tenant-a/contract-a/not-image.gif'), image, { contentType: 'image/gif' }));
+    await assertFails(uploadBytes(object('owner-a', 'contracts/tenant-a/contract-a/mismatch.png'), image, { contentType: 'image/jpeg' }));
+    await assertFails(uploadBytes(object('owner-a', 'contracts/tenant-a/contract-a/empty.jpg'), new Uint8Array(), { contentType: 'image/jpeg' }));
+    await assertSucceeds(uploadBytes(object('owner-a', 'contracts/tenant-a/contract-a/web.webp'), image, { contentType: 'image/webp' }));
+  });
+  it('objects larger than 5 MB are rejected', async () => {
+    await assertFails(uploadBytes(object('owner-a', 'contracts/tenant-a/contract-a/huge.jpg'),
+      new Uint8Array(5 * 1024 * 1024 + 1), { contentType: 'image/jpeg' }));
+  });
+  it('same tenant can read; another tenant cannot; administrative access remains available', async () => {
+    const bytes = await assertSucceeds(getBytes(object('cashier-a')));
+    assert.equal(bytes.byteLength, 3);
+    await assertFails(getBytes(object('cashier-b')));
+    await assertFails(getBytes(object('owner-b')));
+    await assertSucceeds(getBytes(object('admin', 'contracts/tenant-b/contract-b/fixture.jpg')));
   });
 });

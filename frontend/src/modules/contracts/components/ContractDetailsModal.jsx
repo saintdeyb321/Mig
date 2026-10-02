@@ -1,7 +1,10 @@
 import { toDateSafe } from '../../../core/dates/dateValues';
 // src/modules/contracts/components/ContractDetailsModal.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
+import { getPaymentsByContract } from '../../../features/payments/infrastructure/paymentRepository';
+import { contractImageList } from '../../../features/contracts/infrastructure/contractImages';
+import { useContractImageUrls } from '../../../features/contracts/hooks/useContractImageUrls';
 
 const formatFirebaseDate = (timestamp, includeTime = false) => {
   if (!timestamp) return 'Sin fecha';
@@ -13,12 +16,30 @@ const formatFirebaseDate = (timestamp, includeTime = false) => {
 };
 
 const ContractDetailsModal = ({
-  contract, onClose, onAddPayment, onEditRequest, onCancelRequest, onMarkDelivered, isProcessing
+  contract, user, onClose, onAddPayment, onEditRequest, onCancelRequest, onMarkDelivered, isProcessing
 }) => {
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState('efectivo');
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(null);
+  const imageReferences = useMemo(() => contractImageList(contract), [contract]);
+  const { urls: allImages, loading: imagesLoading, error: imagesError } = useContractImageUrls(imageReferences);
+  const [paymentResult, setPaymentResult] = useState({ key: null, payments: [], error: null });
+  const paymentKey = `${user?.uid}:${user?.businessId}:${contract?.id}:${contract?.updatedAt?.seconds ?? contract?.updatedAt ?? ''}`;
+  const paymentBranch = user?.role === 'cajero' ? user.branchId : 'global';
+  useEffect(() => {
+    let disposed = false;
+    if (!contract?.id || !user?.businessId) return;
+    getPaymentsByContract(user.businessId, contract.id, paymentBranch).then(ledger => {
+      if (!disposed) setPaymentResult({ key: paymentKey,
+        payments: contract.paymentsMigrated || ledger.length > 0 ? ledger : (contract.payments || []), error: null });
+    }).catch(error => {
+      if (!disposed) setPaymentResult({ key: paymentKey, payments: [], error });
+    });
+    return () => { disposed = true; };
+  }, [contract, user?.businessId, paymentBranch, paymentKey]);
+  const payments = paymentResult.key === paymentKey ? paymentResult.payments : [];
+  const paymentError = paymentResult.key === paymentKey ? paymentResult.error : null;
 
   if (!contract) return null;
 
@@ -38,10 +59,6 @@ const ContractDetailsModal = ({
       default: return 'Desconocido';
     }
   };
-
-  const allImages = contract.referenceImages && contract.referenceImages.length > 0
-    ? contract.referenceImages
-    : (contract.referenceImage ? [contract.referenceImage] : []);
 
   const closeLightbox = (e) => { e.stopPropagation(); setSelectedImageIndex(null); };
   const nextImage = (e) => {
@@ -329,20 +346,24 @@ const ContractDetailsModal = ({
             )}
 
             {/* TARJETA 6: Auditoría de Pagos */}
-            {contract.payments && contract.payments.length > 0 && (
+            {paymentResult.key !== paymentKey && <p>Cargando movimientos del pedido...</p>}
+            {paymentError && <p role="alert">No se pudo cargar la auditoría de pagos.</p>}
+            {imagesLoading && <p>Cargando imágenes de referencia...</p>}
+            {imagesError && <p role="alert">No se pudieron cargar las imágenes de referencia.</p>}
+            {payments.length > 0 && (
                <div className="cd-card">
                  <h3 className="cd-card-title">Auditoría de Transacciones</h3>
 
                  <div className="cd-audit-list">
-                   {contract.payments.map((p, idx) => (
-                     <div key={idx} className="cd-audit-item" style={{ borderLeft: p.amount < 0 ? '4px solid #ef4444' : '4px solid #10b981', background: p.amount < 0 ? '#fef2f2' : '#f8fafc', padding: '10px', marginBottom: '8px', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                   {payments.map((p, idx) => (
+                     <div key={p.id || idx} className="cd-audit-item" style={{ borderLeft: p.amount < 0 ? '4px solid #ef4444' : '4px solid #10b981', background: p.amount < 0 ? '#fef2f2' : '#f8fafc', padding: '10px', marginBottom: '8px', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 
                        <div className="cd-audit-info">
                          <strong style={{ display: 'block', color: p.amount < 0 ? '#dc2626' : '#0f172a' }}>
-                           {p.type === 'reembolso' ? 'REEMBOLSO' : (p.label || `CUOTA ${idx + 1}`)}
+                           {p.type === 'refund' || p.type === 'reembolso' ? 'REEMBOLSO' : (p.label || (p.type === 'advance' ? 'ADELANTO' : `CUOTA ${idx + 1}`))}
                            <span style={{ fontSize: '0.75rem', opacity: 0.7, marginLeft: '6px' }}>({p.method.replace('_taller', '')})</span>
                          </strong>
-                         <small style={{ color: '#64748b' }}>{formatFirebaseDate(p.date, true)} | Cajero: {p.cashierName || 'Sist.'}</small>
+                         <small style={{ color: '#64748b' }}>{formatFirebaseDate(p.occurredAt ?? p.date, true)} | Cajero: {p.cashierName || 'Sist.'}</small>
                        </div>
 
                        <div className={`cd-audit-amount ${p.amount < 0 ? 'cd-text-void' : 'cd-text-paid'}`} style={{ fontWeight: '900', fontSize: '1.1rem', color: p.amount < 0 ? '#dc2626' : '#10b981' }}>

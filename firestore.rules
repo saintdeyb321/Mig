@@ -175,14 +175,10 @@ service cloud.firestore {
       return superadmin() || (sameTenantResource() && branchAccess(resource.data.get('branchId', null)));
     }
 
-    function validContract() {
-      let data = request.resource.data;
-      return data.keys().hasAll(['businessId', 'branchId', 'contractId', 'clientName',
-          'deliveryDate', 'total', 'status', 'payments'])
-        && hasTenant(data) && data.branchId is string && data.contractId is string
-        && data.clientName is string && data.total is number && data.total >= 0
-        && data.payments is list
-        && data.status in ['pendiente', 'en_produccion', 'listo_para_entrega', 'entregado', 'entregado_con_deuda', 'cancelado'];
+    function protectedFinancialAlert(data, alertId) {
+      return data.get('type', '') in ['VOIDED_SALE', 'VOIDED_CONTRACT']
+        || alertId.matches('^VOIDED_(SALE|CONTRACT)_.*')
+        || data.keys().hasAny(['saleId', 'contractId']);
     }
 
     match /users/{userId} {
@@ -242,9 +238,12 @@ service cloud.firestore {
 
     match /contracts/{contractId} {
       allow read: if tenantReader();
-      allow create: if (superadmin() || sameTenantIncoming()) && validContract();
-      allow update: if tenantReader() && businessUnchanged() && validContract();
-      allow delete: if tenantManager();
+      allow create, update, delete: if false;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if permittedFinancialResource();
+      allow create, update, delete: if false;
     }
 
     match /customers/{customerId} {
@@ -278,16 +277,13 @@ service cloud.firestore {
 
     match /alerts/{alertId} {
       allow create: if hasTenant(request.resource.data) && (superadmin() || sameTenantIncoming())
-        && request.resource.data.get('type', '') != 'VOIDED_SALE'
-        && !alertId.matches('^VOIDED_SALE_.*') && !request.resource.data.keys().hasAny(['saleId']);
+        && !protectedFinancialAlert(request.resource.data, alertId);
       allow read: if tenantManager();
       allow update: if tenantManager() && businessUnchanged()
-        && (((resource.data.get('type', '') == 'VOIDED_SALE' || alertId.matches('^VOIDED_SALE_.*')
-              || resource.data.keys().hasAny(['saleId']))
+        && ((protectedFinancialAlert(resource.data, alertId)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']))
-          || (resource.data.get('type', '') != 'VOIDED_SALE' && !alertId.matches('^VOIDED_SALE_.*')
-            && !resource.data.keys().hasAny(['saleId']) && !request.resource.data.keys().hasAny(['saleId'])
-            && request.resource.data.get('type', '') != 'VOIDED_SALE'));
+          || (!protectedFinancialAlert(resource.data, alertId)
+            && !protectedFinancialAlert(request.resource.data, alertId)));
       allow delete: if false;
     }
 

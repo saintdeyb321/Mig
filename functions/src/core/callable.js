@@ -7,7 +7,7 @@ export function callable(handler) {
     catch (error) {
       if (error instanceof SaleError) {
         const code = ['unauthenticated', 'permission-denied'].includes(error.code) ? error.code
-          : error.code === 'sale-conflict' ? 'already-exists' : 'failed-precondition';
+          : ['sale-conflict', 'payment-conflict'].includes(error.code) ? 'already-exists' : 'failed-precondition';
         throw new HttpsError(code, error.message, { saleCode: error.code });
       }
       // Transaction/network failures remain retryable; do not expose SDK diagnostics or payloads.

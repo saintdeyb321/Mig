@@ -1,6 +1,7 @@
 import { findOpenSession, findLastClosedSession, createSession, updateSession, cacheSession, reserveOfflineSession } from '../infrastructure/cashRegisterRepository';
 import { getSessionSales } from '../../sales/infrastructure/salesRepository';
-import { getBranchContracts } from '../../contracts/infrastructure/contractRepository';
+import { getPaymentsBySession } from '../../payments/infrastructure/paymentRepository';
+import { sumPaymentTotals } from '../../payments/domain/paymentTotals';
 import { createAlert, upsertAlert } from '../../notifications/infrastructure/alertRepository';
 import { toDateSafe } from '../../../core/dates/dateValues';
 import { useState, useCallback, useEffect } from 'react';
@@ -279,27 +280,11 @@ export const useCashRegister = (user, currentBranchId) => {
             totalSalesCount++;
           }
         });
-        const branchContracts = await getBranchContracts(currentSession.businessId, currentSession.branchId);
-        branchContracts.forEach(contract => {
-          if (contract.payments && Array.isArray(contract.payments)) {
-            contract.payments.forEach(payment => {
-              if (payment.sessionId === currentSession.id) {
-                if (payment.method === 'mixto' && payment.splitPayments) {
-                  const montoEfectivo = Number(payment.splitPayments.efectivo) || 0;
-                  totalCash += montoEfectivo;
-                  totalYape += Number(payment.splitPayments.yape) || 0;
-                  // 👈 FIX: Sumamos al contador si el contrato mixto introdujo efectivo a la gaveta
-                  if (montoEfectivo > 0) totalSalesCount++;
-                } else if (payment.method === 'efectivo') {
-                  totalCash += Number(payment.amount);
-                  if (payment.amount > 0) totalSalesCount++;
-                } else if (payment.method === 'yape' || payment.method === 'plin') {
-                  totalYape += Number(payment.amount);
-                }
-              }
-            });
-          }
-        });
+        const contractPayments = await getPaymentsBySession(currentSession.businessId, currentSession.id, currentSession.branchId);
+        const paymentTotals = sumPaymentTotals(contractPayments);
+        totalCash += paymentTotals.efectivo;
+        totalYape += paymentTotals.yape;
+        totalSalesCount += paymentTotals.cashPayments;
 
         toast.dismiss(loadingToast);
       }

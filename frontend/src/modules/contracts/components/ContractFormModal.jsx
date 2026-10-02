@@ -1,8 +1,9 @@
 // src/modules/contracts/components/ContractFormModal.jsx
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useCustomers } from '../../../features/customers/hooks/useCustomers';
 import { toDateSafe } from '../../../core/dates/dateValues';
+import { useContractImageUrls } from '../../../features/contracts/hooks/useContractImageUrls';
 
 const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit, isProcessing }) => {
   const isEditing = !!contractToEdit;
@@ -45,13 +46,20 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     const initialImages = [];
     if (contractToEdit) {
       if (contractToEdit.referenceImages && contractToEdit.referenceImages.length > 0) {
-        contractToEdit.referenceImages.forEach(img => initialImages.push({ type: 'existing', url: img }));
+        contractToEdit.referenceImages.forEach(img => initialImages.push({ type: 'existing', value: img }));
       } else if (contractToEdit.referenceImage) {
-        initialImages.push({ type: 'existing', url: contractToEdit.referenceImage });
+        initialImages.push({ type: 'existing', value: contractToEdit.referenceImage });
       }
     }
     return initialImages;
   });
+  const previewUrls = useRef(new Set());
+  useEffect(() => {
+    const created = previewUrls.current;
+    return () => { created.forEach(url => URL.revokeObjectURL(url)); created.clear(); };
+  }, []);
+  const imageReferences = useMemo(() => images.map(image => image.type === 'existing' ? image.value : image.url), [images]);
+  const { urls: displayedImages, error: imageError } = useContractImageUrls(imageReferences);
 
   const totals = useMemo(() => {
     const sub = Math.max(0, Number(formData.subtotal) || 0);
@@ -59,8 +67,7 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     const total = sub + del;
 
     if (isEditing) {
-      const paid = (contractToEdit.payments || []).reduce((acc, curr) => acc + (curr.amount > 0 && curr.type !== 'reembolso' ? curr.amount : 0), 0) -
-                   (contractToEdit.payments || []).reduce((acc, curr) => acc + (curr.type === 'reembolso' ? Math.abs(curr.amount) : 0), 0);
+      const paid = Number(contractToEdit.paidTotal ?? Math.max(0, Number(contractToEdit.total || 0) - Number(contractToEdit.balance || 0)));
       return { total, balance: Math.max(0, total - paid), totalPaid: paid };
     }
 
@@ -102,18 +109,27 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     if (images.length + files.length > 4) {
       return toast.error("Máximo 4 imágenes de referencia por pedido.");
     }
+    if (files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
+      || !/\.(jpe?g|png|webp)$/i.test(file.name) || file.size > 5 * 1024 * 1024)) {
+      return toast.error('Usa imágenes JPEG, PNG o WebP de hasta 5 MB.');
+    }
 
-    const newImages = files.map(file => ({
-      type: 'new',
-      file: file,
-      url: URL.createObjectURL(file)
-    }));
+    const newImages = files.map(file => {
+      const url = URL.createObjectURL(file);
+      previewUrls.current.add(url);
+      return { type: 'new', file, url };
+    });
 
     setImages(prev => [...prev, ...newImages]);
     e.target.value = null;
   };
 
   const handleRemoveImage = (indexToRemove) => {
+    const removed = images[indexToRemove];
+    if (removed?.type === 'new') {
+      URL.revokeObjectURL(removed.url);
+      previewUrls.current.delete(removed.url);
+    }
     setImages(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
@@ -122,11 +138,14 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     if (!isEditing && Number(formData.advancePayment) > totals.total) {
       return toast.error('La cuota inicial no puede ser mayor al Total');
     }
+    if (isEditing && totals.total < totals.totalPaid) {
+      return toast.error('El total no puede ser menor al monto ya cobrado.');
+    }
     if (formData.deliveryType === 'domicilio' && !formData.deliveryAddress.trim()) {
       return toast.error('Debes ingresar la dirección de entrega');
     }
 
-    const existingImages = images.filter(img => img.type === 'existing').map(img => img.url);
+    const existingImages = images.filter(img => img.type === 'existing').map(img => img.value);
     const newImageFiles = images.filter(img => img.type === 'new').map(img => img.file);
 
     const finalData = {
@@ -134,9 +153,11 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
       clientName: formData.clientName.trim(),
       deliveryDate: new Date(formData.deliveryDate).toISOString(),
       total: totals.total,
-      payments: !isEditing && Number(formData.advancePayment) > 0
-        ? [{ amount: Number(formData.advancePayment), method: formData.paymentMethod, label: 'Cuota 1' }]
-        : undefined,
+      subtotal: Number(formData.subtotal) || 0,
+      deliveryCost: Number(formData.deliveryCost) || 0,
+      ...(!isEditing && Number(formData.advancePayment) > 0 ? {
+        initialPayment: { amount: Number(formData.advancePayment), method: formData.paymentMethod },
+      } : {}),
       newImages: newImageFiles,
       retainedImages: existingImages
     };
@@ -228,15 +249,15 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
                 <div className="cfm-input-group cfm-photos-gallery-group">
                   <label>Fotos de Referencia (Max 4)</label>
                   <div className="cfm-gallery-container">
-                    {images.map((img, idx) => (
+                    {images.map((_image, idx) => (
                       <div key={idx} className="cfm-gallery-item">
-                        <img src={img.url} alt={`Ref ${idx}`} className="cfm-gallery-img" />
+                        {displayedImages[idx] ? <img src={displayedImages[idx]} alt={`Ref ${idx}`} className="cfm-gallery-img" /> : <span>Cargando imagen...</span>}
                         <button type="button" onClick={() => handleRemoveImage(idx)} disabled={isProcessing} className="cfm-btn-remove-img" title="Eliminar foto">✖</button>
                       </div>
                     ))}
                     {images.length < 4 && (
                       <div className="cfm-gallery-add" title="Subir foto">
-                        <input type="file" accept="image/*" multiple onChange={handleImageChange} disabled={isProcessing} className="cfm-gallery-input" />
+                        <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handleImageChange} disabled={isProcessing} className="cfm-gallery-input" />
                         <span className="cfm-gallery-add-icon">➕</span>
                       </div>
                     )}

@@ -1,6 +1,43 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function authorizedTenant(businessId) {
+      let profile = firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+      return profile.get('status', 'activo') == 'activo'
+        && profile.role in ['dueño', 'cajero', 'superadmin']
+        && (profile.role == 'superadmin' || profile.businessId == businessId);
+    }
+
+    function permittedContract(businessId, contractId) {
+      return !firestore.exists(/databases/(default)/documents/contracts/$(contractId))
+        || firestore.get(/databases/(default)/documents/contracts/$(contractId)).data.businessId == businessId;
+    }
+
+    function authorizedPath(businessId, contractId) {
+      // New contract images are uploaded before the callable creates the document.
+      return request.auth != null && authorizedTenant(businessId)
+        && permittedContract(businessId, contractId);
+    }
+
+    function validImage(fileName) {
+      return request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024
+        && ((request.resource.contentType == 'image/jpeg' && fileName.matches('^[A-Za-z0-9_-]+\\.(jpg|jpeg)$'))
+          || (request.resource.contentType == 'image/png' && fileName.matches('^[A-Za-z0-9_-]+\\.png$'))
+          || (request.resource.contentType == 'image/webp' && fileName.matches('^[A-Za-z0-9_-]+\\.webp$')));
+    }
+
+    match /contracts/{businessId}/{contractId}/{fileName} {
+      allow read: if authorizedPath(businessId, contractId);
+      allow create, update: if authorizedPath(businessId, contractId) && validImage(fileName);
+      allow delete: if authorizedPath(businessId, contractId);
+    }
+
+    match /contracts/{businessId}/{contractId}/thumbs/{fileName} {
+      allow read: if authorizedPath(businessId, contractId);
+      allow create, update: if authorizedPath(businessId, contractId) && validImage(fileName);
+      allow delete: if authorizedPath(businessId, contractId);
+    }
+
     match /{file=**} {
       allow read, write: if false;
     }
