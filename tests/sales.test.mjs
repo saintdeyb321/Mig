@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { canonicalSale, paymentBreakdown, statsDelta, saleDay, SaleError } from '../frontend/src/features/sales/domain/saleModel.js';
-import { migrateSaleRecord, migrateCachedProduct, pendingStockDeltas, decodeQueuedSale, isRetryableSaleError, SYNC_LEASE_MS } from '../frontend/src/features/sales/domain/queueState.js';
+import { migrateSaleRecord, migrateCachedProduct, pendingStockDeltas, decodeQueuedSale, isRetryableSaleError, isDeterministicSaleError, SYNC_LEASE_MS } from '../frontend/src/features/sales/domain/queueState.js';
 import { createSaleQueue } from '../frontend/src/features/sales/application/saleQueue.js';
 import { mergeRecentSales } from '../frontend/src/features/sales/application/recentSales.js';
 import { projectQueuedStock } from '../frontend/src/features/catalog/application/projectQueuedStock.js';
@@ -208,6 +208,27 @@ describe('Phase 4 durable queue', () => {
     await assert.rejects(stock.queue.submit(canonicalSale(input()), identity), /Sin stock/);
     assert.equal((await stock.store.get('sale-1')).status, 'failed');
   });
+  for (const code of ['price-changed', 'inactive-product']) {
+    it(`${code} is deterministic, preserves the ticket for review and never retries automatically`, async () => {
+      assert.equal(isDeterministicSaleError({ code }), true);
+      assert.equal(isDeterministicSaleError({ code: `functions/${code}` }), true);
+      assert.equal(isRetryableSaleError({ code }), false);
+      assert.equal(isRetryableSaleError({ code: `functions/${code}`, message: 'Producto offline network timeout' }), false);
+      let attempts = 0;
+      const message = `${code}: Producto offline. Revisa el ticket.`;
+      const h = harness({ apply: async () => { attempts++; throw new SaleError(code, message); } });
+      const sale = canonicalSale(input());
+      await h.queue.enqueue(sale, identity);
+      assert.equal((await h.queue.flush(identity)).failed, 1);
+      const failed = await h.store.get(sale.saleId);
+      assert.equal(failed.status, 'failed'); assert.equal(failed.sync, 'failed');
+      assert.equal(failed.lastError, message); assert.equal(failed.nextRetryAt, 0);
+      assert.equal(failed.retries, 1); assert.equal(failed.projectionState, null);
+      assert.deepEqual(JSON.parse(await decrypt(failed.data, identity.uid)), sale);
+      for (let i = 0; i < 5; i++) { h.advance(70000); await h.queue.flush(identity, { forceId: sale.saleId }); }
+      assert.equal(attempts, 1); assert.deepEqual(await h.store.get(sale.saleId), failed);
+    });
+  }
   it('claims a valid legacy record only after confirming its encrypted identity', async () => {
     const sale = input(); const store = memoryStore([migrateSaleRecord({ localId: sale.localId, sync: false, data: await encrypt(JSON.stringify(sale), identity.uid) })]);
     const h = harness({ store }); await h.queue.flush(identity);

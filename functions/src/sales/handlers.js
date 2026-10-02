@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Timestamp } from 'firebase-admin/firestore';
 import { actorFor, authorizeBranch } from '../core/authorization.js';
-import { canonicalSale, documentId, sameSaleOperation, SaleError, money } from './domain/saleModel.js';
+import { canonicalSale, documentId, sameSaleOperation, SaleError, money, MONEY_TOLERANCE } from './domain/saleModel.js';
 import { statsReference, writeStats, assertStatsScope } from './stats.js';
 import { validateSaleSession } from './sessionWindow.js';
 
@@ -47,12 +47,17 @@ export function createSalesHandlers(database, { now = Date.now } = {}) {
     const snapshots = await transaction.getAll(...input.items.map(item => database.doc(`products/${item.id}`)));
     const products = snapshots.map(snapshot => checkedProduct(snapshot, input));
     input.items.forEach((item, index) => {
-      if (products[index].stockValue < item.qty) throw new SaleError('insufficient-stock', `Stock insuficiente: ${item.name}.`);
+      const product = products[index];
+      if (product.status !== undefined && product.status !== 'activo') {
+        throw new SaleError('inactive-product', `Producto inactivo: ${product.name}. Revisa el ticket.`);
+      }
+      if (product.price < 0 || Math.abs(item.price - money(product.price)) >= MONEY_TOLERANCE) {
+        throw new SaleError('price-changed', `El precio de ${product.name} cambió. Revisa el ticket.`);
+      }
+      if (product.stockValue < item.qty) throw new SaleError('insufficient-stock', `Stock insuficiente: ${product.name}.`);
     });
-    // Costs and descriptive catalog fields are authoritative on the server. Prices are
-    // the validated ticket prices, preserving frozen offline tickets across catalog changes.
     const sale = canonicalSale({ ...input, cashierName: actor.name, items: input.items.map((item, index) => ({ ...item,
-      cost: products[index].cost ?? 0, name: products[index].name ?? item.name, category: products[index].category ?? item.category })) });
+      id: snapshots[index].id, cost: products[index].cost ?? 0, name: products[index].name ?? '', category: products[index].category ?? '' })) });
     const stats = statsReference(database, sale);
     const previous = (await transaction.get(stats.reference)).data();
     assertStatsScope(stats.metadata, previous);

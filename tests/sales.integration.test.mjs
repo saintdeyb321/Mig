@@ -4,7 +4,7 @@ import { before, beforeEach, after, describe, it } from 'node:test';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
-import { canonicalSale, saleDay } from '../frontend/src/features/sales/domain/saleModel.js';
+import { canonicalSale, saleDay, SaleError } from '../frontend/src/features/sales/domain/saleModel.js';
 import { createSaleQueue } from '../frontend/src/features/sales/application/saleQueue.js';
 import { encrypt, decrypt } from '../frontend/src/crypto.js';
 
@@ -88,7 +88,8 @@ function queueHarness(apply = sale => submit(sale)) {
 }
 
 describe('Financial callables through Functions/Auth/Firestore emulators', () => {
-  it('valid online sale applies stock, mixed stats, costs and timestamps atomically once', async () => {
+  it('correct catalog price and legacy product without status apply stock and stats atomically once', async () => {
+    assert.equal((await snapshot()).product.status, undefined);
     assert.equal((await submit()).status, 'APPLIED');
     const saved = await snapshot();
     assert.deepEqual(saved.product.stock, { 'a-1': 18, 'a-2': 30 });
@@ -99,6 +100,82 @@ describe('Financial callables through Functions/Auth/Firestore emulators', () =>
     assert.equal(saved.stats['paymentMethods.efectivo'], 8); assert.equal(saved.stats['paymentMethods.yape'], 12);
     assert.equal(saved.stats['paymentMethods.mixto'], undefined);
     assert.equal(saved.sale.stockVersions['product-a'], 1);
+  });
+  for (const price of [9, 11]) {
+    it(`forged price ${price} rejects even with a coherent total and leaves every financial document unchanged`, async () => {
+      const before = await snapshot();
+      const total = price * 2;
+      const forged = input({ items: [{ ...input().items[0], price }], total, amountPaid: total,
+        splitPayments: { efectivo: total, yape: 0 } });
+      await rejects(submit(forged), 'price-changed');
+      assert.deepEqual(await snapshot(), before);
+    });
+  }
+  it('a forged price on a later ticket line also aborts stock changes for every product', async () => {
+    const product = { businessId: 'tenant-a', name: 'Torta', category: 'pastelería', price: 20, cost: 4, stock: { 'a-1': 7 } };
+    await database.doc('products/product-c').set(product);
+    const before = await snapshot();
+    const ticket = input({ items: [...input().items, { id: 'product-c', name: 'Torta', category: 'pastelería', qty: 1, price: 1, cost: 4 }],
+      total: 21, amountPaid: 21, splitPayments: { efectivo: 8, yape: 13 } });
+    await rejects(submit(ticket), 'price-changed');
+    assert.deepEqual(await snapshot(), before);
+    assert.deepEqual((await database.doc('products/product-c').get()).data(), product);
+  });
+  it('catalog prices follow existing rounding and half-cent tolerance without replacing ticket prices', async () => {
+    await database.doc('products/product-a').update({ price: 10.004 });
+    assert.equal((await submit()).status, 'APPLIED');
+    assert.equal((await snapshot()).sale.items[0].price, 10);
+    await database.doc('products/product-a').update({ price: 10.006 });
+    const before = await snapshot();
+    await rejects(submit(input({ localId: 'sale-outside-tolerance' })), 'price-changed');
+    assert.equal((await database.doc('sales/sale-outside-tolerance').get()).exists, false);
+    assert.deepEqual(await snapshot(), before);
+  });
+  it('explicitly active product permits a new sale', async () => {
+    await database.doc('products/product-a').update({ status: 'activo' });
+    assert.equal((await submit()).status, 'APPLIED');
+    assert.equal((await snapshot()).product.stock['a-1'], 18);
+  });
+  it('inactive catalog product rejects regardless of client status without any financial write', async () => {
+    await database.doc('products/product-a').update({ status: 'inactivo' });
+    const before = await snapshot();
+    const forged = { ...input(), items: input().items.map(item => ({ ...item, status: 'activo' })) };
+    await rejects(submit(forged), 'inactive-product');
+    assert.deepEqual(await snapshot(), before);
+  });
+  for (const [code, catalogChange] of [['price-changed', { price: 11 }], ['inactive-product', { status: 'inactivo' }]]) {
+    it(`offline catalog change yields ${code}, retains the original ticket in failed and stops retries`, async () => {
+      let attempts = 0;
+      const h = queueHarness(async sale => {
+        attempts++;
+        try { return await submit(sale); }
+        catch (error) {
+          assert.equal(error.details?.saleCode, code);
+          throw new SaleError(error.details.saleCode, error.message);
+        }
+      });
+      const ticket = input({ origin: 'offline' });
+      await h.queue.submit(ticket, h.identity);
+      await database.doc('products/product-a').update({ ...catalogChange, name: 'Pan offline' });
+      const before = await snapshot();
+      h.reconnect(); assert.equal((await h.queue.flush(h.identity)).failed, 1);
+      const failed = structuredClone(h.rows.get(ticket.saleId));
+      assert.equal(failed.status, 'failed'); assert.equal(failed.sync, 'failed');
+      assert.match(failed.lastError, /Revisa el ticket/); assert.equal(failed.retries, 1);
+      assert.equal(failed.nextRetryAt, 0); assert.equal(failed.projectionState, null);
+      assert.deepEqual(JSON.parse(await decrypt(failed.data, h.identity.uid)), ticket);
+      assert.deepEqual(await snapshot(), before);
+      for (let i = 0; i < 5; i++) { h.advance(); await h.queue.flush(h.identity); }
+      assert.equal(attempts, 1); assert.deepEqual(h.rows.get(ticket.saleId), failed);
+      assert.deepEqual(await snapshot(), before);
+    });
+  }
+  it('a committed receipt remains idempotent after catalog price and status change', async () => {
+    await submit();
+    await database.doc('products/product-a').update({ price: 11, status: 'inactivo' });
+    const before = await snapshot();
+    assert.equal((await submit()).status, 'ALREADY_APPLIED');
+    assert.deepEqual(await snapshot(), before);
   });
   it('concurrent attempts and retries, even after closure, never repeat stock or stats', async () => {
     const results = await Promise.all([submit(), submit()]);
@@ -139,11 +216,21 @@ describe('Financial callables through Functions/Auth/Firestore emulators', () =>
     });
     assert.equal((await result.json()).error.status, 'UNAUTHENTICATED');
   });
-  it('catalog cost, cashier name and role come from the server', async () => {
-    const forged = input({ cashierName: 'Administrator', items: [{ ...input().items[0], cost: 0 }] });
+  it('catalog document ID, name, category, cost and cashier authority come from the server', async () => {
+    await database.doc('products/product-a').update({ id: 'forged-stored-id' });
+    const forged = input({ cashierName: 'Administrator', items: [{ ...input().items[0], name: 'Forged name', category: 'Forged category', cost: 0 }] });
     await submit({ ...forged, role: 'superadmin', totalCost: 0 });
     const saved = await snapshot(); assert.equal(saved.sale.cashierName, 'Ana Pérez'); assert.equal(saved.sale.totalCost, 6);
+    assert.deepEqual(saved.sale.items[0], { id: 'product-a', name: 'Pan', category: 'pan', qty: 2, price: 10, cost: 3 });
+    assert.equal(saved.stats['categorySales.pan'], 20); assert.equal(saved.stats['categorySales.Forged category'], undefined);
     assert.equal((await submit({ ...forged, role: 'superadmin', totalCost: 0 })).status, 'ALREADY_APPLIED');
+  });
+  it('missing legacy catalog metadata never falls back to forged client fields', async () => {
+    await database.doc('products/product-a').set({ businessId: 'tenant-a', price: 10, stock: { 'a-1': 20, 'a-2': 30 } });
+    await submit(input({ items: [{ ...input().items[0], name: 'Forged name', category: 'Forged category', cost: 999 }] }));
+    const saved = await snapshot();
+    assert.deepEqual(saved.sale.items[0], { id: 'product-a', name: '', category: '', qty: 2, price: 10, cost: 0 });
+    assert.equal(saved.stats['categorySales.Forged category'], undefined); assert.equal(saved.sale.totalCost, 0);
   });
   it('closed online session rejects a new ticket', async () => {
     await closeSession(); await rejects(submit(), 'closed-session'); assert.equal((await snapshot()).sale, undefined);
@@ -203,6 +290,18 @@ describe('Financial callables through Functions/Auth/Firestore emulators', () =>
     assert.deepEqual(await snapshot(), saved);
     assert.equal((await database.collection('alerts').get()).size, 1);
     assert.equal((await database.doc('alerts/VOIDED_SALE_sale-main').get()).data().userId, actors.cashier.uid);
+  });
+  it('historical sale void restores stock after its product becomes inactive and changes price', async () => {
+    await database.doc('products/product-a').update({ status: 'activo' });
+    await submit();
+    await database.doc('products/product-a').update({ status: 'inactivo', price: 11 });
+    assert.equal((await cancel()).status, 'VOIDED');
+    const saved = await snapshot();
+    assert.deepEqual(saved.product.stock, { 'a-1': 20, 'a-2': 30 });
+    assert.equal(saved.product.status, 'inactivo'); assert.equal(saved.sale.items[0].price, 10);
+    assert.equal(saved.stats.totalRevenue, 0); assert.equal(saved.stats.totalCost, 0); assert.equal(saved.stats.totalOrders, 0);
+    assert.equal((await cancel()).status, 'ALREADY_VOIDED');
+    assert.deepEqual(await snapshot(), saved);
   });
   it('void refuses forged items/total/audit authority, wrong tenant and wrong branch', async () => {
     await submit();
