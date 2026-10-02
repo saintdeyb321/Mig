@@ -26,6 +26,12 @@ export function createOfflineDatabase(name = 'migapos_offline_v2') {
     });
   });
 
+  offlineDB.version(4).stores({
+    sales: 'localId, idempotencyKey, businessId, branchId, userId, status, createdAt, projectionState, [businessId+userId+status]',
+  }).upgrade(transaction => transaction.table('sales').toCollection().modify(record => {
+    record.projectionState = ['pending', 'syncing'].includes(migrateSaleRecord(record).status) ? 'pending' : null;
+  }));
+
   return offlineDB;
 }
 

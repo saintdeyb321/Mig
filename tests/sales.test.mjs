@@ -3,7 +3,8 @@ import { describe, it } from 'node:test';
 import { canonicalSale, paymentBreakdown, statsDelta, saleDay, SaleError } from '../frontend/src/features/sales/domain/saleModel.js';
 import { migrateSaleRecord, migrateCachedProduct, pendingStockDeltas, decodeQueuedSale, isRetryableSaleError, SYNC_LEASE_MS } from '../frontend/src/features/sales/domain/queueState.js';
 import { createSaleQueue } from '../frontend/src/features/sales/application/saleQueue.js';
-import { mergeRecentSales, selectUnappliedSales } from '../frontend/src/features/sales/application/recentSales.js';
+import { mergeRecentSales } from '../frontend/src/features/sales/application/recentSales.js';
+import { projectQueuedStock } from '../frontend/src/features/catalog/application/projectQueuedStock.js';
 import { createQueueLock } from '../frontend/src/features/sales/infrastructure/saleQueueStore.js';
 import { projectProducts } from '../frontend/src/features/catalog/application/projectProducts.js';
 import { getSafeStock } from '../frontend/src/features/sales/domain/cartStock.js';
@@ -87,11 +88,31 @@ describe('Phase 4 deterministic model', () => {
     assert.equal(getSafeStock(projected, 'global'), 27); assert.deepEqual(raw.stock, { 'a-1': 10, 'a-2': 20 });
     assert.deepEqual(projectProducts([raw], deltas), projectProducts([raw], deltas));
   });
-  it('F4-07 excludes an applied receipt even if local acknowledgement failed', async () => {
-    const sale = canonicalSale(input());
-    const unapplied = await selectUnappliedSales([sale], async id => id === sale.saleId);
-    const raw = { id: 'product-a', name: 'Pan', stock: { 'a-1': 9, 'a-2': 20 } };
-    assert.equal(getSafeStock(projectProducts([raw], pendingStockDeltas(unapplied, 'tenant-a'))[0], 'a-1'), 9);
+  it('stock never doubles a debit while acknowledgement and snapshots arrive in either order', () => {
+    const sale = { ...canonicalSale(input()), queueStatus: 'pending', attempted: true,
+      projectionBase: { 'product-a': { stock: 10, version: 0 } } };
+    const old = { id: 'product-a', name: 'Pan', stock: { 'a-1': 10, 'a-2': 20 }, posStockVersion: { 'a-1': 0 } };
+    const committed = { ...old, stock: { 'a-1': 9, 'a-2': 20 }, posStockVersion: { 'a-1': 1 } };
+    const project = (raw, queued) => projectQueuedStock([raw], [queued], 'tenant-a');
+    assert.equal(getSafeStock(project(old, sale).products[0], 'a-1'), 9);
+    assert.equal(getSafeStock(project(committed, sale).products[0], 'a-1'), 9);
+    const ack = { ...sale, queueStatus: 'synced', financialAck: true, stockVersions: { 'product-a': 1 } };
+    assert.equal(getSafeStock(project(old, ack).products[0], 'a-1'), 9);
+    assert.deepEqual(project(old, ack).settled, []);
+    assert.equal(getSafeStock(project(committed, ack).products[0], 'a-1'), 9);
+    assert.deepEqual(project(committed, ack).settled, [sale.saleId]);
+    assert.deepEqual(project(committed, ack).products[0].remoteStock, committed.stock);
+    assert.equal(getSafeStock(project(committed, { ...sale, queueStatus: 'failed' }).products[0], 'a-1'), 9);
+  });
+  it('multiple queued tickets retain prior acknowledged debits until a later ambiguous attempt resolves', () => {
+    const raw = { id: 'product-a', name: 'Pan', stock: { 'a-1': 8 }, posStockVersion: { 'a-1': 2 } };
+    const first = { ...canonicalSale(input()), queueStatus: 'synced', financialAck: true, stockVersions: { 'product-a': 1 } };
+    const second = { ...canonicalSale(input({ localId: 'sale-2' })), queueStatus: 'pending', attempted: true,
+      projectionBase: { 'product-a': { stock: 10, version: 0 } } };
+    const before = projectQueuedStock([raw], [first, second], 'tenant-a');
+    assert.equal(getSafeStock(before.products[0], 'a-1'), 8); assert.deepEqual(before.settled, []);
+    const after = projectQueuedStock([raw], [first, { ...second, queueStatus: 'synced', financialAck: true, stockVersions: { 'product-a': 2 } }], 'tenant-a');
+    assert.equal(getSafeStock(after.products[0], 'a-1'), 8); assert.deepEqual(after.settled, ['sale-1', 'sale-2']);
   });
   it('T21 remote receipt replaces the same local identity in history', () => {
     const local = { ...input(), id: 'sale-1', isOffline: true };

@@ -476,6 +476,12 @@ Validación ejecutada: `npm run test:architecture` (15 tests), `npm run test:sal
 
 ---
 
+## Hardening final de Fase 4
+
+`submitSale` y `voidSale` migraron a Functions/Admin SDK con Auth, perfil protegido y dominio puro compartido. El cliente ya no escribe ventas/stats/stock POS; Rules mantiene el inventario manual del dueño y protege `VOIDED_SALE`. El servidor fija costos/nombres del catálogo al primer commit y conserva precios del ticket canónico offline. Dexie v4 conserva idempotencia server-side y distingue `createdAt/queuedAt/syncedAt`; `saveCashSession` protege las ventanas y autoriza previamente aperturas offline. Operaciones antiguas sin ventana verificable conservan payload/error para revisión; receipts existentes se confirman durante retry. CatalogProvider usa ack/versiones de stock sin lecturas remotas de receipts. Fases 5/6/8 siguen pendientes; sin deploy ni datos reales.
+
+Validación del hardening: `npm ci` raíz/Functions/frontend; `npm test` (135: arquitectura 15, ventas 26, dominio Functions 6, Rules 66, callables en Functions/Auth/Firestore/Storage Emulator 22); IndexedDB/locks/ack (18 comprobaciones en Edge aislado); lint/build/diff-check aprobados. Functions se verificó con Node 22 y Java 21; build conserva avisos previos de chunks/Browserslist. npm reporta 2 vulnerabilidades moderadas en Functions y las anteriores 14/13 en tooling/frontend, sin upgrades ajenos a esta fase.
+
 # FASE 5 — Contratos, pedidos y ledger de pagos
 
 ## Objetivo

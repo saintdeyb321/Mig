@@ -1,14 +1,16 @@
 import { canonicalSale, assertSaleIdentity, sameSaleOperation, SaleError } from '../domain/saleModel.js';
 import { decodeQueuedSale, migrateSaleRecord, isDeterministicSaleError, isRetryableSaleError, SYNC_LEASE_MS } from '../domain/queueState.js';
 
-export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, withLock, online, now = Date.now, currentIdentity = () => true }) {
+export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, withLock, online, now = Date.now, currentIdentity = () => true,
+  captureProjection = async () => ({}), verifyReceipt }) {
   async function enqueue(input, identity) {
     const sale = canonicalSale(input);
     assertSaleIdentity(sale, identity);
     const data = await encrypt(JSON.stringify(sale), identity.uid);
     await store.insert({ localId: sale.saleId, idempotencyKey: sale.saleId, data,
       businessId: sale.businessId, branchId: sale.branchId, userId: sale.userId,
-      status: 'pending', sync: false, createdAt: sale.createdAt, version: sale.version,
+      status: 'pending', sync: false, createdAt: sale.createdAt, queuedAt: sale.queuedAt, origin: sale.origin,
+      projectionState: 'pending', version: sale.version,
       retries: 0, lastError: null, syncStartedAt: null, nextRetryAt: 0 }, async existing => {
       const decoded = await decodeQueuedSale(existing, identity, decrypt);
       if (!sameSaleOperation(decoded, sale)) throw new SaleError('sale-conflict', 'ID local reutilizado con otro payload.');
@@ -34,25 +36,44 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
         catch (error) {
           if (['foreign-queue-record', 'unclaimed-legacy-record'].includes(error.code)
             || (error.code === 'identity-mismatch' && !record.userId)) continue;
-          await store.update(record.localId, { status: 'failed', sync: 'failed', lastError: error.message });
+          await store.update(record.localId, { status: 'failed', sync: 'failed', lastError: error.message, projectionState: null });
           report.failed++;
           continue;
         }
         if (!currentIdentity(identity)) return { ...report, pending: true };
-        if (blockedSessions?.has(sale.sessionId)) { report.pending = true; continue; }
-        await store.update(record.localId, { status: 'syncing', sync: false, syncStartedAt: now(),
+        if (blockedSessions?.has(sale.sessionId)) {
+          // A blocked legacy cash merge must not hide an already committed sale.
+          // Verification can acknowledge an existing receipt, never create a new one.
+          if (verifyReceipt) {
+            try {
+              const receipt = await verifyReceipt(sale, identity);
+              if (receipt.status === 'ALREADY_APPLIED') {
+                await store.update(record.localId, { status: 'synced', sync: true, financialAck: true,
+                  stockVersions: receipt.stockVersions ?? {}, syncedAt: receipt.syncedAt,
+                  lastError: null, syncStartedAt: null, nextRetryAt: 0 });
+                report.synced++; continue;
+              }
+            } catch (error) { await store.update(record.localId, { lastError: error.message }); }
+          }
+          report.pending = true; continue;
+        }
+        const projectionBase = record.projectionBase ?? await captureProjection(sale);
+        await store.update(record.localId, { status: 'syncing', sync: false, syncStartedAt: now(), projectionBase, attempted: true,
           businessId: sale.businessId, branchId: sale.branchId, userId: sale.userId, version: sale.version,
           createdAt: sale.createdAt, idempotencyKey: sale.saleId, data: await encrypt(JSON.stringify(sale), sale.userId) });
-        let committed = false;
+        let committed = false, receipt;
         try {
-          await apply(sale, identity);
+          receipt = await apply(sale, identity);
           committed = true;
-          await store.update(record.localId, { status: 'synced', sync: true, syncStartedAt: null, lastError: null, nextRetryAt: 0 });
+          await store.update(record.localId, { status: 'synced', sync: true, syncStartedAt: null, lastError: null, nextRetryAt: 0,
+            financialAck: true, stockVersions: receipt?.stockVersions ?? {}, syncedAt: receipt?.syncedAt ?? new Date(now()).toISOString() });
           report.synced++;
         } catch (error) {
           const failed = !committed && currentIdentity(identity) && !isRetryableSaleError(error) && isDeterministicSaleError(error);
           const retries = record.retries + 1;
           await store.update(record.localId, { status: failed ? 'failed' : 'pending', sync: failed ? 'failed' : false,
+            ...(committed ? { financialAck: true, stockVersions: receipt?.stockVersions ?? {}, syncedAt: receipt?.syncedAt } : {}),
+            ...(failed ? { projectionState: null } : {}),
             retries, lastError: error.message, syncStartedAt: null,
             nextRetryAt: failed ? 0 : now() + Math.min(60000, 1000 * 2 ** Math.min(retries, 6)) });
           if (failed) report.failed++; else report.pending = true;

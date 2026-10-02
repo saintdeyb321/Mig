@@ -33,7 +33,7 @@ try {
   legacy.close();
   database = createOfflineDatabase(name);
   await database.open();
-  check(database.verno === 3, 'Dexie upgrades the same database from v2 to v3');
+  check(database.verno === 4, 'Dexie upgrades the same database from v2 to v4');
   check(await database.sales.count() === 3, 'All legacy sales survive the upgrade');
   const migrated = await database.sales.get('legacy-sale');
   check(migrated.status === 'pending' && migrated.data === ciphertext && migrated.idempotencyKey === 'legacy-sale', 'Pending legacy identity and ciphertext survive');
@@ -50,7 +50,10 @@ try {
   let online = false;
   const applied = [];
   const config = { store: dexieSaleStore(database), encrypt, decrypt, online: () => online,
-    apply: async sale => { applied.push(sale.saleId); await new Promise(resolve => setTimeout(resolve, 25)); },
+    apply: async sale => {
+      applied.push(sale.saleId); await new Promise(resolve => setTimeout(resolve, 25));
+      return { stockVersions: { 'test-product': applied.length }, syncedAt: new Date().toISOString() };
+    },
     syncSessions: async () => {} };
   const first = createSaleQueue({ ...config, withLock: createQueueLock(database) });
   const second = createSaleQueue({ ...config, withLock: createQueueLock(database) });
@@ -64,6 +67,10 @@ try {
   check(await database.sales.where('status').equals('synced').count() === 3 && await database.sales.where('status').equals('failed').count() === 1, 'Historical synced and failed records remain intact and are never replayed');
   check((await database.sales.get('new-sale')).status === 'synced' && (await database.sales.get('legacy-sale')).status === 'synced', 'New and legacy records reach synced with unchanged IDs');
   check((await database.sales.get('legacy-sale')).userId === identity.uid, 'Legacy identity metadata is claimed only after successful decrypt');
+  check(await database.sales.where('projectionState').equals('pending').count() === 2, 'Projection index retains acknowledgements until product snapshots arrive');
+  const acknowledged = await database.sales.get('new-sale');
+  check(acknowledged.financialAck && acknowledged.stockVersions['test-product'] === 2 && !!acknowledged.syncedAt,
+    'Backend acknowledgement metadata is durable in IndexedDB');
   check((await database.products.get('test-product')).stock['test-branch'] === 10, 'Queue never writes projected stock into the durable cache');
   await new Promise(resolve => setTimeout(resolve, 100));
   check(notifications >= 2, 'IndexedDB state changes notify liveQuery');

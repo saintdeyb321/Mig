@@ -39,7 +39,7 @@ it('Phase 4 migrates and synchronizes real IndexedDB in an isolated browser prof
     timeout = setTimeout(() => complete({ ok: false, error: 'Local IndexedDB browser test timed out.' }), 60000);
     const result = await report;
     assert.equal(result.ok, true, result.error);
-    assert.equal(result.checks.length, 16);
+    assert.equal(result.checks.length, 18);
     console.log(`IndexedDB: ${result.checks.length} checks passed; no application database was opened.`);
   } finally {
     clearTimeout(timeout); child?.kill(); await server.close();

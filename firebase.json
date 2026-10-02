@@ -1,4 +1,5 @@
 {
+  "functions": { "source": "functions", "codebase": "financial", "runtime": "nodejs22" },
   "firestore": {
     "database": "(default)",
     "location": "nam5",
@@ -9,6 +10,8 @@
     "rules": "storage.rules"
   },
   "emulators": {
+    "functions": { "host": "127.0.0.1", "port": 5001 },
+    "auth": { "host": "127.0.0.1", "port": 9099 },
     "firestore": {
       "host": "127.0.0.1",
       "port": 8080

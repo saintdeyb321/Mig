@@ -48,14 +48,7 @@ export const useSalesHistory = (user) => {
     const toastId = toast.loading('Anulando venta y ajustando contabilidad...');
 
     try {
-      const ticketParaAnular = {
-        ...venta,
-        voidReason: voidReason,
-        voidedByRole: user?.role || 'Desconocido',
-        voidedByName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Cajero'
-      };
-
-      await voidSaleTransaction(ticketParaAnular);
+      await voidSaleTransaction({ id: venta.id, voidReason });
 
       toast.success('Venta anulada correctamente', { id: toastId });
 

@@ -171,64 +171,8 @@ service cloud.firestore {
         && data.price is number && data.price >= 0 && data.stock is map;
     }
 
-    function cashierStockUpdate() {
-      let branchId = currentUser().get('branchId', null);
-      let data = request.resource.data;
-      return activeUser() && currentRole() == 'cajero' && sameTenantResource()
-        && branchAccess(branchId) && branchBelongsTo(currentBusiness(), branchId)
-        && data.diff(resource.data).affectedKeys().hasOnly(['stock'])
-        && resource.data.stock is map && data.stock is map
-        && data.stock.diff(resource.data.stock).affectedKeys().hasOnly([branchId])
-        && data.stock.get(branchId, null) is number && data.stock[branchId] >= 0;
-    }
-
-    function validSalePayment(data) {
-      return data.payment in ['efectivo', 'yape', 'mixto']
-        && data.amountPaid is number && data.amountPaid >= 0 && data.amountPaid <= 90071992547409
-        && data.change is number && data.change >= 0 && data.change <= 90071992547409
-        && ((data.payment == 'efectivo' && data.amountPaid >= data.total
-            && data.change - (data.amountPaid - data.total) > -0.005
-            && data.change - (data.amountPaid - data.total) < 0.005)
-          || (data.payment in ['yape', 'mixto'] && data.amountPaid == data.total && data.change == 0))
-        && (data.payment != 'mixto' || (data.splitPayments is map
-          && data.splitPayments.keys().hasAll(['efectivo', 'yape'])
-          && data.splitPayments.keys().hasOnly(['efectivo', 'yape'])
-          && data.splitPayments.efectivo is number && data.splitPayments.efectivo >= 0
-          && data.splitPayments.yape is number && data.splitPayments.yape >= 0
-          && data.splitPayments.efectivo + data.splitPayments.yape - data.total > -0.005
-          && data.splitPayments.efectivo + data.splitPayments.yape - data.total < 0.005));
-    }
-
-    function validSale(saleId) {
-      let data = request.resource.data;
-      let actor = currentUser();
-      return data.keys().hasAll(['businessId', 'branchId', 'items', 'total', 'userId', 'createdAt',
-          'saleId', 'localId', 'idempotencyKey', 'version', 'sessionId', 'payment', 'amountPaid', 'change'])
-        && data.saleId == saleId && data.localId == saleId && data.idempotencyKey == saleId && data.version == 1
-        && data.sessionId is string && data.sessionId.size() > 0
-        && exists(/databases/$(database)/documents/cash_sessions/$(data.sessionId))
-        && get(/databases/$(database)/documents/cash_sessions/$(data.sessionId)).data.businessId == data.businessId
-        && get(/databases/$(database)/documents/cash_sessions/$(data.sessionId)).data.branchId == data.branchId
-        && get(/databases/$(database)/documents/cash_sessions/$(data.sessionId)).data.userId == data.userId
-        && hasTenant(data) && (actor.role == 'superadmin' || data.businessId == actor.businessId)
-        && data.userId == request.auth.uid
-        && data.total is number && data.total > 0 && data.total <= 90071992547409 && data.createdAt is timestamp
-        && validSalePayment(data)
-        && (actor.role in ['superadmin', 'dueño']
-          || (actor.role == 'cajero' && data.branchId == actor.get('branchId', null)))
-        && branchBelongsTo(data.businessId, data.branchId)
-        && data.get('voided', false) == false
-        && data.items is list && data.items.size() > 0;
-    }
-
     function permittedFinancialResource() {
       return superadmin() || (sameTenantResource() && branchAccess(resource.data.get('branchId', null)));
-    }
-
-    function permittedFinancialIncoming() {
-      let data = request.resource.data;
-      return hasTenant(data) && (superadmin() || sameTenantIncoming())
-        && branchAccess(data.branchId) && branchBelongsTo(data.businessId, data.branchId);
     }
 
     function validContract() {
@@ -283,9 +227,9 @@ service cloud.firestore {
 
     match /products/{productId} {
       allow read: if tenantReader();
-      allow create: if tenantCreator() && validProduct();
-      allow update: if businessUnchanged()
-        && ((tenantManager() && validProduct()) || cashierStockUpdate());
+      allow create: if tenantCreator() && validProduct() && !request.resource.data.keys().hasAny(['posStockVersion']);
+      allow update: if businessUnchanged() && tenantManager() && validProduct()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['posStockVersion']);
       allow delete: if tenantManager();
     }
 
@@ -293,16 +237,7 @@ service cloud.firestore {
       // Transactions must be able to check an absent receipt. Existing receipts stay tenant/branch scoped.
       allow get: if activeUser() && (resource == null || permittedFinancialResource());
       allow list: if permittedFinancialResource();
-      allow create: if activeUser() && validSale(saleId);
-      allow update: if permittedFinancialResource() && businessUnchanged()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'voided', 'updatedAt', 'voidedAt', 'voidReason', 'voidedByName', 'voidedByRole'])
-        && resource.data.get('voided', false) == false && request.resource.data.voided == true
-        && request.resource.data.voidedAt is timestamp
-        && request.resource.data.voidReason is string
-        && request.resource.data.voidedByName is string
-        && request.resource.data.voidedByRole == currentRole();
-      allow delete: if superadmin();
+      allow create, update, delete: if false;
     }
 
     match /contracts/{contractId} {
@@ -332,26 +267,27 @@ service cloud.firestore {
     match /daily_stats/{statId} {
       allow get: if activeUser() && (resource == null || permittedFinancialResource());
       allow list: if permittedFinancialResource();
-      allow create: if permittedFinancialIncoming();
-      allow update: if permittedFinancialResource() && businessUnchanged()
-        && request.resource.data.branchId == resource.data.branchId
-        && permittedFinancialIncoming();
-      allow delete: if superadmin() || (owner() && sameTenantResource());
+      allow create, update, delete: if false;
     }
 
     match /cash_sessions/{sessionId} {
       allow read: if permittedFinancialResource();
-      allow create: if permittedFinancialIncoming() && request.resource.data.userId == request.auth.uid;
-      allow update: if permittedFinancialResource() && businessUnchanged()
-        && request.resource.data.branchId == resource.data.branchId
-        && request.resource.data.userId == resource.data.userId;
-      allow delete: if superadmin() || (owner() && sameTenantResource());
+      // Only backend-authorized windows may support late offline financial writes.
+      allow create, update, delete: if false;
     }
 
     match /alerts/{alertId} {
-      allow create: if hasTenant(request.resource.data) && (superadmin() || sameTenantIncoming());
+      allow create: if hasTenant(request.resource.data) && (superadmin() || sameTenantIncoming())
+        && request.resource.data.get('type', '') != 'VOIDED_SALE'
+        && !alertId.matches('^VOIDED_SALE_.*') && !request.resource.data.keys().hasAny(['saleId']);
       allow read: if tenantManager();
-      allow update: if tenantManager() && businessUnchanged();
+      allow update: if tenantManager() && businessUnchanged()
+        && (((resource.data.get('type', '') == 'VOIDED_SALE' || alertId.matches('^VOIDED_SALE_.*')
+              || resource.data.keys().hasAny(['saleId']))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']))
+          || (resource.data.get('type', '') != 'VOIDED_SALE' && !alertId.matches('^VOIDED_SALE_.*')
+            && !resource.data.keys().hasAny(['saleId']) && !request.resource.data.keys().hasAny(['saleId'])
+            && request.resource.data.get('type', '') != 'VOIDED_SALE'));
       allow delete: if false;
     }
 

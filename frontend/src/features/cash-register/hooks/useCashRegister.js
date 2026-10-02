@@ -1,4 +1,4 @@
-import { findOpenSession, findLastClosedSession, createSession, updateSession } from '../infrastructure/cashRegisterRepository';
+import { findOpenSession, findLastClosedSession, createSession, updateSession, cacheSession, reserveOfflineSession } from '../infrastructure/cashRegisterRepository';
 import { getSessionSales } from '../../sales/infrastructure/salesRepository';
 import { getBranchContracts } from '../../contracts/infrastructure/contractRepository';
 import { createAlert, upsertAlert } from '../../notifications/infrastructure/alertRepository';
@@ -22,7 +22,8 @@ export const useCashRegister = (user, currentBranchId) => {
   }, [user]);
 
   const checkSession = useCallback(async () => {
-    if (!user?.businessId || !currentBranchId) {
+    if (!user?.businessId || !currentBranchId || currentBranchId === 'global') {
+      setCurrentSession(null);
       setIsLoadingSession(false);
       return;
     }
@@ -37,7 +38,7 @@ export const useCashRegister = (user, currentBranchId) => {
         for (const record of localSessions) {
           try {
             const sessionData = JSON.parse(await decrypt(record.data, user.uid));
-            if (sessionData.businessId === user.businessId && sessionData.branchId === currentBranchId && sessionData.status === 'open') {
+            if (sessionData.userId === user.uid && sessionData.businessId === user.businessId && sessionData.branchId === currentBranchId && sessionData.status === 'open') {
               localOpenSession = { id: record.localId, ...sessionData };
               break;
             }
@@ -66,7 +67,7 @@ export const useCashRegister = (user, currentBranchId) => {
             closedAt: new Date().toISOString(),
             autoClosed: true,
             closingNote: '🚨 SISTEMA: Cerrado automáticamente por olvido (>18h abiertas)'
-          });
+          }, currentBranchId);
 
           await upsertAlert(`autoclose_${sessionDoc.id}`, {
             type: 'FORGOTTEN_REGISTER',
@@ -84,6 +85,11 @@ export const useCashRegister = (user, currentBranchId) => {
           setCurrentSession(null);
           toast.error("Caja del turno anterior cerrada por inactividad.");
         } else {
+          if (sessionData.userId === user.uid) {
+            await cacheSession(sessionData);
+            await reserveOfflineSession({ uid: user.uid, businessId: user.businessId }, currentBranchId)
+              .catch(error => console.warn('Autorización de próxima caja offline pendiente:', error));
+          }
           const isDifferentUser = sessionData.userId !== user.uid;
           setCurrentSession({
             id: sessionDoc.id,
@@ -93,6 +99,7 @@ export const useCashRegister = (user, currentBranchId) => {
         }
       } else {
         setCurrentSession(null);
+        await reserveOfflineSession({ uid: user.uid, businessId: user.businessId }, currentBranchId);
       }
     } catch (error) {
       console.error("Error al verificar sesión de caja:", error);
@@ -119,8 +126,22 @@ export const useCashRegister = (user, currentBranchId) => {
 
     if (!navigator.onLine) {
       try {
-        const localId = `local_session_${Date.now()}`;
+        const records = await offlineDB.cash_sessions.toArray();
+        let reserved;
+        for (const record of records) {
+          try {
+            const session = JSON.parse(await decrypt(record.data, user.uid));
+            if (session.userId === user.uid && session.businessId === user.businessId && session.branchId === currentBranchId
+              && session.status === 'reserved' && new Date(session.financialWindow?.expiresAt).getTime() > Date.now()) {
+              reserved = { ...session, id: record.localId }; break;
+            }
+          } catch { /* Ignore sessions encrypted for another identity. */ }
+        }
+        if (!reserved) throw new Error('Conéctate una vez para autorizar la apertura offline de esta sede.');
+        const localId = reserved.id;
         const newSession = {
+          financialWindow: reserved.financialWindow,
+          offlineAuthorized: true,
           businessId: user.businessId,
           branchId: currentBranchId,
           userId: user.uid,
@@ -142,7 +163,7 @@ export const useCashRegister = (user, currentBranchId) => {
         return true;
       } catch (err) {
         console.error(err);
-        toast.error("Error al abrir caja localmente", { id: loadingToast });
+        toast.error(err.message || "Error al abrir caja localmente", { id: loadingToast });
         return false;
       }
     }
@@ -199,7 +220,7 @@ export const useCashRegister = (user, currentBranchId) => {
         await createAlert({ ...discrepancyAlert, sessionId: docRef.id });
       }
 
-      setCurrentSession({ id: docRef.id, ...newSession });
+      setCurrentSession(docRef);
       toast.success("¡Caja abierta exitosamente!", { id: loadingToast });
       return true;
     } catch (error) {
@@ -340,7 +361,7 @@ export const useCashRegister = (user, currentBranchId) => {
     }
 
     try {
-      await updateSession(currentSession.id, updatedSessionData);
+      await updateSession(currentSession.id, updatedSessionData, currentSession.branchId);
 
       if (Math.abs(summaryData.difference) >= 0.01) {
         const alertData = {

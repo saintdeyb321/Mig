@@ -269,8 +269,8 @@ describe('Tenant collections and stock', () => {
       await assertFails(updateDoc(doc(cashierDb(), 'products/product-a'), { [field]: value }));
     });
   }
-  it('cashiers update only the stock key of their own branch', async () => {
-    await assertSucceeds(updateDoc(doc(cashierDb(), 'products/product-a'), { 'stock.a-1': increment(-1) }));
+  it('cashiers cannot update stock even in their assigned branch', async () => {
+    await assertFails(updateDoc(doc(cashierDb(), 'products/product-a'), { 'stock.a-1': increment(-1) }));
     await assertFails(updateDoc(doc(cashierDb(), 'products/product-a'), { 'stock.a-2': increment(-1) }));
     await assertFails(updateDoc(doc(cashierDb(), 'products/product-a'), { 'stock.a-1': 1, 'stock.a-2': 1 }));
   });
@@ -313,150 +313,83 @@ describe('Licenses', () => {
   });
 });
 
-describe('Financial collections and query compatibility', () => {
-  it('sales require the actor tenant, actor UID and permitted branch', async () => {
-    await assertSucceeds(setDoc(doc(cashierDb(), 'sales/new'), sale()));
-    await assertFails(setDoc(doc(cashierDb(), 'sales/foreign'), sale('tenant-b', 'b-1', 'cashier-a', 'foreign')));
-    await assertFails(setDoc(doc(cashierDb(), 'sales/other-branch'), sale('tenant-a', 'a-2', 'cashier-a', 'other-branch')));
-    await assertFails(setDoc(doc(cashierDb(), 'sales/other-user'), sale('tenant-a', 'a-1', 'owner-a', 'other-user')));
-    await assertFails(setDoc(doc(ownerDb(), 'sales/foreign-branch'), sale('tenant-a', 'b-1', 'owner-a', 'foreign-branch')));
+describe('Financial backend boundary and query compatibility', () => {
+  it('cashier, owner and superadmin cannot directly create, alter or delete receipts/stats', async () => {
+    for (const actor of [cashierDb(), ownerDb(), adminDb()]) {
+      await assertFails(setDoc(doc(actor, 'sales/new'), sale()));
+      await assertFails(updateDoc(doc(actor, 'sales/sale-a'), { voided: true, voidedAt: now, voidReason: 'Error' }));
+      await assertFails(deleteDoc(doc(actor, 'sales/sale-a')));
+      await assertFails(setDoc(doc(actor, 'daily_stats/new'), { businessId: 'tenant-a', branchId: 'a-1', totalOrders: 1 }));
+      await assertFails(updateDoc(doc(actor, 'daily_stats/stat-a'), { totalOrders: increment(1) }));
+      await assertFails(deleteDoc(doc(actor, 'daily_stats/stat-a')));
+    }
   });
-  for (const [label, override] of Object.entries({
-    'negative total': { total: -1 }, 'empty items': { items: [] },
-    'non-list items': { items: {} },
-    'non-numeric total': { total: '10' },
-    'non-timestamp creation': { createdAt: isoDate },
-    'pre-voided sale': { voided: true },
-  })) {
-    it(`sales reject ${label}`, async () => {
-      await assertFails(setDoc(doc(cashierDb(), 'sales/invalid'), { ...sale('tenant-a', 'a-1', 'cashier-a', 'invalid'), ...override }));
-    });
-  }
-  it('sales accept more than 20 distinct products without an artificial limit', async () => {
-    const items = Array.from({ length: 30 }, (_, index) => ({ ...item, id: `product-${index}` }));
-    await assertSucceeds(setDoc(doc(cashierDb(), 'sales/many-lines'), {
-      ...sale('tenant-a', 'a-1', 'cashier-a', 'many-lines'), items, total: 300, amountPaid: 300,
-    }));
+  it('cashier stock writes and former POS batches are rejected atomically', async () => {
+    const actor = cashierDb();
+    await assertFails(updateDoc(doc(actor, 'products/product-a'), { 'stock.a-1': increment(-1) }));
+    const batch = writeBatch(actor);
+    batch.set(doc(actor, 'sales/new'), sale());
+    batch.update(doc(actor, 'products/product-a'), { 'stock.a-1': increment(-1) });
+    batch.set(doc(actor, 'daily_stats/stat-a'), { totalOrders: increment(1) }, { merge: true });
+    await assertFails(batch.commit());
   });
-  it('cashier sales queries need the assigned branch while owners can query their whole tenant', async () => {
-    await assertSucceeds(getDocs(query(collection(cashierDb(), 'sales'),
-      where('businessId', '==', 'tenant-a'), where('branchId', '==', 'a-1'), orderBy('createdAt', 'desc'), limit(50))));
+  it('owner retains manual inventory adjustments but cannot forge backend stock versions', async () => {
+    await assertSucceeds(updateDoc(doc(ownerDb(), 'products/product-a'), { stock: { 'a-1': 25, 'a-2': 40 } }));
+    await assertFails(updateDoc(doc(ownerDb(), 'products/product-b'), { 'stock.b-1': 999 }));
+    await assertFails(updateDoc(doc(ownerDb(), 'products/product-a'), { posStockVersion: { 'a-1': 999 } }));
+    await assertSucceeds(setDoc(doc(ownerDb(), 'products/manual'), { businessId: 'tenant-a', name: 'Pan', price: 10, stock: { 'a-1': 10 } }));
+  });
+  it('cashier history requires tenant and assigned branch; owner history spans its tenant', async () => {
+    await assertSucceeds(getDocs(query(collection(cashierDb(), 'sales'), where('businessId', '==', 'tenant-a'),
+      where('branchId', '==', 'a-1'), orderBy('createdAt', 'desc'), limit(50))));
     await assertFails(getDocs(query(collection(cashierDb(), 'sales'), where('businessId', '==', 'tenant-a'))));
     await assertSucceeds(getDocs(query(collection(ownerDb(), 'sales'), where('businessId', '==', 'tenant-a'))));
     await assertFails(getDoc(doc(cashierDb(), 'sales/sale-a2')));
+    await assertFails(getDoc(doc(ownerDb(), 'sales/sale-b')));
   });
-  it('cash reconciliation query is authorized with tenant, branch and session filters', async () => {
-    await assertSucceeds(getDocs(query(collection(cashierDb(), 'sales'),
-      where('businessId', '==', 'tenant-a'), where('branchId', '==', 'a-1'), where('sessionId', '==', 'session-a'))));
+  it('reconciliation retains tenant/branch/session filtered reads', async () => {
+    await assertSucceeds(getDocs(query(collection(cashierDb(), 'sales'), where('businessId', '==', 'tenant-a'),
+      where('branchId', '==', 'a-1'), where('sessionId', '==', 'session-a'))));
   });
-  it('voiding accepts only expected audit fields and blocks repeated voids', async () => {
-    const change = { voided: true, voidedAt: now, voidReason: 'Error', voidedByName: 'Cajera', voidedByRole: 'cajero' };
-    await assertSucceeds(updateDoc(doc(cashierDb(), 'sales/sale-a'), change));
-    await assertFails(updateDoc(doc(cashierDb(), 'sales/sale-a'), change));
-    await assertFails(updateDoc(doc(cashierDb(), 'sales/sale-a2'), change));
-  });
-  for (const [field, value] of Object.entries({
-    total: 1, items: [{ ...item, price: 0 }], businessId: 'tenant-b',
-    branchId: 'a-2', userId: 'owner-a', unexpected: true,
-  })) {
-    it(`voiding cannot change or add protected field ${field}`, async () => {
-      await assertFails(updateDoc(doc(cashierDb(), 'sales/sale-a'), {
-        voided: true, voidedAt: now, voidReason: 'Error', voidedByName: 'Cajera', voidedByRole: 'cajero', [field]: value,
-      }));
-    });
-  }
-  it('online POS and voiding batches remain authorized', async () => {
-    const actor = cashierDb();
-    const create = writeBatch(actor);
-    create.set(doc(actor, 'sales/new'), sale());
-    create.update(doc(actor, 'products/product-a'), { 'stock.a-1': increment(-1) });
-    create.set(doc(actor, 'daily_stats/stat-a'), { businessId: 'tenant-a', branchId: 'a-1', totalOrders: increment(1) }, { merge: true });
-    await assertSucceeds(create.commit());
-    const cancel = writeBatch(actor);
-    cancel.update(doc(actor, 'sales/new'), { voided: true, voidedAt: now, voidReason: 'Error', voidedByName: 'Cajera', voidedByRole: 'cajero' });
-    cancel.update(doc(actor, 'products/product-a'), { 'stock.a-1': increment(1) });
-    cancel.set(doc(actor, 'daily_stats/stat-a'), { totalOrders: increment(-1) }, { merge: true });
-    cancel.set(doc(actor, 'alerts/new'), { businessId: 'tenant-a', branchId: 'a-1', read: false });
-    await assertSucceeds(cancel.commit());
-  });
-  it('contracts remain cross-branch within a tenant and reject cross-tenant accesses', async () => {
-    await assertSucceeds(setDoc(doc(cashierDb(), 'contracts/new'), contract('tenant-a', 'a-2')));
-    await assertSucceeds(updateDoc(doc(cashierDb(), 'contracts/new'), { deliveryType: 'a-1', status: 'entregado' }));
-    await assertFails(setDoc(doc(cashierDb(), 'contracts/foreign'), contract('tenant-b', 'b-1')));
-    await assertFails(getDoc(doc(cashierDb(), 'contracts/contract-b')));
-    await assertFails(updateDoc(doc(cashierDb(), 'contracts/contract-a'), { businessId: 'tenant-b' }));
-    await assertFails(deleteDoc(doc(cashierDb(), 'contracts/contract-a')));
-    await assertSucceeds(deleteDoc(doc(ownerDb(), 'contracts/contract-a')));
-  });
-  it('delivered contracts support debt transitions and reject unknown statuses', async () => {
-    const target = doc(cashierDb(), 'contracts/contract-a');
-    await assertSucceeds(updateDoc(target, { status: 'entregado' }));
-    await assertSucceeds(updateDoc(target, { status: 'entregado_con_deuda' }));
-    await assertSucceeds(updateDoc(target, { status: 'entregado' }));
-    await assertFails(updateDoc(target, { status: 'invalid' }));
-  });
-  it('more than 20 products remain authorized in complete POS and voiding batches', async () => {
-    const items = Array.from({ length: 30 }, (_, index) => ({ ...item, id: `line-${index}` }));
-    await env.withSecurityRulesDisabled(async ctx => {
-      const fixtures = writeBatch(ctx.firestore());
-      for (const line of items) fixtures.set(doc(ctx.firestore(), 'products', line.id), {
-        businessId: 'tenant-a', name: line.name, price: line.price, stock: { 'a-1': 10 },
-      });
-      await fixtures.commit();
-    });
-    const actor = cashierDb();
-    const create = writeBatch(actor);
-    create.set(doc(actor, 'sales/max-batch'), {
-      ...sale('tenant-a', 'a-1', 'cashier-a', 'max-batch'), items, total: 300, amountPaid: 300,
-    });
-    for (const line of items) create.update(doc(actor, 'products', line.id), { 'stock.a-1': increment(-1) });
-    create.set(doc(actor, 'daily_stats/stat-a'), { totalOrders: increment(1) }, { merge: true });
-    await assertSucceeds(create.commit());
-    const cancel = writeBatch(actor);
-    cancel.update(doc(actor, 'sales/max-batch'), {
-      voided: true, voidedAt: now, voidReason: 'Error', voidedByName: 'Cajera', voidedByRole: 'cajero',
-    });
-    for (const line of items) cancel.update(doc(actor, 'products', line.id), { 'stock.a-1': increment(1) });
-    cancel.set(doc(actor, 'daily_stats/stat-a'), { totalOrders: increment(-1) }, { merge: true });
-    cancel.set(doc(actor, 'alerts/max-batch'), { businessId: 'tenant-a', branchId: 'a-1', read: false });
-    await assertSucceeds(cancel.commit());
-  });
-  it('daily stats are isolated by tenant and assigned branch', async () => {
-    await assertSucceeds(updateDoc(doc(cashierDb(), 'daily_stats/stat-a'), { totalOrders: increment(1) }));
+  it('daily stats retain tenant and branch read isolation', async () => {
     await assertFails(getDoc(doc(cashierDb(), 'daily_stats/stat-a2')));
-    await assertFails(updateDoc(doc(cashierDb(), 'daily_stats/stat-a2'), { totalOrders: 0 }));
-    await assertFails(setDoc(doc(cashierDb(), 'daily_stats/new'), { businessId: 'tenant-b', branchId: 'b-1' }));
-    await assertFails(updateDoc(doc(ownerDb(), 'daily_stats/stat-a'), { branchId: 'a-2' }));
+    await assertFails(getDoc(doc(ownerDb(), 'daily_stats/stat-b')));
     await assertSucceeds(getDocs(query(collection(cashierDb(), 'daily_stats'), where('businessId', '==', 'tenant-a'), where('branchId', '==', 'a-1'))));
     await assertFails(getDocs(query(collection(cashierDb(), 'daily_stats'), where('businessId', '==', 'tenant-a'))));
   });
-  it('cash sessions reject cross-tenant, cross-branch and false actor identity', async () => {
-    await assertSucceeds(setDoc(doc(cashierDb(), 'cash_sessions/new'), { businessId: 'tenant-a', branchId: 'a-1', userId: 'cashier-a', status: 'open' }));
-    await assertFails(setDoc(doc(cashierDb(), 'cash_sessions/foreign'), { businessId: 'tenant-b', branchId: 'b-1', userId: 'cashier-a' }));
-    await assertFails(setDoc(doc(cashierDb(), 'cash_sessions/wrong-user'), { businessId: 'tenant-a', branchId: 'a-1', userId: 'owner-a' }));
+  it('cash window dates/status cannot be created, rewritten or deleted by clients', async () => {
+    for (const actor of [cashierDb(), ownerDb(), adminDb()]) {
+      await assertFails(setDoc(doc(actor, 'cash_sessions/forged'), { businessId: 'tenant-a', branchId: 'a-1', userId: 'cashier-a', status: 'closed' }));
+      await assertFails(updateDoc(doc(actor, 'cash_sessions/session-a'), { status: 'closed', closedAt: isoDate }));
+      await assertFails(updateDoc(doc(actor, 'cash_sessions/session-a'), { openedAt: isoDate, financialWindow: { closedAt: now } }));
+      await assertFails(deleteDoc(doc(actor, 'cash_sessions/session-a')));
+    }
+    await assertSucceeds(getDoc(doc(cashierDb(), 'cash_sessions/session-a')));
     await assertFails(getDoc(doc(cashierDb(), 'cash_sessions/session-a2')));
-    await assertFails(updateDoc(doc(cashierDb(), 'cash_sessions/session-a'), { userId: 'owner-a' }));
-    await assertSucceeds(updateDoc(doc(cashierDb(), 'cash_sessions/session-a'), { status: 'closed', closedAt: isoDate }));
-    await assertSucceeds(updateDoc(doc(ownerDb(), 'cash_sessions/session-a2'), { status: 'closed' }));
   });
-  it('offline session merge and sale batches use the same authorized schema', async () => {
-    const actor = cashierDb();
-    await assertSucceeds(setDoc(doc(actor, 'cash_sessions/offline'), {
-      businessId: 'tenant-a', branchId: 'a-1', userId: 'cashier-a',
-      status: 'closed', openedAt: isoDate, closedAt: isoDate, syncedAt: isoDate,
-    }, { merge: true }));
-    const batch = writeBatch(actor);
-    batch.set(doc(actor, 'sales/offline'), { ...sale('tenant-a', 'a-1', 'cashier-a', 'offline'), sync: true, syncedAt: now });
-    batch.update(doc(actor, 'products/product-a'), { 'stock.a-1': increment(-1) });
-    batch.set(doc(actor, 'daily_stats/new-offline'), {
-      businessId: 'tenant-a', branchId: 'a-1', date: '2026-10-02',
-      totalRevenue: increment(10), totalOrders: increment(1),
-      paymentMethods: { efectivo: increment(10) },
-    }, { merge: true });
-    await assertSucceeds(batch.commit());
+  it('sale audit alerts cannot be forged; cash alerts remain compatible', async () => {
+    for (const actor of [cashierDb(), ownerDb(), adminDb()]) {
+      await assertFails(setDoc(doc(actor, 'alerts/forged'), { businessId: 'tenant-a', type: 'VOIDED_SALE', read: false }));
+      await assertFails(setDoc(doc(actor, 'alerts/VOIDED_SALE_fake'), { businessId: 'tenant-a', type: 'CASH_DISCREPANCY', read: false }));
+    }
+    await assertSucceeds(setDoc(doc(cashierDb(), 'alerts/cash'), { businessId: 'tenant-a', type: 'CASH_DISCREPANCY', read: false }));
+    await assertFails(updateDoc(doc(ownerDb(), 'alerts/cash'), { type: 'VOIDED_SALE' }));
+    await assertFails(updateDoc(doc(ownerDb(), 'alerts/cash'), { saleId: 'forged' }));
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'alerts/VOIDED_SALE_real'), {
+      businessId: 'tenant-a', type: 'VOIDED_SALE', notes: 'Original', read: false,
+    }));
+    await assertSucceeds(updateDoc(doc(ownerDb(), 'alerts/VOIDED_SALE_real'), { read: true }));
+    await assertFails(updateDoc(doc(ownerDb(), 'alerts/VOIDED_SALE_real'), { notes: 'Forged' }));
+  });
+  it('existing contract reads and delivery states remain compatible', async () => {
+    await assertSucceeds(setDoc(doc(cashierDb(), 'contracts/new'), contract('tenant-a', 'a-2')));
+    const target = doc(cashierDb(), 'contracts/new');
+    for (const status of ['entregado', 'entregado_con_deuda', 'entregado']) await assertSucceeds(updateDoc(target, { status }));
+    await assertFails(updateDoc(target, { status: 'invalid' }));
+    await assertFails(setDoc(doc(cashierDb(), 'contracts/foreign'), contract('tenant-b', 'b-1')));
+    await assertFails(getDoc(doc(cashierDb(), 'contracts/contract-b')));
   });
 });
-
 describe('Alerts, platform and Storage', () => {
   it('other tenant alerts cannot be read or updated', async () => {
     await assertFails(getDoc(doc(ownerDb(), 'alerts/alert-b')));
@@ -488,7 +421,7 @@ describe('Alerts, platform and Storage', () => {
     for (const path of ['products/product-b', 'sales/sale-b', 'contracts/contract-b', 'cash_sessions/session-b', 'alerts/alert-b']) {
       await assertSucceeds(getDoc(doc(adminDb(), path)));
     }
-    await assertSucceeds(deleteDoc(doc(adminDb(), 'sales/sale-b')));
+    await assertFails(deleteDoc(doc(adminDb(), 'sales/sale-b')));
   });
   it('Storage denies reads and writes even for authenticated platform users', async () => {
     for (const actor of [env.unauthenticatedContext(), context('cashier-a'), context('admin')]) {

@@ -13,13 +13,14 @@ export function migrateCachedProduct(product) {
   return raw;
 }
 export function isRetryableSaleError(error) {
-  const code = String(error?.code ?? '').replace(/^firestore\//, '');
+  const code = String(error?.code ?? '').replace(/^(firestore|functions)\//, '');
   return ['unavailable', 'deadline-exceeded', 'network-request-failed', 'timeout', 'aborted', 'cancelled', 'offline', 'local-state'].includes(code)
     || /timeout|network|offline/i.test(error?.message ?? '');
 }
 export function isDeterministicSaleError(error) {
   return ['invalid-sale', 'identity-mismatch', 'product-tenant-mismatch', 'invalid-stock', 'insufficient-stock',
-    'sale-conflict', 'permission-denied', 'decryption-failed'].includes(String(error?.code).replace(/^firestore\//, ''));
+    'sale-conflict', 'permission-denied', 'decryption-failed', 'invalid-session', 'closed-session', 'unverified-session', 'invalid-stats']
+    .includes(String(error?.code).replace(/^(firestore|functions)\//, ''));
 }
 export async function decodeQueuedSale(record, identity, decrypt) {
   if ((record.userId && record.userId !== identity.uid) || (record.businessId && record.businessId !== identity.businessId)) {
