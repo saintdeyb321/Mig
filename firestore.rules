@@ -182,38 +182,6 @@ service cloud.firestore {
         && data.stock.get(branchId, null) is number;
     }
 
-    function validSaleItem(item) {
-      // String methods and numeric comparisons reject invalid operand types in Rules.
-      return item.id.matches('^[^/]+$') && item.name is string
-        && item.qty > 0 && item.price >= 0;
-    }
-
-    function validSaleItems(items) {
-      let count = items.size();
-      // Rules has no list iteration. Validate every line within the expression budget.
-      return items is list && count > 0 && count <= 20
-        && validSaleItem(items[0])
-        && (count <= 1 || validSaleItem(items[1]))
-        && (count <= 2 || validSaleItem(items[2]))
-        && (count <= 3 || validSaleItem(items[3]))
-        && (count <= 4 || validSaleItem(items[4]))
-        && (count <= 5 || validSaleItem(items[5]))
-        && (count <= 6 || validSaleItem(items[6]))
-        && (count <= 7 || validSaleItem(items[7]))
-        && (count <= 8 || validSaleItem(items[8]))
-        && (count <= 9 || validSaleItem(items[9]))
-        && (count <= 10 || validSaleItem(items[10]))
-        && (count <= 11 || validSaleItem(items[11]))
-        && (count <= 12 || validSaleItem(items[12]))
-        && (count <= 13 || validSaleItem(items[13]))
-        && (count <= 14 || validSaleItem(items[14]))
-        && (count <= 15 || validSaleItem(items[15]))
-        && (count <= 16 || validSaleItem(items[16]))
-        && (count <= 17 || validSaleItem(items[17]))
-        && (count <= 18 || validSaleItem(items[18]))
-        && (count <= 19 || validSaleItem(items[19]));
-    }
-
     function validSale() {
       let data = request.resource.data;
       let actor = currentUser();
@@ -224,7 +192,8 @@ service cloud.firestore {
         && (actor.role in ['superadmin', 'dueño']
           || (actor.role == 'cajero' && data.branchId == actor.get('branchId', null)))
         && branchBelongsTo(data.businessId, data.branchId)
-        && data.get('voided', false) == false && validSaleItems(data.items);
+        && data.get('voided', false) == false
+        && data.items is list && data.items.size() > 0;
     }
 
     function permittedFinancialResource() {
@@ -244,7 +213,7 @@ service cloud.firestore {
         && hasTenant(data) && data.branchId is string && data.contractId is string
         && data.clientName is string && data.total is number && data.total >= 0
         && data.payments is list
-        && data.status in ['pendiente', 'en_produccion', 'listo_para_entrega', 'entregado', 'cancelado'];
+        && data.status in ['pendiente', 'en_produccion', 'listo_para_entrega', 'entregado', 'entregado_con_deuda', 'cancelado'];
     }
 
     match /users/{userId} {

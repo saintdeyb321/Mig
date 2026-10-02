@@ -1,14 +1,12 @@
 // src/modules/contracts/components/ContractFormModal.jsx
 import React, { useState, useCallback, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { useGlobalData } from '../../../context/GlobalDataContext';
+import { useCustomers } from '../../../features/customers/hooks/useCustomers';
+import { toDateSafe } from '../../../core/dates/dateValues';
 
 const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit, isProcessing }) => {
   const isEditing = !!contractToEdit;
-
-// 🚀 EXTRAEMOS LA AGENDA DE LA RAM (Con referencia estable para que React no se queje)
-  const { globalAgenda } = useGlobalData();
-  const agenda = useMemo(() => globalAgenda || [], [globalAgenda]);
+  const { customers: agenda } = useCustomers();
 
   const [showAgendaModal, setShowAgendaModal] = useState(false);
   const [agendaSearch, setAgendaSearch] = useState('');
@@ -17,9 +15,11 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     if (contractToEdit) {
       let formattedDate = '';
       if (contractToEdit.deliveryDate) {
-        const d = new Date(contractToEdit.deliveryDate);
-        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-        formattedDate = d.toISOString().slice(0, 16);
+        const d = toDateSafe(contractToEdit.deliveryDate);
+        if (d) {
+          d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+          formattedDate = d.toISOString().slice(0, 16);
+        }
       }
       return {
         clientName: contractToEdit.clientName || '',
@@ -30,13 +30,13 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
         deliveryAddress: contractToEdit.deliveryAddress || '',
         subtotal: contractToEdit.subtotal || '',
         deliveryCost: contractToEdit.deliveryCost || '',
-        advancePayment: '', 
+        advancePayment: '',
         paymentMethod: 'efectivo'
       };
     }
     return {
-      clientName: '', clientPhone: '', deliveryDate: '', details: '', 
-      deliveryType: 'domicilio', deliveryAddress: '', subtotal: '', 
+      clientName: '', clientPhone: '', deliveryDate: '', details: '',
+      deliveryType: 'domicilio', deliveryAddress: '', subtotal: '',
       deliveryCost: '', advancePayment: '', paymentMethod: 'efectivo'
     };
   });
@@ -47,7 +47,7 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
       if (contractToEdit.referenceImages && contractToEdit.referenceImages.length > 0) {
         contractToEdit.referenceImages.forEach(img => initialImages.push({ type: 'existing', url: img }));
       } else if (contractToEdit.referenceImage) {
-        initialImages.push({ type: 'existing', url: contractToEdit.referenceImage }); 
+        initialImages.push({ type: 'existing', url: contractToEdit.referenceImage });
       }
     }
     return initialImages;
@@ -70,7 +70,7 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
 
   const handleChange = useCallback((e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ 
+    setFormData(prev => ({
       ...prev, [name]: value,
       ...(name === 'deliveryType' && value !== 'domicilio' ? { deliveryAddress: '' } : {})
     }));
@@ -83,14 +83,14 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
       clientPhone: contact.phone || ''
     }));
     setShowAgendaModal(false);
-    setAgendaSearch(''); 
+    setAgendaSearch('');
     toast.success(`Datos de ${contact.name} cargados.`, { icon: '📖' });
   };
 
   const filteredAgenda = useMemo(() => {
     const lowerSearch = agendaSearch.toLowerCase();
-    return agenda.filter(c => 
-      c.name.toLowerCase().includes(lowerSearch) || 
+    return agenda.filter(c =>
+      c.name.toLowerCase().includes(lowerSearch) ||
       (c.phone && c.phone.includes(lowerSearch))
     );
   }, [agenda, agendaSearch]);
@@ -110,7 +110,7 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     }));
 
     setImages(prev => [...prev, ...newImages]);
-    e.target.value = null; 
+    e.target.value = null;
   };
 
   const handleRemoveImage = (indexToRemove) => {
@@ -134,8 +134,8 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
       clientName: formData.clientName.trim(),
       deliveryDate: new Date(formData.deliveryDate).toISOString(),
       total: totals.total,
-      payments: !isEditing && Number(formData.advancePayment) > 0 
-        ? [{ amount: Number(formData.advancePayment), method: formData.paymentMethod, label: 'Cuota 1' }] 
+      payments: !isEditing && Number(formData.advancePayment) > 0
+        ? [{ amount: Number(formData.advancePayment), method: formData.paymentMethod, label: 'Cuota 1' }]
         : undefined,
       newImages: newImageFiles,
       retainedImages: existingImages
@@ -148,7 +148,7 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     <>
       <div className="cfm-overlay fade-in">
         <div className="cfm-modal-container">
-          
+
           <div className="cfm-header">
             <div className="cfm-title-group">
               <span className="cfm-icon">{isEditing ? '✏️' : '📝'}</span>
@@ -156,9 +156,9 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
             </div>
             <button type="button" onClick={onClose} className="cfm-btn-close" disabled={isProcessing}>✖</button>
           </div>
-          
+
           <form onSubmit={handleFormSubmit} className="cfm-body">
-            
+
             <div className="cfm-section">
               <h4 className="cfm-section-title">1. Datos del Cliente</h4>
 
@@ -167,19 +167,19 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
                   <label>Nombre Completo <span className="req">*</span></label>
                   <input name="clientName" autoFocus value={formData.clientName} onChange={handleChange} required disabled={isProcessing} placeholder="Ej: Juan Pérez" />
                 </div>
-                
+
                 <div className="cfm-input-group">
                   <label>Teléfono / WhatsApp</label>
                   <input name="clientPhone" type="tel" value={formData.clientPhone} onChange={handleChange} disabled={isProcessing} placeholder="987 654 321" autoComplete="off" />
                 </div>
               </div>
 
-              {/* 🚀 BOTÓN AGENDA MOVIDO AFUERA DEL GRID PARA CENTRADO PERFECTO */}
+
               {!isEditing && agenda.length > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'center', marginTop: '12px' }}>
-                  <button 
-                    type="button" 
-                    onClick={() => setShowAgendaModal(true)} 
+                  <button
+                    type="button"
+                    onClick={() => setShowAgendaModal(true)}
                     disabled={isProcessing}
                     className="btn-agenda-inline"
                     style={{ margin: 0 }} /* Reseteamos el margin porque el flex padre ya lo centra */
@@ -189,8 +189,8 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
                 </div>
               )}
             </div>
-              
-            
+
+
 
             <div className="cfm-section">
               <h4 className="cfm-section-title">2. Logística de Entrega</h4>
@@ -224,7 +224,7 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
                   <label>Descripción Exacta <span className="req">*</span></label>
                   <textarea name="details" value={formData.details} onChange={handleChange} required disabled={isProcessing} placeholder="Ej: Torta de chocolate, 2 pisos, relleno de fresa..." />
                 </div>
-                
+
                 <div className="cfm-input-group cfm-photos-gallery-group">
                   <label>Fotos de Referencia (Max 4)</label>
                   <div className="cfm-gallery-container">
@@ -247,10 +247,10 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
 
             <div className="cfm-section cfm-section-finance">
               <h4 className="cfm-section-title">
-                4. Finanzas y Cobro 
+                4. Finanzas y Cobro
                 {isEditing && <span className="cfm-edit-warning"> (Puedes ajustar los precios. Los abonos previos se mantienen)</span>}
               </h4>
-              
+
               <div className="cfm-finance-grid">
                 <div className="cfm-cost-inputs">
                   <div className="cfm-input-group">
@@ -299,8 +299,8 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
               ) : (
                 totals.total > 0 && (
                   <div className={`cfm-debt-summary ${totals.balance > 0 ? 'has-debt' : 'fully-paid'}`}>
-                    {totals.balance > 0 
-                      ? `El cliente dejará un saldo pendiente de S/ ${totals.balance.toFixed(2)}` 
+                    {totals.balance > 0
+                      ? `El cliente dejará un saldo pendiente de S/ ${totals.balance.toFixed(2)}`
                       : 'El pedido quedará totalmente pagado ✅'}
                   </div>
                 )
@@ -321,14 +321,14 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
       {showAgendaModal && (
         <div className="modal-overlay fade-in" style={{ zIndex: 10000 }}>
           <div className="card modal-content" style={{ maxWidth: '400px', padding: 0, overflow: 'hidden', borderRadius: '12px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
-            
+
             <div style={{ padding: '15px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 📖 Seleccionar Cliente
               </h3>
-              <button 
-                type="button" 
-                onClick={() => setShowAgendaModal(false)} 
+              <button
+                type="button"
+                onClick={() => setShowAgendaModal(false)}
                 style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#64748b' }}
               >
                 ✖
@@ -338,9 +338,9 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
             <div style={{ padding: '15px' }}>
               <div style={{ position: 'relative', marginBottom: '15px' }}>
                 <span style={{ position: 'absolute', left: '10px', top: '10px', opacity: 0.5 }}>🔍</span>
-                <input 
-                  type="text" 
-                  placeholder="Buscar nombre o celular..." 
+                <input
+                  type="text"
+                  placeholder="Buscar nombre o celular..."
                   value={agendaSearch}
                   onChange={e => setAgendaSearch(e.target.value)}
                   style={{ width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.95rem' }}
@@ -355,8 +355,8 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
                   </div>
                 ) : (
                   filteredAgenda.map(c => (
-                    <div 
-                      key={c.id} 
+                    <div
+                      key={c.id}
                       onClick={() => handleSelectContact(c)}
                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s ease', background: 'white' }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.background = '#eff6ff'; }}
@@ -366,9 +366,9 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
                         <strong style={{ display: 'block', color: '#0f172a', fontSize: '0.95rem' }}>{c.name}</strong>
                         <span style={{ fontSize: '0.8rem', color: '#64748b' }}>📱 {c.phone || 'Sin número'}</span>
                       </div>
-                      <button 
-                        type="button" 
-                        className="btn-primary" 
+                      <button
+                        type="button"
+                        className="btn-primary"
                         style={{ padding: '6px 12px', fontSize: '0.8rem', background: '#10b981', border: 'none' }}
                       >
                         Elegir

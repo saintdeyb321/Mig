@@ -1,6 +1,6 @@
 // src/modules/Reports.jsx
 import React, { useMemo, memo } from 'react';
-import { useReports } from '../hooks/useReports';
+import { useReports } from '../features/reports/hooks/useReports';
 
 const TIME_FILTERS = {
   hoy: 'Hoy',
@@ -93,8 +93,8 @@ export default function Reports({ user }) {
 
   // 🚀 LIMPIO: Nos quedamos solo con las métricas estandarizadas
   const total = summary?.total || 0;
-  const cash = summary?.cash || 0; 
-  const yape = summary?.yape || 0; 
+  const cash = summary?.cash || 0;
+  const yape = summary?.yape || 0;
   const totalSales = summary?.totalSales || 0;
 
   const maxChartValue = useMemo(() => {

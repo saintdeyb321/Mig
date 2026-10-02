@@ -1,39 +1,14 @@
-// src/components/TermsModal.jsx
 import React, { useState } from 'react';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase'; 
-import toast from 'react-hot-toast';
+import { useAcceptTerms } from '../features/users/hooks/useAcceptTerms';
 
 export default function TermsModal({ user, onAccepted }) {
-  const [isAccepting, setIsAccepting] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
-
-  const handleAccept = async () => {
-    setIsAccepting(true);
-    const loadId = toast.loading('Registrando aceptación...');
-
-    try {
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        hasAcceptedTerms: true,
-        termsAcceptedAt: serverTimestamp(),
-        termsVersion: '1.1' 
-      });
-
-      toast.success('¡Bienvenido a MigaPOS!', { id: loadId });
-      if (onAccepted) onAccepted(); 
-      
-    } catch (error) {
-      console.error("Error al aceptar términos:", error);
-      toast.error('Hubo un problema. Intenta de nuevo.', { id: loadId });
-      setIsAccepting(false);
-    }
-  };
+  const { isAccepting, handleAccept } = useAcceptTerms(user, onAccepted);
 
   return (
     <div className="terms-overlay fade-in">
       <div className="terms-container card">
-        
+
         <div className="terms-header">
           <h2>Términos y Condiciones de MigaPOS</h2>
           <p>Última actualización: Abril 2026 | Versión 1.1</p>
@@ -44,7 +19,7 @@ export default function TermsModal({ user, onAccepted }) {
 
           <h3>1. Naturaleza y Alcance del Servicio</h3>
           <p>
-            MigaPOS es una plataforma de software como servicio (SaaS) proporcionada "tal cual", diseñada exclusivamente para el <strong>control interno, gestión de inventario y registro de ventas operativas</strong>. 
+            MigaPOS es una plataforma de software como servicio (SaaS) proporcionada "tal cual", diseñada exclusivamente para el <strong>control interno, gestión de inventario y registro de ventas operativas</strong>.
             Los comprobantes generados son de carácter estrictamente administrativo. <strong>MigaPOS NO es un sistema de Facturación Electrónica homologado por la SUNAT.</strong> El usuario reconoce que el cumplimiento de sus obligaciones tributarias es de su entera responsabilidad.
           </p>
 
@@ -91,18 +66,18 @@ export default function TermsModal({ user, onAccepted }) {
 
         <div className="terms-footer">
           <label className="terms-checkbox-wrapper" style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', textAlign: 'left', cursor: 'pointer' }}>
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               checked={isChecked}
               onChange={(e) => setIsChecked(e.target.checked)}
               style={{ width: '20px', height: '20px', marginTop: '2px', cursor: 'pointer' }}
             />
             <span>He leído, entiendo y acepto expresamente las condiciones de servicio, la limitación de responsabilidad y el tratamiento de datos.</span>
           </label>
-          
-          <button 
-            onClick={handleAccept} 
-            disabled={!isChecked || isAccepting} 
+
+          <button
+            onClick={handleAccept}
+            disabled={!isChecked || isAccepting}
             className="btn-primary btn-accept-terms"
             style={{ opacity: (!isChecked || isAccepting) ? 0.6 : 1, cursor: (!isChecked || isAccepting) ? 'not-allowed' : 'pointer' }}
           >

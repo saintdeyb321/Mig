@@ -1,8 +1,9 @@
 // src/components/POS.jsx
+import { getSafeStock } from '../features/sales/domain/cartStock';
 import React, { useState, useMemo, memo } from 'react';
-import { usePOS, getSafeStock } from '../hooks/usePOS'; 
-import { useGlobalData } from '../context/GlobalDataContext'; 
-import { useCashRegister } from '../hooks/useCashRegister'; 
+import { usePOS } from '../features/sales/hooks/usePOS';
+import { useTenantData } from '../features/branches/context/TenantContext';
+import { useCashRegister } from '../features/cash-register/hooks/useCashRegister';
 import { CashRegisterModals } from './CashRegisterModals';
 
 const POSProductButton = memo(({ p, activeBranchId, globalDisabled, addToCart }) => {
@@ -11,11 +12,11 @@ const POSProductButton = memo(({ p, activeBranchId, globalDisabled, addToCart })
   const isDisabled = isAgotado || globalDisabled;
 
   return (
-    <button 
-      onClick={() => addToCart(p)} 
-      disabled={isDisabled} 
-      className="product-btn" 
-      title={p.name} 
+    <button
+      onClick={() => addToCart(p)}
+      disabled={isDisabled}
+      className="product-btn"
+      title={p.name}
       style={{ opacity: isDisabled ? 0.6 : 1, cursor: isDisabled ? 'not-allowed' : 'pointer' }}
     >
       <div className="pos-product-img-wrapper">
@@ -37,19 +38,19 @@ const POSProductButton = memo(({ p, activeBranchId, globalDisabled, addToCart })
 });
 
 function POS({ user }) {
-  const { businessBranches, activeBranchId } = useGlobalData();
+  const { businessBranches, activeBranchId } = useTenantData();
 
-  const { 
-    currentSession, isLoadingSession, openRegister, calculateClose, confirmClose 
+  const {
+    currentSession, isLoadingSession, openRegister, calculateClose, confirmClose
   } = useCashRegister(user, activeBranchId);
 
   const {
     filteredProducts, cart, payment, setPayment, amountPaid, setAmountPaid,
-    splitEfectivo, setSplitEfectivo, splitYape, setSplitYape, // 🚀 Importados limpiamente
+    splitEfectivo, setSplitEfectivo, splitYape, setSplitYape,
     search, setSearch, isProcessing, showQrModal, setShowQrModal, qrUrl,
     addToCart, updateQty, removeFromCart, total, isPaymentValid, handleCheckoutClick, processSale,
-    lastSale, clearLastSale, printReceipt, activeCategories, isLoading 
-  } = usePOS(user, currentSession); 
+    lastSale, clearLastSale, printReceipt, activeCategories, isLoading
+  } = usePOS(user, currentSession);
 
   const [selectedCategory, setSelectedCategory] = useState('todas');
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -112,16 +113,16 @@ function POS({ user }) {
   }
 
   return (
-    <div className="fade-in" style={{ minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>      
-      
+    <div className="fade-in" style={{ minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+
       <header className="pos-header" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0, fontSize: '1.3rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           🛒 Punto de Venta
         </h2>
-        
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
           {currentSession && !branchStatus.isReadOnly && (
-            <button 
+            <button
               onClick={() => setShowCloseModal(true)}
               title={currentSession.needsForceClose ? "Debes cerrar el turno del cajero anterior" : "Cerrar Turno"}
               className="btn-close-register"
@@ -130,27 +131,27 @@ function POS({ user }) {
               {currentSession.needsForceClose ? '⚠️ Forzar Cierre de caja' : '🔒 Cerrar caja'}
             </button>
           )}
-          
+
           <div className="user-badge" style={{
-            fontSize: '0.75rem', 
-            background: branchStatus.isReadOnly || !currentSession ? '#ef4444' : (currentSession.needsForceClose ? '#f59e0b' : '#4ade80'), 
+            fontSize: '0.75rem',
+            background: branchStatus.isReadOnly || !currentSession ? '#ef4444' : (currentSession.needsForceClose ? '#f59e0b' : '#4ade80'),
             color: 'white',
             padding: '5px 12px',
             whiteSpace: 'nowrap',
             fontWeight: 'bold',
             borderRadius: '20px'
           }}>
-            {branchStatus.isReadOnly 
-              ? 'Modo Lectura' 
-              : !currentSession 
-                ? 'Caja Cerrada' 
-                : currentSession.needsForceClose 
-                  ? 'Turno Pendiente' 
+            {branchStatus.isReadOnly
+              ? 'Modo Lectura'
+              : !currentSession
+                ? 'Caja Cerrada'
+                : currentSession.needsForceClose
+                  ? 'Turno Pendiente'
                   : 'Caja Abierta'}
           </div>
         </div>
       </header>
-      
+
       {branchStatus.isReadOnly && (
         <div className="fade-in" style={{ background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '500' }}>
           <span style={{ fontSize: '1.5rem' }}>⚠️</span>
@@ -170,13 +171,13 @@ function POS({ user }) {
       )}
 
       <div className="pos-grid">
-          <section className="products-section">      
+          <section className="products-section">
           <div className="filter-bar-container">
             <div className="search-container">
               <span style={{ fontSize: '1.2rem', opacity: 0.5 }}>🔍</span>
-              <input 
-                type="text" 
-                value={search} 
+              <input
+                type="text"
+                value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar pan, dulce o bebida..."
                 className="search-input"
@@ -206,12 +207,12 @@ function POS({ user }) {
               </div>
             ) : (
               displayedProducts.map(p => (
-                <POSProductButton 
-                  key={p.id} 
-                  p={p} 
-                  activeBranchId={activeBranchId} 
-                  globalDisabled={isGlobalDisabled} 
-                  addToCart={addToCart} 
+                <POSProductButton
+                  key={p.id}
+                  p={p}
+                  activeBranchId={activeBranchId}
+                  globalDisabled={isGlobalDisabled}
+                  addToCart={addToCart}
                 />
               ))
             )}
@@ -252,7 +253,7 @@ function POS({ user }) {
                   <button className="close-cart-btn" onClick={() => setIsCartOpen(false)}>✕</button>
                 </h3>
               </div>
-              
+
               <div className="cart-items" style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
                 {cart.length === 0 ? (
                   <div style={{ height: '100%', minHeight: '150px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)' }}>
@@ -288,23 +289,23 @@ function POS({ user }) {
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
-                  <button 
-                    onClick={() => { setPayment('efectivo'); setAmountPaid(''); }} 
-                    disabled={branchStatus.isReadOnly} 
+                  <button
+                    onClick={() => { setPayment('efectivo'); setAmountPaid(''); }}
+                    disabled={branchStatus.isReadOnly}
                     className={`payment-method-btn ${payment === 'efectivo' ? 'active-efectivo' : ''}`}
                   >
                     💵 Efectivo
                   </button>
-                  <button 
-                    onClick={() => { setPayment('yape'); setAmountPaid(''); }} 
-                    disabled={branchStatus.isReadOnly} 
+                  <button
+                    onClick={() => { setPayment('yape'); setAmountPaid(''); }}
+                    disabled={branchStatus.isReadOnly}
                     className={`payment-method-btn ${payment === 'yape' ? 'active-yape' : ''}`}
                   >
                     📲 Yape/Plin
                   </button>
-                  <button 
-                    onClick={() => { setPayment('mixto'); setSplitEfectivo(''); setSplitYape(''); }} 
-                    disabled={branchStatus.isReadOnly} 
+                  <button
+                    onClick={() => { setPayment('mixto'); setSplitEfectivo(''); setSplitYape(''); }}
+                    disabled={branchStatus.isReadOnly}
                     className={`payment-method-btn ${payment === 'mixto' ? 'active-mixto' : ''}`}
                   >
                     🔄 Mixto
@@ -315,13 +316,13 @@ function POS({ user }) {
                   <div className="payment-row fade-in">
                     <div className="payment-input-group">
                       <label className="payment-label">MONTO RECIBIDO (S/)</label>
-                      <input 
-                        type="number" 
-                        value={amountPaid} 
-                        onChange={e => setAmountPaid(e.target.value)} 
-                        placeholder="0.00" 
-                        disabled={branchStatus.isReadOnly} 
-                        style={{ fontWeight: 'bold', fontSize: '1.1rem', textAlign: 'left' }} 
+                      <input
+                        type="number"
+                        value={amountPaid}
+                        onChange={e => setAmountPaid(e.target.value)}
+                        placeholder="0.00"
+                        disabled={branchStatus.isReadOnly}
+                        style={{ fontWeight: 'bold', fontSize: '1.1rem', textAlign: 'left' }}
                       />
                     </div>
                     {Number(amountPaid) >= total && total > 0 && (
@@ -338,22 +339,22 @@ function POS({ user }) {
                     <div className="payment-split-container">
                       <div className="payment-input-group efectivo-group" style={{ flex: 1 }}>
                         <label className="payment-label">EFECTIVO (S/)</label>
-                        <input 
-                          type="number" 
-                          value={splitEfectivo} 
-                          onChange={e => handleSplitEfectivoChange(e.target.value)} 
-                          placeholder="0.00" 
-                          disabled={branchStatus.isReadOnly} 
+                        <input
+                          type="number"
+                          value={splitEfectivo}
+                          onChange={e => handleSplitEfectivoChange(e.target.value)}
+                          placeholder="0.00"
+                          disabled={branchStatus.isReadOnly}
                         />
                       </div>
                       <div className="payment-input-group yape-group" style={{ flex: 1 }}>
                         <label className="payment-label">YAPE/PLIN (S/)</label>
-                        <input 
-                          type="number" 
-                          value={splitYape} 
-                          onChange={e => handleSplitYapeChange(e.target.value)} 
-                          placeholder="0.00" 
-                          disabled={branchStatus.isReadOnly} 
+                        <input
+                          type="number"
+                          value={splitYape}
+                          onChange={e => handleSplitYapeChange(e.target.value)}
+                          placeholder="0.00"
+                          disabled={branchStatus.isReadOnly}
                         />
                       </div>
                     </div>
@@ -366,25 +367,25 @@ function POS({ user }) {
                 )}
 
                 {!currentSession && !branchStatus.isReadOnly ? (
-                  <button 
-                    onClick={() => setShowOpenModal(true)} 
+                  <button
+                    onClick={() => setShowOpenModal(true)}
                     className="btn-open-register-large"
                   >
                     🔓 ABRIR CAJA PARA VENDER
                   </button>
                 ) : currentSession?.needsForceClose ? (
-                  <button 
-                    className="btn-primary" 
-                    onClick={() => setShowCloseModal(true)} 
+                  <button
+                    className="btn-primary"
+                    onClick={() => setShowCloseModal(true)}
                     style={{ width: '100%', padding: '15px', background: '#ef4444', color: 'white', borderRadius: '8px', fontWeight: '900', textTransform: 'uppercase', cursor: 'pointer', border: 'none' }}
                   >
                     🔒 CIERRA EL TURNO ANTERIOR
                   </button>
                 ) : (
-                  <button 
-                    className="btn-primary" 
-                    onClick={handleCheckoutClick} 
-                    disabled={cart.length === 0 || !isPaymentValid || isProcessing || branchStatus.isReadOnly} 
+                  <button
+                    className="btn-primary"
+                    onClick={handleCheckoutClick}
+                    disabled={cart.length === 0 || !isPaymentValid || isProcessing || branchStatus.isReadOnly}
                     style={{ width: '100%', padding: '15px', fontSize: '1.1rem', fontWeight: '900', textTransform: 'uppercase', borderRadius: '8px', cursor: (cart.length === 0 || !isPaymentValid || branchStatus.isReadOnly) ? 'not-allowed' : 'pointer', opacity: branchStatus.isReadOnly ? 0.5 : 1, border: 'none' }}
                   >
                     {branchStatus.isReadOnly ? '🔒 MODO LECTURA' : isProcessing ? 'Procesando...' : `COBRAR`}
@@ -400,11 +401,11 @@ function POS({ user }) {
         <div className="fade-in" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 10001, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center', padding: '30px', borderTop: '8px solid #9333ea' }}>
             <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: 'var(--text-main)' }}>Escanea para pagar</h3>
-            
+
             <h1 style={{ color: '#9333ea', margin: '0 0 15px 0', fontSize: '2.5rem', fontWeight: '900' }}>
               S/ {payment === 'mixto' ? Number(splitYape).toFixed(2) : total.toFixed(2)}
             </h1>
-            
+
             <div style={{ width: '220px', height: '220px', margin: '0 auto 20px auto', background: 'white', borderRadius: '15px', padding: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {qrUrl ? <img src={qrUrl} alt="QR Yape" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px' }} /> : <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '10px' }}>⚠️ QR no configurado en Ajustes.</div>}
             </div>
@@ -429,8 +430,8 @@ function POS({ user }) {
       />
 
       {currentSession?.needsForceClose && !branchStatus.isReadOnly ? (
-        <button 
-          className="mobile-cart-float-btn warning" 
+        <button
+          className="mobile-cart-float-btn warning"
           onClick={() => setShowCloseModal(true)}
           style={{ background: '#ef4444' }}
         >
@@ -438,8 +439,8 @@ function POS({ user }) {
           <span>CERRAR TURNO ANTERIOR</span>
         </button>
       ) : !currentSession && !branchStatus.isReadOnly ? (
-        <button 
-          className="mobile-cart-float-btn warning" 
+        <button
+          className="mobile-cart-float-btn warning"
           onClick={() => setShowOpenModal(true)}
         >
           <span>💰 Caja Cerrada</span>

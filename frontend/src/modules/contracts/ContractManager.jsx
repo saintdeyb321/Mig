@@ -1,8 +1,9 @@
 // src/modules/contracts/ContractManager.jsx
 import React, { useState, useMemo, useCallback } from 'react';
-import { useContracts } from '../../hooks/useContracts';
-import { useGlobalData } from '../../context/GlobalDataContext';
+import { useContracts } from '../../features/contracts/hooks/useContracts';
+import { useTenantData } from '../../features/branches/context/TenantContext';
 import toast from 'react-hot-toast';
+import { toMillisSafe } from '../../core/dates/dateValues';
 
 import ContractCard from './components/ContractCard';
 import ContractDetailsModal from './components/ContractDetailsModal';
@@ -12,31 +13,28 @@ import { generateContractReceiptHTML } from '../../utils/contractReceiptTemplate
 import { generateContractProductionHTML, generateContractTextOnlyHTML } from '../../utils/contractProductionTemplate';
 
 function ContractManager({ user }) {
-  const { activeBranchId, businessBranches, settings } = useGlobalData();
-  
-  const { 
-    contracts, isLoading, isProcessing, 
-    createContract, updateContract, cancelContract, addPayment
+  const { activeBranchId, businessBranches, settings } = useTenantData();
+
+  const {
+    contracts, isLoading, isProcessing,
+    createContract, updateContract, cancelContract, addPayment, markDelivered
   } = useContracts(user);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [viewFilter, setViewFilter] = useState('activos'); // activos | deudas | historial
   const [sortBy, setSortBy] = useState('urgencia'); // urgencia | recientes
-  
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [contractToEdit, setContractToEdit] = useState(null);
   const [contractToView, setContractToView] = useState(null);
   const [contractToCancel, setContractToCancel] = useState(null);
 
   const activeLocations = useMemo(() => businessBranches?.filter(b => b.status === 'activo') || [], [businessBranches]);
-  
-  // 🚀 LÓGICA DE FILTRADO Y LIMITACIÓN DE RAM
   const filteredContracts = useMemo(() => {
-    let result = [...contracts]; 
+    let result = [...contracts];
 
     // 1. FILTRO VISUAL (El corazón de la memoria)
     if (viewFilter === 'activos') {
-      // 🚀 ATENCIÓN AQUÍ: Se muestran todos MENOS los anulados y los 100% cerrados (Entregado Y Pagado).
       // Si está entregado_con_deuda, se Queda en pantalla molestando a la cajera hasta que paguen.
       result = result.filter(c => c.status !== 'cancelado' && c.status !== 'entregado');
     } else if (viewFilter === 'deudas') {
@@ -48,8 +46,8 @@ function ContractManager({ user }) {
     // 2. BÚSQUEDA TEXTUAL
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
-      result = result.filter(c => 
-        c.contractId?.toLowerCase().includes(q) || 
+      result = result.filter(c =>
+        c.contractId?.toLowerCase().includes(q) ||
         c.clientName?.toLowerCase().includes(q) ||
         c.clientPhone?.includes(q)
       );
@@ -60,15 +58,15 @@ function ContractManager({ user }) {
       result.sort((a, b) => {
         if (!a.deliveryDate) return 1;
         if (!b.deliveryDate) return -1;
-        const dateA = new Date(a.deliveryDate).getTime();
-        const dateB = new Date(b.deliveryDate).getTime();
+        const dateA = toMillisSafe(a.deliveryDate);
+        const dateB = toMillisSafe(b.deliveryDate);
         return dateA - dateB; // Más próximo arriba
       });
     } else {
       result.sort((a, b) => {
-        const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime();
-        const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime();
-        return dateB - dateA; 
+        const dateA = toMillisSafe(a.createdAt);
+        const dateB = toMillisSafe(b.createdAt);
+        return dateB - dateA;
       });
     }
 
@@ -89,7 +87,7 @@ function ContractManager({ user }) {
     const printWindow = window.open('', '', 'width=800,height=900');
     if (printWindow) {
       printWindow.document.open(); printWindow.document.write(htmlContent); printWindow.document.close();
-      printWindow.setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.setTimeout(() => printWindow.close(), 500); }, 350); 
+      printWindow.setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.setTimeout(() => printWindow.close(), 500); }, 350);
     } else toast.error("Permite las ventanas emergentes.");
   }, [settings, businessBranches]);
 
@@ -97,14 +95,14 @@ function ContractManager({ user }) {
     const htmlContent = generateContractTextOnlyHTML(contractData, settings || {}, businessBranches);
     const printWindow = window.open('', '', 'width=800,height=900');
     if (printWindow) {
-      printWindow.document.open(); 
-      printWindow.document.write(htmlContent); 
+      printWindow.document.open();
+      printWindow.document.write(htmlContent);
       printWindow.document.close();
-      printWindow.setTimeout(() => { 
-        printWindow.focus(); 
-        printWindow.print(); 
-        printWindow.setTimeout(() => printWindow.close(), 500); 
-      }, 350); 
+      printWindow.setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+        printWindow.setTimeout(() => printWindow.close(), 500);
+      }, 350);
     } else {
       toast.error("Permite las ventanas emergentes.");
     }
@@ -140,13 +138,13 @@ function ContractManager({ user }) {
     <div className="fade-in max-container padding-bottom-lg">
       <header className="module-header">
         <h2 className="module-title">
-          <span className="module-title-icon">🎂</span> 
+          <span className="module-title-icon">🎂</span>
           <span className="module-title-text">Gestión de Pedidos</span>
         </h2>
         <button onClick={() => {
             if (activeBranchId === 'global' && user.role !== 'dueño') return toast.error('Selecciona una sede.');
             setContractToEdit(null); setShowCreateModal(true);
-          }} 
+          }}
           className="btn-primary btn-add-smart"
           style={{ padding: '10px 20px', fontSize: '0.95rem' }}
         >
@@ -178,7 +176,7 @@ function ContractManager({ user }) {
           Mostrando {Math.min(filteredContracts.length, 100)} de {filteredContracts.length}
         </span>
       </div>
-      
+
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {filteredContracts.length === 0 ? (
           <div className="card empty-state-dashed fade-in" style={{ padding: '40px', textAlign: 'center' }}>
@@ -193,7 +191,7 @@ function ContractManager({ user }) {
       </div>
 
       {(showCreateModal || contractToEdit) && <ContractFormModal contractToEdit={contractToEdit} activeLocations={activeLocations} onClose={() => { setShowCreateModal(false); setContractToEdit(null); }} onSubmit={handleFormSubmit} isProcessing={isProcessing} />}
-      {contractToView && <ContractDetailsModal contract={contractToView} branches={businessBranches} settings={settings} onClose={() => setContractToView(null)} onAddPayment={handleAddPayment} onEditRequest={(contract) => { setContractToView(null); setContractToEdit(contract); }} onCancelRequest={(contract) => { setContractToView(null); setContractToCancel(contract); }} isProcessing={isProcessing} />}
+      {contractToView && <ContractDetailsModal contract={contractToView} branches={businessBranches} settings={settings} onClose={() => setContractToView(null)} onAddPayment={handleAddPayment} onMarkDelivered={markDelivered} onEditRequest={(contract) => { setContractToView(null); setContractToEdit(contract); }} onCancelRequest={(contract) => { setContractToView(null); setContractToCancel(contract); }} isProcessing={isProcessing} />}
       {contractToCancel && <ContractCancelModal contract={contractToCancel} onClose={() => setContractToCancel(null)} onConfirm={handleCancelSubmit} isProcessing={isProcessing} />}
     </div>
   );

@@ -322,31 +322,18 @@ describe('Financial collections and query compatibility', () => {
   });
   for (const [label, override] of Object.entries({
     'negative total': { total: -1 }, 'empty items': { items: [] },
-    'invalid second item': { items: [item, { ...item, qty: -1 }] },
-    'missing item price': { items: [{ id: 'product-a', name: 'Pan', qty: 1 }] },
-    'non-map item': { items: ['invalid'] },
-    'string quantity': { items: [{ ...item, qty: '1' }] },
-    'string price': { items: [{ ...item, price: '10' }] },
-    'boolean quantity': { items: [{ ...item, qty: true }] },
-    'boolean price': { items: [{ ...item, price: true }] },
-    'empty product ID': { items: [{ ...item, id: '' }] },
-    'numeric product ID': { items: [{ ...item, id: 123 }] },
-    'boolean product ID': { items: [{ ...item, id: true }] },
-    'map product ID': { items: [{ ...item, id: {} }] },
+    'non-list items': { items: {} },
+    'non-numeric total': { total: '10' },
+    'non-timestamp creation': { createdAt: isoDate },
     'pre-voided sale': { voided: true },
   })) {
     it(`sales reject ${label}`, async () => {
       await assertFails(setDoc(doc(cashierDb(), 'sales/invalid'), { ...sale(), ...override }));
     });
   }
-  it('all 20 supported cart lines are validated and an oversized cart is rejected', async () => {
-    const items = Array.from({ length: 20 }, () => ({ ...item }));
-    await assertSucceeds(setDoc(doc(cashierDb(), 'sales/max-lines'), { ...sale(), items }));
-    items[19] = { ...item, qty: 0 };
-    await assertFails(setDoc(doc(cashierDb(), 'sales/last-invalid'), { ...sale(), items }));
-    await assertFails(setDoc(doc(cashierDb(), 'sales/oversized'), {
-      ...sale(), items: Array.from({ length: 21 }, () => ({ ...item })),
-    }));
+  it('sales accept more than 20 distinct products without an artificial limit', async () => {
+    const items = Array.from({ length: 30 }, (_, index) => ({ ...item, id: `product-${index}` }));
+    await assertSucceeds(setDoc(doc(cashierDb(), 'sales/many-lines'), { ...sale(), items, total: 300 }));
   });
   it('cashier sales queries need the assigned branch while owners can query their whole tenant', async () => {
     await assertSucceeds(getDocs(query(collection(cashierDb(), 'sales'),
@@ -398,8 +385,15 @@ describe('Financial collections and query compatibility', () => {
     await assertFails(deleteDoc(doc(cashierDb(), 'contracts/contract-a')));
     await assertSucceeds(deleteDoc(doc(ownerDb(), 'contracts/contract-a')));
   });
-  it('the maximum cart remains authorized in complete POS and voiding batches', async () => {
-    const items = Array.from({ length: 20 }, (_, index) => ({ ...item, id: `line-${index}` }));
+  it('delivered contracts support debt transitions and reject unknown statuses', async () => {
+    const target = doc(cashierDb(), 'contracts/contract-a');
+    await assertSucceeds(updateDoc(target, { status: 'entregado' }));
+    await assertSucceeds(updateDoc(target, { status: 'entregado_con_deuda' }));
+    await assertSucceeds(updateDoc(target, { status: 'entregado' }));
+    await assertFails(updateDoc(target, { status: 'invalid' }));
+  });
+  it('more than 20 products remain authorized in complete POS and voiding batches', async () => {
+    const items = Array.from({ length: 30 }, (_, index) => ({ ...item, id: `line-${index}` }));
     await env.withSecurityRulesDisabled(async ctx => {
       const fixtures = writeBatch(ctx.firestore());
       for (const line of items) fixtures.set(doc(ctx.firestore(), 'products', line.id), {
@@ -409,7 +403,7 @@ describe('Financial collections and query compatibility', () => {
     });
     const actor = cashierDb();
     const create = writeBatch(actor);
-    create.set(doc(actor, 'sales/max-batch'), { ...sale(), items, total: 200 });
+    create.set(doc(actor, 'sales/max-batch'), { ...sale(), items, total: 300 });
     for (const line of items) create.update(doc(actor, 'products', line.id), { 'stock.a-1': increment(-1) });
     create.set(doc(actor, 'daily_stats/stat-a'), { totalOrders: increment(1) }, { merge: true });
     await assertSucceeds(create.commit());

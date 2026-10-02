@@ -1,11 +1,11 @@
 // src/modules/agenda/AgendaManager.jsx
 import React, { memo } from 'react';
-import { useAgenda } from '../hooks/useAgenda'; 
+import { useAgenda } from '../features/customers/hooks/useAgenda';
 
 const ContactCard = memo(({ c, openEditForm, handleDelete, isLoading }) => {
   return (
     <div className="product-list-card fade-in" style={{ borderLeft: '5px solid #3b82f6' }}>
-      
+
       {/* 1. ICONO (Usamos la inicial del nombre) */}
       <div className="product-image-box" style={{ background: '#eff6ff', color: '#3b82f6', fontWeight: 'bold' }}>
         <span style={{ fontSize: '1.6rem' }}>{c.name.charAt(0).toUpperCase()}</span>
@@ -23,18 +23,18 @@ const ContactCard = memo(({ c, openEditForm, handleDelete, isLoading }) => {
 
       {/* 3. ACCIÓN (Botón Editar y Eliminar) */}
       <div className="product-action-col" style={{ flexDirection: 'row', gap: '5px' }}>
-        <button 
-          onClick={() => openEditForm(c)} 
-          disabled={isLoading} 
-          className="btn-icon" 
-          title="Editar" 
+        <button
+          onClick={() => openEditForm(c)}
+          disabled={isLoading}
+          className="btn-icon"
+          title="Editar"
           style={{ background: 'var(--bg-app)', minHeight: '34px', minWidth: '34px' }}
         >✏️</button>
-        <button 
-          onClick={() => handleDelete(c.id)} 
-          disabled={isLoading} 
-          className="btn-icon" 
-          title="Eliminar" 
+        <button
+          onClick={() => handleDelete(c.id)}
+          disabled={isLoading}
+          className="btn-icon"
+          title="Eliminar"
           style={{ background: '#fee2e2', color: '#ef4444', minHeight: '34px', minWidth: '34px' }}
         >🗑️</button>
       </div>
@@ -61,23 +61,23 @@ function AgendaManager({ user }) {
 
   return (
     <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '900px' }}>
-      
+
       <header className="module-header">
         <h2 className="module-title">
-          <span className="module-title-icon">📖</span> 
+          <span className="module-title-icon">📖</span>
           <span className="module-title-text">Agenda VIP</span>
         </h2>
         <button onClick={openAddForm} className="btn-primary btn-add-smart" style={{ background: '#3b82f6' }}>
           ➕ Nuevo Contacto
         </button>
       </header>
-      
+
       <div className="filter-bar-container">
         <div className="search-container">
           <span className="search-icon">🔍</span>
-          <input 
-            type="text" 
-            value={searchTerm} 
+          <input
+            type="text"
+            value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar contacto por nombre o celular..."
             className="search-input"
@@ -102,12 +102,12 @@ function AgendaManager({ user }) {
           </div>
         ) : (
           filteredContacts.map(c => (
-            <ContactCard 
-              key={c.id} 
-              c={c} 
-              openEditForm={openEditForm} 
+            <ContactCard
+              key={c.id}
+              c={c}
+              openEditForm={openEditForm}
               handleDelete={handleDelete}
-              isLoading={isLoading} 
+              isLoading={isLoading}
             />
           ))
         )}
@@ -119,7 +119,7 @@ function AgendaManager({ user }) {
             <h3 className="modal-header-title">
               {editing ? '✏️ Editar Contacto' : '➕ Nuevo Contacto'}
             </h3>
-            
+
             <form onSubmit={handleSave} className="smart-form">
               <div className="form-group">
                 <label className="form-label">NOMBRE DEL CLIENTE</label>
@@ -130,7 +130,7 @@ function AgendaManager({ user }) {
                 <label className="form-label">TELÉFONO / WHATSAPP</label>
                 <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Ej: 987 654 321" required disabled={isLoading} />
               </div>
-              
+
               <div className="modal-actions-footer">
                 <button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} className="btn-cancel">
                   Cancelar

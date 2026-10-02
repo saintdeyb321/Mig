@@ -1,12 +1,12 @@
 // src/modules/SalesHistory.jsx
-import React, { useState } from 'react'; 
-import { useSalesHistory } from '../hooks/useSalesHistory';
-import toast from 'react-hot-toast'; // 🚀 Necesario para el error del modal
+import React, { useState } from 'react';
+import { useSalesHistory } from '../features/sales/hooks/useSalesHistory';
+import toast from 'react-hot-toast';
 
 function SalesHistory({ user }) {
-  const { sales, isLoading, formatDate, anularVentaConfirmada, isProcessing, businessBranches } = useSalesHistory(user);
+  const { sales, error, isLoading, formatDate, anularVentaConfirmada, isProcessing, businessBranches } = useSalesHistory(user);
   const [saleToCancel, setSaleToCancel] = useState(null);
-  const [voidReason, setVoidReason] = useState(''); // 🚀 NUEVO: Estado para el motivo
+  const [voidReason, setVoidReason] = useState('');
 
   if (isLoading) {
     return (
@@ -19,17 +19,18 @@ function SalesHistory({ user }) {
 
   return (
     <div className="fade-in max-container">
-      
+
       <header className="module-header">
         <h2 className="module-title">
-          <span className="module-title-icon">📜</span> 
+          <span className="module-title-icon">📜</span>
           <span className="module-title-text">Historial de Ventas</span>
         </h2>
         <span className="toggle-label" style={{ cursor: 'default', pointerEvents: 'none' }}>
           Últimos 50 tickets
         </span>
       </header>
-      
+
+      {error && <p role="alert">No se pudo cargar el historial. Revisa la conexión y los permisos.</p>}
       {sales.length === 0 ? (
         <div className="card fade-in empty-state">
           <span className="empty-icon-lg">🏷️</span>
@@ -40,8 +41,6 @@ function SalesHistory({ user }) {
           {sales.map(s => {
             const isAnulada = s.voided === true;
             const branchName = businessBranches?.find(b => b.id === s.branchId)?.name || 'Sede Local';
-
-            // 🚀 DETECCIÓN DE PAGO PARA ESTILOS DINÁMICOS
             const tipoPago = String(s.payment || 'efectivo').toLowerCase();
             const isEfectivo = tipoPago === 'efectivo';
             const isYape = tipoPago === 'yape' || tipoPago === 'plin';
@@ -56,7 +55,7 @@ function SalesHistory({ user }) {
 
             return (
               <div key={s.id} className={`card history-card fade-in ${isAnulada ? 'card-anulada' : ''}`}>
-                
+
                 {/* CABECERA DE LA TARJETA MEJORADA */}
                 <div className={`ticket-header ${borderClass}`}>
                   <div className="ticket-info">
@@ -68,24 +67,23 @@ function SalesHistory({ user }) {
                     </div>
                     <span className="ticket-id">ID: {s.id.substring(0, 8).toUpperCase()} • 🏢 {branchName}</span>
                   </div>
-                  
+
                   <div className="ticket-amount">
                     <span className="ticket-total">S/ {Number(s.total).toFixed(2)}</span>
                     {isAnulada ? (
                        <div className="badge-payment badge-anulada">❌ ANULADA</div>
                     ) : (
-                      // 🚀 BADGES INTELIGENTES USANDO TU CSS
                       <div className={`badge-payment ${isEfectivo ? 'badge-efectivo' : isYape ? 'badge-yape' : isMixto ? 'badge-mixto' : ''}`}>
                         {isEfectivo ? '💵 EFECTIVO' : isYape ? '📲 YAPE' : isMixto ? '🔄 MIXTO' : s.payment}
                       </div>
                     )}
                   </div>
                 </div>
-                
+
                 {/* DETALLE COMPRA */}
                 <div className="ticket-body">
                   <p className="ticket-section-title">Detalle del Ticket</p>
-                  
+
                   <div className="ticket-items-list">
                     {s.items && s.items.map((i, index) => (
                       <div key={i.id || index} className="ticket-item-row">
@@ -117,7 +115,7 @@ function SalesHistory({ user }) {
                         </div>
                       )}
 
-                      {/* 🚀 Desglose Mixto (Barra Dividida Efectivo + Yape) */}
+
                       {isMixto && s.splitPayments && (
                         <div className="ticket-split-row fade-in">
                           <div className="split-efectivo-box">
@@ -142,12 +140,12 @@ function SalesHistory({ user }) {
                       {s.cashierName?.includes('@') ? 'Cajero de Turno' : s.cashierName}
                     </span>
                   </div>
-                  
-                  {/* 🚀 FIX: Permiso visual para el cajero */}
+
+
                   {!isAnulada && !s.isOffline && (user?.role === 'dueño' || user?.role === 'superadmin' || user?.role === 'cajero') && (
-                    <button 
-                      className="btn-danger-solid" 
-                      onClick={() => setSaleToCancel(s)} 
+                    <button
+                      className="btn-danger-solid"
+                      onClick={() => setSaleToCancel(s)}
                       disabled={isProcessing}
                     >
                       {isProcessing ? '...' : 'Anular Ticket'}
@@ -161,7 +159,7 @@ function SalesHistory({ user }) {
         </div>
       )}
 
-      {/* 🚀 MODAL CENTRAL OBLIGATORIO DE JUSTIFICACIÓN (Intacto, 0 modificaciones) */}
+
       {saleToCancel && (
         <div className="modal-overlay fade-in" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="card modal-danger" style={{ maxWidth: '400px', width: '100%', textAlign: 'left', padding: '30px', borderTop: '8px solid #ef4444' }}>
@@ -169,24 +167,23 @@ function SalesHistory({ user }) {
             <p className="modal-desc" style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>
               Estás a punto de anular una venta de <strong>S/ {Number(saleToCancel.total).toFixed(2)}</strong>. El dinero se restará de la caja y se devolverá el stock.
             </p>
-            
+
             <form onSubmit={(e) => {
               e.preventDefault();
               if (voidReason.trim().length < 5) {
                 toast.error("Por favor, explica detalladamente el motivo.");
                 return;
               }
-              // 🚀 Pasamos el ticket y el motivo al Hook
-              anularVentaConfirmada(saleToCancel, voidReason); 
+              anularVentaConfirmada(saleToCancel, voidReason);
               setSaleToCancel(null);
               setVoidReason('');
             }}>
-              
+
               <div style={{ marginBottom: '25px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '0.85rem', color: '#b45309' }}>
                   MOTIVO DE LA ANULACIÓN (Obligatorio):
                 </label>
-                <textarea 
+                <textarea
                   required
                   minLength="5"
                   value={voidReason}

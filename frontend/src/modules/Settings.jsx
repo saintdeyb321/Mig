@@ -1,26 +1,26 @@
 // src/modules/Settings.jsx
 import React, { useState } from 'react';
-import { useSettings } from '../hooks/useSettings';
-import BranchManager from './BranchManager'; 
+import { useSettings } from '../features/settings/hooks/useSettings';
+import BranchManager from './BranchManager';
 
 function Settings({ user }) {
-  const { 
-    companyData, handleCompanyDataChange, saveCompanyData, isSavingData 
+  const {
+    companyData, handleCompanyDataChange, saveCompanyData, isSavingData
   } = useSettings(user);
 
   const [showBranches, setShowBranches] = useState(false);
   const [isEditingCompany, setIsEditingCompany] = useState(false);
-  
+
   const hasCompanyData = Boolean(companyData?.ruc || companyData?.razonSocial);
 
   const handleSaveCompany = async () => {
     await saveCompanyData();
-    setIsEditingCompany(false); 
+    setIsEditingCompany(false);
   };
 
   return (
     <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '900px' }}>
-      
+
       {/* HEADER SIMÉTRICO NATIVO */}
       <header className="module-header">
         <h2 className="module-title">
@@ -38,19 +38,19 @@ function Settings({ user }) {
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)' }}>🏢 Sucursales</h3>
             <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>Administra tus locales físicos y sus métodos de pago.</p>
           </div>
-          
-          <button 
-            type="button" 
+
+          <button
+            type="button"
             onClick={() => setShowBranches(!showBranches)}
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
+            style={{
+              display: 'flex',
+              alignItems: 'center',
               gap: '8px',
-              padding: '6px 14px', 
-              borderRadius: '8px', 
-              border: '1px solid var(--border)', 
-              background: showBranches ? 'var(--bg-app)' : 'var(--bg-card)', 
-              cursor: 'pointer', 
+              padding: '6px 14px',
+              borderRadius: '8px',
+              border: '1px solid var(--border)',
+              background: showBranches ? 'var(--bg-app)' : 'var(--bg-card)',
+              cursor: 'pointer',
               fontSize: '0.9rem',
               fontWeight: '600',
               color: 'var(--text-main)',
@@ -59,11 +59,11 @@ function Settings({ user }) {
             }}
           >
             <span>{showBranches ? 'Ocultar Sucursales' : 'Mostrar Sucursales'}</span>
-            <span style={{ 
-              display: 'inline-block', 
+            <span style={{
+              display: 'inline-block',
               fontSize: '0.8rem',
-              transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
-              transform: showBranches ? 'rotate(-180deg)' : 'rotate(0deg)' 
+              transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              transform: showBranches ? 'rotate(-180deg)' : 'rotate(0deg)'
             }}>
               ▼
             </span>
@@ -71,9 +71,9 @@ function Settings({ user }) {
         </div>
 
         {showBranches && (
-          <div 
-            className="card fade-in" 
-            style={{ 
+          <div
+            className="card fade-in"
+            style={{
               padding: '16px',
               animation: 'fadeInDown 0.3s ease-out'
             }}
@@ -93,7 +93,7 @@ function Settings({ user }) {
             <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>Información para los tickets y facturas.</p>
           </div>
           {hasCompanyData && !isEditingCompany && (
-            <button 
+            <button
               onClick={() => setIsEditingCompany(true)}
               style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: '#f5be87', cursor: 'pointer', fontSize: '0.9rem', fontWeight: '600' }}
             >
@@ -125,7 +125,7 @@ function Settings({ user }) {
                   <input type="text" name="telefono" value={companyData.telefono} onChange={handleCompanyDataChange} placeholder="987 654 321" />
                 </div>
               </div>
-              
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
                 {hasCompanyData && (
                   <button type="button" className="btn-cancel" onClick={() => setIsEditingCompany(false)} disabled={isSavingData}>

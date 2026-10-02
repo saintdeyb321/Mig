@@ -1,19 +1,17 @@
 // src/modules/CategoryManager.jsx
 import React, { memo } from 'react';
-import { useCategories } from '../hooks/useCategories'; 
-
-// 🚀 OPTIMIZACIÓN: El Escudo de Memoria (React.memo)
+import { useCategories } from '../features/catalog/hooks/useCategories';
 // Esta tarjeta solo se redibujará si su nombre o estado cambian en Firebase.
 // Escribir en la barra de búsqueda ya NO afectará a las categorías que no coincidan.
 const CategoryCard = memo(({ c, openEditForm, isLoading }) => {
   const isInactive = c.status === 'inactivo';
-  
+
   // Reutilizamos el estilo de las tarjetas de productos
   let cardClasses = `product-list-card fade-in ${isInactive ? 'inactive inactive-border' : ''}`;
 
   return (
     <div className={cardClasses} style={!isInactive ? { borderLeft: '5px solid var(--primary)' } : {}}>
-      
+
       {/* 1. ICONO */}
       <div className="product-image-box" style={{ background: isInactive ? 'var(--bg-app)' : 'var(--primary-light)' }}>
         <span style={{ fontSize: '1.6rem', opacity: isInactive ? 0.4 : 1 }}>🏷️</span>
@@ -25,9 +23,9 @@ const CategoryCard = memo(({ c, openEditForm, isLoading }) => {
           {c.name}
         </h3>
         <div className="product-badges-row">
-          <span className="badge-stock" style={{ 
-            background: isInactive ? '#fee2e2' : '#d1fae5', 
-            color: isInactive ? 'var(--danger)' : 'var(--success)' 
+          <span className="badge-stock" style={{
+            background: isInactive ? '#fee2e2' : '#d1fae5',
+            color: isInactive ? 'var(--danger)' : 'var(--success)'
           }}>
             {isInactive ? '🔴 INACTIVA' : '🟢 ACTIVA'}
           </span>
@@ -36,11 +34,11 @@ const CategoryCard = memo(({ c, openEditForm, isLoading }) => {
 
       {/* 3. ACCIÓN (Botón Editar) */}
       <div className="product-action-col">
-        <button 
-          onClick={() => openEditForm(c)} 
-          disabled={isLoading} 
-          className="btn-icon" 
-          title="Editar" 
+        <button
+          onClick={() => openEditForm(c)}
+          disabled={isLoading}
+          className="btn-icon"
+          title="Editar"
           style={{ background: 'var(--bg-app)', minHeight: '34px', minWidth: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           ✏️
@@ -58,8 +56,6 @@ function CategoryManager({ user }) {
     name, setName, status, setStatus, editing, showInactive, setShowInactive,
     filteredCategories, openAddForm, openEditForm, handleSave
   } = useCategories(user);
-
-// 🚀 EL ESCUDO PROTECTOR (Transición invisible)
   if (isLoading) {
     return (
       <div className="module-loader fade-in">
@@ -72,26 +68,26 @@ function CategoryManager({ user }) {
 
   return (
     <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '900px' }}>
-      
+
       {/* HEADER REFACTORIZADO */}
       <header className="module-header">
         <h2 className="module-title">
-          <span className="module-title-icon">📂</span> 
+          <span className="module-title-icon">📂</span>
           <span className="module-title-text">Categorias</span>
         </h2>
-        
+
         <button onClick={openAddForm} className="btn-primary btn-add-smart">
           ➕ Nueva Categoria
         </button>
       </header>
-      
+
       {/* BARRA DE BÚSQUEDA Y TOGGLE */}
       <div className="filter-bar-container">
         <div className="search-container">
           <span className="search-icon">🔍</span>
-          <input 
-            type="text" 
-            value={searchTerm} 
+          <input
+            type="text"
+            value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar categoría por nombre..."
             className="search-input"
@@ -102,11 +98,11 @@ function CategoryManager({ user }) {
         </div>
 
         <label className="toggle-label">
-          <input 
-            type="checkbox" 
+          <input
+            type="checkbox"
             className="toggle-checkbox"
-            checked={showInactive} 
-            onChange={(e) => setShowInactive(e.target.checked)} 
+            checked={showInactive}
+            onChange={(e) => setShowInactive(e.target.checked)}
           />
           Ver archivados
         </label>
@@ -116,7 +112,7 @@ function CategoryManager({ user }) {
         Lista de Categorías ({filteredCategories.length})
       </h3>
 
-{/* 🚀 LISTADO OPTIMIZADO Y LIMPIO */}
+
       <div className="product-list-container">
         {filteredCategories.length === 0 ? (
           <div className="card fade-in empty-state">
@@ -128,11 +124,11 @@ function CategoryManager({ user }) {
         ) : (
           filteredCategories.map(c => (
             /* 🚀 Invocamos la tarjeta blindada */
-            <CategoryCard 
-              key={c.id} 
-              c={c} 
-              openEditForm={openEditForm} 
-              isLoading={isLoading} 
+            <CategoryCard
+              key={c.id}
+              c={c}
+              openEditForm={openEditForm}
+              isLoading={isLoading}
             />
           ))
         )}
@@ -145,7 +141,7 @@ function CategoryManager({ user }) {
             <h3 className="modal-header-title">
               {editing ? '✏️ Editar Categoría' : '➕ Nueva Categoría'}
             </h3>
-            
+
             <form onSubmit={handleSave} className="smart-form">
               <div className="form-group">
                 <label className="form-label">NOMBRE</label>
@@ -159,7 +155,7 @@ function CategoryManager({ user }) {
                   <option value="inactivo">🔴 Inactivo</option>
                 </select>
               </div>
-              
+
               <div className="modal-actions-footer">
                 <button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} className="btn-cancel">
                   Cancelar

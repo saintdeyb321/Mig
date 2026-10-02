@@ -1,27 +1,28 @@
 // src/modules/ProductCatalog.jsx
 import React, { useCallback, memo } from 'react';
-import { useProducts } from '../hooks/useProducts'; 
-import { useGlobalData } from '../context/GlobalDataContext'; 
+import { useProducts } from '../features/catalog/hooks/useProducts';
+import { useTenantData } from '../features/branches/context/TenantContext';
 import toast from 'react-hot-toast';
+import { useCatalogData } from '../features/catalog/context/CatalogContext';
 
 const getSafeStock = (product, branchId) => {
   if (!product) return 0;
-  
-  const stockObj = (typeof product.stock === 'object' && product.stock !== null) ? product.stock : 
+
+  const stockObj = (typeof product.stock === 'object' && product.stock !== null) ? product.stock :
                    (typeof product.rawStock === 'object' && product.rawStock !== null) ? product.rawStock : null;
-                   
+
   if (stockObj) {
     if (branchId === 'global') {
        return Object.values(stockObj).reduce((sum, val) => sum + (Number(val) || 0), 0);
     }
     return Number(stockObj[branchId] || 0);
   }
-  
-  return branchId === 'global' ? Number(product.stock || 0) : 0; 
+
+  return branchId === 'global' ? Number(product.stock || 0) : 0;
 };
 
 const ProductCard = memo(({ p, activeBranchId, openEditForm, isLoading }) => {
-  const currentStock = getSafeStock(p, activeBranchId); 
+  const currentStock = getSafeStock(p, activeBranchId);
 
   const isAgotado = currentStock <= 0;
   const isPoco = currentStock > 0 && currentStock <= 10;
@@ -65,14 +66,15 @@ const ProductCard = memo(({ p, activeBranchId, openEditForm, isLoading }) => {
 });
 
 function ProductCatalog({ user }) {
-  const { activeBranchId, globalProducts } = useGlobalData(); 
+  const { activeBranchId } = useTenantData();
+  const { products: globalProducts } = useCatalogData();
 
   const {
     categories, businessBranches, isLoading, searchTerm, setSearchTerm,
     showFormModal, setShowFormModal, showInactive, setShowInactive,
     name, setName, price, setPrice, category, setCategory, status, setStatus, editing,
-    branchStocks, setBranchStocks, 
-    imageUrl, setImageUrl, 
+    branchStocks, setBranchStocks,
+    imageUrl, setImageUrl,
     filteredProducts, openAddForm, openEditForm, handleSave
   } = useProducts(user);
 
@@ -92,8 +94,8 @@ function ProductCatalog({ user }) {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 200; 
-        const MAX_HEIGHT = 200; 
+        const MAX_WIDTH = 200;
+        const MAX_HEIGHT = 200;
         let width = img.width;
         let height = img.height;
 
@@ -108,10 +110,10 @@ function ProductCatalog({ user }) {
         ctx.drawImage(img, 0, 0, width, height);
 
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-        setImageUrl(compressedBase64); 
+        setImageUrl(compressedBase64);
       };
     };
-  }, [setImageUrl]); 
+  }, [setImageUrl]);
 
   const currentEditingProduct = editing ? globalProducts.find(p => p.id === editing) : null;
 
@@ -126,13 +128,13 @@ function ProductCatalog({ user }) {
 
   return (
     <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '900px' }}>
-      
+
       <header className="module-header">
         <h2 className="module-title">
-          <span className="module-title-icon">☕</span> 
+          <span className="module-title-icon">☕</span>
           <span className="module-title-text">Productos</span>
         </h2>
-        
+
         <button onClick={openAddForm} className="btn-primary btn-add-smart">
           ➕ Nuevo Producto
         </button>
@@ -141,9 +143,9 @@ function ProductCatalog({ user }) {
       <div className="filter-bar-container">
         <div className="search-container">
           <span className="search-icon">🔍</span>
-          <input 
-            type="text" 
-            value={searchTerm} 
+          <input
+            type="text"
+            value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar producto..."
             className="search-input"
@@ -154,11 +156,11 @@ function ProductCatalog({ user }) {
         </div>
 
         <label className="toggle-label">
-          <input 
-            type="checkbox" 
-            className="toggle-checkbox" 
-            checked={showInactive} 
-            onChange={(e) => setShowInactive(e.target.checked)} 
+          <input
+            type="checkbox"
+            className="toggle-checkbox"
+            checked={showInactive}
+            onChange={(e) => setShowInactive(e.target.checked)}
           />
           Ver archivados
         </label>
@@ -178,12 +180,12 @@ function ProductCatalog({ user }) {
           </div>
         ) : (
           filteredProducts.map(p => (
-            <ProductCard 
-              key={p.id} 
-              p={p} 
-              activeBranchId={activeBranchId} 
-              openEditForm={openEditForm} 
-              isLoading={isLoading} 
+            <ProductCard
+              key={p.id}
+              p={p}
+              activeBranchId={activeBranchId}
+              openEditForm={openEditForm}
+              isLoading={isLoading}
             />
           ))
         )}
@@ -192,13 +194,13 @@ function ProductCatalog({ user }) {
       {showFormModal && (
         <div className="modal-overlay fade-in" style={{ zIndex: 9999 }}>
           <div className="card modal-content">
-            
+
             <h3 className="modal-header-title">
               {editing ? '✏️ Editar Producto' : '📦 Nuevo Producto'}
             </h3>
-            
+
             <form onSubmit={handleSave} className="smart-form">
-              
+
               <div className="upload-zone">
                 <div className="upload-preview-box">
                   {imageUrl ? (
@@ -207,16 +209,16 @@ function ProductCatalog({ user }) {
                     <span className="preview-placeholder">📷</span>
                   )}
                 </div>
-                
+
                 <div className="upload-actions-col">
                   <label className="form-label">FOTO DEL PRODUCTO (Opcional)</label>
-                  
-                  <input 
-                    type="file" id="product-img" accept="image/*" 
-                    onChange={handleImageUpload} disabled={isLoading} 
-                    className="hidden-input" 
+
+                  <input
+                    type="file" id="product-img" accept="image/*"
+                    onChange={handleImageUpload} disabled={isLoading}
+                    className="hidden-input"
                   />
-                  
+
                   <div className="upload-buttons-row">
                     <label htmlFor="product-img" className="btn-upload-file">
                        {imageUrl ? '🔄 Cambiar' : '📁 Seleccionar archivo'}
@@ -235,7 +237,7 @@ function ProductCatalog({ user }) {
                 <label className="form-label">NOMBRE</label>
                 <input autoFocus value={name} onChange={e => setName(e.target.value)} required disabled={isLoading} maxLength="100" pattern=".*\S+.*"/>
               </div>
-              
+
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">PRECIO (S/)</label>
@@ -254,14 +256,14 @@ function ProductCatalog({ user }) {
                 <label className="stock-panel-title">
                   <span>📦</span> DISTRIBUCIÓN DE INVENTARIO
                 </label>
-                
+
                 {businessBranches.length === 0 ? (
                   <p className="stock-panel-empty">
                     ⚠️ No tienes sucursales creadas. Ve a Configuración para crearlas.
                   </p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    
+
                     <div className="stock-table-header">
                       <span className="stock-col-title">SUCURSAL</span>
                       <span className="stock-col-title stock-col-right">
@@ -271,17 +273,17 @@ function ProductCatalog({ user }) {
 
                     {businessBranches.map((branch) => {
                       const stockActual = getSafeStock(currentEditingProduct, branch.id);
-                      
+
                       const ajusteInput = branchStocks[branch.id];
                       const ajusteNumerico = Number(ajusteInput);
                       const delta = isNaN(ajusteNumerico) ? 0 : Math.floor(ajusteNumerico);
-                      
+
                       const stockFinal = Math.max(0, stockActual + delta);
                       const historyText = currentEditingProduct?.lastStockHistory?.[branch.id];
 
                       return (
                         <div key={branch.id} className="stock-table-row">
-                          
+
                           <div className="stock-branch-info">
                             <span className="stock-branch-name">
                               {branch.name.toUpperCase()}
@@ -291,7 +293,7 @@ function ProductCatalog({ user }) {
                                 <span className="stock-current-info" style={{ display: 'block' }}>
                                   En almacén: <span className="stock-current-number">{stockActual}</span> uds.
                                 </span>
-                                
+
                                 {historyText && (
                                   <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: '800' }}>
                                     Último mov: {historyText}
@@ -302,18 +304,18 @@ function ProductCatalog({ user }) {
                           </div>
 
                           <div className="stock-input-wrapper">
-                            {/* 🚀 FIX: TYPE="NUMBER" NATIVO EVITA CUALQUIER BUG DE EXPRESIÓN REGULAR */}
-                            <input 
-                              type="number" 
-                              value={ajusteInput !== undefined ? ajusteInput : ''} 
+
+                            <input
+                              type="number"
+                              value={ajusteInput !== undefined ? ajusteInput : ''}
                               onChange={(e) => {
                                 setBranchStocks(prev => ({ ...prev, [branch.id]: e.target.value }));
                               }}
                               placeholder={editing ? "Ej: 10, -5" : "0"}
-                              disabled={isLoading} 
+                              disabled={isLoading}
                               className={`stock-adjust-input ${delta > 0 ? 'is-addition' : delta < 0 ? 'is-deduction' : ''}`}
                             />
-                            
+
                             {editing && (ajusteInput !== undefined && ajusteInput !== '') && !isNaN(ajusteNumerico) && delta !== 0 && (
                               <span className={`stock-preview-text ${delta > 0 ? 'text-addition' : 'text-deduction'}`}>
                                 ➔ {stockFinal} uds.
@@ -335,7 +337,7 @@ function ProductCatalog({ user }) {
                   </div>
                 )}
               </div>
-              
+
               <div className="form-group">
                 <label className="form-label">ESTADO DEL PRODUCTO</label>
                 <select value={status} onChange={e => setStatus(e.target.value)} disabled={isLoading}>
@@ -343,7 +345,7 @@ function ProductCatalog({ user }) {
                   <option value="inactivo">🔴 Inactivo (Oculto)</option>
                 </select>
               </div>
-              
+
               <div className="modal-actions-footer">
                 <button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} className="btn-cancel">
                   Cancelar

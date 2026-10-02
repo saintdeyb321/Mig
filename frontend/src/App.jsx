@@ -4,7 +4,7 @@ import './index.css';
 import toast, { Toaster } from 'react-hot-toast';
 
 import { useAuthManager } from './hooks/useAuthManager';
-import { GlobalDataProvider } from './context/GlobalDataContext';
+import { SessionProviders } from './app/providers/SessionProviders';
 import { useShiftMonitor } from './hooks/useShiftMonitor';
 import { useMaintenance } from './hooks/useMaintenance';
 
@@ -17,8 +17,8 @@ import AppLayout from './layouts/AppLayout';
 import LicenseGuard from './components/LicenseGuard';
 import ReloadPrompt from './components/ReloadPrompt';
 import MaintenanceScreen from './components/MaintenanceScreen';
-import BranchGuard from './components/BranchGuard'; 
-import TermsModal from './components/TermsModal'; 
+import BranchGuard from './components/BranchGuard';
+import TermsModal from './components/TermsModal';
 
 import Auth from './modules/Auth';
 
@@ -31,7 +31,6 @@ const Reports = React.lazy(() => import('./modules/Reports'));
 const UserManagement = React.lazy(() => import('./modules/UserManagement'));
 const Settings = React.lazy(() => import('./modules/Settings'));
 const SuperAdmin = React.lazy(() => import('./modules/SuperAdmin'));
-// 🚀 NUEVO: Importación perezosa del módulo de Contratos
 const ContractManager = React.lazy(() => import('./modules/contracts/ContractManager'));
 const AgendaManager = React.lazy(() => import('./modules/AgendaManager'));
 
@@ -42,7 +41,7 @@ const NO_OP_FUNCTION = () => {};
 function App() {
   const [tab, setTab] = useState('pos');
   const { user, authLoading, handleLogout } = useAuthManager();
-  
+
   const { isMaintenance, maintenanceMsg } = useMaintenance();
 
   useShiftMonitor(user);
@@ -51,16 +50,16 @@ function App() {
     if (user?.uid) {
       retryOfflineSales(user.uid);
     }
-    
+
     const handleOnline = async () => {
       if (user?.uid) {
         const syncToast = toast.loading('Conexión recuperada. Sincronizando datos locales...', {
           style: { background: '#fffbeb', color: '#b45309', border: '1px solid #fcd34d' },
           icon: '🔄'
         });
-        
-        await retryOfflineSales(user.uid); 
-        
+
+        await retryOfflineSales(user.uid);
+
         toast.success('¡Sincronización completada! Todo está en la nube.', { id: syncToast });
       }
     };
@@ -76,7 +75,7 @@ function App() {
 
   if (isMaintenance) {
     return <MaintenanceScreen message={maintenanceMsg} />;
-  } 
+  }
 
   if (authLoading) {
     return (
@@ -99,16 +98,16 @@ function App() {
       ) : user.hasAcceptedTerms !== true ? (
         <>
           <Toaster position="top-center" />
-          <TermsModal 
-            user={user} 
-            onAccepted={() => window.location.reload()} 
+          <TermsModal
+            user={user}
+            onAccepted={() => window.location.reload()}
           />
         </>
       ) : (
-        <GlobalDataProvider key={`${user.uid}:${user.businessId}:${user.role}:${user.branchId || ''}`} user={user}>
+        <SessionProviders user={user}>
           <LicenseGuard user={user} handleLogout={handleLogout}>
             <BranchGuard user={user} handleLogout={handleLogout}>
-              
+
               <Toaster
                 position="top-right"
                 reverseOrder={false}
@@ -128,8 +127,8 @@ function App() {
                 >
                   {/* === RUTAS DE LA APLICACIÓN === */}
                   {tab === 'pos' && <POS user={user} />}
-                  
-                  {/* 🚀 NUEVA RUTA: El Cajero también debe poder entrar aquí */}
+
+
                   {tab === 'contracts' && (
                     <UserRoleGate user={user} allowedRoles={ALL_ROLES}>
                       <ContractManager user={user} />
@@ -167,7 +166,7 @@ function App() {
                       <UserManagement user={user} />
                     </UserRoleGate>
                   )}
-                  {/* 🚀 NUEVA RUTA DE AGENDA PROTEGIDA */}
+
                   {tab === 'agenda' && (
                     <UserRoleGate user={user} allowedRoles={ADMIN_ROLES}>
                       <AgendaManager user={user} />
@@ -183,7 +182,7 @@ function App() {
 
             </BranchGuard>
           </LicenseGuard>
-        </GlobalDataProvider>
+        </SessionProviders>
       )}
     </>
   );

@@ -1,6 +1,6 @@
 // src/modules/ExportSales.jsx
 import React, { useState, memo } from "react"
-import { useExportSales } from "../hooks/useExportSales"
+import { useExportSales } from "../features/reports/hooks/useExportSales"
 
 function ExportSales({ user }) {
   // 🚀 FIX: Ahora controlamos el RANGO DE TIEMPO, no el tipo de reporte.

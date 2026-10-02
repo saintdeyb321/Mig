@@ -1,25 +1,23 @@
 import React, { memo } from 'react';
-import { useUserManagement } from '../hooks/useUserManagement';
-
-// 🚀 Tarjeta de usuario (Restaurada al diseño CSS original)
+import { useUserManagement } from '../features/users/hooks/useUserManagement';
 const UserCard = memo(({ u, user, branches, isLoading, openEditForm, toggleStatus, cancelInvite }) => {
   const isInactive = u.status === 'inactivo';
   const isDueño = u.role === 'dueño';
   const isSuperAdmin = u.role === 'superadmin';
-  const isInvite = u.isInvite; 
+  const isInvite = u.isInvite;
 
-  const branchName = (isDueño || isSuperAdmin) 
-    ? '🌐 Acceso Global' 
+  const branchName = (isDueño || isSuperAdmin)
+    ? '🌐 Acceso Global'
     : (branches.find(b => b.id === u.branchId)?.name || (isInvite ? '⏳ Esperando registro...' : '⚠️ Sin sede asignada'));
 
   return (
     <div className={`user-card fade-in ${isInactive ? 'inactive' : ''}`} style={isInvite ? { borderLeftColor: '#f59e0b' } : {}}>
-      
+
       <div className="user-card-content">
         <div className={`user-avatar ${isDueño || isSuperAdmin ? 'avatar-admin' : 'avatar-staff'}`} style={isInvite ? { background: '#fef3c7', borderColor: '#fde68a' } : {}}>
           {isInvite ? '✉️' : (isDueño || isSuperAdmin ? '👑' : '👨‍🍳')}
         </div>
-        
+
         <div className="user-info">
           <div className="user-name-row">
             <span className={`user-name ${isInactive ? 'text-strikethrough text-muted' : 'text-main'}`}>
@@ -29,11 +27,11 @@ const UserCard = memo(({ u, user, branches, isLoading, openEditForm, toggleStatu
               {isInvite ? 'Invitación' : u.role}
             </span>
           </div>
-          
+
           <span className="employee-card-email" title={u.email}>
             {u.email}
           </span>
-          
+
           <div className="user-shift" style={{ marginTop: '5px', color: (isDueño || isSuperAdmin) ? 'var(--primary)' : 'var(--text-muted)', fontWeight: (isDueño || isSuperAdmin) ? '600' : 'normal' }}>
             <span className="shift-icon">{(isDueño || isSuperAdmin) ? '🌍' : '🏢'}</span>
             <span className="shift-text" style={{ color: 'inherit' }}>{branchName}</span>
@@ -47,12 +45,12 @@ const UserCard = memo(({ u, user, branches, isLoading, openEditForm, toggleStatu
           )}
         </div>
       </div>
-      
+
       <div className="user-actions">
         {isInvite ? (
-          <button 
-            onClick={() => cancelInvite(u.id)} 
-            disabled={isLoading} 
+          <button
+            onClick={() => cancelInvite(u.id)}
+            disabled={isLoading}
             className="btn-user-action"
             style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' }}
           >
@@ -60,18 +58,18 @@ const UserCard = memo(({ u, user, branches, isLoading, openEditForm, toggleStatu
           </button>
         ) : (
           <>
-            <button 
-              onClick={() => openEditForm(u)} 
-              disabled={isLoading || isInactive} 
+            <button
+              onClick={() => openEditForm(u)}
+              disabled={isLoading || isInactive}
               className="btn-user-action btn-edit-user"
             >
               <span>✏️</span> Editar
             </button>
-            
+
             {u.email !== user.email && !isSuperAdmin && (
-              <button 
-                onClick={() => toggleStatus(u.id, u.status || 'activo')} 
-                disabled={isLoading} 
+              <button
+                onClick={() => toggleStatus(u.id, u.status || 'activo')}
+                disabled={isLoading}
                 className={`btn-user-action ${isInactive ? 'btn-toggle-on' : 'btn-toggle-off'}`}
               >
                 <span>{isInactive ? '🔓' : '🔒'}</span> {isInactive ? 'Habilitar' : 'Deshabilitar'}
@@ -94,16 +92,14 @@ function UserManagement({ user }) {
     branchId, setBranchId, branches,
     openAddForm, openEditForm, handleSave, toggleStatus, cancelInvite
   } = useUserManagement(user);
-
-  // 🚀 ORDENAMIENTO ESTRICTO: Dueño > Superadmin > Invitaciones > Cajeros
   const sortedUsers = [...filteredUsers].sort((a, b) => {
     const roleRank = { 'dueño': 1, 'superadmin': 2, 'invite': 3, 'cajero': 4 };
     const rankA = a.isInvite ? roleRank['invite'] : (roleRank[a.role] || 5);
     const rankB = b.isInvite ? roleRank['invite'] : (roleRank[b.role] || 5);
-    
+
     // Si tienen diferente rol, se ordenan por rango
     if (rankA !== rankB) return rankA - rankB;
-    
+
     // Si tienen el mismo rol, se ordenan alfabéticamente
     const nameA = (a.firstName || '').toLowerCase();
     const nameB = (b.firstName || '').toLowerCase();
@@ -115,7 +111,7 @@ function UserManagement({ user }) {
 
       <header className="module-header">
         <h2 className="module-title">
-          <span className="module-title-icon">👥</span> 
+          <span className="module-title-icon">👥</span>
           <span className="module-title-text">Personal</span>
         </h2>
         <button onClick={openAddForm} className="btn-primary btn-add-smart">
@@ -126,10 +122,10 @@ function UserManagement({ user }) {
       <div className="filter-bar-container">
         <div className="search-container">
           <span className="search-icon">🔍</span>
-          <input 
-            type="text" 
+          <input
+            type="text"
             className="search-input"
-            value={searchTerm} 
+            value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar por nombre o correo..."
           />
@@ -139,11 +135,11 @@ function UserManagement({ user }) {
         </div>
 
         <label className="toggle-label" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-          <input 
-            type="checkbox" 
+          <input
+            type="checkbox"
             className="toggle-checkbox"
-            checked={showInactive} 
-            onChange={(e) => setShowInactive(e.target.checked)} 
+            checked={showInactive}
+            onChange={(e) => setShowInactive(e.target.checked)}
           />
           Mostrar bloqueados
         </label>
@@ -161,13 +157,13 @@ function UserManagement({ user }) {
           </div>
         ) : (
           sortedUsers.map(u => (
-            <UserCard 
-              key={u.id} 
-              u={u} 
-              user={user} 
+            <UserCard
+              key={u.id}
+              u={u}
+              user={user}
               branches={branches}
-              isLoading={isLoading} 
-              openEditForm={openEditForm} 
+              isLoading={isLoading}
+              openEditForm={openEditForm}
               toggleStatus={toggleStatus}
               cancelInvite={cancelInvite}
             />
@@ -182,13 +178,13 @@ function UserManagement({ user }) {
             <h3 className="modal-header-title">
               {editing ? '✏️ Editar Perfil' : '➕ Nuevo Miembro'}
             </h3>
-            
+
             {!editing && (
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
                 Se enviará una invitación. El empleado debe iniciar sesión con Google usando este correo.
               </p>
             )}
-            
+
             <form onSubmit={handleSave} className="smart-form">
               <div className="form-row">
                 <div className="form-group">
@@ -223,10 +219,10 @@ function UserManagement({ user }) {
                 {role === 'cajero' && (
                   <div className="form-group fade-in">
                     <label className="form-label" style={{ color: 'var(--primary)' }}>🏢 ASIGNAR A SEDE</label>
-                    <select 
-                      value={branchId} 
-                      onChange={e => setBranchId(e.target.value)} 
-                      required 
+                    <select
+                      value={branchId}
+                      onChange={e => setBranchId(e.target.value)}
+                      required
                       disabled={isLoading}
                       style={{ border: '2px solid var(--primary)' }}
                     >
@@ -254,7 +250,7 @@ function UserManagement({ user }) {
                   </div>
                 </div>
               )}
-              
+
               <div className="modal-actions-footer">
                 <button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} className="btn-cancel">Cancelar</button>
                 <button type="submit" className="btn-primary flex-1" disabled={isLoading}>{isLoading ? 'Guardando...' : (editing ? 'Guardar Cambios' : 'Enviar Invitación')}</button>

@@ -1,9 +1,7 @@
 // src/modules/BranchManager.jsx
 import React, { memo, useState } from 'react';
-import { useBranches } from '../hooks/useBranches';
-import QRPaymentCard from './QRPaymentCard'; // 🚀 IMPORTAMOS TU COMPONENTE
-
-// 🚀 TARJETA: Diseño adaptado para mostrar si tiene QR
+import { useBranches } from '../features/branches/hooks/useBranches';
+import QRPaymentCard from './QRPaymentCard';
 const BranchCard = memo(({ b, openEditForm, isProcessing }) => {
   const isInactive = b.status?.toLowerCase() === 'inactivo';
   const hasQR = Boolean(b.yapeQrUrl);
@@ -14,7 +12,7 @@ const BranchCard = memo(({ b, openEditForm, isProcessing }) => {
         <div className="user-avatar avatar-staff" style={{ position: 'relative' }}>
           <span style={{ opacity: isInactive ? 0.5 : 1 }}>🏢</span>
         </div>
-        
+
         <div className="user-info">
           <div className="user-name-row">
             <span className={`user-name ${isInactive ? 'text-strikethrough text-muted' : 'text-main'}`}>
@@ -31,11 +29,11 @@ const BranchCard = memo(({ b, openEditForm, isProcessing }) => {
               </span>
             </div>
           </div>
-          
+
           <span className="employee-card-email" style={{ marginTop: '4px' }}>
             📍 {b.address || 'Sin dirección'}
           </span>
-          
+
           <div className="user-shift" style={{ marginTop: '2px' }}>
             <span className="shift-icon">📞</span>
             <span className="shift-text" style={{ color: 'var(--text-muted)', fontWeight: '500' }}>
@@ -44,11 +42,11 @@ const BranchCard = memo(({ b, openEditForm, isProcessing }) => {
           </div>
         </div>
       </div>
-      
+
       <div className="user-actions">
-        <button 
-          onClick={() => openEditForm(b)} 
-          disabled={isProcessing} 
+        <button
+          onClick={() => openEditForm(b)}
+          disabled={isProcessing}
           className="btn-user-action btn-edit-user"
         >
           <span>✏️</span> Editar
@@ -57,8 +55,6 @@ const BranchCard = memo(({ b, openEditForm, isProcessing }) => {
     </div>
   );
 });
-
-// 🚀 MODULO PRINCIPAL
 function BranchManager({ user, isEmbedded = false }) {
   const {
     branches, isLoading, isProcessing,
@@ -72,7 +68,7 @@ function BranchManager({ user, isEmbedded = false }) {
   const [showInactive, setShowInactive] = useState(false);
 
   const filteredBranches = branches.filter(b => {
-    const matchesSearch = b.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const matchesSearch = b.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (b.address && b.address.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesStatus = showInactive ? true : b.status !== 'inactivo';
     return matchesSearch && matchesStatus;
@@ -89,11 +85,11 @@ function BranchManager({ user, isEmbedded = false }) {
 
   return (
     <div className={isEmbedded ? "fade-in" : "fade-in max-container padding-bottom-lg"} style={isEmbedded ? {} : { maxWidth: '900px', margin: '0 auto' }}>
-      
+
       {!isEmbedded && (
         <header className="module-header">
           <h2 className="module-title">
-            <span className="module-title-icon">🏢</span> 
+            <span className="module-title-icon">🏢</span>
             <span className="module-title-text">Mis Sucursales</span>
           </h2>
           <button onClick={openAddForm} className="btn-primary btn-add-smart">
@@ -103,13 +99,13 @@ function BranchManager({ user, isEmbedded = false }) {
       )}
 
       <div className="filter-bar-container" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '20px' }}>
-        
+
         <div className="search-container" style={{ flex: '1 1 200px', margin: 0 }}>
           <span className="search-icon">🔍</span>
-          <input 
-            type="text" 
+          <input
+            type="text"
             className="search-input"
-            value={searchTerm} 
+            value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Buscar por nombre..."
           />
@@ -119,11 +115,11 @@ function BranchManager({ user, isEmbedded = false }) {
         </div>
 
         <label className="toggle-label" style={{ margin: 0 }}>
-          <input 
-            type="checkbox" 
+          <input
+            type="checkbox"
             className="toggle-checkbox"
-            checked={showInactive} 
-            onChange={(e) => setShowInactive(e.target.checked)} 
+            checked={showInactive}
+            onChange={(e) => setShowInactive(e.target.checked)}
           />
           Ver inactivos
         </label>
@@ -149,11 +145,11 @@ function BranchManager({ user, isEmbedded = false }) {
           </div>
         ) : (
           filteredBranches.map(b => (
-            <BranchCard 
-              key={b.id} 
-              b={b} 
-              openEditForm={openEditForm} 
-              isProcessing={isProcessing} 
+            <BranchCard
+              key={b.id}
+              b={b}
+              openEditForm={openEditForm}
+              isProcessing={isProcessing}
             />
           ))
         )}
@@ -166,7 +162,7 @@ function BranchManager({ user, isEmbedded = false }) {
             <h3 className="modal-header-title">
               {editingBranch ? '✏️ Editar Sede' : '➕ Nueva Sede'}
             </h3>
-            
+
             <form onSubmit={handleSave} className="smart-form">
               <div className="form-group">
                 <label className="form-label">NOMBRE DE LA SEDE</label>
@@ -176,7 +172,7 @@ function BranchManager({ user, isEmbedded = false }) {
                 <label className="form-label">DIRECCIÓN FÍSICA</label>
                 <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Ej: Av. Las Begonias 123" disabled={isProcessing} />
               </div>
-              
+
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">TELÉFONO DE ATENCIÓN</label>
@@ -191,12 +187,12 @@ function BranchManager({ user, isEmbedded = false }) {
                 </div>
               </div>
 
-              {/* 🚀 AQUÍ LLAMAMOS A TU COMPONENTE EXACTAMENTE COMO PEDISTE */}
-              <QRPaymentCard 
-                qrImageBase64={qrImageBase64} 
-                isProcessing={isProcessing} 
-                handleImageChange={handleImageChange} 
-                onRemoveImage={removeQrImage} 
+
+              <QRPaymentCard
+                qrImageBase64={qrImageBase64}
+                isProcessing={isProcessing}
+                handleImageChange={handleImageChange}
+                onRemoveImage={removeQrImage}
               />
 
               <div className="modal-actions-footer" style={{ marginTop: '25px' }}>

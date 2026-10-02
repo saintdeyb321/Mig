@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:rules",
+    "test": "npm run test:architecture && npm run test:rules",
+    "test:architecture": "node --test tests/architecture.test.mjs",
     "test:rules": "firebase emulators:exec --only firestore,storage --project demo-migapos \"node --test --test-concurrency=1 tests/security.rules.test.mjs\""
   },
   "devDependencies": {

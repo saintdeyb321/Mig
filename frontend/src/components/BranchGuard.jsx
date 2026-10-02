@@ -1,9 +1,12 @@
 // src/components/BranchGuard.jsx
 import React, { useMemo } from 'react';
-import { useGlobalData } from '../context/GlobalDataContext';
+import { useCatalogData } from '../features/catalog/context/CatalogContext';
+import { useTenantData } from '../features/branches/context/TenantContext';
 
 export default function BranchGuard({ user, handleLogout, children }) {
-  const { businessBranches, isGlobalLoading } = useGlobalData();
+  const { businessBranches, isLoading: isTenantLoading } = useTenantData();
+
+  const { isLoading: isCatalogLoading } = useCatalogData();
 
   // Verificamos si el usuario es administrador
   const isAdmin = useMemo(() => {
@@ -15,25 +18,23 @@ export default function BranchGuard({ user, handleLogout, children }) {
   const myBranch = useMemo(() => {
     if (!businessBranches || !user?.branchId) return null;
     return businessBranches.find(b => b.id === user.branchId);
-    // 🚀 FIX: Pasamos 'user' completo en lugar de 'user?.branchId' para satisfacer al React Compiler
-  }, [businessBranches, user]); 
+  }, [businessBranches, user]);
 
   // Evaluamos si debemos bloquearlo
   const isBlocked = useMemo(() => {
     // Si es admin, NUNCA lo bloqueamos (necesita entrar a arreglar las cosas)
     if (isAdmin) return false;
-    
+
     // Si encontramos su sucursal y está inactiva, lo bloqueamos
     if (myBranch && myBranch.status?.toLowerCase() === 'inactivo') {
       return true;
     }
-    
+
     return false;
   }, [isAdmin, myBranch]);
 
-  // Si los datos globales aún están cargando, no hacemos nada todavía
-  if (isGlobalLoading) {
-    return null; 
+  if (isTenantLoading || isCatalogLoading) {
+    return null;
   }
 
   // 🚨 LA BARRERA DE SUCURSAL INACTIVA
@@ -53,8 +54,8 @@ export default function BranchGuard({ user, handleLogout, children }) {
           <p style={{ fontSize: '0.95rem', color: 'var(--text-muted)', marginBottom: '30px' }}>
             No puedes registrar ventas ni acceder al sistema en este momento.
           </p>
-          <button 
-            onClick={handleLogout} 
+          <button
+            onClick={handleLogout}
             className="maintenance-btn"
             style={{ background: 'var(--danger, #dc2626)', boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)' }}
           >

@@ -47,8 +47,8 @@ Usar esta tabla como control de avance.
 |---|---|---|
 | 0 | Auditoría inicial | COMPLETADA |
 | 1 | Foundation: repositorio, env y Firebase CLI | COMPLETADA |
-| 2 | Seguridad SaaS multi-tenant | EN PROGRESO |
-| 3 | Arquitectura React y Data Layer | PENDIENTE |
+| 2 | Seguridad SaaS multi-tenant | COMPLETADA |
+| 3 | Arquitectura React y Data Layer | COMPLETADA |
 | 4 | Ventas, inventario y motor offline | PENDIENTE |
 | 5 | Contratos, pedidos y ledger de pagos | PENDIENTE |
 | 6 | Caja, alertas y auditoría | PENDIENTE |
@@ -258,7 +258,7 @@ No se aprueba hasta demostrar mediante tests que un tenant no accede a otro.
 - El registro requiere email verificado e invitación exacta. Tenant, rol, sede, turno y status provienen de ella. No existe bootstrap de superadmin desde el cliente; las cuentas de plataforma deben provisionarse por un mecanismo confiable.
 - Email, tenant y fecha de creación no se sobrescriben al editar personal. La edición propia admite nombres y aceptación de términos con timestamp del servidor, sin modificar campos administrativos.
 - Las escrituras de stock del cajero afectan únicamente su sede. Ventas, agregados y cajas requieren tenant/sede permitidos; la anulación conserva identidad, importes e items. Los contratos mantienen acceso entre sedes del mismo negocio.
-- La validación de cada item admite hasta 20 líneas de producto por venta, sin limitar las unidades por línea. Es un límite explícito del payload para respetar el presupuesto de evaluación de Rules, reflejado también en POS; no se calcula aquí la integridad matemática de ventas/agregados ni se repara la idempotencia offline (Fase 4).
+- Ventas valida lista no vacía, tenant, actor, sede, total y fecha, sin máximo artificial de líneas. La semántica completa de items y la integridad matemática de ventas/agregados quedan para Fase 4, junto con la idempotencia offline. Contratos admite `entregado_con_deuda`, incluido el regreso a `entregado` al saldar la deuda.
 - Settings utiliza el ID del documento como tenant canónico para compatibilidad con documentos antiguos sin `businessId`; al guardar se añade únicamente ese tenant. Los caches de UI se filtran por tenant y el contexto se reinicia al cambiar identidad/permisos.
 - `storage.rules` deniega todos los accesos hasta la migración de imágenes de Fase 5. App Check queda pendiente de configuración real. No se desplegaron reglas ni se modificaron datos reales.
 
@@ -267,8 +267,10 @@ No se aprueba hasta demostrar mediante tests que un tenant no accede a otro.
 El paquete raíz es tooling únicamente: `firebase-tools` y `@firebase/rules-unit-testing`, con su lockfile. Firebase SDK se instala como peer de la biblioteca de tests; el runtime React continúa exclusivamente en frontend. Se requiere Node compatible y Java 21+ disponible en PATH. Para esta validación se descargó un JRE portátil oficial con checksum verificado en la carpeta temporal, sin instalarlo en el sistema.
 
 ```powershell
-npm ci --ignore-scripts
+npm ci
 npm run test:rules
+npm run test:architecture
+npm ci --prefix frontend
 npm run lint --prefix frontend
 npm run build --prefix frontend
 git diff --check
@@ -276,7 +278,7 @@ git diff --check
 
 `test:rules` inicia Firestore y Storage en localhost con `demo-migapos`; el harness rechaza ejecutarse sin los hosts locales esperados. Los privilegios se desactivan únicamente para fixtures de prueba. Los tests incluyen ataques de tenant/sucursal, escalamiento, adición/eliminación de campos protegidos, consultas reales y batches POS/offline.
 
-Validación de esta implementación: 88 tests aprobados, incluidos los batches completos de venta/anulación con 20 líneas; instalación raíz reproducible con `npm ci --ignore-scripts`; lint, build y `git diff --check` aprobados. El build conserva avisos de tamaño/Browserslist. npm reporta 14 vulnerabilidades transitivas en el tooling raíz, pendientes de una revisión de dependencias sin actualizaciones major improvisadas. Fase 2 queda EN PROGRESO hasta la revisión/aprobación del usuario.
+Validación al cerrar Fases 2–3: 81 tests de Rules aprobados, incluidos los batches completos de venta/anulación con 30 líneas y las transiciones de deuda. Los tests que exigían validación semántica individual de items se difieren al motor de Fase 4; se mantienen las pruebas de aislamiento y campos críticos. Instalaciones reproducibles raíz/frontend, lint, build y `git diff --check` aprobados. El build conserva avisos de tamaño/Browserslist; npm reporta 14 vulnerabilidades en tooling raíz y 13 en frontend, pendientes de revisión sin actualizaciones major improvisadas.
 
 ---
 
@@ -360,6 +362,17 @@ Query-driven:
 ## Criterio de aprobación
 
 La lógica de negocio crítica deja de vivir directamente en componentes React.
+
+## Implementación de Fase 3
+
+- `app/providers/SessionProviders` agrega Tenant/Branch y Catalog como contextos separados. La clave de identidad reinicia los providers y sus módulos al cambiar UID, tenant o permisos; los callbacks pendientes se invalidan al limpiar suscripciones.
+- Repositories por dominio encapsulan Firestore para catálogo, sedes, settings, usuarios, clientes, ventas, contratos, caja, reportes, licencias y notificaciones. Firebase se inicializa únicamente en `core/firebase/client`; los paths anteriores son re-exports de compatibilidad.
+- Se eliminó `GlobalDataContext`. Users/invites se escuchan únicamente en gestión de usuarios; customers en Agenda o el formulario de contratos; últimas 50 ventas en SalesHistory; contratos conserva su listener por módulo. Branches utiliza únicamente el snapshot inicial, y desktop/móvil comparten una suscripción de notificaciones.
+- Dexie conserva su esquema. Lecturas y borrados de catálogo/personal filtran tenant, la sincronización rechaza IDs que colisionen con otro tenant y los DTOs preservan el ID real del documento. El cache de reportes incluye identidad/tenant en su clave.
+- Firestore salió de todos los componentes visuales, incluida aceptación de términos y entrega de contratos. POS usa settings del provider y conserva `lastSale` local; consume el único `useCart`, con el comportamiento de stock/cantidades anterior. Fechas y errores usan helpers puros compartidos en los flujos migrados.
+- Se conservan cálculos, colecciones, payloads, `payments[]`, imágenes, arqueo, autocierre y el adaptador financiero existente. Descifrado/cola/retries offline, fórmulas y rangos de reportes, modelo de alertas y operaciones de SuperAdmin/borrado continúan pendientes de sus fases; `wipeTenantData` no se modificó.
+
+Validación: 15 tests de arquitectura aprobados para aislamiento del cache, colisiones, respuestas tardías, cleanup, identidad, fechas, errores e interpretación de stock; 81 tests de Rules aprobados; lint sin errores/warnings, build y diff check aprobados. Una comparación AST confirmó que el adaptador financiero y el carrito canónico conservan sus operaciones. No hubo deploy, migraciones ni acceso a datos reales.
 
 ---
 

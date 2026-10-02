@@ -1,9 +1,9 @@
 // src/components/BranchSelector.jsx
 import React from 'react';
-import { useGlobalData } from '../context/GlobalDataContext'; 
+import { useTenantData } from '../features/branches/context/TenantContext';
 
 const BranchSelector = () => {
-  const { businessBranches, activeBranchId, setActiveBranchId } = useGlobalData();
+  const { businessBranches, activeBranchId, setActiveBranchId } = useTenantData();
 
   // Si no hay sucursales o solo hay una, ocultamos el selector para no estorbar
   if (!businessBranches || businessBranches.length <= 1) {
@@ -24,11 +24,11 @@ const BranchSelector = () => {
           className="branch-select-input"
           value={activeBranchId || ''}
           onChange={(e) => setActiveBranchId(e.target.value)}
-          aria-label="Seleccionar sucursal" 
+          aria-label="Seleccionar sucursal"
         >
           <option value="global">🌍 Vista Global</option>
-          
-          {/* 🚀 EL CAMBIO: Mapeamos agregando el estado visual de inactivo */}
+
+
           {businessBranches.map(b => {
             const isInactive = b.status?.toLowerCase() === 'inactivo';
             return (
