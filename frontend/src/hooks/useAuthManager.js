@@ -53,7 +53,7 @@ export const useAuthManager = () => {
       setAuthLoading(true);
 
       try {
-        const emailLower = firebaseUser.email.toLowerCase().trim();
+        const authenticatedEmail = firebaseUser.email;
         const userRef = doc(db, 'users', firebaseUser.uid);
 
         // Verificar si el documento existe
@@ -61,7 +61,7 @@ export const useAuthManager = () => {
 
         // Si no existe, crear desde invitación
         if (!userSnap.exists()) {
-          const inviteRef = doc(db, 'invites', emailLower);
+          const inviteRef = doc(db, 'invites', authenticatedEmail);
           const inviteSnap = await getDoc(inviteRef);
           
           if (inviteSnap.exists()) {

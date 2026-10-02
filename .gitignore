@@ -47,6 +47,7 @@ logs/
 .node_repl_history
 *.tsbuildinfo
 *.tgz
+repomix-output.*
 *.pid
 *.pid.lock
 

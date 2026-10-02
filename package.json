@@ -1,0 +1,13 @@
+{
+  "name": "migapos-tooling",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:rules",
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-migapos \"node --test --test-concurrency=1 tests/security.rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
+    "firebase-tools": "15.32.1"
+  }
+}

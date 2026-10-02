@@ -105,7 +105,7 @@ function App() {
           />
         </>
       ) : (
-        <GlobalDataProvider user={user}>
+        <GlobalDataProvider key={`${user.uid}:${user.businessId}:${user.role}:${user.branchId || ''}`} user={user}>
           <LicenseGuard user={user} handleLogout={handleLogout}>
             <BranchGuard user={user} handleLogout={handleLogout}>
               

@@ -1,6 +1,6 @@
 # MigaPOS — frontend
 
-Las dependencias y el único lockfile npm pertenecen a `frontend/`. La raíz contiene la configuración Firebase CLI, sin paquete npm adicional ni workspaces. Usa Node 20.19+ o 22.12+, compatible con Vite 7.
+Las dependencias runtime y su lockfile pertenecen a `frontend/`. La raíz contiene únicamente tooling y un lockfile para probar Firebase Rules con Emulator; no se usan workspaces ni dependencias React en raíz. Usa Node 20.19+ o 22.12+, compatible con Vite 7. El contexto permanente del proyecto es `docs/MASTER-PLAN.md`.
 
 ## Desarrollo local
 

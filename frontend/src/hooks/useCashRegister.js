@@ -266,6 +266,7 @@ export const useCashRegister = (user, currentBranchId) => {
         const salesQuery = query(
           collection(db, 'sales'),
           where('businessId', '==', currentSession.businessId),
+          where('branchId', '==', currentSession.branchId),
           where('sessionId', '==', currentSession.id)
         );
         const salesSnap = await getDocs(salesQuery);

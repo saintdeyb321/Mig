@@ -119,9 +119,13 @@ export const GlobalDataProvider = ({ user, children }) => {
         ]);
 
         if (isMounted.current) {
-          if (localProducts.length) setGlobalProducts(localProducts.sort((a, b) => a.name.localeCompare(b.name)));
-          if (localCategories.length) setGlobalCategories(localCategories.sort((a, b) => a.name.localeCompare(b.name)));
-          if (localUsers.length) setGlobalUsers(localUsers.sort((a, b) => (a.firstName || '').localeCompare(b.firstName || '')));
+          const tenantProducts = localProducts.filter(item => item.businessId === user.businessId);
+          const tenantCategories = localCategories.filter(item => item.businessId === user.businessId);
+          const tenantUsers = localUsers.filter(item => item.businessId === user.businessId
+            && (user.role === 'superadmin' || (user.role === 'dueño' && item.role !== 'superadmin')));
+          if (tenantProducts.length) setGlobalProducts(tenantProducts.sort((a, b) => a.name.localeCompare(b.name)));
+          if (tenantCategories.length) setGlobalCategories(tenantCategories.sort((a, b) => a.name.localeCompare(b.name)));
+          if (tenantUsers.length) setGlobalUsers(tenantUsers.sort((a, b) => (a.firstName || '').localeCompare(b.firstName || '')));
           if (localSettings) setGlobalSettings(localSettings);
         }
       } catch (error) {
@@ -132,7 +136,7 @@ export const GlobalDataProvider = ({ user, children }) => {
     const deferLoad = window.requestIdleCallback || ((cb) => setTimeout(cb, 10));
     deferLoad(() => loadLocalData());
 
-  }, [user?.businessId]);
+  }, [user?.businessId, user?.role]);
 
   // 🟢 ZONA CLAVE: CÁLCULO DE MERMAS OFFLINE
   const getPendingStockDeltas = useCallback(async () => {
@@ -293,8 +297,10 @@ export const GlobalDataProvider = ({ user, children }) => {
     setFirestoreError(null);
 
     const salesConstraints = [where('businessId', '==', user.businessId)];
-    if (activeBranchId !== 'global') {
-      salesConstraints.push(where('branchId', '==', activeBranchId));
+    const permittedBranchId = user.role === 'cajero' ? user.branchId : activeBranchId;
+    if (!permittedBranchId) return;
+    if (permittedBranchId !== 'global') {
+      salesConstraints.push(where('branchId', '==', permittedBranchId));
     }
     salesConstraints.push(orderBy('createdAt', 'desc'), limit(50));
 
@@ -313,7 +319,8 @@ export const GlobalDataProvider = ({ user, children }) => {
             } catch { return null; }
           })
           .filter(Boolean)
-          .filter(sale => activeBranchId === 'global' || sale.branchId === activeBranchId);
+          .filter(sale => sale.businessId === user.businessId
+            && (permittedBranchId === 'global' || sale.branchId === permittedBranchId));
 
         const mergedSales = [...offlineSales, ...firestoreSales]
           .sort((a, b) => getTimestamp(b) - getTimestamp(a))
@@ -335,7 +342,7 @@ export const GlobalDataProvider = ({ user, children }) => {
     });
 
     return () => unsubSales();
-  }, [user?.businessId, activeBranchId, markLoaded]); 
+  }, [user?.businessId, user?.role, user?.branchId, activeBranchId, markLoaded]);
 
   // =========================================================
   // 🟢 ZONA CLAVE: MEMOIZACIÓN PARA EVITAR RE-RENDERS EN REACT

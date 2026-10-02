@@ -22,10 +22,7 @@ El proyecto se trabajará de forma iterativa.
 Para cada fase:
 
 1. GPT/Codex/Sol recibe únicamente el prompt de la fase actual.
-2. El agente lee:
-   - `AGENTS.md`
-   - este documento;
-   - los documentos específicos de la fase.
+2. El agente lee únicamente este documento, la única fuente permanente de contexto del proyecto.
 3. Ejecuta SOLO esa fase.
 4. Ejecuta lint/build/tests correspondientes.
 5. No despliega producción salvo autorización explícita.
@@ -49,8 +46,8 @@ Usar esta tabla como control de avance.
 | Fase | Nombre | Estado inicial |
 |---|---|---|
 | 0 | Auditoría inicial | COMPLETADA |
-| 1 | Foundation: repositorio, env y Firebase CLI | PENDIENTE / EN PROGRESO |
-| 2 | Seguridad SaaS multi-tenant | PENDIENTE |
+| 1 | Foundation: repositorio, env y Firebase CLI | COMPLETADA |
+| 2 | Seguridad SaaS multi-tenant | EN PROGRESO |
 | 3 | Arquitectura React y Data Layer | PENDIENTE |
 | 4 | Ventas, inventario y motor offline | PENDIENTE |
 | 5 | Contratos, pedidos y ledger de pagos | PENDIENTE |
@@ -214,15 +211,7 @@ Esta fase es crítica.
 ## Trabajo
 
 ### Identidad
-Diseñar claims:
-
-```text
-tenantId
-role
-platformAdmin
-```
-
-o una estructura equivalente.
+Usar `users/{uid}` protegido como fuente de identidad y autorización server-side en esta fase. Los roles canónicos son `superadmin`, `dueño` y `cajero`. Ningún usuario puede autoasignarse privilegios ni escoger un tenant durante el registro: el perfil nace de su invitación autenticada. La migración a Custom Claims o un backend equivalente se abordará posteriormente.
 
 ### Firestore Security Rules
 Toda colección del tenant debe validar:
@@ -246,9 +235,7 @@ Separar claramente:
 - platform superadmin.
 
 ### App Check
-Introducirlo como defensa adicional.
-
-No usar App Check como sustituto de Security Rules.
+Pendiente del hardening posterior hasta contar con configuración real. No inventar site keys ni usar App Check como sustituto de Security Rules.
 
 ### Storage
 Crear/revisar Storage Rules.
@@ -264,6 +251,32 @@ Agregar pruebas:
 ## Criterio de aprobación
 
 No se aprueba hasta demostrar mediante tests que un tenant no accede a otro.
+
+## Implementación de Fase 2
+
+- Firestore usa exclusivamente el perfil protegido `users/{uid}` para roles/tenant. Un perfil sin `status` conserva compatibilidad como activo; `inactivo` revoca el acceso de negocio. Los privilegios enviados en el token o el payload no autorizan operaciones.
+- El registro requiere email verificado e invitación exacta. Tenant, rol, sede, turno y status provienen de ella. No existe bootstrap de superadmin desde el cliente; las cuentas de plataforma deben provisionarse por un mecanismo confiable.
+- Email, tenant y fecha de creación no se sobrescriben al editar personal. La edición propia admite nombres y aceptación de términos con timestamp del servidor, sin modificar campos administrativos.
+- Las escrituras de stock del cajero afectan únicamente su sede. Ventas, agregados y cajas requieren tenant/sede permitidos; la anulación conserva identidad, importes e items. Los contratos mantienen acceso entre sedes del mismo negocio.
+- La validación de cada item admite hasta 20 líneas de producto por venta, sin limitar las unidades por línea. Es un límite explícito del payload para respetar el presupuesto de evaluación de Rules, reflejado también en POS; no se calcula aquí la integridad matemática de ventas/agregados ni se repara la idempotencia offline (Fase 4).
+- Settings utiliza el ID del documento como tenant canónico para compatibilidad con documentos antiguos sin `businessId`; al guardar se añade únicamente ese tenant. Los caches de UI se filtran por tenant y el contexto se reinicia al cambiar identidad/permisos.
+- `storage.rules` deniega todos los accesos hasta la migración de imágenes de Fase 5. App Check queda pendiente de configuración real. No se desplegaron reglas ni se modificaron datos reales.
+
+## Pruebas de seguridad
+
+El paquete raíz es tooling únicamente: `firebase-tools` y `@firebase/rules-unit-testing`, con su lockfile. Firebase SDK se instala como peer de la biblioteca de tests; el runtime React continúa exclusivamente en frontend. Se requiere Node compatible y Java 21+ disponible en PATH. Para esta validación se descargó un JRE portátil oficial con checksum verificado en la carpeta temporal, sin instalarlo en el sistema.
+
+```powershell
+npm ci --ignore-scripts
+npm run test:rules
+npm run lint --prefix frontend
+npm run build --prefix frontend
+git diff --check
+```
+
+`test:rules` inicia Firestore y Storage en localhost con `demo-migapos`; el harness rechaza ejecutarse sin los hosts locales esperados. Los privilegios se desactivan únicamente para fixtures de prueba. Los tests incluyen ataques de tenant/sucursal, escalamiento, adición/eliminación de campos protegidos, consultas reales y batches POS/offline.
+
+Validación de esta implementación: 88 tests aprobados, incluidos los batches completos de venta/anulación con 20 líneas; instalación raíz reproducible con `npm ci --ignore-scripts`; lint, build y `git diff --check` aprobados. El build conserva avisos de tamaño/Browserslist. npm reporta 14 vulnerabilidades transitivas en el tooling raíz, pendientes de una revisión de dependencias sin actualizaciones major improvisadas. Fase 2 queda EN PROGRESO hasta la revisión/aprobación del usuario.
 
 ---
 

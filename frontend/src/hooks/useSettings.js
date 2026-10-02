@@ -42,7 +42,7 @@ export const useSettings = (user) => {
 
     try {
       const settingsRef = doc(db, 'settings', user.businessId);
-      await setDoc(settingsRef, { companyData }, { merge: true });
+      await setDoc(settingsRef, { businessId: user.businessId, companyData }, { merge: true });
       
       toast.success('Datos de facturación actualizados', { id: loadId });
     } catch (error) {

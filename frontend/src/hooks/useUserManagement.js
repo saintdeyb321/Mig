@@ -121,7 +121,7 @@ export const useUserManagement = (user) => {
     const fullEmail = `${emailPrefix.toLowerCase().trim()}@gmail.com`;
 
     // 🚀 OPTIMIZACIÓN 2: Búsqueda directa y más rápida
-    const emailExists = (globalUsers || []).some(u => u.email === fullEmail && u.id !== editing);
+    const emailExists = !editing && (globalUsers || []).some(u => u.email === fullEmail);
     if (emailExists) {
       return toast.error('Este correo ya está registrado en tu personal.');
     }
@@ -140,22 +140,23 @@ export const useUserManagement = (user) => {
       const userData = {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        email: fullEmail,
         role,
-        businessId: user.businessId,
         shiftStart: role === 'cajero' ? shiftStart : null,
         shiftEnd: role === 'cajero' ? shiftEnd : null,
         branchId: role === 'dueño' || role === 'superadmin' ? 'global' : branchId,
         status: 'activo',
-        // 🚀 Mantenemos ISO string para compatibilidad, pero nuestro nuevo getTimestamp lo leerá bien
-        createdAt: new Date().toISOString(), 
       };
 
       if (editing) {
         await updateDoc(doc(db, 'users', editing), userData);
         toast.success('Usuario actualizado correctamente', { id: toastId });
       } else {
-        await setDoc(doc(db, 'invites', fullEmail), userData);
+        await setDoc(doc(db, 'invites', fullEmail), {
+          ...userData,
+          email: fullEmail,
+          businessId: user.businessId,
+          createdAt: new Date().toISOString(),
+        });
         toast.success('Invitación enviada. El usuario debe registrarse con Google.', { id: toastId });
       }
 

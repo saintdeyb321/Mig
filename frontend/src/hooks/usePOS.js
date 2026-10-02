@@ -201,6 +201,11 @@ export const usePOS = (user, currentSession) => {
 
     const VAL_TOAST_ID = 'pos-validation-error';
 
+    if (cart.length > 20) {
+      toast.error('Una venta admite hasta 20 productos distintos.', { id: VAL_TOAST_ID });
+      return;
+    }
+
     if (activeBranchId === 'global') {
       toast.error('⛔ Selecciona una sede física para poder vender.', { id: VAL_TOAST_ID });
       return;
