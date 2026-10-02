@@ -3,9 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:architecture && npm run test:rules",
+    "test": "npm run test:architecture && npm run test:sales && npm run test:rules",
     "test:architecture": "node --test tests/architecture.test.mjs",
-    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-migapos \"node --test --test-concurrency=1 tests/security.rules.test.mjs\""
+    "test:sales": "node --test tests/sales.test.mjs",
+    "test:offline-db": "node --test tests/offline-db.browser.test.mjs",
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-migapos \"node --test --test-concurrency=1 tests/security.rules.test.mjs tests/sales.integration.test.mjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.2",

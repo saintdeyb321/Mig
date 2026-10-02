@@ -1,8 +1,9 @@
-export function projectProducts(products, pendingDeltas) {
+export function projectProducts(products, pendingDeltas = {}) {
   return products.map(product => {
-    const stock = product.stock !== null && typeof product.stock === 'object'
-      ? Object.values(product.stock).reduce((total, qty) => total + Math.max(0, Number(qty) || 0), 0)
-      : Number(product.stock || 0);
-    return { ...product, stock: Math.max(0, stock - (pendingDeltas[product.id] || 0)), rawStock: product.stock };
+    const remoteStock = product.stock && typeof product.stock === 'object' ? product.stock : {};
+    const rawStock = Object.fromEntries(Object.entries(remoteStock).map(([branchId, qty]) =>
+      [branchId, Math.max(0, (Number.isSafeInteger(qty) && qty >= 0 ? qty : 0) - (pendingDeltas[product.id]?.[branchId] ?? 0))]));
+    const stock = Object.values(rawStock).reduce((sum, qty) => sum + qty, 0);
+    return { ...product, stock, rawStock, remoteStock };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }

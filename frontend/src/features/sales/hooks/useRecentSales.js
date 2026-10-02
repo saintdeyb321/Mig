@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 import { useTenantData } from '../../branches/context/TenantContext';
 import { subscribeRecentSales } from '../infrastructure/salesRepository';
-import { readPendingSales } from '../infrastructure/pendingSalesCache';
-import { toMillisSafe } from '../../../core/dates/dateValues';
+import { subscribePendingSales } from '../infrastructure/pendingSalesCache';
+import { mergeRecentSales } from '../application/recentSales';
 import { useScopedSubscription } from '../../../shared/hooks/useScopedSubscription';
 import { createSubscriptionScope } from '../../../shared/utils/subscriptionScope';
 
@@ -12,16 +12,13 @@ export function useRecentSales(user) {
   const branchId = user?.role === 'cajero' ? user.branchId : activeBranchId;
   const subscribe = useCallback((onData, onError) => {
     const scope = createSubscriptionScope();
-    const unsubscribe = subscribeRecentSales(businessId, branchId, async remoteSales => {
-      const token = scope.next();
-      try {
-        const offlineSales = await readPendingSales(businessId, branchId);
-        if (scope.isCurrent(token)) onData([...offlineSales, ...remoteSales]
-          .sort((a, b) => toMillisSafe(b.createdAt || b.date) - toMillisSafe(a.createdAt || a.date)).slice(0, 50));
-      } catch (error) { if (scope.isCurrent(token)) onError(error); }
-    }, scope.guard(onError));
-    return () => { scope.close(); unsubscribe(); };
-  }, [businessId, branchId]);
+    let remote = [];
+    let pending = [];
+    const publish = scope.guard(() => onData(mergeRecentSales(pending, remote)));
+    const stopRemote = subscribeRecentSales(businessId, branchId, sales => { remote = sales; publish(); }, scope.guard(onError));
+    const stopPending = subscribePendingSales(user, branchId, sales => { pending = sales; publish(); }, scope.guard(onError));
+    return () => { scope.close(); stopRemote(); stopPending(); };
+  }, [businessId, branchId, user]);
   const result = useScopedSubscription(businessId && branchId ? `${identityKey}:${branchId}` : null, subscribe);
   return { sales: result.data, isLoading: result.isLoading, error: result.error };
 }

@@ -179,16 +179,41 @@ service cloud.firestore {
         && data.diff(resource.data).affectedKeys().hasOnly(['stock'])
         && resource.data.stock is map && data.stock is map
         && data.stock.diff(resource.data.stock).affectedKeys().hasOnly([branchId])
-        && data.stock.get(branchId, null) is number;
+        && data.stock.get(branchId, null) is number && data.stock[branchId] >= 0;
     }
 
-    function validSale() {
+    function validSalePayment(data) {
+      return data.payment in ['efectivo', 'yape', 'mixto']
+        && data.amountPaid is number && data.amountPaid >= 0 && data.amountPaid <= 90071992547409
+        && data.change is number && data.change >= 0 && data.change <= 90071992547409
+        && ((data.payment == 'efectivo' && data.amountPaid >= data.total
+            && data.change - (data.amountPaid - data.total) > -0.005
+            && data.change - (data.amountPaid - data.total) < 0.005)
+          || (data.payment in ['yape', 'mixto'] && data.amountPaid == data.total && data.change == 0))
+        && (data.payment != 'mixto' || (data.splitPayments is map
+          && data.splitPayments.keys().hasAll(['efectivo', 'yape'])
+          && data.splitPayments.keys().hasOnly(['efectivo', 'yape'])
+          && data.splitPayments.efectivo is number && data.splitPayments.efectivo >= 0
+          && data.splitPayments.yape is number && data.splitPayments.yape >= 0
+          && data.splitPayments.efectivo + data.splitPayments.yape - data.total > -0.005
+          && data.splitPayments.efectivo + data.splitPayments.yape - data.total < 0.005));
+    }
+
+    function validSale(saleId) {
       let data = request.resource.data;
       let actor = currentUser();
-      return data.keys().hasAll(['businessId', 'branchId', 'items', 'total', 'userId', 'createdAt'])
+      return data.keys().hasAll(['businessId', 'branchId', 'items', 'total', 'userId', 'createdAt',
+          'saleId', 'localId', 'idempotencyKey', 'version', 'sessionId', 'payment', 'amountPaid', 'change'])
+        && data.saleId == saleId && data.localId == saleId && data.idempotencyKey == saleId && data.version == 1
+        && data.sessionId is string && data.sessionId.size() > 0
+        && exists(/databases/$(database)/documents/cash_sessions/$(data.sessionId))
+        && get(/databases/$(database)/documents/cash_sessions/$(data.sessionId)).data.businessId == data.businessId
+        && get(/databases/$(database)/documents/cash_sessions/$(data.sessionId)).data.branchId == data.branchId
+        && get(/databases/$(database)/documents/cash_sessions/$(data.sessionId)).data.userId == data.userId
         && hasTenant(data) && (actor.role == 'superadmin' || data.businessId == actor.businessId)
         && data.userId == request.auth.uid
-        && data.total is number && data.total >= 0 && data.createdAt is timestamp
+        && data.total is number && data.total > 0 && data.total <= 90071992547409 && data.createdAt is timestamp
+        && validSalePayment(data)
         && (actor.role in ['superadmin', 'dueño']
           || (actor.role == 'cajero' && data.branchId == actor.get('branchId', null)))
         && branchBelongsTo(data.businessId, data.branchId)
@@ -265,8 +290,10 @@ service cloud.firestore {
     }
 
     match /sales/{saleId} {
-      allow read: if permittedFinancialResource();
-      allow create: if activeUser() && validSale();
+      // Transactions must be able to check an absent receipt. Existing receipts stay tenant/branch scoped.
+      allow get: if activeUser() && (resource == null || permittedFinancialResource());
+      allow list: if permittedFinancialResource();
+      allow create: if activeUser() && validSale(saleId);
       allow update: if permittedFinancialResource() && businessUnchanged()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'voided', 'updatedAt', 'voidedAt', 'voidReason', 'voidedByName', 'voidedByRole'])
@@ -303,7 +330,8 @@ service cloud.firestore {
     }
 
     match /daily_stats/{statId} {
-      allow read: if permittedFinancialResource();
+      allow get: if activeUser() && (resource == null || permittedFinancialResource());
+      allow list: if permittedFinancialResource();
       allow create: if permittedFinancialIncoming();
       allow update: if permittedFinancialResource() && businessUnchanged()
         && request.resource.data.branchId == resource.data.branchId

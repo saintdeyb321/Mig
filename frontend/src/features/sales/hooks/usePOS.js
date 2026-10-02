@@ -8,7 +8,7 @@ import { useTenantData } from '../../branches/context/TenantContext';
 import { generateReceiptHTML } from '../../../utils/receiptTemplate';
 
 export const usePOS = (user, currentSession) => {
-  const { products: catalogProducts, categories: catalogCategories, updateProducts } = useCatalogData();
+  const { products: catalogProducts, categories: catalogCategories } = useCatalogData();
   const { activeBranchId, businessBranches, settings: tenantSettings } = useTenantData();
 
   const [payment, setPayment] = useState('efectivo');
@@ -18,6 +18,7 @@ export const usePOS = (user, currentSession) => {
 
   const [search, setSearch] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const processingRef = useRef(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [lastSale, setLastSale] = useState(null);
 
@@ -112,7 +113,7 @@ export const usePOS = (user, currentSession) => {
   }, [tenantSettings, businessBranches, activeBranchId]);
 
   const processSale = useCallback(async () => {
-    if (!user?.businessId || isProcessing) return;
+    if (!user?.businessId || processingRef.current) return;
 
     const VAL_TOAST_ID = 'pos-validation-error';
 
@@ -145,6 +146,7 @@ export const usePOS = (user, currentSession) => {
       return;
     }
 
+    processingRef.current = true;
     setIsProcessing(true);
     const toastId = toast.loading('Procesando cobro...');
     setShowQrModal(false);
@@ -164,7 +166,7 @@ export const usePOS = (user, currentSession) => {
       finalChange = 0;
     }
 
-    const sale = {
+    let sale = {
       localId,
       items: cartBackup,
       total,
@@ -189,15 +191,7 @@ export const usePOS = (user, currentSession) => {
     try {
       const result = await saveSaleTransaction(sale, cartBackup, products, user);
 
-      if (result.isOffline) {
-        if (typeof updateProducts === 'function') {
-          updateProducts(prev => prev.map(p => {
-            const cartItem = cartBackup.find(item => item.id === p.id);
-            return cartItem ? { ...p, stock: p.stock - cartItem.qty } : p;
-          }));
-        }
-
-      }
+      sale = result.sale;
 
       toast.dismiss(toastId);
       toast.success(result.isOffline ? 'Venta offline guardada' : 'Venta registrada', { id: 'sale-success', icon: result.isOffline ? '🏠' : '✅' });
@@ -206,9 +200,10 @@ export const usePOS = (user, currentSession) => {
     } catch (err) {
       console.error(err);
       toast.dismiss(toastId);
-      toast.error('Error al procesar la venta', { id: 'sale-error' });
+      toast.error(err.message || 'Error al procesar la venta', { id: 'sale-error' });
     } finally {
       setIsProcessing(false);
+      processingRef.current = false;
 
       if (isSuccess) {
         setLastSale(sale);
@@ -221,8 +216,8 @@ export const usePOS = (user, currentSession) => {
         setCart(cartBackup);
       }
     }
-  }, [user, cart, total, payment, amountPaid, splitEfectivo, splitYape, products, updateProducts,
-    isProcessing, clearCart, setCart, activeBranchId, catalogProducts, businessBranches, currentSession]);
+  }, [user, cart, total, payment, amountPaid, splitEfectivo, splitYape, products,
+    clearCart, setCart, activeBranchId, catalogProducts, businessBranches, currentSession]);
 
   const handleCheckoutClick = useCallback(() => {
     if (cart.length === 0) {

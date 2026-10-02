@@ -48,7 +48,7 @@ function App() {
 
   useEffect(() => {
     if (user?.uid) {
-      retryOfflineSales(user.uid);
+      retryOfflineSales(user).catch(error => console.warn('Error sincronizando cola:', error));
     }
 
     const handleOnline = async () => {
@@ -58,15 +58,20 @@ function App() {
           icon: '🔄'
         });
 
-        await retryOfflineSales(user.uid);
-
-        toast.success('¡Sincronización completada! Todo está en la nube.', { id: syncToast });
+        try {
+          const result = await retryOfflineSales(user);
+          if (result.pending || result.failed) toast.error('Hay ventas pendientes o fallidas. Revisa el historial.', { id: syncToast });
+          else toast.success('Sincronización completada.', { id: syncToast });
+        } catch (error) { toast.error(error.message || 'Sincronización pendiente.', { id: syncToast }); }
       }
     };
 
     window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
-  }, [user?.uid]);
+    const retryTimer = setInterval(() => {
+      if (user?.uid && navigator.onLine) retryOfflineSales(user).catch(error => console.warn('Error reintentando cola:', error));
+    }, 15000);
+    return () => { window.removeEventListener('online', handleOnline); clearInterval(retryTimer); };
+  }, [user]);
 
   const isAdmin = useMemo(() => {
     if (!user || !user.role) return false;

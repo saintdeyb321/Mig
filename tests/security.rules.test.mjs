@@ -29,9 +29,10 @@ const invitation = {
   shiftStart: '08:00', shiftEnd: '16:00', status: 'activo', createdAt: isoDate,
 };
 const invitedUser = { ...invitation };
-const sale = (businessId = 'tenant-a', branchId = 'a-1', userId = 'cashier-a') => ({
+const sale = (businessId = 'tenant-a', branchId = 'a-1', userId = 'cashier-a', id = 'new') => ({
   businessId, branchId, userId, total: 10, items: [item], createdAt: now,
   voided: false, sessionId: 'session-a', payment: 'efectivo',
+  saleId: id, localId: id, idempotencyKey: id, version: 1, amountPaid: 10, change: 0,
 });
 const contract = (businessId = 'tenant-a', branchId = 'a-1') => ({
   businessId, branchId, contractId: 'PED-TEST', clientName: 'Cliente',
@@ -315,10 +316,10 @@ describe('Licenses', () => {
 describe('Financial collections and query compatibility', () => {
   it('sales require the actor tenant, actor UID and permitted branch', async () => {
     await assertSucceeds(setDoc(doc(cashierDb(), 'sales/new'), sale()));
-    await assertFails(setDoc(doc(cashierDb(), 'sales/foreign'), sale('tenant-b', 'b-1')));
-    await assertFails(setDoc(doc(cashierDb(), 'sales/other-branch'), sale('tenant-a', 'a-2')));
-    await assertFails(setDoc(doc(cashierDb(), 'sales/other-user'), sale('tenant-a', 'a-1', 'owner-a')));
-    await assertFails(setDoc(doc(ownerDb(), 'sales/foreign-branch'), sale('tenant-a', 'b-1', 'owner-a')));
+    await assertFails(setDoc(doc(cashierDb(), 'sales/foreign'), sale('tenant-b', 'b-1', 'cashier-a', 'foreign')));
+    await assertFails(setDoc(doc(cashierDb(), 'sales/other-branch'), sale('tenant-a', 'a-2', 'cashier-a', 'other-branch')));
+    await assertFails(setDoc(doc(cashierDb(), 'sales/other-user'), sale('tenant-a', 'a-1', 'owner-a', 'other-user')));
+    await assertFails(setDoc(doc(ownerDb(), 'sales/foreign-branch'), sale('tenant-a', 'b-1', 'owner-a', 'foreign-branch')));
   });
   for (const [label, override] of Object.entries({
     'negative total': { total: -1 }, 'empty items': { items: [] },
@@ -328,12 +329,14 @@ describe('Financial collections and query compatibility', () => {
     'pre-voided sale': { voided: true },
   })) {
     it(`sales reject ${label}`, async () => {
-      await assertFails(setDoc(doc(cashierDb(), 'sales/invalid'), { ...sale(), ...override }));
+      await assertFails(setDoc(doc(cashierDb(), 'sales/invalid'), { ...sale('tenant-a', 'a-1', 'cashier-a', 'invalid'), ...override }));
     });
   }
   it('sales accept more than 20 distinct products without an artificial limit', async () => {
     const items = Array.from({ length: 30 }, (_, index) => ({ ...item, id: `product-${index}` }));
-    await assertSucceeds(setDoc(doc(cashierDb(), 'sales/many-lines'), { ...sale(), items, total: 300 }));
+    await assertSucceeds(setDoc(doc(cashierDb(), 'sales/many-lines'), {
+      ...sale('tenant-a', 'a-1', 'cashier-a', 'many-lines'), items, total: 300, amountPaid: 300,
+    }));
   });
   it('cashier sales queries need the assigned branch while owners can query their whole tenant', async () => {
     await assertSucceeds(getDocs(query(collection(cashierDb(), 'sales'),
@@ -403,7 +406,9 @@ describe('Financial collections and query compatibility', () => {
     });
     const actor = cashierDb();
     const create = writeBatch(actor);
-    create.set(doc(actor, 'sales/max-batch'), { ...sale(), items, total: 300 });
+    create.set(doc(actor, 'sales/max-batch'), {
+      ...sale('tenant-a', 'a-1', 'cashier-a', 'max-batch'), items, total: 300, amountPaid: 300,
+    });
     for (const line of items) create.update(doc(actor, 'products', line.id), { 'stock.a-1': increment(-1) });
     create.set(doc(actor, 'daily_stats/stat-a'), { totalOrders: increment(1) }, { merge: true });
     await assertSucceeds(create.commit());
@@ -441,7 +446,7 @@ describe('Financial collections and query compatibility', () => {
       status: 'closed', openedAt: isoDate, closedAt: isoDate, syncedAt: isoDate,
     }, { merge: true }));
     const batch = writeBatch(actor);
-    batch.set(doc(actor, 'sales/offline'), { ...sale(), sync: true, syncedAt: now });
+    batch.set(doc(actor, 'sales/offline'), { ...sale('tenant-a', 'a-1', 'cashier-a', 'offline'), sync: true, syncedAt: now });
     batch.update(doc(actor, 'products/product-a'), { 'stock.a-1': increment(-1) });
     batch.set(doc(actor, 'daily_stats/new-offline'), {
       businessId: 'tenant-a', branchId: 'a-1', date: '2026-10-02',

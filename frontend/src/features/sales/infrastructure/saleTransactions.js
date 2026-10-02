@@ -1,226 +1,51 @@
-import { db } from '../../../core/firebase/client';
-import { doc, writeBatch, increment, collection } from 'firebase/firestore';
+import { db, auth } from '../../../core/firebase/client';
+import { doc, setDoc } from 'firebase/firestore';
 import offlineDB from '../../../offlineDB';
-import { encrypt } from '../../../crypto';
+import { encrypt, decrypt } from '../../../crypto';
+import { canonicalSale, SaleError } from '../domain/saleModel.js';
+import { applySaleOnce, voidSaleOnce } from '../application/saleEngine.js';
+import { createSaleQueue } from '../application/saleQueue.js';
+import { firestoreSalePort } from './firestoreSalePort.js';
+import { dexieSaleStore, createQueueLock } from './saleQueueStore.js';
 
-// Existing financial adapter; online/offline semantics are deferred to Phase 4.
-
-
-/* ========================================================
-   1. GUARDAR NUEVA VENTA
-======================================================== */
-export const saveSaleTransaction = async (sale, cartItems, products, user) => {
-  try {
-    if (!navigator.onLine) throw new Error('offline');
-
-    const batch = writeBatch(db);
-
-    // A. Calcular costo total para métricas de ganancia neta
-    let totalCost = 0;
-
-    // B. Restar stock por sucursal y sumar costos
-    cartItems.forEach(item => {
-      // Usamos Dot Notation para restar solo el stock de esta sucursal específica
-      batch.update(doc(db, 'products', item.id), {
-        [`stock.${sale.branchId}`]: increment(-item.qty)
-      });
-
-      // Buscamos el costo original del producto (si lo tienes configurado)
-      const productDb = products.find(p => p.id === item.id);
-      const itemCost = productDb?.cost || item.cost || 0;
-      totalCost += (itemCost * item.qty);
-    });
-
-    // C. Guardar la venta en la colección principal
-    const saleRef = doc(db, 'sales', sale.localId);
-    const grossProfit = sale.total - totalCost; // Ganancia limpia
-    batch.set(saleRef, {
-      ...sale,
-      totalCost,
-      grossProfit,
-      sync: true,
-      voided: false // Inicializamos como NO anulada
-    });
-
-    // D. Determinar fecha correcta (Previene errores si viene como Timestamp, Date o String)
-    let localDate = new Date();
-    if (sale.createdAt && typeof sale.createdAt.toDate === 'function') {
-      localDate = sale.createdAt.toDate();
-    } else if (sale.createdAt instanceof Date) {
-      localDate = sale.createdAt;
-    } else if (sale.date instanceof Date) {
-      localDate = sale.date;
-    } else if (sale.createdAt || sale.date) {
-      localDate = new Date(sale.createdAt || sale.date);
+const port = firestoreSalePort(db);
+async function syncCashSessions(identity) {
+  const pending = await offlineDB.cash_sessions.filter(record => record.sync === false).toArray();
+  const blockedSessions = new Set();
+  for (const record of pending) {
+    if (auth.currentUser?.uid !== identity.uid) break;
+    let session;
+    try { session = JSON.parse(await decrypt(record.data, identity.uid)); }
+    catch { continue; }
+    if (session.userId !== identity.uid || session.businessId !== identity.businessId) continue;
+    // Preserve cash-session merge semantics and ordering until Phase 6.
+    try {
+      await setDoc(doc(db, 'cash_sessions', record.localId), { ...session, syncedAt: new Date().toISOString() }, { merge: true });
+      await offlineDB.cash_sessions.update(record.localId, { sync: true });
+    } catch (error) {
+      blockedSessions.add(record.localId);
+      console.warn(`Caja pendiente ${record.localId}:`, error);
     }
-
-    const year = localDate.getFullYear();
-    const month = String(localDate.getMonth() + 1).padStart(2, '0');
-    const day = String(localDate.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}`;
-
-    // E. Referencia al reporte diario de ESTA sucursal específica
-    const statsRef = doc(db, 'daily_stats', `${sale.businessId}_${dateStr}_${sale.branchId}`);
-
-    // F. Preparar actualizaciones (Modo Seguro "Dot Notation")
-    const updates = {
-      businessId: sale.businessId,
-      branchId: sale.branchId,
-      date: dateStr,
-      totalRevenue: increment(sale.total),
-      totalCost: increment(totalCost),
-      grossProfit: increment(grossProfit),
-      totalOrders: increment(1), // Sumamos 1 ticket exitoso
-      voidedOrders: increment(0)
-    };
-    if (sale.payment === 'mixto' && sale.splitPayments) {
-      if (sale.splitPayments.efectivo > 0) updates['paymentMethods.efectivo'] = increment(sale.splitPayments.efectivo);
-      if (sale.splitPayments.yape > 0) updates['paymentMethods.yape'] = increment(sale.splitPayments.yape);
-    } else {
-      const metodo = sale.payment || 'efectivo';
-      updates[`paymentMethods.${metodo}`] = increment(sale.total);
-    }
-
-    // Agregar Categorías y Productos a las estadísticas
-    cartItems.forEach(item => {
-      const subtotal = item.price * item.qty;
-
-      if (item.category) {
-        updates[`categorySales.${item.category}`] = increment(subtotal);
-      }
-
-      updates[`productSales.${item.id}.name`] = item.name;
-      updates[`productSales.${item.id}.qty`] = increment(item.qty);
-      updates[`productSales.${item.id}.revenue`] = increment(subtotal);
-    });
-
-    // G. Enviar todo a Firebase de un solo golpe
-    batch.set(statsRef, updates, { merge: true });
-    await batch.commit();
-
-    return { success: true, isOffline: false };
-
-  } catch (err) {
-    // Manejo de Ventas Offline (Sin internet)
-    if (err.message === 'offline' || err.message === 'timeout' || err.code === 'unavailable') {
-
-      // Validación de seguridad. Si por alguna razón no hay user, no podemos encriptar con su UID.
-      if (!user || !user.uid) {
-        throw new Error('Sesión inválida para guardar venta offline.');
-      }
-
-      // Al guardar venta offline
-      await offlineDB.sales.add({
-        localId: sale.localId,
-        data: await encrypt(JSON.stringify(sale), user.uid),
-        sync: false,
-        createdAt: new Date()
-      });
-
-      // Descuento de stock local temporal para que la interfaz siga funcionando
-      for (const item of cartItems) {
-        const product = products.find(p => p.id === item.id);
-        if (product) {
-          await offlineDB.products.update(item.id, { stock: product.stock - item.qty }).catch(() => {});
-        }
-      }
-      return { success: true, isOffline: true };
-    }
-    throw err;
   }
-};
+  return blockedSessions;
+}
+export const saleQueue = createSaleQueue({
+  store: dexieSaleStore(offlineDB), encrypt, decrypt, withLock: createQueueLock(offlineDB),
+  online: () => navigator.onLine, syncSessions: syncCashSessions,
+  currentIdentity: identity => auth.currentUser?.uid === identity.uid,
+  apply: (sale, identity) => {
+    if (auth.currentUser?.uid !== identity.uid) throw new SaleError('session-changed', 'La sesión cambió; la venta queda pendiente.');
+    return applySaleOnce(sale, identity, port);
+  },
+});
 
+export const saveSaleTransaction = (sale, cartItems, products, user) =>
+  saleQueue.submit(canonicalSale({ ...sale, items: cartItems }, products), user);
 
-/* ========================================================
-   2. ANULAR UNA VENTA EXISTENTE
-======================================================== */
-export const voidSaleTransaction = async (sale) => {
-  try {
-    if (!navigator.onLine) throw new Error('Debes tener conexión a internet para anular una venta.');
-
-    const batch = writeBatch(db);
-
-    const saleRef = doc(db, 'sales', sale.id);
-    batch.update(saleRef, {
-      voided: true,
-      voidedAt: new Date(),
-      voidReason: sale.voidReason || 'Sin justificación registrada',
-      voidedByName: sale.voidedByName || 'Cajero Desconocido',
-      voidedByRole: sale.voidedByRole || 'Rol Desconocido'
-    });
-
-    (sale.items || []).forEach(item => {
-      batch.update(doc(db, 'products', item.id), {
-        [`stock.${sale.branchId}`]: increment(item.qty)
-      });
-    });
-
-    let localDate = new Date();
-    if (sale.createdAt && typeof sale.createdAt.toDate === 'function') {
-      localDate = sale.createdAt.toDate();
-    } else if (sale.createdAt instanceof Date) {
-      localDate = sale.createdAt;
-    } else if (sale.date instanceof Date) {
-      localDate = sale.date;
-    } else if (sale.createdAt || sale.date) {
-      localDate = new Date(sale.createdAt || sale.date);
-    }
-
-    const year = localDate.getFullYear();
-    const month = String(localDate.getMonth() + 1).padStart(2, '0');
-    const day = String(localDate.getDate()).padStart(2, '0');
-    const dateStr = `${year}-${month}-${day}`;
-
-    const statsRef = doc(db, 'daily_stats', `${sale.businessId}_${dateStr}_${sale.branchId}`);
-
-    const totalCost = sale.totalCost || 0;
-    const grossProfit = sale.grossProfit || (sale.total - totalCost);
-
-    const updates = {
-      totalRevenue: increment(-sale.total),
-      totalCost: increment(-totalCost),
-      grossProfit: increment(-grossProfit),
-      totalOrders: increment(-1),
-      voidedOrders: increment(1)
-    };
-    if (sale.payment === 'mixto' && sale.splitPayments) {
-      if (sale.splitPayments.efectivo > 0) updates['paymentMethods.efectivo'] = increment(-sale.splitPayments.efectivo);
-      if (sale.splitPayments.yape > 0) updates['paymentMethods.yape'] = increment(-sale.splitPayments.yape);
-    } else {
-      const metodo = sale.payment || 'efectivo';
-      updates[`paymentMethods.${metodo}`] = increment(-sale.total);
-    }
-
-    (sale.items || []).forEach(item => {
-      const subtotal = item.price * item.qty;
-
-      if (item.category) {
-        updates[`categorySales.${item.category}`] = increment(-subtotal);
-      }
-
-      updates[`productSales.${item.id}.qty`] = increment(-item.qty);
-      updates[`productSales.${item.id}.revenue`] = increment(-subtotal);
-    });
-
-    batch.set(statsRef, updates, { merge: true });
-    const alertRef = doc(collection(db, 'alerts'));
-    batch.set(alertRef, {
-      type: 'VOIDED_SALE',
-      title: `❌ Ticket Anulado (S/ ${Number(sale.total).toFixed(2)})`,
-      branchId: sale.branchId,
-      cashierName: sale.voidedByName || 'Cajero Desconocido',
-      notes: `Motivo: ${sale.voidReason || 'Sin justificación'}`,
-      createdAt: new Date().toISOString(),
-      read: false,
-      businessId: sale.businessId,
-      saleId: sale.id // Guardamos el ID por si el dueño quiere buscar el ticket
-    });
-
-    await batch.commit();
-    return { success: true };
-
-  } catch (err) {
-    console.error("Error al anular venta:", err);
-    throw err;
-  }
-};
+export async function voidSaleTransaction(sale) {
+  if (!navigator.onLine) throw new Error('Debes tener conexión a internet para anular una venta.');
+  return voidSaleOnce(sale.id, {
+    voidReason: sale.voidReason || 'Sin justificación registrada',
+    voidedByName: sale.voidedByName || 'Cajero', voidedByRole: sale.voidedByRole,
+  }, port);
+}

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es"><meta charset="utf-8"><title>MigaPOS Phase 4 isolated IndexedDB tests</title>
+<body><pre id="result">Running isolated tests…</pre>
+<script type="module">
+import Dexie, { liveQuery } from 'dexie';
+import { createOfflineDatabase } from '/src/offlineDB.js';
+import { encrypt, decrypt } from '/src/crypto.js';
+import { createSaleQueue } from '/src/features/sales/application/saleQueue.js';
+import { dexieSaleStore, createQueueLock } from '/src/features/sales/infrastructure/saleQueueStore.js';
+import { canonicalSale } from '/src/features/sales/domain/saleModel.js';
+
+const checks = [];
+const check = (condition, name) => { if (!condition) throw new Error(name); checks.push(name); };
+const identity = { uid: 'test-cashier', businessId: 'test-tenant', role: 'cajero', branchId: 'test-branch' };
+const input = id => ({ localId: id, businessId: identity.businessId, branchId: identity.branchId, userId: identity.uid,
+  sessionId: 'test-session', items: [{ id: 'test-product', name: 'Pan', qty: 1, price: 10, cost: 3 }],
+  total: 10, payment: 'efectivo', amountPaid: 10, change: 0, createdAt: '2026-10-02T12:00:00.000Z' });
+const name = `migapos-test-phase4-${crypto.randomUUID()}`;
+let database;
+let subscription;
+try {
+  const legacy = new Dexie(name);
+  legacy.version(2).stores({ sales: 'localId, sync, createdAt', products: 'id, businessId, category',
+    categories: 'id, businessId', users: 'id, businessId', settings: 'id', cash_sessions: 'localId, sync' });
+  const ciphertext = await encrypt(JSON.stringify(input('legacy-sale')), identity.uid);
+  await legacy.sales.bulkAdd([
+    { localId: 'legacy-sale', data: ciphertext, sync: false, createdAt: new Date(0) },
+    { localId: 'legacy-synced', data: 'synced-ciphertext', sync: true },
+    { localId: 'legacy-failed', data: 'failed-ciphertext', sync: 'failed', retries: 4, error: 'original error' },
+  ]);
+  await legacy.products.put({ id: 'test-product', name: 'Pan', businessId: identity.businessId, stock: 4, rawStock: { 'test-branch': 10, other: 20 } });
+  await legacy.cash_sessions.put({ localId: 'test-session', data: 'cash-ciphertext', sync: false });
+  legacy.close();
+  database = createOfflineDatabase(name);
+  await database.open();
+  check(database.verno === 3, 'Dexie upgrades the same database from v2 to v3');
+  check(await database.sales.count() === 3, 'All legacy sales survive the upgrade');
+  const migrated = await database.sales.get('legacy-sale');
+  check(migrated.status === 'pending' && migrated.data === ciphertext && migrated.idempotencyKey === 'legacy-sale', 'Pending legacy identity and ciphertext survive');
+  check((await database.sales.get('legacy-synced')).status === 'synced', 'Legacy synced state survives');
+  const failed = await database.sales.get('legacy-failed');
+  check(failed.status === 'failed' && failed.retries === 4 && failed.lastError === 'original error', 'Legacy failed state, error and retries survive');
+  const product = await database.products.get('test-product');
+  check(product.stock['test-branch'] === 10 && product.stock.other === 20 && !('rawStock' in product), 'Legacy projected cache returns to the raw branch map');
+  check((await database.cash_sessions.get('test-session')).data === 'cash-ciphertext', 'Cash-session table survives without a redesign');
+  check(JSON.parse(await decrypt(migrated.data, identity.uid)).localId === 'legacy-sale', 'Migrated ciphertext still decrypts with the original UID');
+  let notifications = 0;
+  subscription = liveQuery(() => database.sales.where('status').equals('pending').count()).subscribe(() => { notifications++; });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  let online = false;
+  const applied = [];
+  const config = { store: dexieSaleStore(database), encrypt, decrypt, online: () => online,
+    apply: async sale => { applied.push(sale.saleId); await new Promise(resolve => setTimeout(resolve, 25)); },
+    syncSessions: async () => {} };
+  const first = createSaleQueue({ ...config, withLock: createQueueLock(database) });
+  const second = createSaleQueue({ ...config, withLock: createQueueLock(database) });
+  const queued = canonicalSale(input('new-sale'));
+  await first.submit(queued, identity);
+  check((await database.sales.get('new-sale')).status === 'pending', 'Offline sale is durable in real IndexedDB');
+  check((await database.sales.where('[businessId+userId+status]').equals([identity.businessId, identity.uid, 'pending']).count()) === 1, 'Tenant/user/status compound index works');
+  online = true;
+  await Promise.all([first.flush(identity), second.flush(identity)]);
+  check(applied.length === 2 && new Set(applied).size === 2, 'Separate queue instances serialize via real Web Locks and Dexie lease');
+  check(await database.sales.where('status').equals('synced').count() === 3 && await database.sales.where('status').equals('failed').count() === 1, 'Historical synced and failed records remain intact and are never replayed');
+  check((await database.sales.get('new-sale')).status === 'synced' && (await database.sales.get('legacy-sale')).status === 'synced', 'New and legacy records reach synced with unchanged IDs');
+  check((await database.sales.get('legacy-sale')).userId === identity.uid, 'Legacy identity metadata is claimed only after successful decrypt');
+  check((await database.products.get('test-product')).stock['test-branch'] === 10, 'Queue never writes projected stock into the durable cache');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  check(notifications >= 2, 'IndexedDB state changes notify liveQuery');
+  await fetch('/__phase4-report', { method: 'POST', body: JSON.stringify({ ok: true, checks }) });
+} catch (error) {
+  await fetch('/__phase4-report', { method: 'POST', body: JSON.stringify({ ok: false, checks, error: error.stack }) });
+} finally {
+  subscription?.unsubscribe();
+  database?.close();
+  // Only this newly created fixture database is eligible for cleanup.
+  if (name.startsWith('migapos-test-phase4-')) await Dexie.delete(name);
+}
+</script></body></html>

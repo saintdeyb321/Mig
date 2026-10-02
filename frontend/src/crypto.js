@@ -2,8 +2,9 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-// Derivar una clave AES-GCM a partir del UID del usuario (secreto único por sesión)
+// UID binds the local ciphertext to an account; it is not a server-side secret.
 async function getKey(uid) {
+  if (typeof uid !== 'string' || !uid) throw new Error('UID requerido para cifrar o descifrar.');
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
     encoder.encode(uid.padEnd(32, '0')), // Aseguramos longitud mínima

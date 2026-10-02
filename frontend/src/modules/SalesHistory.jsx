@@ -62,10 +62,11 @@ function SalesHistory({ user }) {
                     <div className="ticket-date-row">
                       <span className="ticket-date">{formatDate(s.createdAt || s.date)}</span>
                       {s.isOffline && !isAnulada && (
-                        <span className="badge-offline">OFFLINE</span>
+                        <span className="badge-offline">{s.queueStatus === 'failed' ? 'FALLIDA' : 'PENDIENTE'}</span>
                       )}
                     </div>
                     <span className="ticket-id">ID: {s.id.substring(0, 8).toUpperCase()} • 🏢 {branchName}</span>
+                    {s.queueStatus === 'failed' && <span role="alert">{s.lastError || 'La venta no pudo sincronizarse.'}</span>}
                   </div>
 
                   <div className="ticket-amount">

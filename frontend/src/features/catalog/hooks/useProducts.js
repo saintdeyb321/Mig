@@ -94,7 +94,9 @@ export const useProducts = (user) => {
       const currentProduct = editing ? globalProducts.find(p => p.id === editing) : null;
       let stockViejo = {};
       if (currentProduct) {
-        if (typeof currentProduct.stock === 'object' && currentProduct.stock !== null) {
+        if (currentProduct.remoteStock && typeof currentProduct.remoteStock === 'object') {
+          stockViejo = currentProduct.remoteStock;
+        } else if (typeof currentProduct.stock === 'object' && currentProduct.stock !== null) {
           stockViejo = currentProduct.stock;
         } else if (typeof currentProduct.rawStock === 'object' && currentProduct.rawStock !== null) {
           stockViejo = currentProduct.rawStock;

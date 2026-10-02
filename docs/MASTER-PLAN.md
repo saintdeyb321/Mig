@@ -49,7 +49,7 @@ Usar esta tabla como control de avance.
 | 1 | Foundation: repositorio, env y Firebase CLI | COMPLETADA |
 | 2 | Seguridad SaaS multi-tenant | COMPLETADA |
 | 3 | Arquitectura React y Data Layer | COMPLETADA |
-| 4 | Ventas, inventario y motor offline | PENDIENTE |
+| 4 | Ventas, inventario y motor offline | COMPLETADA |
 | 5 | Contratos, pedidos y ledger de pagos | PENDIENTE |
 | 6 | Caja, alertas y auditoría | PENDIENTE |
 | 7 | Reportes, dashboard y Excel | PENDIENTE |
@@ -461,6 +461,18 @@ Casos:
 ## Criterio de aprobación
 
 Mismo input → mismo resultado, sin importar cuántos retries existan.
+
+## Implementación de Fase 4
+
+- `saleModel` valida el payload canónico v1: `saleId == localId == idempotencyKey`, tenant, sede física, usuario, caja, items únicos, cantidades enteras, precios y pagos. Los importes se normalizan a dos decimales y las comparaciones admiten ruido menor a S/ 0.005. El costo de cada línea se captura antes de encolar; costo, ganancia, pagos y agregados comparten helpers. El calendario de negocio usa `America/Lima`; Firestore persiste `Timestamp` y el payload JSON cifrado usa ISO para interoperabilidad.
+- Online y reconnect pasan por `applySaleOnce`: lee el recibo, productos y agregado antes de escribir; un recibo idéntico devuelve `ALREADY_APPLIED` y uno diferente genera conflicto. Venta, stock de la sede y `daily_stats` se confirman en una sola transacción. Se conserva el esquema de claves literales con puntos del agregado online; los mapas anidados de retries anteriores se incorporan al tocar ese agregado, sin reconstruir históricos ni modificar reportes.
+- Dexie mantiene `migapos_offline_v2` y actualiza su esquema a v3 sin borrar datos. Conserva ciphertext/IDs/estados antiguos y recupera el mapa raw de caches previamente proyectados. La cola persiste tenant/sede/usuario, versión, retries, error y tiempos; usa `pending → syncing → synced`, `failed` para errores deterministas y backoff hasta 60 segundos para fallos transitorios. Descifra con `await` y el UID registrado; los legados sólo se reclaman si el payload confirma usuario/tenant actuales.
+- La venta queda durable antes del intento remoto. Un fallo de acknowledgement se recupera con el mismo ID; `syncing` abandonado vuelve a procesarse tras 120 segundos. Promesas serializadas, Web Locks y lease Dexie renovable impiden flush simultáneos; App reintenta al iniciar, al recuperar conexión y cada 15 segundos, respetando backoff y cambios de identidad. Se conserva el merge de cajas anterior a las ventas; una caja pendiente demora únicamente sus ventas.
+- El cache de productos guarda snapshots raw. La UI deriva un único mapa efectivo por producto/sede, excluye recibos ya aplicados y nunca persiste descuentos de pendientes. El total escalar del DTO es sólo presentación; la edición de inventario usa el mapa remoto. Historial deduplica por ID, prefiere el recibo remoto y muestra estado/error de fallos legibles.
+- `voidSaleOnce` lee el recibo remoto y revierte stock/agregados una sola vez, con alerta determinista `VOIDED_SALE_{saleId}`. Las carreras de Rules se resuelven comprobando el recibo mediante una lectura autorizada; un rechazo sin operación confirmada conserva el error. La anulación requiere conexión.
+- Rules refuerza identidad inmutable, tenant/sede/usuario/caja, pagos y stock no negativo del cajero. Los documentos existentes conservan aislamiento y compatibilidad de void; se permite comprobar recibos/agregados ausentes para transacciones. La semántica arbitraria de items se valida en el dominio, sin simular un límite de 20 líneas en Rules.
+
+Validación ejecutada: `npm run test:architecture` (15 tests), `npm run test:sales` (25), `npm run test:rules` (81 de seguridad + 12 de integración Firestore/Storage Emulator con `demo-migapos`), `npm run test:offline-db` (16 comprobaciones en IndexedDB/Web Locks reales usando Edge headless y un perfil temporal aislado), `npm run lint --prefix frontend`, `npm run build --prefix frontend` y `git diff --check`: aprobados. El test de navegador admite `MIGAPOS_TEST_BROWSER` para otra ruta Chromium/Edge; no abre la base de la aplicación. El emulador utilizó el JRE 21 portátil existente en PATH. Se mantienen los avisos previos de tamaño de chunks/Browserslist. F4-01–F4-30 verificados; no se actualizaron dependencias, no hubo deploy, commits ni cambios del índice/historial de Git, ni acceso a datos reales, y no se inició Fase 5.
 
 ---
 
