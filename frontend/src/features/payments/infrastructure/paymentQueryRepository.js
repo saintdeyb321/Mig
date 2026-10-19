@@ -1,4 +1,4 @@
-import { collection, query, where, orderBy, documentId, limit, startAfter, getDocs, Timestamp } from 'firebase/firestore';
+import * as firestoreSDK from 'firebase/firestore';
 import { mapDocuments } from '../../../core/firebase/documents.js';
 import { toDateSafe } from '../../../core/dates/dateValues.js';
 
@@ -11,7 +11,8 @@ function requiredId(value) {
   return value;
 }
 
-export function createPaymentRepository(database) {
+export function createPaymentRepository(database, { sdk = firestoreSDK } = {}) {
+  const { collection, query, where, orderBy, documentId, limit, startAfter, getDocs, Timestamp } = sdk;
   async function readPayments(businessId, filters, branchId = 'global') {
     requiredId(businessId);
     const constraints = [where('businessId', '==', businessId), ...filters,

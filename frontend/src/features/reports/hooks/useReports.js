@@ -16,6 +16,7 @@ export const useReports = (user) => {
   const [topProducts, setTopProducts] = useState([]);
   const [chartData, setChartData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [timeFilter, setTimeFilter] = useState('hoy');
 
   const handleTimeFilterChange = useCallback((newFilter) => {
@@ -37,6 +38,7 @@ export const useReports = (user) => {
         setChartData(cached.chartData);
         setTopProducts(cached.topProducts);
         setIsLoading(false);
+        setError(null);
       }));
       if (timeFilter !== 'hoy') return () => scope.close();
     }
@@ -154,6 +156,8 @@ export const useReports = (user) => {
         });
       } catch (err) {
         console.error("Error fusionando contratos al reporte:", err);
+        if (scope.isCurrent(revision)) { setError(err.message || 'No se pudo verificar el ledger.'); setIsLoading(false); }
+        return;
       }
 
       const resultSummary = { total: t, cash: c, yape: y, totalSales: orders };
@@ -169,6 +173,7 @@ export const useReports = (user) => {
 
       if (!scope.isCurrent(revision)) return;
       setSummary(resultSummary);
+      setError(null);
       setChartData(resultChart);
       setTopProducts(resultTop);
       setIsLoading(false);
@@ -192,5 +197,5 @@ export const useReports = (user) => {
 
   const maxProductQty = useMemo(() => topProducts.length > 0 ? topProducts[0].qty : 1, [topProducts]);
 
-  return { summary, topProducts, chartData, isLoading, timeFilter, setTimeFilter: handleTimeFilterChange, maxProductQty };
+  return { summary, topProducts, chartData, isLoading, error, timeFilter, setTimeFilter: handleTimeFilterChange, maxProductQty };
 };

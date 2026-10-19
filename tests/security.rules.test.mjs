@@ -11,6 +11,48 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getBytes } from 'firebase/storage';
 
+describe('Immutable audit and user notification isolation', () => {
+  beforeEach(async () => env.withSecurityRulesDisabled(async ctx => {
+    const fixtureDb = ctx.firestore();
+    await setDoc(doc(fixtureDb, 'users', 'owner-a2'), profile('tenant-a', 'dueño'));
+    await setDoc(doc(fixtureDb, 'audit_events', 'event-a'), { businessId: 'tenant-a', branchId: 'a-1',
+      type: 'CASH_OPENED', sourceType: 'cash_session', sourceId: 'session-a', actorId: 'cashier-a',
+      actorName: 'Cajero', occurredAt: now, metadata: {} });
+    for (const userId of ['owner-a', 'owner-a2']) await setDoc(doc(fixtureDb, 'notifications', userId), {
+      businessId: 'tenant-a', branchId: 'a-1', userId, eventId: 'event-a', type: 'CASH_OPENED',
+      title: 'Caja', message: 'Turno abierto', createdAt: now, readAt: null });
+    await setDoc(doc(fixtureDb, 'active_cash_sessions', 'lock-a'), { businessId: 'tenant-a', branchId: 'a-1', sessionId: 'session-a' });
+  }));
+  it('audit is readable by the tenant owner/admin but cannot be created, modified or deleted by clients', async () => {
+    await assertSucceeds(getDoc(doc(ownerDb(), 'audit_events', 'event-a')));
+    await assertSucceeds(getDoc(doc(adminDb(), 'audit_events', 'event-a')));
+    await assertFails(getDoc(doc(db('owner-b'), 'audit_events', 'event-a')));
+    await assertFails(getDoc(doc(cashierDb(), 'audit_events', 'event-a')));
+    await assertFails(setDoc(doc(ownerDb(), 'audit_events', 'new'), { businessId: 'tenant-a' }));
+    await assertFails(updateDoc(doc(ownerDb(), 'audit_events', 'event-a'), { type: 'changed' }));
+    await assertFails(deleteDoc(doc(adminDb(), 'audit_events', 'event-a')));
+  });
+  it('notification A cannot be read by B or another owner/admin', async () => {
+    await assertSucceeds(getDoc(doc(ownerDb(), 'notifications', 'owner-a')));
+    for (const user of ['owner-a2', 'owner-b', 'cashier-a', 'admin']) await assertFails(getDoc(doc(db(user), 'notifications', 'owner-a')));
+  });
+  it('reading A changes only readAt and leaves owner B unread', async () => {
+    await assertSucceeds(updateDoc(doc(ownerDb(), 'notifications', 'owner-a'), { readAt: serverTimestamp() }));
+    assert.equal((await getDoc(doc(db('owner-a2'), 'notifications', 'owner-a2'))).data().readAt, null);
+    for (const key of ['userId', 'businessId', 'type', 'eventId', 'message', 'createdAt']) {
+      await assertFails(updateDoc(doc(ownerDb(), 'notifications', 'owner-a'), { [key]: 'forged' }));
+    }
+    await assertFails(updateDoc(doc(ownerDb(), 'notifications', 'owner-a'), { readAt: null }));
+    await assertFails(setDoc(doc(ownerDb(), 'notifications', 'new'), { businessId: 'tenant-a', userId: 'owner-a' }));
+    await assertFails(deleteDoc(doc(ownerDb(), 'notifications', 'owner-a')));
+  });
+  it('clients cannot create a cash lock or read another tenant lock', async () => {
+    await assertSucceeds(getDoc(doc(cashierDb(), 'active_cash_sessions', 'lock-a')));
+    await assertFails(getDoc(doc(db('owner-b'), 'active_cash_sessions', 'lock-a')));
+    await assertFails(updateDoc(doc(ownerDb(), 'active_cash_sessions', 'lock-a'), { sessionId: 'forged' }));
+  });
+});
+
 const projectId = 'demo-migapos';
 assert.match(projectId, /^demo-/);
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080',

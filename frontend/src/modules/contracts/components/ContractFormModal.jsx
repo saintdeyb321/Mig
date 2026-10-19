@@ -59,7 +59,7 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     return () => { created.forEach(url => URL.revokeObjectURL(url)); created.clear(); };
   }, []);
   const imageReferences = useMemo(() => images.map(image => image.type === 'existing' ? image.value : image.url), [images]);
-  const { urls: displayedImages, error: imageError } = useContractImageUrls(imageReferences);
+  const { urls: displayedImages } = useContractImageUrls(imageReferences);
 
   const totals = useMemo(() => {
     const sub = Math.max(0, Number(formData.subtotal) || 0);

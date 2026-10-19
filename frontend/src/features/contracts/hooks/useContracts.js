@@ -5,7 +5,7 @@ import {
   subscribeActiveContracts, getContractHistoryPage, createContractDocument, updateContractDocument,
   addContractPayment, cancelContractDocument, markContractDelivered, ACTIVE_CONTRACT_LIMIT,
 } from '../infrastructure/contractRepository';
-import { prepareContractImages } from '../infrastructure/contractImages';
+import { prepareContractImages, cleanupContractImagePaths, cleanupRetiredContractImages, retryContractImageCleanup } from '../infrastructure/contractImages';
 import { commercialContractFields, contractCommandSignature, createContractCommandRegistry, mergeContractPages } from '../application/contractCommands';
 import { useScopedSubscription } from '../../../shared/hooks/useScopedSubscription';
 
@@ -17,8 +17,15 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const processing = useRef(false);
   const historyRequest = useRef(null);
-  const commands = useMemo(() => createContractCommandRegistry(), [identityKey]);
-  const scope = useMemo(() => ({ active: true }), [identityKey]);
+  const commands = useMemo(() => ({ ...createContractCommandRegistry(), identityKey }), [identityKey]);
+  const scope = useMemo(() => ({ active: true, identityKey }), [identityKey]);
+  useEffect(() => {
+    if (!businessId) return;
+    const retry = () => { void retryContractImageCleanup(businessId).catch(() => console.warn('Cleanup de imágenes pendiente.')); };
+    retry(); window.addEventListener('online', retry);
+    const timer = setInterval(retry, 60000);
+    return () => { clearInterval(timer); window.removeEventListener('online', retry); };
+  }, [businessId, identityKey]);
   useEffect(() => {
     scope.active = true;
     return () => { scope.active = false; };
@@ -32,24 +39,26 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
   const [history, setHistory] = useState(() => emptyHistory(identityKey));
   if (history.scopeKey !== identityKey) setHistory(emptyHistory(identityKey));
   const currentHistory = history.scopeKey === identityKey ? history : emptyHistory(identityKey);
+  const contracts = useMemo(() => mergeContractPages(currentHistory.contracts, activeContracts), [currentHistory.contracts, activeContracts]);
 
   const loadMoreHistory = useCallback(async () => {
-    if (!businessId || !scope.active || !currentHistory.hasMore || historyRequest.current === identityKey) return;
-    historyRequest.current = identityKey;
+    if (!businessId || !scope.active || !currentHistory.hasMore || historyRequest.current?.identityKey === identityKey) return;
+    const request = { identityKey };
+    historyRequest.current = request;
     setHistory(previous => previous.scopeKey === identityKey ? { ...previous, loading: true, started: true } : previous);
     try {
       const page = await getContractHistoryPage(businessId, currentHistory.cursor);
-      if (!scope.active) return;
+      if (!scope.active || historyRequest.current !== request) return;
       setHistory(previous => previous.scopeKey === identityKey ? {
         ...previous, contracts: mergeContractPages(previous.contracts, page.contracts),
         cursor: page.cursor, hasMore: page.hasMore, loading: false,
       } : previous);
     } catch (error) {
-      if (!scope.active) return;
+      if (!scope.active || historyRequest.current !== request) return;
       setHistory(previous => previous.scopeKey === identityKey ? { ...previous, loading: false } : previous);
       toast.error(error.message || 'Error al cargar el historial. Puedes reintentar.');
     } finally {
-      if (historyRequest.current === identityKey) historyRequest.current = null;
+      if (historyRequest.current === request) historyRequest.current = null;
     }
   }, [businessId, scope, identityKey, currentHistory.hasMore, currentHistory.cursor]);
 
@@ -85,13 +94,21 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     return activeBranchId;
   }, [activeBranchId]);
 
+  const discardUploads = useCallback(async (command, contractId, error) => {
+    if (['unavailable', 'internal', 'deadline-exceeded', 'unknown', 'cancelled', 'network-request-failed'].includes(error.code)) return;
+    await cleanupContractImagePaths(businessId, contractId, command.uploadedPaths ?? []).catch(() => console.warn('Cleanup pendiente.'));
+    command.images = null; command.uploadedPaths = [];
+  }, [businessId]);
   const imagesForCommand = useCallback(async (command, contractId, data) => {
-    if (!command.images) command.images = await prepareContractImages({
-      businessId, contractId, newImages: data.newImages ?? [], retainedImages: data.retainedImages ?? [],
-    });
+    command.uploadedPaths ??= [];
+    try {
+      if (!command.images) command.images = await prepareContractImages({
+        businessId, contractId, newImages: data.newImages ?? [], retainedImages: data.retainedImages ?? [], uploadedPaths: command.uploadedPaths,
+      });
+    } catch (error) { await discardUploads(command, contractId, error); throw error; }
     if (!scope.active) throw new Error('La sesión cambió durante la operación.');
     return command.images;
-  }, [businessId, scope]);
+  }, [businessId, scope, discardUploads]);
 
   const createContract = useCallback(async data => {
     const branchId = physicalBranch();
@@ -102,16 +119,17 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     const command = commands.retain('create', signature);
     return runCommand('Registrando pedido...', async () => {
       const referenceImages = await imagesForCommand(command, command.contractId, data);
-      const result = await createContractDocument({ ...fields, contractId: command.contractId,
+      let result;
+      try { result = await createContractDocument({ ...fields, contractId: command.contractId,
         operationId: command.operationId, branchId, referenceImages,
         ...(data.initialPayment ? { initialPayment: {
           amount: data.initialPayment.amount, method: data.initialPayment.method, operationId: command.initialOperationId,
         } } : {}),
-      });
+      }); } catch (error) { await discardUploads(command, command.contractId, error); throw error; }
       commands.complete('create', command);
       return result;
     }, result => `Pedido ${result.contractNumber || 'registrado'} confirmado`);
-  }, [physicalBranch, commands, runCommand, imagesForCommand]);
+  }, [physicalBranch, commands, runCommand, imagesForCommand, discardUploads]);
 
   const updateContract = useCallback(async (contractId, data) => {
     if (!data) return false;
@@ -120,11 +138,16 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     const command = commands.retain(key, contractCommandSignature({ ...fields, retainedImages: data.retainedImages, newImages: data.newImages }));
     return runCommand('Actualizando pedido...', async () => {
       const referenceImages = await imagesForCommand(command, contractId, data);
-      const result = await updateContractDocument(contractId, { ...fields, referenceImages });
+      let result;
+      try { result = await updateContractDocument(contractId, { ...fields, referenceImages }); }
+      catch (error) { await discardUploads(command, contractId, error); throw error; }
+      const previousImages = contracts.find(contract => contract.id === contractId)?.referenceImages ?? [];
+      await cleanupRetiredContractImages(businessId, contractId, previousImages, referenceImages)
+        .catch(() => console.warn('Pedido confirmado; limpieza de imágenes pendiente.'));
       commands.complete(key, command);
       return result;
     }, 'Pedido actualizado');
-  }, [commands, runCommand, imagesForCommand]);
+  }, [commands, runCommand, imagesForCommand, discardUploads, contracts, businessId]);
 
   const cancelContract = useCallback(async (contractId, reason = 'Anulado por el usuario') => {
     const branchId = physicalBranch();
@@ -134,6 +157,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     return runCommand('Anulando y procesando reembolsos...', async () => {
       const result = await cancelContractDocument({ contractId, reason, branchId, operationId: command.operationId });
       commands.complete(key, command);
+      historyRequest.current = null;
       setHistory(previous => previous.scopeKey === identityKey ? emptyHistory(identityKey) : previous);
       return result;
     }, 'Pedido anulado y reembolsos confirmados');
@@ -147,17 +171,21 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     return runCommand('Procesando abono...', async () => {
       const result = await addContractPayment({ contractId, amount, method, branchId, operationId: command.operationId });
       commands.complete(key, command);
+      if (result.contractStatus === 'entregado') {
+        historyRequest.current = null;
+        setHistory(previous => previous.scopeKey === identityKey ? emptyHistory(identityKey) : previous);
+      }
       return result;
     }, 'Abono confirmado');
-  }, [physicalBranch, commands, runCommand]);
+  }, [physicalBranch, commands, runCommand, identityKey]);
 
   const markDelivered = useCallback(contract => runCommand('Confirmando entrega...', async () => {
     const result = await markContractDelivered(contract.id);
+    historyRequest.current = null;
     setHistory(previous => previous.scopeKey === identityKey ? emptyHistory(identityKey) : previous);
     return result;
   }, 'Entrega confirmada'), [runCommand, identityKey]);
 
-  const contracts = useMemo(() => mergeContractPages(currentHistory.contracts, activeContracts), [currentHistory.contracts, activeContracts]);
   return { contracts, activeContracts, historyContracts: currentHistory.contracts, isLoading, isProcessing,
     isHistoryLoading: currentHistory.loading, historyStarted: currentHistory.started,
     hasMoreHistory: currentHistory.hasMore, loadMoreHistory,

@@ -2,7 +2,7 @@ import { canonicalSale, assertSaleIdentity, sameSaleOperation, SaleError } from 
 import { decodeQueuedSale, migrateSaleRecord, isDeterministicSaleError, isRetryableSaleError, SYNC_LEASE_MS } from '../domain/queueState.js';
 
 export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, withLock, online, now = Date.now, currentIdentity = () => true,
-  captureProjection = async () => ({}), verifyReceipt }) {
+  captureProjection = async () => ({}), verifyReceipt, afterFlush = async () => {} }) {
   async function enqueue(input, identity) {
     const sale = canonicalSale(input);
     assertSaleIdentity(sale, identity);
@@ -78,6 +78,9 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
             nextRetryAt: failed ? 0 : now() + Math.min(60000, 1000 * 2 ** Math.min(retries, 6)) });
           if (failed) report.failed++; else report.pending = true;
         }
+      }
+      if (currentIdentity(identity)) {
+        try { await afterFlush(identity); } catch (error) { console.warn('Reconciliación de caja pendiente:', error); }
       }
       return report;
     });

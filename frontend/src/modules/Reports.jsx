@@ -86,6 +86,7 @@ export default function Reports({ user }) {
     topProducts,
     chartData,
     isLoading,
+    error,
     timeFilter,
     setTimeFilter,
     maxProductQty
@@ -111,6 +112,7 @@ export default function Reports({ user }) {
     );
   }
 
+  if (error) return <div className="card" role="alert">No se puede mostrar un reporte completo: {error}</div>;
   return (
     <div className="fade-in max-container padding-bottom-lg">
 

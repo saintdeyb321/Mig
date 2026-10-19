@@ -4,6 +4,8 @@ import { actorFor, authorizeBranch } from '../core/authorization.js';
 import { canonicalSale, documentId, sameSaleOperation, SaleError, money, MONEY_TOLERANCE } from './domain/saleModel.js';
 import { statsReference, writeStats, assertStatsScope } from './stats.js';
 import { validateSaleSession } from './sessionWindow.js';
+import { writeAuditEvent } from '../audit/events.js';
+import { prepareClosedSessionReconciliation } from '../cash-register/sessionTotals.js';
 
 function checkedProduct(snapshot, sale) {
   const product = snapshot.data();
@@ -61,12 +63,15 @@ export function createSalesHandlers(database, { now = Date.now } = {}) {
     const stats = statsReference(database, sale);
     const previous = (await transaction.get(stats.reference)).data();
     assertStatsScope(stats.metadata, previous);
+    const reconcile = await prepareClosedSessionReconciliation(transaction, database, sale.sessionId, actor,
+      { id: sale.saleId, data: { ...sale, voided: false } }, 'sale-' + sale.saleId, now());
     const stockVersions = Object.fromEntries(sale.items.map((item, index) => [item.id, products[index].nextVersion]));
     const syncedAt = Timestamp.fromMillis(now());
     transaction.create(reference, { ...sale, requestHash, createdAt: Timestamp.fromDate(new Date(sale.createdAt)),
       queuedAt: Timestamp.fromDate(new Date(sale.queuedAt)), syncedAt, stockVersions, sync: true, voided: false });
     moveStock(transaction, snapshots, products, sale, -1);
     writeStats(transaction, stats.reference, stats.metadata, sale, 1, previous);
+    reconcile();
     return { status: 'APPLIED', stockVersions, syncedAt: syncedAt.toDate().toISOString() };
   });
 
@@ -98,11 +103,17 @@ export function createSalesHandlers(database, { now = Date.now } = {}) {
       const stats = statsReference(database, sale);
       const previous = (await transaction.get(stats.reference)).data();
       assertStatsScope(stats.metadata, previous);
+      const reconcile = sale.sessionId ? await prepareClosedSessionReconciliation(transaction, database, sale.sessionId, actor,
+        { id: saleId, data: { ...sale, voided: true } }, 'void-' + saleId, now()) : () => {};
       const voidedAt = Timestamp.fromMillis(now());
       transaction.update(reference, { voided: true, voidedAt, voidReason: data.reason.trim(),
         voidedByName: actor.name, voidedByRole: actor.role, voidedByUid: actor.uid });
       moveStock(transaction, snapshots, products, sale, 1);
       writeStats(transaction, stats.reference, stats.metadata, sale, -1, previous);
+      reconcile();
+      writeAuditEvent(transaction, database, { businessId: sale.businessId, branchId: sale.branchId, type: 'SALE_VOIDED',
+        sourceType: 'sale', sourceId: saleId, actorId: actor.uid, actorName: actor.name, occurredAt: voidedAt,
+        metadata: { amount: sale.total, reason: data.reason.trim() } });
       transaction.create(database.doc(`alerts/VOIDED_SALE_${saleId}`), {
         type: 'VOIDED_SALE', title: `❌ Ticket Anulado (S/ ${Number(sale.total).toFixed(2)})`,
         businessId: sale.businessId, branchId: sale.branchId, saleId, cashierName: actor.name, userId: actor.uid,

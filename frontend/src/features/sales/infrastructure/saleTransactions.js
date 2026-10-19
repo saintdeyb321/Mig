@@ -1,6 +1,6 @@
 import { auth } from '../../../core/firebase/client';
 import { callBackend } from '../../../core/firebase/callable.js';
-import { syncLocalSession } from '../../cash-register/infrastructure/cashRegisterRepository.js';
+import { syncLocalSession, reconcilePendingSessions } from '../../cash-register/infrastructure/cashRegisterRepository.js';
 import offlineDB from '../../../offlineDB';
 import { encrypt, decrypt } from '../../../crypto';
 import { canonicalSale, SaleError } from '../domain/saleModel.js';
@@ -17,7 +17,7 @@ async function syncCashSessions(identity) {
     catch { continue; }
     if (session.userId !== identity.uid || session.businessId !== identity.businessId) continue;
     try {
-      await syncLocalSession(record.localId, session);
+      await syncLocalSession(record.localId, session, record.data);
     } catch (error) {
       blockedSessions.add(record.localId);
       console.warn(`Caja pendiente ${record.localId}:`, error);
@@ -28,6 +28,7 @@ async function syncCashSessions(identity) {
 export const saleQueue = createSaleQueue({
   store: dexieSaleStore(offlineDB), encrypt, decrypt, withLock: createQueueLock(offlineDB),
   online: () => navigator.onLine, syncSessions: syncCashSessions,
+  afterFlush: reconcilePendingSessions,
   currentIdentity: identity => auth.currentUser?.uid === identity.uid,
   verifyReceipt: (sale, identity) => {
     if (auth.currentUser?.uid !== identity.uid) throw new SaleError('session-changed', 'La sesión cambió.');

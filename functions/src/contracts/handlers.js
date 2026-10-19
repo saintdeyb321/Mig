@@ -4,6 +4,7 @@ import { documentId, SaleError, money } from '../sales/domain/saleModel.js';
 import { COMMERCIAL_FIELDS, commercialFields, contractAmount, paymentMethod, operationId,
   financialProjection, assertPaymentWithinBalance } from './domain/contractModel.js';
 import { digest, ensureLegacyPaymentsMigrated, remainingIncomePayments } from './legacyLedger.js';
+import { writeAuditEvent } from '../audit/events.js';
 
 function payload(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new SaleError('invalid-contract', 'Payload de pedido inválido.');
@@ -41,6 +42,12 @@ function verifyPaymentRetry(existing, hash, actor) {
     throw new SaleError('payment-conflict', 'El ID de operación ya fue usado con otro movimiento financiero.');
   }
 }
+async function operationReceipt(transaction, database, id, hash, actor) {
+  const reference = database.doc(`contract_operations/${id}`);
+  const existing = (await transaction.get(reference)).data();
+  if (existing) verifyPaymentRetry(existing, hash, actor);
+  return { reference, exists: !!existing, data: { businessId: actor.businessId, userId: actor.uid, requestHash: hash } };
+}
 function newPayment(actor, contractId, contract, input, type, sessionId, timestamp, requestHash) {
   return { businessId: actor.businessId, branchId: input.branchId, sessionId, userId: actor.uid,
     cashierName: actor.name, sourceType: 'contract', sourceId: contractId,
@@ -69,6 +76,8 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
       method: paymentMethod(raw.initialPayment.method), branchId, contractId };
     if (initial) assertPaymentWithinBalance(initial.amount, commercial.total);
     const hash = digest(['create', actor.businessId, actor.uid, createOperationId, contractId, branchId, commercial, initial]);
+    const operation = await operationReceipt(transaction, database, createOperationId, hash, actor);
+    if (initial?.operationId === createOperationId) throw new SaleError('payment-conflict', 'El adelanto necesita su propio ID de operación.');
     const reference = database.doc(`contracts/${contractId}`);
     const existing = (await transaction.get(reference)).data();
     if (existing) {
@@ -81,6 +90,9 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
     if (paymentReference && (await transaction.get(paymentReference)).exists) {
       throw new SaleError('payment-conflict', 'El ID del adelanto ya fue utilizado.');
     }
+    if (operation.exists) throw new SaleError('payment-conflict', 'La operación ya fue confirmada para otro pedido.');
+    const initialReceipt = initial ? await operationReceipt(transaction, database, initial.operationId, paymentRequestHash('advance', actor, initial), actor) : null;
+    if (initialReceipt?.exists) throw new SaleError('payment-conflict', 'El ID del adelanto ya fue utilizado.');
     const sessionId = initial?.method === 'efectivo' ? await openCashSession(transaction, database, actor, branchId) : null;
     const timestamp = Timestamp.fromMillis(now());
     const contractNumber = orderNumber(contractId, timestamp);
@@ -90,8 +102,13 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
       createdBy: actor.uid, creatorName: actor.name, startDate: timestamp, createdAt: timestamp, updatedAt: timestamp,
       paymentsMigrated: true, paymentsMigratedAt: timestamp, createOperationId, createRequestHash: hash };
     transaction.create(reference, contract);
+    transaction.create(operation.reference, operation.data);
+    if (initialReceipt) transaction.create(initialReceipt.reference, initialReceipt.data);
     if (initial) transaction.create(paymentReference, newPayment(actor, contractId, contract, initial, 'advance', sessionId, timestamp,
       paymentRequestHash('advance', actor, initial)));
+    if (initial) writeAuditEvent(transaction, database, { businessId: actor.businessId, branchId, type: 'CONTRACT_PAYMENT',
+      sourceType: 'contract', sourceId: contractId, actorId: actor.uid, actorName: actor.name, occurredAt: timestamp,
+      operationId: initial.operationId, metadata: { paymentId: initial.operationId, method: initial.method, amount: initial.amount, paymentType: 'advance' } });
     return response(contractId, contract, 'APPLIED', initial ? { paymentId: initial.operationId } : {});
   });
 
@@ -127,10 +144,12 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
     const paymentReference = database.doc(`payments/${input.operationId}`);
     const previous = (await transaction.get(paymentReference)).data();
     const hash = paymentRequestHash('payment', actor, input);
+    const operation = await operationReceipt(transaction, database, input.operationId, hash, actor);
     if (previous) {
       verifyPaymentRetry(previous, hash, actor);
       return response(reference.id, contract, 'ALREADY_APPLIED', { paymentId: input.operationId });
     }
+    if (operation.exists) throw new SaleError('payment-conflict', 'La operación ya tiene otro movimiento confirmado.');
     activeContract(contract);
     const ledger = await ensureLegacyPaymentsMigrated(transaction, database, reference, contract, { now });
     const current = financialProjection(contract.total, ledger.payments, contract.status);
@@ -140,7 +159,11 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
     const payment = newPayment(actor, reference.id, contract, input, 'payment', sessionId, timestamp, hash);
     const projection = financialProjection(contract.total, [...ledger.payments, payment], contract.status);
     ledger.write(); transaction.create(paymentReference, payment);
+    transaction.create(operation.reference, operation.data);
     transaction.update(reference, { ...projection, ...ledger.migration, updatedAt: timestamp });
+    writeAuditEvent(transaction, database, { businessId: actor.businessId, branchId: input.branchId, type: 'CONTRACT_PAYMENT',
+      sourceType: 'contract', sourceId: reference.id, actorId: actor.uid, actorName: actor.name, occurredAt: timestamp,
+      operationId: input.operationId, metadata: { paymentId: input.operationId, method: input.method, amount: input.amount, paymentType: 'payment' } });
     return response(reference.id, { ...contract, ...projection }, 'APPLIED', { paymentId: input.operationId });
   });
 
@@ -156,12 +179,14 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
     await authorizeBranch(transaction, database, actor, input.branchId);
     const { reference, contract } = await readContract(transaction, database, actor, input.contractId);
     const hash = digest(['cancel', actor.businessId, actor.uid, reference.id, input.operationId, input.branchId, reason]);
+    const operation = await operationReceipt(transaction, database, input.operationId, hash, actor);
     if (contract.status === 'cancelado') {
       if (contract.cancelOperationId === input.operationId && contract.cancelRequestHash !== hash) {
         throw new SaleError('payment-conflict', 'El ID de cancelación ya se usó con datos diferentes.');
       }
       return response(reference.id, contract, 'ALREADY_APPLIED');
     }
+    if (operation.exists) throw new SaleError('payment-conflict', 'La operación ya tiene otro movimiento confirmado.');
     const ledger = await ensureLegacyPaymentsMigrated(transaction, database, reference, contract, { now });
     const outstanding = remainingIncomePayments(ledger.payments);
     const sessionId = outstanding.some(payment => payment.method === 'efectivo')
@@ -178,10 +203,19 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
     }
     const projection = financialProjection(contract.total, [...ledger.payments, ...refunds], 'cancelado');
     ledger.write();
-    for (const { id, ...refund } of refunds) transaction.create(database.doc(`payments/${id}`), refund);
+    transaction.create(operation.reference, operation.data);
+    for (const { id, ...refund } of refunds) {
+      transaction.create(database.doc(`payments/${id}`), refund);
+      writeAuditEvent(transaction, database, { businessId: actor.businessId, branchId: input.branchId, type: 'CONTRACT_REFUND',
+        sourceType: 'contract', sourceId: reference.id, actorId: actor.uid, actorName: actor.name, occurredAt: timestamp,
+        operationId: id, metadata: { paymentId: id, reversesPaymentId: refund.reversesPaymentId, method: refund.method, amount: refund.amount } });
+    }
     const update = { ...projection, ...ledger.migration, cancelOperationId: input.operationId, cancelRequestHash: hash,
       voidedAt: timestamp, voidedBy: actor.uid, voidedByName: actor.name, voidReason: reason, updatedAt: timestamp };
     transaction.update(reference, update);
+    writeAuditEvent(transaction, database, { businessId: actor.businessId, branchId: input.branchId, type: 'CONTRACT_VOIDED',
+      sourceType: 'contract', sourceId: reference.id, actorId: actor.uid, actorName: actor.name, occurredAt: timestamp,
+      metadata: { reason, refundedTotal: money(-refunds.reduce((sum, refund) => sum + refund.amount, 0)), contractNumber: contract.contractNumber ?? contract.contractId } });
     transaction.create(database.doc(`alerts/VOIDED_CONTRACT_${reference.id}`), {
       businessId: actor.businessId, branchId: input.branchId, type: 'VOIDED_CONTRACT', sourceId: reference.id,
       title: 'Pedido anulado', message: `${contract.contractNumber ?? contract.contractId}: ${reason}`,

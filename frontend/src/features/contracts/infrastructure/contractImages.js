@@ -1,5 +1,8 @@
-import { getBlob, ref, uploadBytes } from 'firebase/storage';
-import { storage } from '../../../core/firebase/client';
+import { getBlob, ref, uploadBytes, deleteObject } from 'firebase/storage';
+import { collection, documentId, getDocsFromServer, limit, query, where } from 'firebase/firestore';
+import { storage, db, auth } from '../../../core/firebase/client';
+import offlineDB from '../../../offlineDB.js';
+import { cleanupUnreferencedImages, imagePaths } from '../application/imageCleanup.js';
 
 export const MAX_CONTRACT_IMAGES = 20;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -91,7 +94,7 @@ function retainedMetadata(image, prefix) {
   };
 }
 
-export async function prepareContractImages({ businessId, contractId, newImages = [], retainedImages = [] }) {
+export async function prepareContractImages({ businessId, contractId, newImages = [], retainedImages = [], uploadedPaths = [] }) {
   const prefix = `contracts/${safeSegment(businessId)}/${safeSegment(contractId)}/`;
   if (!Array.isArray(newImages) || !Array.isArray(retainedImages)
     || newImages.length + retainedImages.length > MAX_CONTRACT_IMAGES) {
@@ -102,16 +105,59 @@ export async function prepareContractImages({ businessId, contractId, newImages 
     const imageId = crypto.randomUUID();
     const storagePath = `${prefix}${imageId}.jpg`;
     const thumbnailPath = `${prefix}thumbs/${imageId}.jpg`;
-    await Promise.all([
-      uploadBytes(ref(storage, storagePath), main, { contentType: 'image/jpeg' }),
-      uploadBytes(ref(storage, thumbnailPath), thumbnail, { contentType: 'image/jpeg' }),
-    ]);
+    const results = await Promise.allSettled([[storagePath, main], [thumbnailPath, thumbnail]].map(async ([path, bytes]) => {
+      uploadedPaths.push(path); await uploadBytes(ref(storage, path), bytes, { contentType: 'image/jpeg' });
+    }));
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
     return { storagePath, thumbnailPath, contentType: 'image/jpeg' };
   };
-  const retained = await Promise.all(retainedImages.map(image => typeof image === 'string'
-    ? upload(legacyBlob(image)) : retainedMetadata(image, prefix)));
-  const added = await Promise.all(newImages.map(upload));
-  return [...retained, ...added];
+  const results = await Promise.allSettled([...retainedImages.map(async image => typeof image === 'string'
+    ? upload(legacyBlob(image)) : retainedMetadata(image, prefix)), ...newImages.map(upload)]);
+  const failure = results.find(result => result.status === 'rejected');
+  if (failure) throw failure.reason;
+  return results.map(result => result.value);
+}
+
+export async function cleanupContractImagePaths(businessId, contractId, paths, { retry = null } = {}) {
+  const userId = auth.currentUser?.uid;
+  if (!userId || !paths.length) return;
+  const prefix = `contracts/${safeSegment(businessId)}/${safeSegment(contractId)}/`;
+  if (paths.some(path => !path.startsWith(prefix))) throw new Error('Cleanup fuera del pedido.');
+  const id = retry?.id ?? `image-cleanup:${businessId}:${userId}:${crypto.randomUUID()}`;
+  const result = await cleanupUnreferencedImages({ paths,
+    readCurrent: async () => {
+      if (auth.currentUser?.uid !== userId) throw new Error('La sesión cambió.');
+      const snapshot = await getDocsFromServer(query(collection(db, 'contracts'), where('businessId', '==', businessId),
+        where(documentId(), '==', contractId), limit(1)));
+      return snapshot.docs[0]?.data().referenceImages ?? [];
+    },
+    remove: async path => {
+      if (auth.currentUser?.uid !== userId) throw new Error('La sesión cambió.');
+      try { await deleteObject(ref(storage, path)); } catch (error) { if (error.code !== 'storage/object-not-found') throw error; }
+    },
+    onFailure: async pending => {
+      console.warn('Limpieza de imágenes pendiente de reintento.');
+      const retries = (retry?.retries ?? 0) + 1;
+      await offlineDB.settings.put({ id, businessId, userId, contractId, paths: pending, retries,
+        nextRetryAt: Date.now() + Math.min(300000, 5000 * 2 ** retries) });
+    },
+  });
+  if (!result.pending.length) await offlineDB.settings.delete(id);
+}
+
+export async function retryContractImageCleanup(businessId) {
+  const userId = auth.currentUser?.uid;
+  if (!userId || !navigator.onLine) return;
+  const jobs = await offlineDB.settings.where('id').startsWith(`image-cleanup:${businessId}:${userId}:`).limit(20).toArray();
+  for (const job of jobs) if (job.retries < 3 && job.nextRetryAt <= Date.now()) {
+    await cleanupContractImagePaths(businessId, job.contractId, job.paths, { retry: job });
+  }
+}
+
+export async function cleanupRetiredContractImages(businessId, contractId, previous, current) {
+  const retained = new Set(imagePaths(current));
+  await cleanupContractImagePaths(businessId, contractId, imagePaths(previous).filter(path => !retained.has(path)));
 }
 
 export async function resolveContractImageUrls(images, { thumbnails = false } = {}) {

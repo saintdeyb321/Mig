@@ -350,17 +350,19 @@ describe('Financial callables through Functions/Auth/Firestore emulators', () =>
     assert.equal((await snapshot()).stats.totalCost, 0); assert.equal((await snapshot()).product.stock['a-1'], 20);
   });
   it('server session open/close is immutable, scoped and retryable', async () => {
+    await closeSession();
     const payload = { action: 'open', sessionId: 'new-session', branchId: 'a-1', session: { openingAmount: 10, openedAt: at(-9999999), userId: actors.other.uid } };
     const session = await rpc('saveCashSession', payload);
     assert.equal(session.userId, actors.cashier.uid); assert.ok(new Date(session.openedAt).getTime() >= time);
     assert.equal((await rpc('saveCashSession', payload)).openedAt, session.openedAt);
     await submit(input({ sessionId: session.id, createdAt: new Date().toISOString(), queuedAt: new Date().toISOString() }));
-    const closed = await rpc('saveCashSession', { action: 'close', sessionId: session.id, branchId: 'a-1', session: { status: 'closed' } });
+    const closed = await rpc('saveCashSession', { action: 'close', sessionId: session.id, branchId: 'a-1', session: { status: 'closed', declaredAmount: 18 } });
     assert.ok(closed.financialWindow.closedAt);
     await rejects(rpc('saveCashSession', payload), 'closed-session');
     await rejects(rpc('saveCashSession', { ...payload, sessionId: 'foreign', branchId: 'b-1' }), 'permission-denied');
   });
   it('previously authorized offline opening/closure keeps the protected bounded window', async () => {
+    await closeSession();
     const reserved = await rpc('saveCashSession', { action: 'reserve', sessionId: 'reserved', branchId: 'a-1' });
     const openedAt = new Date().toISOString();
     const opened = await rpc('saveCashSession', { action: 'open', sessionId: reserved.id, branchId: 'a-1', offline: true,
@@ -368,7 +370,7 @@ describe('Financial callables through Functions/Auth/Firestore emulators', () =>
     assert.equal(opened.financialWindow.start, reserved.financialWindow.start);
     const ticket = input({ origin: 'offline', sessionId: reserved.id, createdAt: new Date().toISOString(), queuedAt: new Date().toISOString() });
     await rpc('saveCashSession', { action: 'close', sessionId: reserved.id, branchId: 'a-1', offline: true,
-      session: { status: 'closed', closedAt: new Date().toISOString() } });
+      session: { status: 'closed', closedAt: new Date().toISOString(), declaredAmount: 8 } });
     await submit(ticket); assert.equal((await database.doc(`daily_stats/tenant-a_${saleDay(ticket)}_a-1`).get()).data().totalOrders, 1);
     await rejects(rpc('saveCashSession', { action: 'open', sessionId: 'unreserved', branchId: 'a-1', offline: true,
       session: { openedAt, openingAmount: 0 } }), 'unverified-session');

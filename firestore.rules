@@ -287,6 +287,24 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /active_cash_sessions/{lockId} {
+      allow read: if permittedFinancialResource();
+      allow write: if false;
+    }
+
+    match /audit_events/{eventId} {
+      allow read: if superadmin() || (owner() && sameTenantResource());
+      allow write: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid;
+      allow update: if activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+        && request.resource.data.readAt is timestamp && request.resource.data.readAt == request.time;
+      allow create, delete: if false;
+    }
+
     match /system/{docId} {
       allow read: if true;
       allow write: if superadmin();

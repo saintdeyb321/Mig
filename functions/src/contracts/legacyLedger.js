@@ -38,8 +38,9 @@ export function legacyPaymentPlan(contractId, contract) {
       type, occurredAt, userId: payment.userId ?? payment.cashierId ?? contract.createdBy ?? 'legacy-unknown',
       cashierName: payment.cashierName ?? contract.creatorName ?? 'Registro anterior',
       sessionId: payment.sessionId ?? null, branchId: payment.branchId ?? null,
-      legacyIndex: index, legacyContentHash: legacyHash, legacy: true, ...(payment.reason ? { reason: String(payment.reason) } : {}) };
-    const method = String(payment.method ?? '').toLowerCase();
+      legacyIndex: index, legacyContentHash: legacyHash, legacy: true, legacyMethod: String(payment.method ?? ''),
+      ...(payment.reason ? { reason: String(payment.reason) } : {}) };
+    const method = String(payment.method ?? '').trim().toLowerCase().replace(/_taller$/, '');
     const parts = method === 'mixto' ? Object.entries(payment.splitPayments ?? {}) : [[method === 'yape/plin' ? 'yape' : method, Math.abs(signed)]];
     if (!parts.length || parts.some(([key, value]) => !['efectivo', 'yape', 'plin'].includes(key)
       || typeof value !== 'number' || !Number.isFinite(value) || value < 0)
@@ -84,15 +85,23 @@ export async function ensureLegacyPaymentsMigrated(transaction, database, refere
   const sessionIds = [...new Set(missing.map(payment => payment.sessionId).filter(Boolean))];
   const sessionDocs = sessionIds.length ? await transaction.getAll(...sessionIds.map(id => database.doc(`cash_sessions/${documentId(id)}`))) : [];
   const sessions = new Map(sessionDocs.map(doc => [doc.id, doc.data()]));
+  const validId = id => { try { return id !== 'global' && !!documentId(id); } catch { return false; } };
+  const branchIds = [...new Set([contract.branchId, ...missing.map(payment => payment.branchId),
+    ...sessionDocs.map(doc => doc.data()?.branchId)].filter(validId))];
+  const branchDocs = branchIds.length ? await transaction.getAll(...branchIds.map(id => database.doc(`branches/${documentId(id)}`))) : [];
+  const validBranches = new Set(branchDocs.filter(doc => doc.data()?.businessId === contract.businessId).map(doc => doc.id));
   for (const payment of missing) {
     const session = payment.sessionId ? sessions.get(payment.sessionId) : null;
-    if (payment.sessionId && (!session || session.businessId !== contract.businessId)) migrationError('Caja histórica ausente o fuera del tenant; requiere revisión.');
-    payment.branchId = payment.branchId ?? session?.branchId ?? contract.branchId;
-    if (!payment.branchId || payment.branchId === 'global') migrationError('Pago antiguo sin sede física verificable; requiere revisión.');
-    documentId(payment.branchId);
-    if (session && session.branchId !== payment.branchId) migrationError('Sede histórica y caja no coinciden; requiere revisión.');
-    payment.legacyBranchSource = payment.branchId === (plan.find(row => row.id === payment.id)?.branchId)
-      ? 'payment' : session ? 'session' : 'contract';
+    if (session && session.businessId !== contract.businessId) migrationError('Caja histórica fuera del tenant; requiere revisión.');
+    if (validBranches.has(payment.branchId)) payment.branchResolution = 'verified-payment';
+    else if (session && validBranches.has(session.branchId)) {
+      payment.branchId = session.branchId; payment.branchResolution = 'verified-session';
+    } else if (validBranches.has(contract.branchId)) {
+      payment.branchId = contract.branchId; payment.branchResolution = 'inferred-contract';
+    } else migrationError('Pago antiguo sin sede física verificable; requiere revisión.');
+    if (session && validBranches.has(session.branchId) && session.branchId !== payment.branchId) {
+      migrationError('Sede histórica y caja no coinciden; requiere revisión.');
+    }
     // Preserve historical digital session linkage if it existed; new digital entries always use null.
     payment.createdAt = Timestamp.fromMillis(now());
   }
@@ -112,5 +121,5 @@ export async function ensureLegacyPaymentsMigrated(transaction, database, refere
   const migration = contract.paymentsMigrated !== true ? { paymentsMigrated: true, paymentsMigratedAt: Timestamp.fromMillis(now()),
     ...(contract.payments !== undefined ? { payments: FieldValue.delete() } : {}) } : {};
   return { payments: all, missing, migration,
-    write: () => { for (const { id, ...payment } of missing) transaction.create(database.doc(`payments/${id}`), payment); } };
+    write: (limit = missing.length) => { for (const { id, ...payment } of missing.slice(0, limit)) transaction.create(database.doc(`payments/${id}`), payment); } };
 }

@@ -165,7 +165,7 @@ function POS({ user }) {
         <div className="fade-in" style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#b91c1c', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '500' }}>
           <span style={{ fontSize: '1.5rem' }}>🚨</span>
           <span>
-            <strong>Acción Requerida:</strong> El turno anterior no fue cerrado. Por seguridad, haz el conteo y cierra la caja de tu compañero antes de iniciar tus ventas.
+            <strong>Acción Requerida:</strong> Hay un turno o reserva offline de otro usuario. {currentSession.canForceClose ? 'Verifica el conteo para cerrarlo como administrador.' : 'Solicita el cierre a un administrador.'}
           </span>
         </div>
       )}
@@ -377,9 +377,10 @@ function POS({ user }) {
                   <button
                     className="btn-primary"
                     onClick={() => setShowCloseModal(true)}
+                    disabled={!currentSession.canForceClose}
                     style={{ width: '100%', padding: '15px', background: '#ef4444', color: 'white', borderRadius: '8px', fontWeight: '900', textTransform: 'uppercase', cursor: 'pointer', border: 'none' }}
                   >
-                    🔒 CIERRA EL TURNO ANTERIOR
+                    {currentSession.canForceClose ? '🔒 CERRAR TURNO ANTERIOR' : '🔒 REQUIERE ADMINISTRADOR'}
                   </button>
                 ) : (
                   <button
@@ -433,6 +434,7 @@ function POS({ user }) {
         <button
           className="mobile-cart-float-btn warning"
           onClick={() => setShowCloseModal(true)}
+          disabled={!currentSession.canForceClose}
           style={{ background: '#ef4444' }}
         >
           <span>⚠️ Atención</span>

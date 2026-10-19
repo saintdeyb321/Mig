@@ -8,6 +8,7 @@ import { encrypt, decrypt } from '/src/crypto.js';
 import { createSaleQueue } from '/src/features/sales/application/saleQueue.js';
 import { dexieSaleStore, createQueueLock } from '/src/features/sales/infrastructure/saleQueueStore.js';
 import { canonicalSale } from '/src/features/sales/domain/saleModel.js';
+import { persistCashSession } from '/src/features/cash-register/application/sessionCache.js';
 
 const checks = [];
 const check = (condition, name) => { if (!condition) throw new Error(name); checks.push(name); };
@@ -74,6 +75,24 @@ try {
   check((await database.products.get('test-product')).stock['test-branch'] === 10, 'Queue never writes projected stock into the durable cache');
   await new Promise(resolve => setTimeout(resolve, 100));
   check(notifications >= 2, 'IndexedDB state changes notify liveQuery');
+  const remote = { id: 'cash-race', businessId: identity.businessId, userId: identity.uid, branchId: identity.branchId, status: 'open' };
+  const local = { ...remote, status: 'closed', declaredAmount: 12, reconciliationPending: true };
+  const closedCiphertext = await encrypt(JSON.stringify(local), identity.uid);
+  await database.cash_sessions.put({ localId: remote.id, data: closedCiphertext, sync: false });
+  const preserved = await persistCashSession(database, remote, { encrypt, decrypt, preservePending: true });
+  check(preserved.status === 'closed' && (await database.cash_sessions.get(remote.id)).sync === false,
+    'A stale remote refresh cannot overwrite an unacknowledged local close');
+  let staleRejected = false;
+  try { await persistCashSession(database, remote, { encrypt, decrypt, acknowledgedData: 'older-open-ciphertext' }); }
+  catch { staleRejected = true; }
+  check(staleRejected && (await database.cash_sessions.get(remote.id)).data === closedCiphertext,
+    'An opening acknowledgement cannot discard a newer encrypted local close');
+  await persistCashSession(database, local, { encrypt, decrypt, acknowledgedData: closedCiphertext });
+  const jobId = `cash-reconcile:${identity.businessId}:${identity.uid}:${remote.id}`;
+  check((await database.cash_sessions.get(remote.id)).sync === true && (await database.settings.get(jobId)).sessionId === remote.id,
+    'Acknowledging the exact close atomically persists its reconciliation job');
+  await persistCashSession(database, { ...local, reconciliationPending: false }, { encrypt, decrypt });
+  check(!await database.settings.get(jobId), 'A final reconciliation clears only its own durable job');
   await fetch('/__phase4-report', { method: 'POST', body: JSON.stringify({ ok: true, checks }) });
 } catch (error) {
   await fetch('/__phase4-report', { method: 'POST', body: JSON.stringify({ ok: false, checks, error: error.stack }) });

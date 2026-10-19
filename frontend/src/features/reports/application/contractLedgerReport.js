@@ -47,7 +47,7 @@ export function buildContractLedgerReport(payments, contracts = [], branchesMap 
       'Estado': String(contract?.status ?? '-').toUpperCase().replace(/_/g, ' '),
     };
   }).sort((a, b) => a._branchName.localeCompare(b._branchName) || b._timestamp - a._timestamp)
-    .map(({ _branchName, _timestamp, ...row }) => row);
+    .map(row => { const clean = { ...row }; delete clean._branchName; delete clean._timestamp; return clean; });
   return { contractPaymentRows, paymentsByBranch, totals: {
     efectivo: totals.efectivo, yape: totals.yape, totalContratosNeto: money(totals.efectivo + totals.yape),
     totalPagosProcesados: totals.payments,

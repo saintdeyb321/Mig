@@ -69,7 +69,7 @@ export function financialProjection(total, payments, currentStatus = 'pendiente'
     return sum + payment.amount;
   }, 0));
   if (paidTotal < -MONEY_TOLERANCE) fail('invalid-ledger', 'Los reembolsos superan los ingresos.');
-  const balance = Math.max(0, money(total - paidTotal));
+  const balance = currentStatus === 'cancelado' ? 0 : Math.max(0, money(total - paidTotal));
   const delivered = ['entregado', 'entregado_con_deuda'].includes(currentStatus);
   const status = currentStatus === 'cancelado' ? 'cancelado' : delivered
     ? (balance > 0 ? 'entregado_con_deuda' : 'entregado')

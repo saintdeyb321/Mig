@@ -50,8 +50,8 @@ Usar esta tabla como control de avance.
 | 2 | Seguridad SaaS multi-tenant | COMPLETADA |
 | 3 | Arquitectura React y Data Layer | COMPLETADA |
 | 4 | Ventas, inventario y motor offline | COMPLETADA |
-| 5 | Contratos, pedidos y ledger de pagos | PENDIENTE |
-| 6 | Caja, alertas y auditoría | PENDIENTE |
+| 5 | Contratos, pedidos y ledger de pagos | EN PROGRESO |
+| 6 | Caja, alertas y auditoría | EN PROGRESO |
 | 7 | Reportes, dashboard y Excel | PENDIENTE |
 | 8 | Licencias, SuperAdmin, backups y borrado | PENDIENTE |
 | 9 | Branding MigaPOS y limpieza general | PENDIENTE |
@@ -567,9 +567,21 @@ Debe existir estrategia compatible para contratos antiguos.
 
 Caja/reportes pueden obtener pagos por rango/session sin cargar todos los contratos.
 
+## Cierre pendiente de Fase 5
+
+Se añadieron índices de las consultas actuales, `functions/scripts/migrateLegacyContracts.mjs` (dry-run por defecto; `--apply`, `--business=`, `--limit=`, `--cursor=`), migración paginada e idempotente de pagos/imágenes y procedencia de sede (`verified-payment`, `verified-session`, `inferred-contract`). Los casos sin datos verificables conservan el origen y se reportan para revisión. Cancelados conservan `balance = 0`; las operaciones usan recibos determinísticos. El lector temporal legacy sólo participa si el contrato no está migrado y no existe ledger, sin sumar ambas fuentes. La UI invalida historial al completar entregados con deuda y limpia únicamente imágenes propias no referenciadas, con reintentos acotados; los reportes bloquean resultados incompletos.
+
+Validación del 18/10/2026: `npm ci` en raíz/Functions/frontend, arquitectura (15), ventas (28), dominio Functions/contratos/caja (17), lint/build y diff-check aprobados. Una ejecución anterior con Auth/Functions/Firestore/Storage Emulator (`demo-migapos`) aprobó 131 pruebas de Fase 5 y regresión; después se añadieron paginación real, limpieza tras creación rechazada y reanudación de 450 movimientos. La versión final requiere volver a ejecutar `test:rules` (seguridad + integración de ventas/contratos/caja) y `test:offline-db` (22 comprobaciones reales de IndexedDB). Un intento de navegador aislado agotó 60 segundos; las ejecuciones posteriores fuera del sandbox no llegaron a iniciarse porque la revisión automática agotó su plazo o devolvió `Selected model is at capacity`, incluso tras autorización explícita del usuario y ejecución por suites. No se declaran aprobadas esas pruebas ni cerradas las fases.
+
+Sólo se migraron fixtures sintéticos de emuladores; no hubo migraciones reales, deploy ni acceso a Firebase de producción. El script mantiene dry-run por defecto; los casos inferidos siguen apareciendo en `manualReview` al reejecutarlo. Antes de una migración real se deben revisar el resumen y los casos pendientes, y autorizar su aplicación expresamente.
+
 ---
 
 # FASE 6 — Caja, alertas y auditoría
+
+## Estado
+
+EN PROGRESO: implementación disponible; integración y navegador bloqueados según la validación de Fase 5.
 
 ## Objetivo
 
@@ -624,6 +636,12 @@ Ejemplos:
 ## Criterio de aprobación
 
 Dos administradores pueden gestionar su estado de lectura independientemente.
+
+## Implementación pendiente de aprobación
+
+Las Functions de apertura/reserva/cierre/cierre forzado usan Auth/perfil, lock transaccional por negocio/sede y consultas financieras por sesión. El servidor calcula POS, pagos y refunds; el cliente aporta el conteo físico y las notas. El autocierre programado cada 15 minutos conserva conteo/diferencia desconocidos como `null`, libera únicamente su lock y genera auditoría. Las ventanas offline conservan sus IDs, admiten cierre local diferido sin afectar un turno posterior y reconcilian ventas tardías; la caché protege cierres pendientes frente a respuestas antiguas y registra la reconciliación con el ack local, esperando las ventas pendientes.
+
+`audit_events` es inmutable para clientes. Un trigger crea `notifications` determinísticas para dueños activos y, cuando corresponde, el cajero afectado; reintentos no restablecen `readAt`. NotificationBell escucha sólo las 30 no leídas del negocio/usuario y marca lecturas individualmente. Rules, índices y pruebas cubren aislamiento, cierres concurrentes, cálculos protegidos, offline, autocierre, auditoría y lectura independiente. `alerts` conserva únicamente la compatibilidad previa de anulaciones; no se inició Fase 7 ni se ejecutó el schedule en producción.
 
 ---
 
