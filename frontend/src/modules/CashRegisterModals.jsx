@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 export const CashRegisterModals = ({
   showOpenModal, setShowOpenModal,
   showCloseModal, setShowCloseModal,
-  isLoadingSession, openRegister, calculateClose, confirmClose
+  isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
 }) => {
   const [openingAmount, setOpeningAmount] = useState('');
   const [declaredAmount, setDeclaredAmount] = useState('');
@@ -95,6 +95,9 @@ export const CashRegisterModals = ({
                 </button>
               </div>
             </form>
+            <button type="button" onClick={authorizeOffline} disabled={isLoadingSession || !navigator.onLine} className="btn-secondary">
+              Autorizar apertura offline (15 min)
+            </button>
           </div>
         </div>
       )}

@@ -3,6 +3,7 @@ import { FieldPath, Timestamp } from 'firebase-admin/firestore';
 import { ensureLegacyPaymentsMigrated } from '../src/contracts/legacyLedger.js';
 import { financialProjection } from '../src/contracts/domain/contractModel.js';
 import { migrateLegacyContractImages } from './legacyContractImages.mjs';
+import { MIGRATION_PROOF_VERSION } from '../src/contracts/legacyReader.js';
 
 export function migrationOptions(args) {
   const options = { dryRun: true, limit: 100, cursor: null, businessId: null };
@@ -25,7 +26,11 @@ export async function runContractMigration({ database, bucket, dryRun = true, bu
   const summary = { scanned: 0, migrated: 0, skipped: 0, manualReview: 0, errors: 0, nextCursor: null };
   const markerRef = !dryRun && businessId ? database.doc('contract_migrations/' + businessId) : null;
   const previousMarker = markerRef ? (await markerRef.get()).data() : null;
-  const continuation = cursor && previousMarker?.cursor === cursor && previousMarker.startedFromBeginning;
+  const continuation = cursor && previousMarker?.cursor === cursor && previousMarker.businessId === businessId
+    && previousMarker.proofVersion === MIGRATION_PROOF_VERSION && previousMarker.startedFromBeginning;
+  const startedFromBeginning = !cursor || !!continuation;
+  if (markerRef) await markerRef.set({ businessId, proofVersion: MIGRATION_PROOF_VERSION, complete: false, verified: false,
+    cursor, startedFromBeginning, needsReview: !!continuation && previousMarker.needsReview === true, updatedAt: Timestamp.now() });
   let last = cursor;
   while (summary.scanned < limit) {
     let query = database.collection('contracts').orderBy(FieldPath.documentId()).limit(Math.min(50, limit - summary.scanned));
@@ -67,10 +72,20 @@ export async function runContractMigration({ database, bucket, dryRun = true, bu
     if (page.size < 50 && summary.scanned < limit) { summary.nextCursor = null; break; }
   }
   if (markerRef) {
-    const startedFromBeginning = !cursor || !!continuation;
-    const needsReview = summary.errors > 0 || summary.manualReview > 0 || (!!continuation && previousMarker.needsReview);
-    await markerRef.set({ businessId, cursor: summary.nextCursor, startedFromBeginning, needsReview,
-      complete: startedFromBeginning && !summary.nextCursor && !needsReview, updatedAt: Timestamp.now() });
+    let needsReview = summary.errors > 0 || summary.manualReview > 0 || (!!continuation && previousMarker.needsReview === true);
+    if (startedFromBeginning && !summary.nextCursor && !needsReview) {
+      let verifiedCursor = null;
+      do {
+        let check = database.collection('contracts').where('businessId', '==', businessId).orderBy(FieldPath.documentId()).limit(50);
+        if (verifiedCursor) check = check.startAfter(verifiedCursor);
+        const page = await check.get();
+        needsReview ||= page.docs.some(doc => doc.data().paymentsMigrated !== true || doc.data().payments !== undefined);
+        verifiedCursor = page.size === 50 ? page.docs.at(-1) : null;
+      } while (verifiedCursor && !needsReview);
+    }
+    const complete = startedFromBeginning && !summary.nextCursor && !needsReview;
+    await markerRef.set({ businessId, proofVersion: MIGRATION_PROOF_VERSION, cursor: summary.nextCursor, startedFromBeginning, needsReview,
+      complete, verified: complete, updatedAt: Timestamp.now() });
   }
   return summary;
 }

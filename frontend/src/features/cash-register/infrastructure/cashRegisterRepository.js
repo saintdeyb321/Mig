@@ -1,10 +1,11 @@
-import { collection, query, where, getDocs, orderBy, limit, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db, auth } from '../../../core/firebase/client';
 import { mapDocuments } from '../../../core/firebase/documents';
 import { callBackend } from '../../../core/firebase/callable.js';
 import offlineDB from '../../../offlineDB.js';
 import { encrypt, decrypt } from '../../../crypto.js';
 import { persistCashSession } from '../application/sessionCache.js';
+import { createCashStateReader } from './cashQueryRepository.js';
 
 function sessionDTO(session) {
   return { ...session, ...(session.financialWindow ? { financialWindow: Object.fromEntries(Object.entries(session.financialWindow)
@@ -26,17 +27,15 @@ export async function reserveOfflineSession(user, branchId) {
   }
   return cacheSession(await callBackend('reserveOfflineCashSession', { sessionId: crypto.randomUUID(), branchId }), { preservePending: true });
 }
-export async function findOpenSession(businessId, branchId, userId = null) {
-  const base = [where('businessId', '==', businessId), where('branchId', '==', branchId), ...(userId ? [where('userId', '==', userId)] : [])];
-  const open = await getDocs(query(collection(db, 'cash_sessions'), ...base, where('status', '==', 'open'), limit(1)));
-  if (open.size) return sessionDTO(mapDocuments(open)[0]);
-  const reserved = await getDocs(query(collection(db, 'cash_sessions'), ...base, where('status', '==', 'reserved'),
-    where('financialWindow.expiresAt', '>', Timestamp.now()), orderBy('financialWindow.expiresAt'), limit(1)));
-  return reserved.size ? sessionDTO(mapDocuments(reserved)[0]) : null;
-}
+const readOpenSession = createCashStateReader(db);
+export const findOpenSession = async (...args) => {
+  const session = await readOpenSession(...args);
+  return session ? sessionDTO(session) : null;
+};
 export const findLastClosedSession = async (businessId, branchId) => mapDocuments(await getDocs(query(collection(db, 'cash_sessions'),
   where('businessId', '==', businessId), where('branchId', '==', branchId),
   where('status', 'in', ['closed', 'closed_with_discrepancy']), orderBy('closedAt', 'desc'), limit(1))))[0] ?? null;
+// This is called only by the explicit opening action; checking state never acquires a lock.
 export async function createSession(data) {
   const reserved = await reserveOfflineSession({ uid: data.userId, businessId: data.businessId }, data.branchId);
   if (reserved.status !== 'reserved') throw new Error('La caja anterior aún se está sincronizando.');

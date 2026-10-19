@@ -237,7 +237,9 @@ service cloud.firestore {
     }
 
     match /contracts/{contractId} {
-      allow read: if tenantReader();
+      // Cleanup can confirm an absent new contract; existing documents remain tenant scoped.
+      allow get: if activeUser() && (resource == null || tenantReader());
+      allow list: if tenantReader();
       allow create, update, delete: if false;
     }
 

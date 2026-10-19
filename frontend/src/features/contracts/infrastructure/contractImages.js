@@ -1,5 +1,5 @@
 import { getBlob, ref, uploadBytes, deleteObject } from 'firebase/storage';
-import { collection, documentId, getDocsFromServer, limit, query, where } from 'firebase/firestore';
+import { doc, getDocFromServer } from 'firebase/firestore';
 import { storage, db, auth } from '../../../core/firebase/client';
 import offlineDB from '../../../offlineDB.js';
 import { cleanupUnreferencedImages, imagePaths } from '../application/imageCleanup.js';
@@ -128,9 +128,9 @@ export async function cleanupContractImagePaths(businessId, contractId, paths, {
   const result = await cleanupUnreferencedImages({ paths,
     readCurrent: async () => {
       if (auth.currentUser?.uid !== userId) throw new Error('La sesión cambió.');
-      const snapshot = await getDocsFromServer(query(collection(db, 'contracts'), where('businessId', '==', businessId),
-        where(documentId(), '==', contractId), limit(1)));
-      return snapshot.docs[0]?.data().referenceImages ?? [];
+      const snapshot = await getDocFromServer(doc(db, 'contracts', contractId));
+      if (snapshot.exists() && snapshot.data().businessId !== businessId) throw new Error('Pedido fuera del negocio.');
+      return snapshot.data()?.referenceImages ?? [];
     },
     remove: async path => {
       if (auth.currentUser?.uid !== userId) throw new Error('La sesión cambió.');

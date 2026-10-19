@@ -20,7 +20,7 @@ function historicalDate(value) {
   return date;
 }
 export function legacyPaymentPlan(contractId, contract) {
-  if (contract.paymentsMigrated === true || contract.payments === undefined) return [];
+  if (contract.payments === undefined) return [];
   if (!Array.isArray(contract.payments)) migrationError('El historial antiguo de pagos es inválido.');
   const plan = [];
   for (const [index, payment] of contract.payments.entries()) {
@@ -118,7 +118,7 @@ export async function ensureLegacyPaymentsMigrated(transaction, database, refere
   const all = [...payments, ...missing];
   financialProjection(contract.total, all, contract.status);
   remainingIncomePayments(all);
-  const migration = contract.paymentsMigrated !== true ? { paymentsMigrated: true, paymentsMigratedAt: Timestamp.fromMillis(now()),
+  const migration = contract.paymentsMigrated !== true || contract.payments !== undefined ? { paymentsMigrated: true, paymentsMigratedAt: Timestamp.fromMillis(now()),
     ...(contract.payments !== undefined ? { payments: FieldValue.delete() } : {}) } : {};
   return { payments: all, missing, migration,
     write: (limit = missing.length) => { for (const { id, ...payment } of missing.slice(0, limit)) transaction.create(database.doc(`payments/${id}`), payment); } };

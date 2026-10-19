@@ -38,10 +38,7 @@ export const useCashRegister = (user, currentBranchId) => {
           const cached = await cacheSession(session, { preservePending: true });
           if (active()) setCurrentSession(cached.status === 'open' ? cached : null);
         } else if (session) setCurrentSession({ ...session, needsForceClose: true, canForceClose: canForce });
-        else {
-          setCurrentSession(null);
-          await reserveOfflineSession({ uid: user.uid, businessId: user.businessId }, currentBranchId);
-        }
+        else setCurrentSession(null);
       }
     } catch (error) {
       if (active()) { setCurrentSession(null); toast.error(error.message || 'No se pudo verificar la caja.'); }
@@ -54,6 +51,15 @@ export const useCashRegister = (user, currentBranchId) => {
     window.addEventListener('online', online);
     return () => { revisionRef.current++; window.removeEventListener('online', online); };
   }, [checkSession]);
+  const authorizeOffline = async () => {
+    if (!navigator.onLine || processing.current || !user?.uid || currentBranchId === 'global') return;
+    processing.current = true;
+    try {
+      await reserveOfflineSession({ uid: user.uid, businessId: user.businessId }, currentBranchId);
+      toast.success('Apertura offline autorizada por 15 minutos. Abre la caja antes de desconectarte si necesitas un turno de 18 horas.');
+    } catch (error) { toast.error(error.message || 'No se pudo autorizar la apertura offline.'); }
+    finally { processing.current = false; }
+  };
   const openRegister = async (openingAmount, notes = '') => {
     if (!user?.businessId || currentBranchId === 'global' || processing.current || auth.currentUser?.uid !== user.uid) return false;
     if (typeof openingAmount !== 'number' || !Number.isFinite(openingAmount) || openingAmount < 0) { toast.error('Monto de apertura inválido.'); return false; }
@@ -121,5 +127,5 @@ export const useCashRegister = (user, currentBranchId) => {
     } catch (error) { toast.error(error.message || 'No se pudo cerrar la caja.', { id: toastId }); return false; }
     finally { processing.current = false; }
   };
-  return { currentSession, isLoadingSession, checkSession, openRegister, calculateClose, confirmClose };
+  return { currentSession, isLoadingSession, checkSession, authorizeOffline, openRegister, calculateClose, confirmClose };
 };

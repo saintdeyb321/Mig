@@ -51,6 +51,18 @@ describe('Immutable audit and user notification isolation', () => {
     await assertFails(getDoc(doc(db('owner-b'), 'active_cash_sessions', 'lock-a')));
     await assertFails(updateDoc(doc(ownerDb(), 'active_cash_sessions', 'lock-a'), { sessionId: 'forged' }));
   });
+  it('no client role can forge a verified migration completion proof', async () => {
+    for (const client of [ownerDb(), cashierDb(), adminDb()]) {
+      await assertFails(setDoc(doc(client, 'contract_migrations', 'tenant-a'), {
+        businessId: 'tenant-a', proofVersion: 2, verified: true, complete: true, needsReview: false,
+      }));
+    }
+  });
+  it('an active user can confirm an absent contract for cleanup without reading a foreign contract', async () => {
+    await assertSucceeds(getDoc(doc(cashierDb(), 'contracts', 'absent-cleanup-contract')));
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'contracts', 'absent-cleanup-contract')));
+    await assertFails(getDoc(doc(db('owner-b'), 'contracts', 'contract-a')));
+  });
 });
 
 const projectId = 'demo-migapos';

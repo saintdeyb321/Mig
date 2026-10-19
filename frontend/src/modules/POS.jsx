@@ -41,7 +41,7 @@ function POS({ user }) {
   const { businessBranches, activeBranchId } = useTenantData();
 
   const {
-    currentSession, isLoadingSession, openRegister, calculateClose, confirmClose
+    currentSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
   } = useCashRegister(user, activeBranchId);
 
   const {
@@ -426,6 +426,7 @@ function POS({ user }) {
         setShowCloseModal={setShowCloseModal}
         isLoadingSession={isLoadingSession}
         openRegister={openRegister}
+        authorizeOffline={authorizeOffline}
         calculateClose={calculateClose}
         confirmClose={confirmClose}
       />

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
+import { verifiedMigration } from '../functions/src/contracts/legacyReader.js';
 import { describe, it } from 'node:test';
 import { financialProjection, assertPaymentWithinBalance } from '../functions/src/contracts/domain/contractModel.js';
 import { legacyPaymentPlan, remainingIncomePayments } from '../functions/src/contracts/legacyLedger.js';
@@ -7,6 +9,20 @@ import { cleanupUnreferencedImages } from '../frontend/src/features/contracts/ap
 import { mergeContractPages } from '../frontend/src/features/contracts/application/contractCommands.js';
 const legacy = payments => ({ businessId: 'tenant', branchId: 'branch', total: 100, payments });
 describe('Contract financial invariants', () => {
+  it('partial migration and a batch racing the report preserve every movement exactly once', async () => {
+    const legacy = [{ id: 'one', sourceId: 'same', amount: 20 }, { id: 'two', sourceId: 'same', amount: -5 }];
+    const rows = await compatiblePayments({}, async () => [{ ...legacy[0], authoritative: true }, { id: 'three', sourceId: 'same', amount: 10 }],
+      async () => ({ payments: legacy, partialMigrations: 1, manualReview: 0, nextCursor: null }));
+    assert.equal(rows.length, 3); assert.equal(rows.reduce((sum, row) => sum + row.amount, 0), 25);
+    assert.equal(rows.find(row => row.id === 'one').authoritative, true);
+    await assert.rejects(compatiblePayments({}, async () => [], async () => ({ payments: [], manualReview: 1 })), /revisión/);
+  });
+  it('completion proofs require the verified schema and the exact tenant', () => {
+    const proof = { businessId: 'tenant', proofVersion: 2, verified: true, complete: true, needsReview: false };
+    assert.equal(verifiedMigration(proof, 'tenant'), true);
+    for (const invalid of [{ ...proof, businessId: 'other' }, { ...proof, proofVersion: 1 }, { ...proof, verified: false },
+      { ...proof, needsReview: true }, { complete: true }]) assert.equal(verifiedMigration(invalid, 'tenant'), false);
+  });
   it('fully refunded cancellations retain no operational debt', () => {
     assert.deepEqual(financialProjection(100, [{ amount: 40, type: 'advance' }, { amount: -40, type: 'refund' }], 'cancelado'),
       { paidTotal: 0, balance: 0, status: 'cancelado' });
@@ -28,7 +44,7 @@ describe('Contract financial invariants', () => {
     assert.equal(first.reduce((sum, row) => sum + row.amount, 0), 17);
     assert.equal(first[0].occurredAt.toDate().toISOString(), '2024-01-01T00:00:00.000Z');
     assert.equal(first.at(-1).type, 'refund'); assert.equal(first.at(-1).amount, -3);
-    assert.deepEqual(legacyPaymentPlan('doc', { ...contract, paymentsMigrated: true }), []);
+    assert.deepEqual(legacyPaymentPlan('doc', { ...contract, paymentsMigrated: true }), first);
   });
   it('unverifiable legacy data requests review without creating a guessed movement', () => {
     for (const payment of [{ amount: 1, method: 'yape' }, { amount: 1, method: 'other', date: '2024-01-01' },

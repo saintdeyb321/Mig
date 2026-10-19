@@ -15,7 +15,9 @@ import { runContractMigration, migrationOptions } from '../functions/scripts/mig
 import { migrateLegacyContractImages } from '../functions/scripts/legacyContractImages.mjs';
 import { ensureLegacyPaymentsMigrated } from '../functions/src/contracts/legacyLedger.js';
 import { createCashAutoCloser } from '../functions/src/cash-register/scheduled.js';
-import { cashLockId } from '../functions/src/cash-register/handlers.js';
+import { cashLockId, createCashSessionHandlers, RESERVATION_WINDOW_MS } from '../functions/src/cash-register/handlers.js';
+import { createCashStateReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
+import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
 import { createNotificationRepository } from '../frontend/src/features/notifications/infrastructure/notificationQueryRepository.js';
 import { createAuditRepository } from '../frontend/src/features/notifications/infrastructure/auditQueryRepository.js';
 
@@ -45,6 +47,74 @@ describe('Phase 6 protected cash sessions and event notifications', () => {
       payment: 'efectivo', amountPaid: 10, change: 0, createdAt, queuedAt: createdAt, origin: 'online', ...extra };
     await rpc('submitSale', data); return data;
   }
+  async function partialLegacy(sessionId) {
+    const reference = database.doc('contracts/partial-legacy');
+    await reference.set(legacy({ payments: [
+      { amount: 30, type: 'advance', method: 'efectivo', sessionId, date: iso(-300000) },
+      { amount: 5, type: 'refund', method: 'efectivo', sessionId, date: iso(-200000) },
+    ] }));
+    await database.runTransaction(async transaction => {
+      const source = (await transaction.get(reference)).data();
+      (await ensureLegacyPaymentsMigrated(transaction, database, reference, source)).write(1);
+    });
+  }
+  it('two cashiers checking the branch do not create reservations or prevent a subsequent opening', async () => {
+    await fresh();
+    for (const who of ['cashier', 'cashier2']) {
+      const read = createCashStateReader(actors[who].database, { sdk: firestoreSDK });
+      assert.equal(await read('tenant-a', 'a-1'), null);
+    }
+    assert.equal((await database.collection('active_cash_sessions').get()).size, 0);
+    assert.equal((await database.collection('cash_sessions').get()).size, 0);
+    assert.equal((await opened({}, 'cashier2')).userId, actors.cashier2.uid);
+  });
+  it('explicit reservations block foreign openings only until expiry and retries never renew abandoned authorization', async () => {
+    await fresh(); let clock = Date.now();
+    const handlers = createCashSessionHandlers(database, { now: () => clock });
+    const request = (who, data) => ({ auth: { uid: actors[who].uid }, data });
+    const sessionId = uuid();
+    const reserved = await handlers.reserveOfflineCashSession(request('cashier', { sessionId, branchId: 'a-1' }));
+    assert.equal(new Date(reserved.financialWindow.expiresAt).getTime() - clock, RESERVATION_WINDOW_MS);
+    assert.equal((await handlers.reserveOfflineCashSession(request('cashier', { sessionId: uuid(), branchId: 'a-1' }))).id, sessionId);
+    await assert.rejects(handlers.openCashSession(request('cashier2', opening())), { code: 'active-session' });
+    clock += RESERVATION_WINDOW_MS + 1;
+    await assert.rejects(handlers.reserveOfflineCashSession(request('cashier', { sessionId, branchId: 'a-1' })), { code: 'expired-session' });
+    const opened = await handlers.openCashSession(request('cashier2', opening()));
+    assert.equal(opened.userId, actors.cashier2.uid);
+    assert.equal((await database.doc('active_cash_sessions/' + cashLockId('tenant-a', 'a-1')).get()).data().sessionId, opened.id);
+  });
+  it('late offline sale and void include missing legacy refunds during a partial migration exactly once', async () => {
+    await partialLegacy('session-a');
+    const closed = await rpc('closeCashSession', { sessionId: 'session-a', declaredAmount: 35 });
+    assert.equal(closed.expectedCash, 35); assert.equal(closed.contractCash, 25); assert.equal(closed.legacyPartialMigrations, 1);
+    const receipt = await sale('session-a', { origin: 'offline', createdAt: iso(-1000), queuedAt: iso(-1000) });
+    await rpc('submitSale', receipt);
+    let saved = (await database.doc('cash_sessions/session-a').get()).data();
+    assert.equal(saved.expectedCash, 45); assert.equal(saved.contractCash, 25); assert.equal(saved.financialRevision, 1);
+    await rpc('voidSale', { saleId: receipt.localId, reason: 'Prueba' });
+    await rpc('voidSale', { saleId: receipt.localId, reason: 'Prueba' });
+    saved = (await database.doc('cash_sessions/session-a').get()).data();
+    assert.equal(saved.expectedCash, 35); assert.equal(saved.financialRevision, 2);
+    await runContractMigration({ database, bucket, businessId: 'tenant-a', dryRun: false });
+    assert.equal((await rpc('reconcileCashSession', { sessionId: 'session-a' })).expectedCash, 35);
+    assert.equal((await audits('CASH_RECONCILED', 'session-a')).length, 2);
+  });
+  it('unverifiable legacy preserves the last trusted close until an explicit reconciliation has complete data', async () => {
+    await partialLegacy('session-a');
+    await rpc('closeCashSession', { sessionId: 'session-a', declaredAmount: 35 });
+    const bad = database.doc('contracts/missing-date');
+    const payment = { amount: 4, type: 'payment', method: 'efectivo', sessionId: 'session-a' };
+    await bad.set(legacy({ payments: [payment] }));
+    await sale('session-a', { origin: 'offline', createdAt: iso(-1000), queuedAt: iso(-1000) });
+    let saved = (await database.doc('cash_sessions/session-a').get()).data();
+    assert.equal(saved.expectedCash, 35); assert.equal(saved.requiresFinancialReview, true); assert.equal(saved.totalsComplete, false);
+    assert.equal((await rpc('reconcileCashSession', { sessionId: 'session-a' })).expectedCash, 35);
+    await bad.update({ payments: [{ ...payment, date: iso(-30000) }] });
+    const reconciled = await rpc('reconcileCashSession', { sessionId: 'session-a' });
+    assert.equal(reconciled.expectedCash, 49); assert.equal(reconciled.requiresFinancialReview, false); assert.equal(reconciled.totalsComplete, true);
+    await rpc('reconcileCashSession', { sessionId: 'session-a' });
+    assert.equal((await audits('CASH_RECONCILED', 'session-a')).length, 2);
+  });
   it('concurrent openings allow at most one actor and one deterministic branch lock', async () => {
     await fresh();
     const results = await Promise.allSettled([rpc('openCashSession', opening()), rpc('openCashSession', opening(), 'cashier2')]);
@@ -357,6 +427,32 @@ describe('Phase 5 contract callables', () => {
 });
 
 describe('Phase 5 migration, queries and image cleanup', () => {
+  it('a partial ledger merges missing movement IDs and ignores unverified or foreign completion markers', async () => {
+    const reference = database.doc('contracts/partial-report');
+    await reference.set(legacy({ paymentsMigrated: true, payments: [
+      { amount: 30, method: 'efectivo', type: 'advance', branchId: 'a-1', sessionId: 'session-a', date: '2024-01-02' },
+      { amount: 5, method: 'efectivo', type: 'refund', branchId: 'a-1', sessionId: 'session-a', date: '2024-01-03' },
+    ] }));
+    await database.runTransaction(async transaction => {
+      const source = (await transaction.get(reference)).data();
+      (await ensureLegacyPaymentsMigrated(transaction, database, reference, source)).write(1);
+    });
+    const marker = database.doc('contract_migrations/tenant-a');
+    await marker.set({ businessId: 'tenant-b', proofVersion: 2, verified: true, complete: true, needsReview: false });
+    const input = { sessionId: 'session-a', branchId: 'a-1' };
+    const page = await rpc('getLegacyContractPayments', input);
+    assert.equal(page.partialMigrations, 1); assert.equal(page.payments.length, 1); assert.equal(page.payments[0].amount, -5);
+    assert.equal(page.payments[0].occurredAt, '2024-01-03T00:00:00.000Z');
+    const repo = createPaymentRepository(actors.cashier.database, { sdk: firestoreSDK });
+    const rows = await compatiblePayments(input, () => repo.getPaymentsBySession('tenant-a', 'session-a', 'a-1'), data => rpc('getLegacyContractPayments', data));
+    assert.equal(rows.length, 2); assert.equal(rows.reduce((sum, row) => sum + row.amount, 0), 25);
+    await marker.set({ businessId: 'tenant-a', complete: true });
+    assert.equal((await rpc('getLegacyContractPayments', input)).payments.length, 1);
+    const result = await runContractMigration({ database, bucket, businessId: 'tenant-a', dryRun: false });
+    assert.equal(result.errors, 0); assert.equal((await marker.get()).data().verified, true);
+    assert.equal((await rpc('getLegacyContractPayments', input)).payments.length, 0);
+    assert.equal((await ledger(reference.id)).length, 2);
+  });
   it('dry run is default, CLI only prints a summary and resumes via cursor', async () => {
     assert.equal(migrationOptions([]).dryRun, true);
     await database.doc('contracts/legacy-a').set(legacy());
@@ -488,10 +584,9 @@ describe('Phase 5 migration, queries and image cleanup', () => {
     await storageSDK.uploadBytes(object, new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), { contentType: 'image/png' });
     await fails(rpc('createContract', input({ contractId: id, initialPayment: { operationId: uuid(), amount: 101, method: 'yape' } })), 'overpayment');
     const result = await cleanupUnreferencedImages({ paths: [path], readCurrent: async () => {
-      const snapshot = await firestoreSDK.getDocsFromServer(firestoreSDK.query(firestoreSDK.collection(actors.cashier.database, 'contracts'),
-        firestoreSDK.where('businessId', '==', 'tenant-a'), firestoreSDK.where(firestoreSDK.documentId(), '==', id), firestoreSDK.limit(1)));
-      return snapshot.docs[0]?.data().referenceImages ?? [];
-    }, remove: () => storageSDK.deleteObject(object) });
+      const snapshot = await firestoreSDK.getDocFromServer(firestoreSDK.doc(actors.cashier.database, 'contracts', id));
+      return snapshot.data()?.referenceImages ?? [];
+    }, remove: () => storageSDK.deleteObject(object), onFailure: (_paths, error) => { throw error; } });
     assert.equal(result.deleted, 1); assert.equal(result.pending.length, 0);
     await assert.rejects(storageSDK.getMetadata(object), { code: 'storage/object-not-found' });
   });

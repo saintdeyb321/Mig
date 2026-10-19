@@ -3,45 +3,52 @@ import { actorFor } from '../core/authorization.js';
 import { documentId, SaleError } from '../sales/domain/saleModel.js';
 import { ensureLegacyPaymentsMigrated } from './legacyLedger.js';
 
-// Temporary bounded compatibility reader; ledger documents always take precedence.
-export async function readLegacyPaymentPage(database, input) {
-    const businessId = documentId(input.businessId);
-    const branchId = input.branchId ?? 'global';
-    if ((await database.doc('contract_migrations/' + businessId).get()).data()?.complete === true) {
-      return { payments: [], manualReview: 0, nextCursor: null };
+export const MIGRATION_PROOF_VERSION = 2;
+export function verifiedMigration(marker, businessId) {
+  return marker?.businessId === businessId && marker.proofVersion === MIGRATION_PROOF_VERSION
+    && marker.complete === true && marker.verified === true && marker.needsReview === false;
+}
+
+// The caller's transaction observes legacy arrays and ledger at the same snapshot.
+export async function readLegacyPaymentPage(database, input, { transaction } = {}) {
+  const businessId = documentId(input.businessId), branchId = input.branchId ?? 'global';
+  const read = reference => transaction ? transaction.get(reference) : reference.get();
+  const marker = (await read(database.doc('contract_migrations/' + businessId))).data();
+  if (verifiedMigration(marker, businessId)) return { payments: [], manualReview: 0, partialMigrations: 0, nextCursor: null };
+  if (branchId !== 'global') documentId(branchId);
+  const start = input.startDate == null ? null : new Date(input.startDate).getTime();
+  const end = input.endDate == null ? null : new Date(input.endDate).getTime();
+  if ((start !== null && !Number.isFinite(start)) || (end !== null && !Number.isFinite(end)) || (start !== null && end !== null && end < start)) {
+    throw new SaleError('invalid-payment', 'Período inválido.');
+  }
+  if (input.sessionId) documentId(input.sessionId);
+  let query = database.collection('contracts').where('businessId', '==', businessId).orderBy(FieldPath.documentId()).limit(50);
+  if (input.cursor) query = query.startAfter(documentId(input.cursor));
+  const documents = input.contractId ? [await read(database.doc(`contracts/${documentId(input.contractId)}`))] : (await read(query)).docs;
+  const payments = [];
+  let manualReview = 0, partialMigrations = 0;
+  for (const document of documents) {
+    const original = document.data();
+    if (!original || original.businessId !== businessId || original.payments === undefined) continue;
+    try {
+      const prepare = async tx => {
+        const current = transaction ? original : (await tx.get(document.ref)).data();
+        if (!current || current.businessId !== businessId || current.payments === undefined) return null;
+        return ensureLegacyPaymentsMigrated(tx, database, document.ref, current, { maxNewPayments: 10000 });
+      };
+      const planned = transaction ? await prepare(transaction) : await database.runTransaction(prepare);
+      if (!planned) continue;
+      if (planned.missing.length && planned.payments.length > planned.missing.length) partialMigrations++;
+      payments.push(...planned.missing.filter(payment => (branchId === 'global' || payment.branchId === branchId)
+        && (!input.sessionId || payment.sessionId === input.sessionId)
+        && (start === null || payment.occurredAt.toMillis() >= start) && (end === null || payment.occurredAt.toMillis() <= end))
+        .map(payment => ({ ...payment, occurredAt: payment.occurredAt.toDate().toISOString(), createdAt: payment.createdAt.toDate().toISOString() })));
+    } catch (error) {
+      if (['migration-required', 'invalid-ledger'].includes(error.code)) manualReview++;
+      else throw error;
     }
-    if (branchId !== 'global') documentId(branchId);
-    const start = input.startDate == null ? null : new Date(input.startDate).getTime();
-    const end = input.endDate == null ? null : new Date(input.endDate).getTime();
-    if ((start !== null && !Number.isFinite(start)) || (end !== null && !Number.isFinite(end))) throw new SaleError('invalid-payment', 'Período inválido.');
-    if (input.sessionId) documentId(input.sessionId);
-    let query = database.collection('contracts').where('businessId', '==', businessId).orderBy(FieldPath.documentId()).limit(50);
-    if (input.cursor) query = query.startAfter(documentId(input.cursor));
-    const documents = input.contractId ? [await database.doc(`contracts/${documentId(input.contractId)}`).get()] : (await query.get()).docs;
-    const payments = [];
-    let manualReview = 0;
-    for (const document of documents) {
-      const original = document.data();
-      if (!original || original.businessId !== businessId || original.paymentsMigrated === true || !original.payments?.length) continue;
-      try {
-        const fallback = await database.runTransaction(async transaction => {
-          const current = (await transaction.get(document.ref)).data();
-          if (!current || current.businessId !== businessId || current.paymentsMigrated === true) return [];
-          const existing = await transaction.get(database.collection('payments').where('businessId', '==', businessId)
-            .where('sourceId', '==', document.id).limit(1));
-          if (!existing.empty) return [];
-          return (await ensureLegacyPaymentsMigrated(transaction, database, document.ref, current, { maxNewPayments: 10000 })).payments;
-        });
-        payments.push(...fallback.filter(payment => (branchId === 'global' || payment.branchId === branchId)
-          && (!input.sessionId || payment.sessionId === input.sessionId)
-          && (start === null || payment.occurredAt.toMillis() >= start) && (end === null || payment.occurredAt.toMillis() <= end))
-          .map(payment => ({ ...payment, occurredAt: payment.occurredAt.toDate().toISOString(), createdAt: payment.createdAt.toDate().toISOString() })));
-      } catch (error) {
-        if (['migration-required', 'invalid-ledger'].includes(error.code)) manualReview++;
-        else throw error;
-      }
-    }
-    return { payments, manualReview, nextCursor: !input.contractId && documents.length === 50 ? documents.at(-1).id : null };
+  }
+  return { payments, manualReview, partialMigrations, nextCursor: !input.contractId && documents.length === 50 ? documents.at(-1).id : null };
 }
 export function createLegacyPaymentReader(database) {
   return async request => {

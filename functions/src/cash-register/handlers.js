@@ -3,11 +3,11 @@ import { createHash } from 'node:crypto';
 import { actorFor, authorizeBranch } from '../core/authorization.js';
 import { documentId, SaleError, money, saleDay } from '../sales/domain/saleModel.js';
 import { OFFLINE_WINDOW_MS, milliseconds } from '../sales/sessionWindow.js';
-import { readCashTotals, closingProjection } from './sessionTotals.js';
+import { readCashTotals, closingProjection, incompleteCashProjection } from './sessionTotals.js';
 import { writeAuditEvent } from '../audit/events.js';
-import { createLegacyPaymentReader } from '../contracts/legacyReader.js';
 
 export const cashLockId = (businessId, branchId) => createHash('sha256').update(JSON.stringify([businessId, branchId])).digest('hex');
+export const RESERVATION_WINDOW_MS = 15 * 60 * 1000;
 const fail = (code, message) => { throw new SaleError(code, message); };
 function amount(value) {
   if (typeof value !== 'number' || value < 0) fail('invalid-session', 'Importe de caja inválido.');
@@ -33,26 +33,9 @@ export function sessionDTO(id, data) {
 }
 
 export function createCashSessionHandlers(database, { now = Date.now } = {}) {
-  const readLegacy = createLegacyPaymentReader(database);
-  async function legacyForSession(request, sessionId) {
-    const actor = await database.runTransaction(tx => actorFor(tx, database, request.auth?.uid));
-    const session = (await database.doc('cash_sessions/' + sessionId).get()).data();
-    if (!session || session.businessId !== actor.businessId || (actor.role === 'cajero' && session.userId !== actor.uid)) {
-      fail('permission-denied', 'Caja fuera de tus permisos.');
-    }
-    let cursor = null;
-    const payments = [];
-    do {
-      const page = await readLegacy({ auth: request.auth, data: { sessionId, branchId: session.branchId, cursor } });
-      if (page.manualReview) fail('migration-required', 'Pagos históricos pendientes de revisión administrativa.');
-      payments.push(...page.payments); cursor = page.nextCursor;
-    } while (cursor);
-    return payments;
-  }
   async function handle(request, action) {
     const raw = request.data ?? {}, sessionId = documentId(raw.sessionId);
     const offline = raw.offline === true;
-    const legacy = ['close', 'force', 'preview', 'reconcile'].includes(action) ? await legacyForSession(request, sessionId) : [];
     return database.runTransaction(async transaction => {
       const actor = await actorFor(transaction, database, request.auth?.uid);
       const reference = database.doc('cash_sessions/' + sessionId);
@@ -87,18 +70,21 @@ export function createCashSessionHandlers(database, { now = Date.now } = {}) {
           }
           fail('closed-session', 'Una caja cerrada no se puede reabrir.');
         }
-        if (action === 'reserve' && previous) return sessionDTO(sessionId, previous);
+        if (action === 'reserve' && previous) {
+          if (['reserved', 'expired'].includes(previous.status)) fail('expired-session', 'La reserva venció; solicita una nueva autorización.');
+          return sessionDTO(sessionId, previous);
+        }
         if (action === 'open' && offline && previous?.financialWindow && milliseconds(previous.financialWindow.expiresAt) <= time) {
           const opened = milliseconds(raw.openedAt), end = milliseconds(previous.financialWindow.expiresAt);
           if (opened < milliseconds(previous.financialWindow.start) || opened > end || opened > time) fail('invalid-session', 'Apertura offline inválida.');
           const historical = { ...previous, openingAmount, openingNote, openingFingerprint: fingerprint, openedAt: new Date(opened).toISOString(),
             financialWindow: { ...previous.financialWindow, openedAt: Timestamp.fromMillis(opened), closedAt: Timestamp.fromMillis(end) } };
           const totals = await readCashTotals(transaction, database, sessionId, historical);
-          const data = { ...historical, ...closingProjection(totals, null), closedAt: new Date(end).toISOString(),
+          const data = { ...historical, ...(totals.totalsComplete ? closingProjection(totals, null) : incompleteCashProjection(historical)), closedAt: new Date(end).toISOString(),
             autoClosed: true, reconciliationPending: true, syncedAt: timestamp };
           transaction.set(reference, data);
           if (lock?.sessionId === sessionId) transaction.delete(lockReference);
-          audit('CASH_OPENED', { openingAmount }); audit('REGISTER_AUTO_CLOSED', { expectedCash: totals.expectedCash });
+          audit('CASH_OPENED', { openingAmount }); audit('REGISTER_AUTO_CLOSED', { expectedCash: data.expectedCash, requiresFinancialReview: data.requiresFinancialReview });
           return sessionDTO(sessionId, data);
         }
         const active = await transaction.get(database.collection('cash_sessions').where('businessId', '==', actor.businessId)
@@ -119,7 +105,7 @@ export function createCashSessionHandlers(database, { now = Date.now } = {}) {
             fail('invalid-session', 'Apertura fuera de la autorización offline.');
           }
         }
-        const expiresAt = offline ? previous.financialWindow.expiresAt : Timestamp.fromMillis(time + OFFLINE_WINDOW_MS);
+        const expiresAt = offline ? previous.financialWindow.expiresAt : Timestamp.fromMillis(time + (action === 'reserve' ? RESERVATION_WINDOW_MS : OFFLINE_WINDOW_MS));
         if (offline && milliseconds(expiresAt) <= time) fail('expired-session', 'Sincroniza el cierre offline para conservar el turno histórico.');
         let openingDiscrepancy = 0;
         if (action === 'open') {
@@ -161,7 +147,13 @@ export function createCashSessionHandlers(database, { now = Date.now } = {}) {
         if (reported < start || reported > time) fail('invalid-session', 'Fecha de cierre offline inválida.');
         closedTime = Math.min(reported, milliseconds(session.financialWindow.expiresAt));
       }
-      const totals = await readCashTotals(transaction, database, sessionId, session, { legacy });
+      const totals = await readCashTotals(transaction, database, sessionId, session);
+      if (!totals.totalsComplete) {
+        if (action !== 'reconcile') fail('migration-required', 'Pagos históricos pendientes de revisión administrativa.');
+        const review = incompleteCashProjection(previous);
+        if (!previous.requiresFinancialReview) transaction.update(reference, review);
+        return sessionDTO(sessionId, { ...previous, ...review });
+      }
       const declaredAmount = action === 'reconcile' ? previous.declaredAmount ?? null : amount(raw.declaredAmount);
       const projection = closingProjection(totals, declaredAmount);
       if (action === 'preview') return { ...projection, id: sessionId };

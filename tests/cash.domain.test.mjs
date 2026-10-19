@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { calculateCashTotals } from '../functions/src/cash-register/domain/cashTotals.js';
-import { closingProjection } from '../functions/src/cash-register/sessionTotals.js';
+import { closingProjection, incompleteCashProjection } from '../functions/src/cash-register/sessionTotals.js';
 import { cashLockId } from '../functions/src/cash-register/handlers.js';
 describe('Cash financial calculations', () => {
+  it('incomplete reconciliation preserves trusted amounts and exposes pending review', () => {
+    const result = incompleteCashProjection({ expectedCash: 48, difference: -2, contractCash: 38, openingAmount: 10, declaredAmount: 46 });
+    assert.equal(result.expectedCash, 48); assert.equal(result.contractCash, 38); assert.equal(result.difference, -2);
+    assert.equal(result.requiresFinancialReview, true); assert.equal(result.reconciliationPending, true); assert.equal(result.totalsComplete, false);
+    assert.equal(incompleteCashProjection({}).expectedCash, null);
+  });
   it('preserves signed refunds, mixed cash/digital and counts only valid transactions', () => {
     const totals = calculateCashTotals({ openingAmount: 10 }, [
       { payment: 'mixto', total: 20, splitPayments: { efectivo: 8, yape: 12 } },
