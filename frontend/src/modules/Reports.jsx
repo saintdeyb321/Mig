@@ -39,7 +39,7 @@ const MetricCard = memo(({ title, value, subtext, emoji, borderColor, bgColor, v
 
 const ChartColumn = memo(({ ventas, date, maxChartValue }) => {
   const numVentas = Number(ventas) || 0;
-  const heightPercentage = Math.max((numVentas / maxChartValue) * 100, 2);
+  const heightPercentage = Math.max((Math.abs(numVentas) / maxChartValue) * 100, 2);
   const isZero = numVentas === 0;
 
   return (
@@ -49,7 +49,7 @@ const ChartColumn = memo(({ ventas, date, maxChartValue }) => {
         <span className="money-amount">{formatChartMoney(numVentas)}</span>
       </span>
       <div className="chart-bar-bg">
-        <div className="chart-bar-fill fade-in" style={{ height: `${heightPercentage}%` }} />
+        <div className="chart-bar-fill fade-in" style={{ height: `${heightPercentage}%`, ...(numVentas < 0 ? { background: 'var(--danger, #dc2626)' } : {}) }} />
       </div>
       <span className="chart-label-x">{date}</span>
     </div>
@@ -89,18 +89,19 @@ export default function Reports({ user }) {
     error,
     timeFilter,
     setTimeFilter,
+    refreshReport,
     maxProductQty
   } = useReports(user);
 
   // 🚀 LIMPIO: Nos quedamos solo con las métricas estandarizadas
-  const total = summary?.total || 0;
-  const cash = summary?.cash || 0;
-  const yape = summary?.yape || 0;
-  const totalSales = summary?.totalSales || 0;
+  const total = summary.netRevenue;
+  const cash = summary.cashRevenue;
+  const yape = summary.digitalRevenue;
+  const totalSales = summary.posTicketCount;
 
   const maxChartValue = useMemo(() => {
     if (!Array.isArray(chartData) || chartData.length === 0) return 1;
-    return Math.max(...chartData.map(d => Number(d?.ventas) || 0));
+    return Math.max(1, ...chartData.map(d => Math.abs(Number(d?.ventas) || 0)));
   }, [chartData]);
 
   if (isLoading) {
@@ -112,7 +113,7 @@ export default function Reports({ user }) {
     );
   }
 
-  if (error) return <div className="card" role="alert">No se puede mostrar un reporte completo: {error}</div>;
+  if (error) return <div className="card" role="alert">No se puede mostrar un reporte completo: {error} <button onClick={refreshReport}>Reintentar</button></div>;
   return (
     <div className="fade-in max-container padding-bottom-lg">
 
@@ -136,17 +137,18 @@ export default function Reports({ user }) {
 
       <div className="metrics-grid">
         <MetricCard
-          title="Ingresos Brutos"
+          title="Ingresos Netos"
           value={`S/ ${formatMoney(total)}`}
+          subtext={`POS: S/ ${formatMoney(summary.posRevenue)} · Pedidos: S/ ${formatMoney(summary.contractRevenue)}`}
           emoji="💰"
           borderColor="border-primary"
           bgColor="bg-primary-light"
         />
 
         <MetricCard
-          title="Tickets Generados"
+          title="Tickets POS"
           value={totalSales.toLocaleString('en-US')}
-          subtext={totalSales > 0 ? `Promedio: S/ ${formatMoney(total / totalSales)} por venta` : null}
+          subtext={`Promedio POS: S/ ${formatMoney(summary.posAverageTicket)} · Anulados: ${summary.voidedTicketCount} · Pagos pedidos: ${summary.contractPaymentCount}`}
           emoji="🧾"
           borderColor="border-dark"
           bgColor="bg-gray"
@@ -154,7 +156,7 @@ export default function Reports({ user }) {
 
         {/* 🚀 Ahora estos reflejan el Efectivo y Yape de la Sede Seleccionada (o el Global) */}
         <MetricCard
-          title="En Caja (Efectivo)"
+          title="Ingresos en Efectivo"
           value={`S/ ${formatMoney(cash)}`}
           emoji="💵"
           borderColor="border-success"

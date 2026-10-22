@@ -1,5 +1,7 @@
 {
   "indexes": [
+    {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"closedAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},
+    {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"openedAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},
     {"collectionGroup":"sales","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"sessionId","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},
     {"collectionGroup":"payments","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"sessionId","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},
     {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"financialWindow.expiresAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},

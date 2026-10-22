@@ -74,5 +74,16 @@ export async function reconcilePendingSessions(identity) {
     await cacheSession(await callBackend('reconcileCashSession', { sessionId: job.sessionId }));
   }
 }
-export const getSessionsOpenedInPeriod = async (businessId, startDate, endDate) => mapDocuments(await getDocs(query(
-  collection(db, 'cash_sessions'), where('businessId', '==', businessId), where('openedAt', '>=', startDate), where('openedAt', '<=', endDate))));
+const readSessionsByDate = async (field, businessId, startDate, endDate, branchId = 'global') => {
+  const page = await getDocs(query(collection(db, 'cash_sessions'), where('businessId', '==', businessId),
+    ...(branchId === 'global' ? [] : [where('branchId', '==', branchId)]), where(field, '>=', startDate), where(field, '<=', endDate), limit(10001)));
+  if (page.size > 10000) throw new Error('Demasiadas cajas. Selecciona un período menor.');
+  return mapDocuments(page);
+};
+export const getSessionsOpenedInPeriod = (...args) => readSessionsByDate('openedAt', ...args);
+export const getSessionsInPeriod = async (...args) => {
+  const [opened, closed] = await Promise.all([readSessionsByDate('openedAt', ...args), readSessionsByDate('closedAt', ...args)]);
+  const sessions = [...new Map([...opened, ...closed].map(session => [session.id, session])).values()];
+  if (sessions.length > 10000) throw new Error('Demasiadas cajas. Selecciona un período menor.');
+  return sessions;
+};

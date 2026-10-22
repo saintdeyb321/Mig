@@ -41,7 +41,7 @@ jobs:
           npm ci --no-audit --no-fund
           npm ci --prefix functions --no-audit --no-fund
           npm ci --prefix frontend --no-audit --no-fund
-      - name: Architecture, sales, Functions and Firebase Emulator Suite
+      - name: Architecture, sales, reports, Functions and Firebase Emulator Suite
         timeout-minutes: 12
         run: |
           if npm test > "$RUNNER_TEMP/tests.log" 2>&1; then

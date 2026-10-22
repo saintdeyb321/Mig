@@ -3,6 +3,18 @@
 export const sanitizeSheetName = (name) => {
   return name.replace(/[\][*?:/\\]/g, '').trim().substring(0, 31) || 'Sede_Desconocida';
 };
+export const uniqueSheetName = (name, used = []) => {
+  const base = sanitizeSheetName(name);
+  let candidate = base, counter = 1;
+  while (used.some(item => item.toLowerCase() === candidate.toLowerCase())) {
+    const suffix = `_${counter++}`; candidate = base.slice(0, 31 - suffix.length) + suffix;
+  }
+  return candidate;
+};
+export const cleanExcelRows = rows => rows.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => !key.startsWith('_')).map(([key, value]) => {
+  if (typeof value === 'number' && !Number.isFinite(value)) throw new Error(`Importe no finito en columna ${key}.`);
+  return [key, value ?? ''];
+})));
 
 /* =========================================
     PALETA DE COLORES PREMIUM (Global)
@@ -35,7 +47,7 @@ const SUBROW_VALUE_STYLE = { fill: { fgColor: { rgb: "E0F2FE" } }, font: { bold:
     CREACIÓN DE HOJAS Y MONEDAS
 ========================================= */
 export const createSheet = (XLSX, rows, columns) => {
-  const safeRows = rows.length > 0 ? rows : [{ "Mensaje": "Sin datos en este periodo" }];
+  const safeRows = rows.length > 0 ? cleanExcelRows(rows) : [{ "Mensaje": "Sin datos en este periodo" }];
   const ws = XLSX.utils.json_to_sheet(safeRows);
   ws["!cols"] = columns;
   if (ws["!ref"]) ws["!autofilter"] = { ref: ws["!ref"] };
@@ -136,7 +148,7 @@ export const styleSummarySheet = (ws, type = 'default') => {
       } else if (col === 'H' || col === 'J') {
          if (String(cellObj.v).includes('EFECTIVO')) rowStyle = EFECTIVO_STYLE;
          else if (String(cellObj.v).includes('YAPE') || String(cellObj.v).includes('PLIN')) rowStyle = YAPE_STYLE;
-      } else if (col === 'K' && Number(cellObj.v) > 0) {
+      } else if (col === 'K' && Number(cellObj.v) < 0) {
         rowStyle = DANGER_STYLE; // Reembolsos en Rojo
       } else if (col === 'L') {
         // Pintar la columna de Estado según su valor
@@ -278,6 +290,7 @@ export const styleTotalRows = (ws) => {
     else if (col === 'D') {
       if (cellObj.v === 'COMPLETADA') ws[cell].s = { ...(ws[cell].s || {}), ...COMPLETED_STYLE };
       else if (cellObj.v === 'ANULADA ❌') ws[cell].s = { ...(ws[cell].s || {}), ...VOIDED_STYLE };
+      else if (cellObj.v === 'REEMBOLSO') ws[cell].s = { ...(ws[cell].s || {}), ...DANGER_STYLE };
     }
     else if (col === 'E') {
       if (cellObj.v === 'YAPE' || cellObj.v === 'PLIN') ws[cell].s = { ...(ws[cell].s || {}), ...YAPE_STYLE };
@@ -296,5 +309,7 @@ export const styleTotalRows = (ws) => {
         ws[cell].s = { ...(ws[cell].s || {}), ...DETAILS_STYLE };
       }
     }
+    else if (col === 'K') ws[cell].s = { ...(ws[cell].s || {}), ...(anuladoRows.has(rowNum) ? ANULADO_VALUE_STYLE : TOTAL_VALUE_STYLE) };
+    if (typeof cellObj.v === 'number' && cellObj.v < 0) ws[cell].s = { ...(ws[cell].s || {}), ...DANGER_STYLE };
   });
 };

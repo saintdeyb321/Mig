@@ -52,7 +52,7 @@ Usar esta tabla como control de avance.
 | 4 | Ventas, inventario y motor offline | COMPLETADA |
 | 5 | Contratos, pedidos y ledger de pagos | COMPLETADA |
 | 6 | Caja, alertas y auditoría | COMPLETADA |
-| 7 | Reportes, dashboard y Excel | PENDIENTE |
+| 7 | Reportes, dashboard y Excel | COMPLETADA |
 | 8 | Licencias, SuperAdmin, backups y borrado | PENDIENTE |
 | 9 | Branding MigaPOS y limpieza general | PENDIENTE |
 | 10 | Tests, CI, observabilidad y release | PENDIENTE |
@@ -651,6 +651,10 @@ El servidor calcula POS, pagos y refunds; el cliente aporta el conteo físico y 
 
 # FASE 7 — Reportes, dashboard y Excel
 
+## Estado
+
+COMPLETADA: validada localmente el 22/10/2026, partiendo de `main` en `bb6ecc2`.
+
 ## Objetivo
 
 Corregir exactitud financiera y consumo Firebase.
@@ -735,6 +739,20 @@ Comparar exactamente:
 ## Criterio de aprobación
 
 Día/semana/mes/año entregan cifras reproducibles y consistentes.
+
+## Implementación validada
+
+`reportTotals` unifica Dashboard y Excel: `daily_stats.totalRevenue/totalOrders` ya son netos de anulaciones, por lo que no se restan nuevamente. Los movimientos `advance/payment` suman y `refund` resta; se deduplican por ID y se atribuyen a la sede del movimiento. Se separan ingresos POS, contratos, neto total, efectivo/digital, tickets POS, pagos positivos de pedidos, refunds y anulados. El promedio usa únicamente ingresos/tickets POS. Las sumas monetarias reutilizan el dominio existente y se exige conciliación entre efectivo/digital e ingresos. Las fechas internas son `YYYY-MM-DD`, con calendario y presentación de `America/Lima`.
+
+`useReports` delega agregación y ciclo de lecturas a módulos pequeños: caché de hasta 12 entradas por identidad/tenant/sede/período, TTL de 30 segundos, renovación periódica y al recuperar conexión/foco. Los snapshots POS reutilizan los payments ya leídos; no disparan una consulta del ledger por cada actualización. Los cambios de alcance descartan callbacks y datos anteriores; errores de fuentes o migraciones parciales ocultan las cifras definitivas y permiten reintentar. Las gráficas conservan refunds/ingresos negativos y usan las mismas definiciones que el resumen. No se creó `monthly_stats`.
+
+La exportación construye workbooks puros en memoria y conserva las hojas/estilos reconocibles: Resumen_Financiero, Auditoría_Pedidos, Auditoría_Cajas, Comparativa_Sedes, Productos_Global/Productos_Sedes y detalle/resumen por sede cuando hay datos. Las filas usan esquemas canónicos; fechas y grupos se ordenan por timestamps antes de eliminar campos auxiliares. Subtotales de productos y totales de movimientos ocupan columnas separadas para conciliar sin duplicarlos. La auditoría distingue document ID de número comercial, fecha cada pago con `occurredAt` y conserva refunds negativos; el total comercial es sólo referencia. Aperturas/cierres de caja son informativos, incluidos turnos que cruzan medianoche, y sus diferencias no se suman a ingresos. Conteos físicos desconocidos se muestran pendientes.
+
+Se eliminó la caché de workbooks. Ventas usan páginas `limit/startAfter` de 200 documentos con un máximo explícito de 10 000 y un único registro centinela para detectar exceso. Payments y agregados también tienen límites; el detalle controla cantidad de filas antes de crear hojas. Los documentos comerciales se consultan únicamente para Auditoría_Pedidos. Se añadieron sólo los índices utilizados por consultas de actividad de caja; no hubo cambios financieros, de seguridad o de idempotencia del backend de Fases 1–6.
+
+Validación: arquitectura (15), ventas (28), dominio Functions (20), reportes/workbooks/caché/paginación (30), Rules e integración en Auth/Functions/Firestore/Storage Emulator `demo-migapos` (158): aprobados. Los tests generan y vuelven a leer XLSX en memoria, concilian detalle/resumen/sedes, cubren períodos de Lima, dataset vacío, importes no finitos, migración parcial y consultas paginadas reales con aislamiento tenant. IndexedDB aprobó sus 22 comprobaciones: se corrigió además el launcher de Edge que entrega su perfil a otro proceso, para cerrar el proceso real y evitar archivos bloqueados/procesos huérfanos, sin modificar la lógica offline de la aplicación. Frontend lint/build y `git diff --check` aprobados con Node 22/Java 21 portátiles; permanecen los avisos previos de tamaño de chunks/Browserslist.
+
+`npm test` incorpora `test:reports`, y el workflow existente de GitHub Actions ejecuta esa suite mediante el mismo comando; no se afirma una ejecución remota de CI en esta tarea. No se hicieron deploy, migraciones reales ni cambios de datos de producción, y no se inició Fase 8.
 
 ---
 

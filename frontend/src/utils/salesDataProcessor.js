@@ -1,133 +1,46 @@
-// src/utils/salesDataProcessor.js
-import { getValidDate, formatDate, formatTime } from './dateUtils';
+import { aggregateReport, amount, reportRows } from '../features/reports/domain/reportTotals.js';
+import { reportDay, visibleDay, reportTime } from '../features/reports/domain/reportPeriod.js';
+import { paymentLabel } from '../features/reports/application/contractLedgerReport.js';
+import { toMillisSafe } from '../core/dates/dateValues.js';
 
-export const processDailyStats = (statsDocs) => {
-  const dailyRowsByBranch = {};
-  const branchStats = new Map();
-  let totalIngresos = 0, totalTickets = 0, totalAnulados = 0;
-
-  const sortedStats = [...statsDocs].sort((a, b) => b.date.localeCompare(a.date));
-
-  sortedStats.forEach(day => {
-    const bId = day.branchId || 'eliminada';
-    if (!dailyRowsByBranch[bId]) dailyRowsByBranch[bId] = [];
-
-    dailyRowsByBranch[bId].push({
-      Fecha: day.date,
-      Tickets: Number(day.totalOrders || 0),
-      Anulados: Number(day.voidedOrders || 0),
-      Ingreso: Number(day.totalRevenue || 0),
-      Efectivo: Number(day.paymentMethods?.efectivo || day['paymentMethods.efectivo'] || 0),
-      Yape: Number(day.paymentMethods?.yape || day['paymentMethods.yape'] || 0)
-    });
-
-    totalIngresos += Number(day.totalRevenue || 0);
-    totalTickets += Number(day.totalOrders || 0);
-    totalAnulados += Number(day.voidedOrders || 0);
-
-    if (bId !== 'eliminada') {
-      const stat = branchStats.get(bId) || { tickets: 0, ingresos: 0 };
-      stat.tickets += Number(day.totalOrders || 0);
-      stat.ingresos += Number(day.totalRevenue || 0);
-      branchStats.set(bId, stat);
-    }
-  });
-
-  return { dailyRowsByBranch, branchStats, totals: { totalIngresos, totalTickets, totalAnulados } };
+export const DETAIL_HEADERS = ['Fecha', 'Hora', 'Ticket', 'Estado', 'Pago', 'Producto', 'Cantidad', 'Precio Unit.', 'Subtotal', 'Observaciones', 'Total movimiento (S/)'];
+const detail = values => Object.fromEntries(DETAIL_HEADERS.map(key => [key, values[key] ?? '']));
+export const dailyReportRows = model => {
+  const result = {};
+  for (const day of model.days) (result[day.branchId] ??= []).push({ Fecha: visibleDay(day.day), 'Tickets POS': day.posTicketCount,
+    Anulados: day.voidedTicketCount, Ingreso: day.netRevenue, Efectivo: day.cashRevenue, 'Yape/Plin': day.digitalRevenue,
+    'Ingreso POS': day.posRevenue, 'Ingreso Pedidos': day.contractRevenue, 'Pagos Pedidos': day.contractPaymentCount });
+  return result;
 };
-
-export const processSales = (salesDocs, branchesMap) => {
+export function processDailyStats(stats, payments = [], scope = {}) {
+  const model = aggregateReport({ stats, payments, ...scope });
+  return { model, dailyRowsByBranch: dailyReportRows(model) };
+}
+export function processSales(sales, branchesMap = {}, payments = [], scope = {}) {
+  const model = aggregateReport({ sales, payments, ...scope });
+  const groups = [];
+  for (const sale of reportRows(sales, scope, row => row.createdAt)) {
+    if (!Array.isArray(sale.items) || !sale.items.length || (!sale.voided
+      && amount(sale.items.reduce((sum, item) => sum + amount(item.qty * item.price), 0)) !== amount(sale.total))) {
+      throw new Error('El detalle POS no concilia con el ticket.');
+    }
+    const rows = (sale.items ?? []).map((item, index) => detail({ Fecha: index ? '' : visibleDay(reportDay(sale.createdAt)),
+      Hora: index ? '' : reportTime(sale.createdAt), Ticket: index ? '' : sale.id ?? sale.saleId,
+      Estado: index ? '' : sale.voided ? 'ANULADA ❌' : 'COMPLETADA', Pago: index ? '' : paymentLabel(sale.payment, sale.splitPayments),
+      Producto: item.name, Cantidad: amount(item.qty), 'Precio Unit.': amount(item.price), Subtotal: sale.voided ? 0 : amount(item.qty * item.price),
+      Observaciones: index || !sale.voided ? '' : `${sale.voidReason ?? ''} (${sale.voidedByName ?? ''})` }));
+    rows.push(detail({ 'Precio Unit.': sale.voided ? 'TICKET ANULADO ➔' : 'TOTAL TICKET ➔', 'Total movimiento (S/)': sale.voided ? 0 : amount(sale.total) }));
+    groups.push({ branchId: sale.branchId, timestamp: toMillisSafe(sale.createdAt), id: sale.id ?? sale.saleId, rows });
+  }
+  const uniquePayments = new Map(reportRows(payments, scope).map(payment => [payment.id, payment]));
+  for (const payment of uniquePayments.values()) groups.push({ branchId: payment.branchId, timestamp: toMillisSafe(payment.occurredAt), id: payment.id,
+    rows: [detail({ Fecha: visibleDay(reportDay(payment.occurredAt)), Hora: reportTime(payment.occurredAt),
+      Ticket: `PEDIDO: ${payment.contractNumber ?? payment.sourceId}`, Estado: payment.type === 'refund' ? 'REEMBOLSO' : 'PAGO PEDIDO',
+      Pago: paymentLabel(payment.method, payment.splitPayments), Producto: `[${payment.type}] ${payment.clientName ?? ''}`,
+      Cantidad: 1, 'Precio Unit.': amount(payment.amount), Subtotal: amount(payment.amount), 'Total movimiento (S/)': amount(payment.amount),
+      Observaciones: `Movimiento ${payment.id} · Cajero: ${payment.cashierName ?? ''}` })] });
+  groups.sort((a, b) => a.timestamp - b.timestamp || String(a.id).localeCompare(String(b.id)));
   const ticketsRowsByBranch = {};
-  const productMap = new Map();
-  const globalProductMap = new Map();
-  const branchStats = new Map();
-  let totalIngresos = 0, totalTickets = 0, totalAnulados = 0;
-
-  const sortedSales = [...salesDocs].sort((a, b) => getValidDate(b.createdAt) - getValidDate(a.createdAt));
-
-  sortedSales.forEach(s => {
-    const d = getValidDate(s.createdAt);
-    const isAnulada = s.voided === true;
-    const ticketId = (s.id || '').slice(0, 8).toUpperCase();
-    const bId = s.branchId || 'eliminada';
-    const branchName = branchesMap[bId] || 'Sede Desconocida';
-    
-    // Extraemos la justificación y quién anuló
-    const voidReason = isAnulada ? (s.voidReason || 'Sin justificación') : '';
-    const voidedBy = isAnulada ? ` (Por: ${s.voidedByName || 'Cajero'})` : '';
-    const justificacionCompleta = isAnulada ? `${voidReason}${voidedBy}` : '';
-
-    // 🚀 FIX: FORMATEO INTELIGENTE DEL MÉTODO DE PAGO
-    let metodoPago = (s.payment || '').toUpperCase();
-    if (s.payment === 'mixto' && s.splitPayments) {
-      const ef = Number(s.splitPayments.efectivo || 0).toFixed(2);
-      const yp = Number(s.splitPayments.yape || 0).toFixed(2);
-      metodoPago = `MIXTO (Ef: ${ef} / Yp: ${yp})`;
-    }
-
-    if (!ticketsRowsByBranch[bId]) ticketsRowsByBranch[bId] = [];
-    const targetArray = ticketsRowsByBranch[bId];
-
-    if (!isAnulada) {
-      totalIngresos += Number(s.total || 0);
-      totalTickets += 1;
-      if (bId !== 'eliminada') {
-        const stat = branchStats.get(bId) || { tickets: 0, ingresos: 0 };
-        stat.tickets += 1;
-        stat.ingresos += Number(s.total || 0);
-        branchStats.set(bId, stat);
-      }
-    } else {
-      totalAnulados += 1;
-    }
-
-    if (isAnulada) {
-      (s.items || []).forEach((item, index) => {
-        targetArray.push({
-          Fecha: index === 0 ? formatDate(d) : '',
-          Hora: index === 0 ? formatTime(d) : '',
-          Ticket: index === 0 ? ticketId : '',
-          Estado: index === 0 ? 'ANULADA ❌' : '', 
-          Pago: index === 0 ? metodoPago : '', // 🚀 APLICAMOS EL TEXTO MIXTO AQUÍ
-          Producto: item.name,
-          Cantidad: Number(item.qty || 0),
-          'Precio Unit.': Number(item.price || 0),
-          Subtotal: 0,
-          Observaciones: index === 0 ? justificacionCompleta : ''
-        });
-      });
-      targetArray.push({ Fecha: '', Hora: '', Ticket: '', Estado: '', Pago: '', Producto: '', Cantidad: '', 'Precio Unit.': 'TICKET ANULADO ➔', Subtotal: 0, Observaciones: '' });
-      targetArray.push({});
-    } else {
-      (s.items || []).forEach((item, index) => {
-        targetArray.push({
-          Fecha: index === 0 ? formatDate(d) : '',
-          Hora: index === 0 ? formatTime(d) : '',
-          Ticket: index === 0 ? ticketId : '',
-          Estado: index === 0 ? 'COMPLETADA' : '',
-          Pago: index === 0 ? metodoPago : '', // 🚀 APLICAMOS EL TEXTO MIXTO AQUÍ
-          Producto: item.name,
-          Cantidad: Number(item.qty || 0),
-          'Precio Unit.': Number(item.price || 0),
-          Subtotal: Number(item.qty || 0) * Number(item.price || 0),
-          Observaciones: '' 
-        });
-        
-        const prodKey = `${item.name}_${bId}`;
-        const currentProd = productMap.get(prodKey) || { nombre: item.name, sucursal: branchName, qty: 0, total: 0 };
-        currentProd.qty += Number(item.qty || 0);
-        currentProd.total += Number(item.qty || 0) * Number(item.price || 0);
-        productMap.set(prodKey, currentProd);
-
-        const gCurrent = globalProductMap.get(item.name) || { nombre: item.name, qty: 0, total: 0 };
-        gCurrent.qty += Number(item.qty || 0);
-        gCurrent.total += Number(item.qty || 0) * Number(item.price || 0);
-        globalProductMap.set(item.name, gCurrent);
-      });
-      targetArray.push({ Fecha: '', Hora: '', Ticket: '', Estado: '', Pago: '', Producto: '', Cantidad: '', 'Precio Unit.': 'TOTAL TICKET ➔', Subtotal: Number(s.total || 0), Observaciones: '' });
-      targetArray.push({});
-    }
-  });
-
-  return { ticketsRowsByBranch, productMap, globalProductMap, branchStats, totals: { totalIngresos, totalTickets, totalAnulados } };
-};
+  for (const group of groups) (ticketsRowsByBranch[group.branchId] ??= []).push(...group.rows);
+  return { model, ticketsRowsByBranch, branchesMap };
+}

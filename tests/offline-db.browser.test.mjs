@@ -72,7 +72,7 @@ it('migrates and synchronizes real IndexedDB in an isolated Chromium profile', {
         response.end(await server.transformIndexHtml('/phase4-offline-test', html));
       });
     } }] });
-  let child, childClosed, page, browserControl;
+  let child, childClosed, page, browserControl, browserPid;
   const timeout = setTimeout(() => complete({ ok: false, error: `IndexedDB timed out after 60s (${requests} HTTP requests). ${stderr.slice(-1200)}` }), 60000);
   try {
     await server.listen();
@@ -82,7 +82,8 @@ it('migrates and synchronizes real IndexedDB in an isolated Chromium profile', {
     childClosed = new Promise(resolve => child.once('close', resolve));
     child.stderr.on('data', data => { stderr = (stderr + data).slice(-4000); });
     child.on('error', error => complete({ ok: false, error: `Browser launch failed: ${error.message}` }));
-    child.on('exit', code => { if (!finished) complete({ ok: false, error: `Browser exited before reporting (${code}). ${stderr.slice(-1200)}` }); });
+    // Edge may exit its launcher successfully and hand the isolated profile to a new process.
+    child.on('exit', code => { if (!finished && code !== 0) complete({ ok: false, error: `Browser exited before reporting (${code}). ${stderr.slice(-1200)}` }); });
     let debug;
     const startup = Date.now() + 10000;
     while (!finished && Date.now() < startup) {
@@ -91,6 +92,8 @@ it('migrates and synchronizes real IndexedDB in an isolated Chromium profile', {
     if (!debug && !finished) complete({ ok: false, error: `Browser did not expose DevTools. ${stderr.slice(-1200)}` });
     if (debug) {
       browserControl = await connectCDP(`ws://127.0.0.1:${debug[0]}${debug[1]}`, () => {});
+      const info = await browserControl.send('SystemInfo.getProcessInfo').catch(() => null);
+      browserPid = info?.processInfo?.find(process => process.type === 'browser')?.id;
       const targets = await (await fetch(`http://127.0.0.1:${debug[0]}/json/list`, { signal: AbortSignal.timeout(3000) })).json();
       const target = targets.find(target => target.type === 'page');
       assert.ok(target, 'Browser did not create an isolated page.');
@@ -109,14 +112,18 @@ it('migrates and synchronizes real IndexedDB in an isolated Chromium profile', {
     page?.close();
     if (browserControl) { await browserControl.send('Browser.close').catch(() => {}); browserControl.close(); }
     if (childClosed) await Promise.race([childClosed, delay(3000, undefined, { ref: false })]);
-    if (child && child.exitCode === null && child.signalCode === null) {
-      if (process.platform === 'win32') await new Promise(resolve => execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, resolve));
-      else child.kill('SIGKILL');
+    const isRunning = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    const remainingPid = browserPid && browserPid !== process.pid && isRunning(browserPid) ? browserPid
+      : child && child.exitCode === null && child.signalCode === null ? child.pid : null;
+    if (remainingPid) {
+      if (process.platform === 'win32') await new Promise(resolve => execFile('taskkill', ['/PID', String(remainingPid), '/T', '/F'], { windowsHide: true }, resolve));
+      else process.kill(remainingPid, 'SIGKILL');
       await Promise.race([childClosed, delay(2000, undefined, { ref: false })]);
     }
+    child?.stderr?.destroy();
     await server.close();
     const target = resolve(profile);
     assert.ok(target.startsWith(resolve(tmpdir()) + sep) && basename(target).startsWith('migapos-phase4-browser-'));
-    await rm(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    await rm(target, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
   }
 });

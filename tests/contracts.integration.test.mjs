@@ -18,6 +18,7 @@ import { createCashAutoCloser } from '../functions/src/cash-register/scheduled.j
 import { cashLockId, createCashSessionHandlers, RESERVATION_WINDOW_MS } from '../functions/src/cash-register/handlers.js';
 import { createCashStateReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
 import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
+import { createSalesPeriodReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
 import { createNotificationRepository } from '../frontend/src/features/notifications/infrastructure/notificationQueryRepository.js';
 import { createAuditRepository } from '../frontend/src/features/notifications/infrastructure/auditQueryRepository.js';
 
@@ -427,6 +428,21 @@ describe('Phase 5 contract callables', () => {
 });
 
 describe('Phase 5 migration, queries and image cleanup', () => {
+  it('Phase 7 sales export pages actual scoped queries and enforces the read limit', async () => {
+    const batch = database.batch();
+    for (let index = 0; index < 205; index++) batch.set(database.doc('sales/report-' + String(index).padStart(3, '0')), {
+      businessId: 'tenant-a', branchId: 'a-1', createdAt: Timestamp.fromMillis(now + index), total: 1,
+    });
+    batch.set(database.doc('sales/report-other-branch'), { businessId: 'tenant-a', branchId: 'a-2', createdAt: Timestamp.fromMillis(now), total: 2 });
+    batch.set(database.doc('sales/report-foreign'), { businessId: 'tenant-b', branchId: 'b-1', createdAt: Timestamp.fromMillis(now), total: 3 });
+    await batch.commit();
+    const read = createSalesPeriodReader(actors.owner.database, { sdk: firestoreSDK });
+    const rows = await read('tenant-a', new Date(now - 1), new Date(now + 1000), { branchId: 'a-1' });
+    assert.equal(rows.length, 205); assert.equal(new Set(rows.map(row => row.id)).size, 205);
+    assert.equal((await read('tenant-a', new Date(now - 1), new Date(now + 1000))).length, 206);
+    await assert.rejects(read('tenant-a', new Date(now - 1), new Date(now + 1000), { maxRows: 200 }), /Demasiados tickets/);
+    await assert.rejects(read('tenant-b', new Date(now - 1), new Date(now + 1000)), { code: 'permission-denied' });
+  });
   it('a partial ledger merges missing movement IDs and ignores unverified or foreign completion markers', async () => {
     const reference = database.doc('contracts/partial-report');
     await reference.set(legacy({ paymentsMigrated: true, payments: [
@@ -444,6 +460,8 @@ describe('Phase 5 migration, queries and image cleanup', () => {
     assert.equal(page.partialMigrations, 1); assert.equal(page.payments.length, 1); assert.equal(page.payments[0].amount, -5);
     assert.equal(page.payments[0].occurredAt, '2024-01-03T00:00:00.000Z');
     const repo = createPaymentRepository(actors.cashier.database, { sdk: firestoreSDK });
+    await assert.rejects(compatiblePayments(input, () => repo.getPaymentsBySession('tenant-a', 'session-a', 'a-1'), data => rpc('getLegacyContractPayments', data),
+      { requireMigrated: true }), /incompleta/);
     const rows = await compatiblePayments(input, () => repo.getPaymentsBySession('tenant-a', 'session-a', 'a-1'), data => rpc('getLegacyContractPayments', data));
     assert.equal(rows.length, 2); assert.equal(rows.reduce((sum, row) => sum + row.amount, 0), 25);
     await marker.set({ businessId: 'tenant-a', complete: true });

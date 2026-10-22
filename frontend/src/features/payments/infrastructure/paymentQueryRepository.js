@@ -13,7 +13,7 @@ function requiredId(value) {
 
 export function createPaymentRepository(database, { sdk = firestoreSDK } = {}) {
   const { collection, query, where, orderBy, documentId, limit, startAfter, getDocs, Timestamp } = sdk;
-  async function readPayments(businessId, filters, branchId = 'global') {
+  async function readPayments(businessId, filters, branchId = 'global', { maxRows = Infinity } = {}) {
     requiredId(businessId);
     const constraints = [where('businessId', '==', businessId), ...filters,
       ...(branchId === 'global' ? [] : [where('branchId', '==', requiredId(branchId))]),
@@ -22,8 +22,9 @@ export function createPaymentRepository(database, { sdk = firestoreSDK } = {}) {
     let cursor;
     while (true) {
       const page = await getDocs(query(collection(database, 'payments'), ...constraints,
-        ...(cursor ? [startAfter(cursor)] : []), limit(PAYMENT_PAGE_SIZE)));
+        ...(cursor ? [startAfter(cursor)] : []), limit(Math.min(PAYMENT_PAGE_SIZE, maxRows - rows.length + 1))));
       rows.push(...mapDocuments(page));
+      if (rows.length > maxRows) throw new Error('Demasiados movimientos. Selecciona un período menor.');
       if (page.size < PAYMENT_PAGE_SIZE) return rows;
       cursor = page.docs.at(-1);
     }
@@ -36,11 +37,11 @@ export function createPaymentRepository(database, { sdk = firestoreSDK } = {}) {
       requiredId(branchId);
       return readPayments(businessId, [where('sessionId', '==', requiredId(sessionId))], branchId);
     },
-    getPaymentsInPeriod: (businessId, startDate, endDate, branchId = 'global') => {
+    getPaymentsInPeriod: (businessId, startDate, endDate, branchId = 'global', options = {}) => {
       const start = toDateSafe(startDate), end = toDateSafe(endDate);
       if (!start || !end || end < start) throw new Error('Período de pagos inválido.');
       return readPayments(businessId, [where('occurredAt', '>=', Timestamp.fromDate(start)),
-        where('occurredAt', '<=', Timestamp.fromDate(end))], branchId);
+        where('occurredAt', '<=', Timestamp.fromDate(end))], branchId, options);
     },
     getContractAuditDocuments: async (businessId, ids) => {
       requiredId(businessId);

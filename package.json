@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:architecture && npm run test:sales && npm run test:functions && npm run test:rules",
+    "test": "npm run test:architecture && npm run test:sales && npm run test:functions && npm run test:reports && npm run test:rules",
+    "test:reports": "node --test tests/reports.test.mjs",
     "test:functions": "npm test --prefix functions",
     "test:architecture": "node --test tests/architecture.test.mjs",
     "test:sales": "node --test tests/sales.test.mjs",
