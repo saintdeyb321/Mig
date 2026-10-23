@@ -22,13 +22,13 @@ export function validateWebEnvironment(env, requested, profiles = environments) 
   if (Object.keys(env).some(key => key.startsWith('VITE_') && /PRIVATE|PASSWORD|SECRET|SERVICE_ACCOUNT|ACCESS_TOKEN|REFRESH_TOKEN/i.test(key))) throw new Error('Las variables VITE_ no pueden contener credenciales privadas.');
   const name = requested || env.VITE_APP_ENV || (env.VITE_FIREBASE_PROJECT_ID === 'demo-migapos' ? 'emulator' : 'production');
   const profile = environmentFor(name, profiles);
-  const required = ['API_KEY', 'PROJECT_ID', 'AUTH_DOMAIN', 'STORAGE_BUCKET', 'MESSAGING_SENDER_ID', 'APP_ID'];
+  const required = ['API_KEY', 'PROJECT_ID', 'AUTH_DOMAIN', 'MESSAGING_SENDER_ID', 'APP_ID'];
   for (const field of required) if (!env[`VITE_FIREBASE_${field}`]?.trim()) throw new Error(`Falta configuración Firebase: VITE_FIREBASE_${field}`);
   if (env.VITE_APP_ENV && env.VITE_APP_ENV !== name) throw new Error('VITE_APP_ENV no coincide con el entorno solicitado.');
   if (env.VITE_FIREBASE_PROJECT_ID !== profile.projectId || env.VITE_FIREBASE_AUTH_DOMAIN !== profile.authDomain) throw new Error('Proyecto/Auth domain no corresponden al entorno.');
   const buckets = profile.storageBucket ? [profile.storageBucket] : [`${profile.projectId}.appspot.com`, `${profile.projectId}.firebasestorage.app`];
   if (name === 'staging' && [profiles.production.storageBucket, `${profiles.production.projectId}.appspot.com`, `${profiles.production.projectId}.firebasestorage.app`].filter(Boolean).includes(env.VITE_FIREBASE_STORAGE_BUCKET)) throw new Error('Staging no puede usar Storage de producción.');
-  if (!buckets.includes(env.VITE_FIREBASE_STORAGE_BUCKET)) throw new Error('Storage bucket no corresponde al proyecto.');
+  if (env.VITE_FIREBASE_STORAGE_BUCKET && !buckets.includes(env.VITE_FIREBASE_STORAGE_BUCKET)) throw new Error('Storage bucket no corresponde al proyecto.');
   if (!env.VITE_FIREBASE_APP_ID.startsWith(`1:${env.VITE_FIREBASE_MESSAGING_SENDER_ID}:web:`)) throw new Error('App ID/Sender ID incompatibles.');
   if (env.VITE_USE_EMULATORS && env.VITE_USE_EMULATORS !== String(profile.emulator)) throw new Error('No mezclar proyecto real y emuladores.');
   if (!['off', 'monitor'].includes(env.VITE_APP_CHECK_MODE || 'off')) throw new Error('Modo App Check inválido.');

@@ -46,7 +46,7 @@ async function connectCDP(url, onEvent) {
   }) };
 }
 
-export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, mockPng, firebaseSdk = false, fixture } = {}) {
+export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, mockPng, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
   const browser = findBrowser();
   const root = fileURLToPath(new URL('../../frontend/', import.meta.url));
   const workspace = fileURLToPath(new URL('../../', import.meta.url));
@@ -57,11 +57,11 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
   const server = await createServer({ root, configFile: false, envFile: false, clearScreen: false, logLevel: 'error',
     esbuild: { jsx: 'automatic' },
     resolve: { alias: { react: resolve(root, 'node_modules/react'), 'react-dom': resolve(root, 'node_modules/react-dom'), 'xlsx-js-style': resolve(root, 'node_modules/xlsx-js-style'), firebase: resolve(root, 'node_modules/firebase') } },
-    optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react-dom/client', ...(mockPng || firebaseSdk ? ['xlsx-js-style'] : []), ...(firebaseSdk ? ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'] : [])] },
+    optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom/client', ...(mockPng || firebaseSdk ? ['xlsx-js-style'] : []), ...(firebaseSdk ? ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'] : [])] },
     // saleModel imports the shared Functions domain outside frontend/. Default Vite fs policy denies it.
     server: { host: '127.0.0.1', port: 0, hmr: false, headers, fs: { allow: [workspace] } }, plugins: [{ name: 'isolated-indexeddb-test',
-      resolveId: id => id === 'virtual:browser-fixture' ? '\0browser-fixture' : undefined,
-      load: id => id === '\0browser-fixture' ? 'export default ' + JSON.stringify(fixture || {}) + ';' : undefined,
+      resolveId: id => id === 'virtual:browser-fixture' ? '\0browser-fixture' : Object.hasOwn(moduleMocks, id) ? id : undefined,
+      load: id => id === '\0browser-fixture' ? 'export default ' + JSON.stringify(fixture || {}) + ';' : moduleMocks[id],
       configureServer(server) {
       server.middlewares.use((_request, response, next) => {
         requests++;

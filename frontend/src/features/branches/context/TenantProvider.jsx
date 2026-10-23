@@ -6,8 +6,14 @@ import { useScopedSubscription } from '../../../shared/hooks/useScopedSubscripti
 import { getIdentityKey } from '../../../core/session/identity';
 import { createSubscriptionScope } from '../../../shared/utils/subscriptionScope';
 import offlineDB from '../../../offlineDB';
+import { isBusinessSession } from '../../../core/session/context.js';
 
 export function TenantProvider({ user, children }) {
+  if (!isBusinessSession(user)) return children;
+  return <BusinessTenantProvider key={getIdentityKey(user)} user={user}>{children}</BusinessTenantProvider>;
+}
+
+function BusinessTenantProvider({ user, children }) {
   const identityKey = getIdentityKey(user);
   const businessId = user.businessId;
   const [activeBranchId, setActiveBranchId] = useState(user.role === 'cajero' ? user.branchId : null);

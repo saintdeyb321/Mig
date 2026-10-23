@@ -4,6 +4,7 @@ import React, { useState, memo } from 'react';
 import { useSuperAdmin } from '../hooks/useSuperAdmin'; 
 // 🚀 NUEVO: Importamos el hook para exportar la BD de los clientes
 import { useAdminBackup } from '../hooks/useAdminBackup';
+import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 
 const formatDate = (timestamp) => {
   if (!timestamp) return 'Sin fecha';
@@ -159,6 +160,19 @@ function SuperAdmin({ user }) {
       </div>
     );
   }
+
+  if (!runtimeCapabilities.tenantAdministration) return (
+    <section className="fade-in max-container padding-bottom-lg" aria-label="Administración de plataforma">
+      <h2>Clientes SaaS · Firebase Spark</h2>
+      <p>Contexto de plataforma: SuperAdmin.</p>
+      <div className="card" role="status">
+        <p>Authentication, Firestore, Hosting y persistencia local disponibles.</p>
+        <p>Consulta y creación de negocios no disponibles en SPARK-0. Se habilitarán en SPARK-1.</p>
+        <p>Backups cloud, purgas y automatizaciones aún no disponibles. Cloud Functions y Firebase Storage deshabilitados.</p>
+      </div>
+      <button className="btn-primary" disabled title="Pendiente de SPARK-1">Nuevo negocio · pendiente de SPARK-1</button>
+    </section>
+  );
 
   const submitCreate = async (e) => {
     e.preventDefault();

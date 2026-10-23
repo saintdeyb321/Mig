@@ -195,6 +195,7 @@ describe('Hosting policy and conservative cleanup', () => {
     }
     for (const path of ['frontend/src/firebase.js', 'frontend/src/utils/adminExcelStyles.js', 'frontend/src/utils/backupAdmin/adminDataProcessor.js', 'backend/src/index.js', 'shared/README.md']) assert.ok(!existsSync(path), path);
     const markdown = execFileSync('git', ['ls-files', '*.md'], { encoding: 'utf8' }).trim().split(/\r?\n/).filter(existsSync);
-    assert.deepEqual(markdown, ['docs/MASTER-PLAN.md']);
+    assert.ok(markdown.includes('docs/MASTER-PLAN.md'));
+    assert.ok(markdown.every(path => ['docs/MASTER-PLAN.md', 'docs/PLAN-REFAC-SPARK-MIGAPOS.md'].includes(path)));
   });
 });

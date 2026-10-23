@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { adminCall } from '../features/licenses/infrastructure/administrationRepository';
+import { runtimeCapabilities, requireCapability } from '../config/runtimeCapabilities.js';
 
 export const useAdminBackup = user => {
   const [jobId, setJobId] = useState(null), [job, setJob] = useState(null), [error, setError] = useState(null);
@@ -9,7 +10,7 @@ export const useAdminBackup = user => {
   const identity = `${user?.uid}:${user?.role}`;
   useEffect(() => { setJobId(null); setJob(null); setError(null); operations.current.clear(); }, [identity]);
   useEffect(() => {
-    if (!jobId || user?.role !== 'superadmin') return;
+    if (!runtimeCapabilities.platformJobs || !jobId || user?.role !== 'superadmin') return;
     let active = true, pending = false, timer;
     const refresh = async () => {
       if (pending) return;
@@ -26,7 +27,7 @@ export const useAdminBackup = user => {
   const action = async work => {
     if (busy.current) return;
     busy.current = true; setIsBackingUp(true);
-    try { return await work(); }
+    try { requireCapability('cloudFunctions', 'Backups y jobs de plataforma'); return await work(); }
     catch (failure) { setError(failure.message); toast.error(failure.message || 'No se pudo completar la acción.'); }
     finally { busy.current = false; setIsBackingUp(false); }
   };

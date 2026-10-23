@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es"><meta charset="utf-8"><title>MigaPOS Spark startup fixture</title>
+<body><div id="root"></div><script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import App from '/src/App.jsx';
+import offlineDB from '/src/offlineDB.js';
+
+const checks = [];
+const check = (value, message) => { if (!value) throw new Error(message); checks.push(message); };
+const waitFor = async predicate => {
+  const until = Date.now() + 15000;
+  while (!predicate()) { if (Date.now() > until) throw new Error('UI condition timed out'); await new Promise(resolve => setTimeout(resolve, 30)); }
+};
+globalThis.__sparkForbidden = [];
+let result;
+const root = createRoot(document.getElementById('root'));
+try {
+  // Synthetic data in a fresh, isolated browser profile; the application never clears it.
+  await offlineDB.settings.put({ id: 'spark-sentinel', value: 'keep-me' });
+  root.render(React.createElement(App));
+  await waitFor(() => document.querySelector('.auth-logo')?.complete);
+  check(document.querySelector('.auth-logo').naturalWidth > 0, 'Login serves the local MigaPOS logo');
+  globalThis.__setSparkUser({uid:'platform-user', role:'superadmin', businessId:'platform-admin', hasAcceptedTerms:true});
+  await waitFor(() => document.querySelector('[aria-label="Administración de plataforma"]'));
+  check(document.body.textContent.includes('Firebase Spark'), 'SuperAdmin opens directly in Spark platform context');
+  check([...document.querySelectorAll('.nav-item')].every(button => button.textContent.includes('SaaS Admin')), 'Desktop and mobile only show SaaS navigation');
+  check(document.querySelectorAll('.nav-item').length === 2 && !document.querySelector('.bell-button'), 'No business navigation or notification bell mounted');
+  check(document.querySelector('[aria-label="Administración de plataforma"] button').disabled, 'Creation is honestly pending SPARK-1');
+  document.querySelector('.nav-item').click();
+  globalThis.__setSparkUser({uid:'another-platform-user', role:'superadmin', businessId:'old-tenant', hasAcceptedTerms:true});
+  await new Promise(resolve => setTimeout(resolve, 150));
+  check(globalThis.__sparkForbidden.length === 0, 'Startup and platform account change invoke no business subscriptions or backend adapters');
+  globalThis.__setSparkUser(null);
+  await waitFor(() => document.querySelector('.auth-logo'));
+  check((await offlineDB.settings.get('spark-sentinel')).value === 'keep-me', 'Logout retains persisted IndexedDB data');
+  check(!document.body.textContent.includes('Sincronización completada'), 'No fictitious synchronization success');
+  result = {ok:true, checks};
+} catch (error) { result = {ok:false, error:error.stack, checks}; }
+finally { root.unmount(); offlineDB.close(); }
+await fetch('/__phase4-report', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(result)});
+</script></body></html>

@@ -8,9 +8,8 @@ import { useAuthManager } from './hooks/useAuthManager';
 import { SessionProviders } from './app/providers/SessionProviders';
 import { useShiftMonitor } from './hooks/useShiftMonitor';
 import { useMaintenance } from './hooks/useMaintenance';
-
-// Utils
-import { retryOfflineSales } from './utils/offlineRetry';
+import { getSessionTab, isBusinessSession } from './core/session/context.js';
+import { runtimeCapabilities } from './config/runtimeCapabilities.js';
 
 // Componentes y Layout
 import UserRoleGate from './components/UserRoleGate';
@@ -35,19 +34,29 @@ const SuperAdmin = React.lazy(() => import('./modules/SuperAdmin'));
 const ContractManager = React.lazy(() => import('./modules/contracts/ContractManager'));
 const AgendaManager = React.lazy(() => import('./modules/AgendaManager'));
 
-const ADMIN_ROLES = ['dueño', 'superadmin'];
-const ALL_ROLES = ['dueño', 'cajero', 'superadmin']; // Para módulos que el cajero sí ve
+const ADMIN_ROLES = ['dueño'];
+const ALL_ROLES = ['dueño', 'cajero'];
 const NO_OP_FUNCTION = () => {};
 
+function SessionGuards({ user, handleLogout, children }) {
+  if (!isBusinessSession(user)) return children;
+  return <LicenseGuard user={user} handleLogout={handleLogout}>
+    <BranchGuard user={user} handleLogout={handleLogout}>{children}</BranchGuard>
+  </LicenseGuard>;
+}
+
 function App() {
-  const [tab, setTab] = useState('pos');
+  const [requestedTab, setTab] = useState('pos');
   const { user, authLoading, handleLogout } = useAuthManager();
+  const tab = getSessionTab(user, requestedTab);
 
   const { isMaintenance, maintenanceMsg } = useMaintenance();
 
   useShiftMonitor(user);
 
   useEffect(() => {
+    if (!isBusinessSession(user) || !runtimeCapabilities.offlineSync) return;
+    const retryOfflineSales = async identity => (await import('./utils/offlineRetry')).retryOfflineSales(identity);
     if (user?.uid) {
       retryOfflineSales(user).catch(error => console.warn('Error sincronizando cola:', error));
     }
@@ -111,8 +120,7 @@ function App() {
         </>
       ) : (
         <SessionProviders user={user}>
-          <LicenseGuard user={user} handleLogout={handleLogout}>
-            <BranchGuard user={user} handleLogout={handleLogout}>
+          <SessionGuards user={user} handleLogout={handleLogout}>
 
               <Toaster
                 position="top-right"
@@ -132,6 +140,7 @@ function App() {
                   }
                 >
                   {/* === RUTAS DE LA APLICACIÓN === */}
+                  {!tab && <p role="alert">Tu perfil no tiene un contexto operativo válido. Contacta al administrador.</p>}
                   {tab === 'pos' && <POS user={user} />}
 
 
@@ -186,8 +195,7 @@ function App() {
                 </Suspense>
               </AppLayout>
 
-            </BranchGuard>
-          </LicenseGuard>
+          </SessionGuards>
         </SessionProviders>
       )}
     </>

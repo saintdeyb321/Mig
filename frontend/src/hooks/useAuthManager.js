@@ -88,7 +88,7 @@ export const useAuthManager = () => {
               }
 
 
-              if (!userData.businessId || !userData.role) return; // Faltan datos críticos
+              if (!userData.role || (!userData.businessId && userData.role !== 'superadmin')) return; // Faltan datos críticos
 
               if (userData.status === 'inactivo') {
                 handleSecurityExit('Cuenta suspendida. Contacta al administrador.');

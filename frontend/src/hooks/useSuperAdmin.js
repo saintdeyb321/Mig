@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { adminCall, administrationPage } from '../features/licenses/infrastructure/administrationRepository';
+import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 
 export const useSuperAdmin = user => {
-  const [licenses, setLicenses] = useState([]), [isLoading, setIsLoading] = useState(true);
+  const [licenses, setLicenses] = useState([]), [isLoading, setIsLoading] = useState(runtimeCapabilities.tenantAdministration);
   const [isProcessing, setIsProcessing] = useState(false), [searchTerm, setSearchTerm] = useState('');
   const [cursor, setCursor] = useState(null), [error, setError] = useState(null);
   const busy = useRef(false), revision = useRef({ value: 0 }), operations = useRef(new Map());
   const identity = `${user?.uid}:${user?.role}`;
   const fetchLicenses = useCallback(async (nextCursor = null) => {
     if (user?.role !== 'superadmin') { setIsLoading(false); return; }
+    if (!runtimeCapabilities.tenantAdministration) {
+      setError('Consulta y creación de negocios no disponibles en Spark durante SPARK-0. Pendientes de SPARK-1.');
+      setIsLoading(false); return;
+    }
     const version = revision.current.value;
     setIsLoading(true);
     try {

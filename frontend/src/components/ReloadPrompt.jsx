@@ -122,7 +122,7 @@ export default function ReloadPrompt({ user }) {
       <p style={{ marginBottom: 15, fontSize: '0.9rem', lineHeight: 1.4, color: 'var(--text-muted)' }}>
         {needRefresh
           ? `Hay una nueva versión de ${brand.name} disponible. Actualiza para disfrutar las mejoras.`
-          : 'La aplicación ahora funciona incluso si se cae el internet.'}
+          : 'La interfaz está disponible sin conexión. Las operaciones pendientes requieren un repositorio Spark habilitado para confirmarse.'}
       </p>
 
       <div style={{ display: 'flex', gap: 10 }}>

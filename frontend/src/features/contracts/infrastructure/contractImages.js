@@ -1,6 +1,7 @@
-import { getBlob, ref, uploadBytes, deleteObject } from 'firebase/storage';
 import { doc, getDocFromServer } from 'firebase/firestore';
-import { storage, db, auth } from '../../../core/firebase/client';
+import { db, auth } from '../../../core/firebase/client';
+import { readStorageBlob, uploadStorageBlob, deleteStorageObject, requireLocalImageSources } from '../../../core/firebase/storage.js';
+import { requireCapability } from '../../../config/runtimeCapabilities.js';
 import { resolveImageSources, usingImageSources } from '../application/imageSources.js';
 import offlineDB from '../../../offlineDB.js';
 import { cleanupUnreferencedImages, imagePaths } from '../application/imageCleanup.js';
@@ -101,13 +102,14 @@ export async function prepareContractImages({ businessId, contractId, newImages 
     || newImages.length + retainedImages.length > MAX_CONTRACT_IMAGES) {
     throw new Error(`El pedido admite hasta ${MAX_CONTRACT_IMAGES} imágenes.`);
   }
+  if (newImages.length || retainedImages.some(image => typeof image === 'string')) requireCapability('cloudStorage', 'Guardar imágenes del contrato');
   const upload = async blob => {
     const { main, thumbnail } = await optimizedImages(blob);
     const imageId = crypto.randomUUID();
     const storagePath = `${prefix}${imageId}.jpg`;
     const thumbnailPath = `${prefix}thumbs/${imageId}.jpg`;
     const results = await Promise.allSettled([[storagePath, main], [thumbnailPath, thumbnail]].map(async ([path, bytes]) => {
-      uploadedPaths.push(path); await uploadBytes(ref(storage, path), bytes, { contentType: 'image/jpeg' });
+      uploadedPaths.push(path); await uploadStorageBlob(path, bytes, { contentType: 'image/jpeg' });
     }));
     const failure = results.find(result => result.status === 'rejected');
     if (failure) throw failure.reason;
@@ -123,6 +125,7 @@ export async function prepareContractImages({ businessId, contractId, newImages 
 export async function cleanupContractImagePaths(businessId, contractId, paths, { retry = null } = {}) {
   const userId = auth.currentUser?.uid;
   if (!userId || !paths.length) return;
+  requireCapability('cloudStorage', 'Limpiar imágenes del contrato');
   const prefix = `contracts/${safeSegment(businessId)}/${safeSegment(contractId)}/`;
   if (paths.some(path => !path.startsWith(prefix))) throw new Error('Cleanup fuera del pedido.');
   const id = retry?.id ?? `image-cleanup:${businessId}:${userId}:${crypto.randomUUID()}`;
@@ -135,7 +138,7 @@ export async function cleanupContractImagePaths(businessId, contractId, paths, {
     },
     remove: async path => {
       if (auth.currentUser?.uid !== userId) throw new Error('La sesión cambió.');
-      try { await deleteObject(ref(storage, path)); } catch (error) { if (error.code !== 'storage/object-not-found') throw error; }
+      try { await deleteStorageObject(path); } catch (error) { if (error.code !== 'storage/object-not-found') throw error; }
     },
     onFailure: async pending => {
       console.warn('Limpieza de imágenes pendiente de reintento.');
@@ -148,6 +151,7 @@ export async function cleanupContractImagePaths(businessId, contractId, paths, {
 }
 
 export async function retryContractImageCleanup(businessId) {
+  requireCapability('cloudStorage', 'Reintentar limpieza de imágenes');
   const userId = auth.currentUser?.uid;
   if (!userId || !navigator.onLine) return;
   const jobs = await offlineDB.settings.where('id').startsWith(`image-cleanup:${businessId}:${userId}:`).limit(20).toArray();
@@ -162,10 +166,12 @@ export async function cleanupRetiredContractImages(businessId, contractId, previ
 }
 
 export async function resolveContractImageUrls(images, { thumbnails = false } = {}) {
-  return resolveImageSources(images, { thumbnails, load: path => getBlob(ref(storage, path), MAX_IMAGE_BYTES) });
+  requireLocalImageSources(images);
+  return resolveImageSources(images, { thumbnails, load: readStorageBlob });
 }
 
 export async function withResolvedContractImages(contract, callback) {
+  requireLocalImageSources(contractImageList(contract));
   return usingImageSources(contractImageList(contract), urls => callback({ ...contract, referenceImages: urls, referenceImage: urls[0] || null }),
-    { load: path => getBlob(ref(storage, path), MAX_IMAGE_BYTES) });
+    { load: readStorageBlob });
 }

@@ -3,7 +3,7 @@ import { useTenantData } from '../features/branches/context/TenantContext';
 import { toDateSafe } from '../core/dates/dateValues';
 
 export const NotificationBell = ({ alerts, isAdmin, canViewNotifications = false, markAsRead, markAllAsRead, isDesktop = false }) => {
-  const { businessBranches } = useTenantData();
+  const { businessBranches = [] } = useTenantData() ?? {};
   const [isOpen, setIsOpen] = useState(false);
   if (!canViewNotifications && !isAdmin) return null;
   return <div className="bell-wrapper">

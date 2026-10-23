@@ -22,7 +22,7 @@ El proyecto se trabajará de forma iterativa.
 Para cada fase:
 
 1. GPT/Codex/Sol recibe únicamente el prompt de la fase actual.
-2. El agente lee únicamente este documento, la única fuente permanente de contexto del proyecto.
+2. El agente lee este documento y, para las fases Spark, `docs/PLAN-REFAC-SPARK-MIGAPOS.md`, aprobado por el titular.
 3. Ejecuta SOLO esa fase.
 4. Ejecuta lint/build/tests correspondientes.
 5. No despliega producción salvo autorización explícita.
@@ -58,6 +58,47 @@ Usar esta tabla como control de avance.
 | 10 | Tests, CI, observabilidad y release | LISTA PARA STAGING |
 
 Este estado debe actualizarse a medida que se aprueben fases.
+
+## Reencaminamiento Firebase Spark — base `e92c702`, 23/10/2026
+
+Rige `docs/PLAN-REFAC-SPARK-MIGAPOS.md`. Spark es obligatorio: proyecto `migapos`, Hosting `migapos-peru`, Authentication, Firestore y persistencia local; sin Blaze, Cloud Functions desplegadas, Storage ni backend de pago. F1–F10 conservan su historia y dominio, pero su dependencia de servidor **no acredita funcionamiento financiero en Spark**. Los procedimientos históricos de despliegue/backend no se aplican a esta transición; la publicación Spark se revisará en SPARK-7. No se hizo ningún deploy.
+
+| Fase | Alcance | Estado |
+|---|---|---|
+| SPARK-0 | Capacidades, arranque y separación plataforma/negocio | EN PROGRESO: código y validación local completados; aceptación manual con login real pendiente |
+| SPARK-1 | Lectura SaaS y creación atómica real de negocio/licencia/sede/invitación, Rules estrictas | PENDIENTE |
+| SPARK-2 | Catálogo, sedes, usuarios, agenda e índices | PENDIENTE |
+| SPARK-3 | Caja y puerta de factibilidad de venta segura con Rules | PENDIENTE |
+| SPARK-4 | POS, anulación, stock e idempotencia/offline | PENDIENTE |
+| SPARK-5 | Contratos, ledger, cuotas, refunds y cierre | PENDIENTE |
+| SPARK-6 | Reportes, alertas, imágenes y cuotas Spark | PENDIENTE |
+| SPARK-7 | Backups locales, mantenimiento y publicación controlada | PENDIENTE |
+
+### SPARK-0 — implementación y límites
+
+- `config/runtimeCapabilities.js` fija `mode: spark` y estrategia de repositorios `spark`, sin flags de usuario/URL/localStorage. Auth, Firestore, Hosting, persistencia y exportaciones locales disponibles; Functions, Storage, administración todavía no migrada, operaciones financieras remotas, sincronización y jobs deshabilitados. Que un servicio esté disponible no certifica un flujo aún pendiente.
+- `core/session/context.js` centraliza contextos, módulos y pestaña válida. SuperAdmin siempre entra en `platform-admin`, incluso si el perfil contiene un tenant anterior o carece de `businessId`. No monta Tenant/Catalog providers, guards de negocio, selector de sede, notificaciones de tenant, POS, caja, categorías, agenda, contratos, reportes, personal ni ajustes. Una pestaña heredada no permite montar un módulo ajeno al contexto. Un perfil operativo con ID reservado `platform-admin` no obtiene contexto de negocio. La UI no sustituye la autorización de Rules.
+- El panel SaaS muestra Spark y sus limitaciones; consulta/alta quedan explícitamente pendientes de SPARK-1. No presenta una lista vacía como prueba de ausencia de negocios. Se eliminó el callable directo de administración; no hay consultas administrativas ni polling de jobs al arrancar. La sincronización automática de ventas y la limpieza Storage quedan pausadas, conservando sus registros para migración posterior.
+- `core/firebase/callable.js` delega en `sparkRepository.js`; cualquier operación aún no migrada rechaza con `capability-unavailable` antes de inicializar SDK o acceder a red. `core/firebase/storage.js` es el límite de imágenes sin SDK: upload, lectura, delete y referencias remotas fallan explícitamente. No hay `httpsCallable` ni imports de `firebase/functions`/`firebase/storage` en `frontend/src`. La configuración Web ya no requiere bucket; acepta y valida la variable existente sin utilizarla ni modificar `.env`.
+- No se alteran Rules, índices, cálculos financieros, colecciones, esquema Dexie, cifrado, datos ni estados de la cola offline. Los errores de capacidades no producen receipts ni confirmaciones ficticias. Los módulos operativos muestran que la confirmación remota y la sincronización están pendientes; su dominio anterior se conserva como especificación para las siguientes fases.
+- Logo e iconos PNG locales comprobados (192/512), rutas de branding y manifest PWA conservados. SW con actualización explícita y assets versionados; mensaje offline distingue interfaz disponible de operaciones confirmadas. Firestore conserva `persistentLocalCache` con múltiples pestañas. No se borra IndexedDB, cola ni caché de negocio; imágenes locales compatibles se mantienen y las referencias Storage no se eliminan.
+
+### Inventario de operaciones aisladas en SPARK-0
+
+| Frontera actual | Operaciones aún no disponibles en Spark |
+|---|---|
+| `administrationRepository` / `useSuperAdmin` | `getTenantAdministration`, `createTenant`, `extendTenantLicense`, `setTenantLicenseStatus`, `requestTenantDeletion`, `cancelTenantDeletion`, `startTenantPurge` |
+| `useAdminBackup` | `getPlatformJob`, `startTenantBackup`, `retryPlatformJob`, `cancelPlatformBackup`, `startRestoreDryRun`, `getBackupDownload` |
+| `cashRegisterRepository` | `reserveOfflineCashSession`, `openCashSession`, `previewCashSessionClose`, `closeCashSession`, `forceCloseCashSession`, `reconcileCashSession` |
+| `saleTransactions` | `submitSale` (incluido receipt/retry), `voidSale` |
+| `contractRepository` / `paymentRepository` | `createContract`, `updateContract`, `addContractPayment`, `cancelContract`, `markContractDelivered`, `getLegacyContractPayments` |
+| `contractImages` → límite Storage | Subida de original/miniatura, lectura Blob, limpieza y reintentos de borrado; referencias HTTPS/metadata legacy no recuperables en Spark. Fuentes data/Blob locales compatibles no requieren Storage. |
+
+### Validación SPARK-0
+
+APROBADOS: `npm run lint --prefix frontend`, `npm run build --prefix frontend` con variables públicas sintéticas de Emulator solo en la sesión, `node --test tests/spark-mode.test.mjs` (7 pruebas), `node --test tests/spark-startup.browser.test.mjs` (8 checks en Chromium aislado) y `git diff --check`. Build PWA: 33 entradas, aproximadamente 2453 KiB; permanece el aviso de chunks >500 KiB. No se ejecutó la suite completa ni se conectaron emuladores a datos reales.
+
+La comprobación del arranque usa perfiles/Auth simulados y bloquea endpoints de Functions/Storage antes de cualquier conexión. Verifica navegación desktop/móvil SaaS, cero suscripciones/callables, cambio de cuenta plataforma, logo local y conservación de un registro IndexedDB al logout. Pendiente del titular: Google login real, abrir panel SaaS y observar cero requests a `cloudfunctions.net`, sin borrar datos locales. No se declara validación manual ni equivalencia financiera Spark; SPARK-1 no está implementada.
 
 ---
 

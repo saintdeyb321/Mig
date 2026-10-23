@@ -6,12 +6,14 @@ import NetworkBadge from '../components/NetworkBadge';
 import { NotificationBell } from '../components/NotificationBell';
 import { useTenantData } from '../features/branches/context/TenantContext';
 import { useAlerts } from '../features/notifications/hooks/useAlerts';
+import { isBusinessSession } from '../core/session/context.js';
+import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 import '../styles/layout.css';
 
 const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
 
   // Extraemos las sedes del contexto
-  const { businessBranches } = useTenantData();
+  const { businessBranches = [] } = useTenantData() ?? {};
   const notifications = useAlerts(user);
 
   const fullName = useMemo(() => {
@@ -99,6 +101,10 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
         </header>
 
         <main className="content-area">
+          {isBusinessSession(user) && !runtimeCapabilities.financialOperations && <p role="status" className="card">
+            Modo Spark: ventas, caja, pagos y contratos aún no disponibles para confirmación remota.
+            La cola local se conserva; su sincronización está pausada hasta completar la migración.
+          </p>}
           {children}
         </main>
       </div>

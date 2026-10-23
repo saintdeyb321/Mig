@@ -1,4 +1,4 @@
-const known = new Set(['unavailable', 'deadline-exceeded', 'network-request-failed', 'offline', 'permission-denied', 'unauthenticated', 'tenant-restricted', 'outside-shift', 'insufficient-stock', 'price-changed', 'invalid-session', 'closed-session', 'sale-conflict', 'AbortError']);
+const known = new Set(['capability-unavailable', 'unavailable', 'deadline-exceeded', 'network-request-failed', 'offline', 'permission-denied', 'unauthenticated', 'tenant-restricted', 'outside-shift', 'insufficient-stock', 'price-changed', 'invalid-session', 'closed-session', 'sale-conflict', 'AbortError']);
 const areas = new Set(['functions', 'sale', 'sync', 'network', 'license', 'storage', 'print', 'report', 'render']);
 const states = new Set(['pending', 'confirmed', 'rejected', 'review', 'failed', 'offline', 'restricted']);
 const events = [], recent = new Map();

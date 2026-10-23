@@ -6,6 +6,7 @@ import {
   addContractPayment, cancelContractDocument, markContractDelivered, ACTIVE_CONTRACT_LIMIT,
 } from '../infrastructure/contractRepository';
 import { prepareContractImages, cleanupContractImagePaths, cleanupRetiredContractImages, retryContractImageCleanup } from '../infrastructure/contractImages';
+import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
 import { commercialContractFields, contractCommandSignature, createContractCommandRegistry, mergeContractPages } from '../application/contractCommands';
 import { useScopedSubscription } from '../../../shared/hooks/useScopedSubscription';
 
@@ -20,7 +21,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
   const commands = useMemo(() => ({ ...createContractCommandRegistry(), identityKey }), [identityKey]);
   const scope = useMemo(() => ({ active: true, identityKey }), [identityKey]);
   useEffect(() => {
-    if (!businessId) return;
+    if (!businessId || !runtimeCapabilities.cloudStorage) return;
     const retry = () => { void retryContractImageCleanup(businessId).catch(() => console.warn('Cleanup de imágenes pendiente.')); };
     retry(); window.addEventListener('online', retry);
     const timer = setInterval(retry, 60000);

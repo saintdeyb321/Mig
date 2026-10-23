@@ -1,6 +1,7 @@
 // src/components/BottomNav.jsx
 import React, { useMemo, memo } from 'react';
 import BranchSelector from '../src/components/BranchSelector'; // Verifica tu ruta
+import { getSessionModules, isBusinessSession } from './core/session/context.js';
 
 // 🚀 OPTIMIZACIÓN 1: Sacamos el menú estático afuera. 
 // 🚀 NUEVO: Agregamos 'contracts' con icono de tortita/agenda
@@ -23,13 +24,14 @@ const BottomNav = memo(({ current, setCurrent, user, assignedBranchName, isDeskt
 
   // Filtramos rápido usando memoización
   const visibleItems = useMemo(() => {
-    return MENU_ITEMS.filter(item => item.roles.includes(role));
-  }, [role]);
+    const allowed = getSessionModules(user);
+    return MENU_ITEMS.filter(item => allowed.includes(item.id));
+  }, [user]);
 
   return (
     <nav className={isDesktop ? "sidebar-nav" : "app-bottom-nav"}>
       
-      {(role === 'dueño' || role === 'superadmin') && <BranchSelector />}
+      {isBusinessSession(user) && role === 'dueño' && <BranchSelector />}
       
       {visibleItems.map((item) => (
         <button
