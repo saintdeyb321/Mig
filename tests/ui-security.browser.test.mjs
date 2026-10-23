@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import { readFileSync } from 'node:fs';
+import { hostingHeaders, environmentFor } from '../frontend/src/config/environments.js';
 import { runBrowserFixture } from './helpers/browserHarness.mjs';
 
 it('prints safely and cleans resources under the Hosting CSP in real Chromium', { timeout: 90000 }, async () => {
-  const config = JSON.parse(readFileSync(new URL('../firebase.json', import.meta.url), 'utf8'));
-  const headers = Object.fromEntries(config.hosting.headers[0].headers.map(({ key, value }) => [key, value]));
+  const headers = Object.fromEntries(hostingHeaders(environmentFor('production')).map(({ key, value }) => [key, value]));
   const mockPng = readFileSync(new URL('../frontend/public/img/Logo_192.png', import.meta.url)).toString('base64');
   const result = await runBrowserFixture({ htmlFile: new URL('./ui-security.browser.html', import.meta.url), route: '/phase9-ui-test', headers, mockPng,
     // Fulfill ALL external requests locally, including Auth/Storage/Functions fixtures.

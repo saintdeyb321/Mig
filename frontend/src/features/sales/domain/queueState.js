@@ -20,7 +20,7 @@ export function isRetryableSaleError(error) {
 }
 export function isDeterministicSaleError(error) {
   return ['invalid-sale', 'identity-mismatch', 'product-tenant-mismatch', 'invalid-stock', 'insufficient-stock',
-    'price-changed', 'inactive-product', 'tenant-restricted', 'sale-conflict', 'permission-denied', 'decryption-failed', 'invalid-session', 'closed-session', 'unverified-session', 'invalid-stats']
+    'price-changed', 'inactive-product', 'tenant-restricted', 'outside-shift', 'sale-conflict', 'permission-denied', 'decryption-failed', 'invalid-session', 'closed-session', 'unverified-session', 'invalid-stats']
     .includes(String(error?.code).replace(/^(firestore|functions)\//, ''));
 }
 export async function decodeQueuedSale(record, identity, decrypt) {

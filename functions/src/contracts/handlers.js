@@ -1,5 +1,5 @@
 import { Timestamp } from 'firebase-admin/firestore';
-import { actorFor, authorizeBranch } from '../core/authorization.js';
+import { actorFor, authorizeBranch, requireShift } from '../core/authorization.js';
 import { documentId, SaleError, money } from '../sales/domain/saleModel.js';
 import { COMMERCIAL_FIELDS, commercialFields, contractAmount, paymentMethod, operationId,
   financialProjection, assertPaymentWithinBalance } from './domain/contractModel.js';
@@ -86,6 +86,7 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
       }
       return response(contractId, existing, 'ALREADY_APPLIED');
     }
+    requireShift(actor, now());
     const paymentReference = initial ? database.doc(`payments/${initial.operationId}`) : null;
     if (paymentReference && (await transaction.get(paymentReference)).exists) {
       throw new SaleError('payment-conflict', 'El ID del adelanto ya fue utilizado.');
@@ -116,6 +117,7 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
     const actor = await actorFor(transaction, database, request.auth?.uid);
     const input = payload(request.data);
     const changes = payload(input.changes);
+    requireShift(actor, now());
     if (Object.keys(changes).some(key => !COMMERCIAL_FIELDS.includes(key))) {
       throw new SaleError('protected-contract-field', 'La edición sólo permite datos comerciales.');
     }
@@ -150,6 +152,7 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
       return response(reference.id, contract, 'ALREADY_APPLIED', { paymentId: input.operationId });
     }
     if (operation.exists) throw new SaleError('payment-conflict', 'La operación ya tiene otro movimiento confirmado.');
+    requireShift(actor, now());
     activeContract(contract);
     const ledger = await ensureLegacyPaymentsMigrated(transaction, database, reference, contract, { now });
     const current = financialProjection(contract.total, ledger.payments, contract.status);
@@ -187,6 +190,7 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
       return response(reference.id, contract, 'ALREADY_APPLIED');
     }
     if (operation.exists) throw new SaleError('payment-conflict', 'La operación ya tiene otro movimiento confirmado.');
+    requireShift(actor, now());
     const ledger = await ensureLegacyPaymentsMigrated(transaction, database, reference, contract, { now });
     const outstanding = remainingIncomePayments(ledger.payments);
     const sessionId = outstanding.some(payment => payment.method === 'efectivo')
@@ -233,6 +237,7 @@ export function createContractHandlers(database, { now = Date.now } = {}) {
     const ledger = await ensureLegacyPaymentsMigrated(transaction, database, reference, contract, { now });
     const projection = financialProjection(contract.total, ledger.payments, 'entregado');
     const repeated = contract.status === projection.status && contract.deliveredAt != null;
+    if (!repeated) requireShift(actor, now());
     ledger.write();
     transaction.update(reference, { ...projection, ...ledger.migration,
       ...(repeated ? {} : { deliveredAt: Timestamp.fromMillis(now()), deliveredBy: actor.uid }), updatedAt: Timestamp.fromMillis(now()) });

@@ -55,7 +55,7 @@ Usar esta tabla como control de avance.
 | 7 | Reportes, dashboard y Excel | COMPLETADA |
 | 8 | Licencias, SuperAdmin, backups y borrado | COMPLETADA |
 | 9 | Branding MigaPOS y limpieza general | COMPLETADA |
-| 10 | Tests, CI, observabilidad y release | PENDIENTE |
+| 10 | Tests, CI, observabilidad y release | LISTA PARA STAGING |
 
 Este estado debe actualizarse a medida que se aprueben fases.
 
@@ -911,6 +911,60 @@ No existe personalización específica de Kprichitos fuera de datos de tenant.
 ---
 
 # FASE 10 — Tests, CI, observabilidad y release
+
+## Estado y alcance de esta ejecución
+
+LISTA PARA STAGING. Código, QA local y preparación reproducible terminados sobre `main`, base `f3e558c`, el 23/10/2026. Se mantienen el proyecto real `migapos` y Hosting `migapos-peru`. Por instrucción del titular no se crean proyectos/sites adicionales ni se modifican sus `.env`. `demo-migapos` es exclusivamente el identificador local de Emulator Suite. La validación remota de un staging independiente permanece pendiente; no se certifica producción.
+
+## Correcciones y controles implementados
+
+- Comprobantes: `occurredAt` tiene prioridad sobre `date` legacy; Timestamp/Date/ISO se formatean en Lima. Fechas inválidas/ausentes muestran “Fecha no disponible”, nunca la fecha actual. Ledger firmado, cuotas históricas y refunds negativos; el `paidTotal` canónico evita subtotales falsos cuando el historial está limitado por sede; una cancelación reembolsada muestra neto pagado y deuda cero.
+- Turnos: misma función pura en frontend/Functions. Las nuevas operaciones online de cajero usan reloj y perfil del servidor; owner/superadmin están exentos. Los receipts confirmados se reconocen antes de comprobar el horario. Nuevas ventanas offline se limitan al fin del turno; la sincronización usa la ventana previamente emitida por el servidor, vinculada a usuario/tenant/sede, y conserva grants anteriores válidos. Los timestamps del dispositivo por sí solos no autorizan nada. Lecturas de cierre y conciliaciones de recuperación siguen disponibles con sus permisos existentes.
+- Auditoría: se conservan las protecciones de identidad, importes, stock, licencia, ledger, caja y administración; las nuevas regresiones cubren horario, retries y grants offline. No se rediseñan colecciones ni APIs financieras.
+- Observabilidad: `firebase-functions/logger` registra operación, correlación, ID de operación opaco, resultado, código seguro, duración, App Check y contadores. Los rechazos de negocio son INFO; errores inesperados ERROR; no se serializan payloads, tokens, nombres, emails ni importes. Contadores: errores, ventas rechazadas, retries, conciliación pendiente, fallos de backup/purga y operaciones lentas (≥2 s). Los errores internos de jobs programados se distinguen del éxito completo.
+- Frontend: diagnóstico local acotado/deduplicado para Functions, ventas/sync, red, licencia, Storage, impresión y reportes; boundary de errores sin borrar IndexedDB. Los estados pendiente/confirmada/rechazada/revisión conservan la cola durable. No se añade transporte remoto ni listeners de Firestore para telemetría.
+- Costo/rendimiento: se revisaron scopes, liberación de suscripciones, límites/paginación y caché de las suites existentes. Excel continúa lazy y se cachea tras el primer uso; no se precarga al instalar la PWA. Precache aproximado: 3,3 MB → 2,5 MB; control automático de presupuesto de 3 MiB. No se añaden agregados ni índices. Continúa el aviso del chunk inicial grande; no se fuerzan refactors ajenos al hallazgo medido.
+
+## Validación y CI
+
+Comandos requeridos: `npm test`, `npm run test:offline-db`, `npm run lint --prefix frontend`, `npm run build --prefix frontend`, `git diff --check`. Controles adicionales: `npm run check:release`, `npm run check:build`, `npm run audit:security`. Las variables públicas de CI son únicamente fixtures `demo-migapos`, con `VITE_APP_ENV=emulator`, `VITE_USE_EMULATORS=true` y App Check desactivado. `scripts/emulator-guard.mjs` rechaza proyecto real y hosts distintos de los emuladores locales antes de las pruebas destructivas.
+
+Node 22, Java 21, Chromium/Edge/Chrome y dependencias instaladas con `npm ci` en raíz, `frontend` y `functions` son requisitos operativos. Se conserva `verify.yml`: pruebas existentes + configuración/release, Chromium autenticado y auditoría. No hay deploy ni pasos críticos con `continue-on-error`. Un fallo corta CI; el artefacto `release-verification` se genera solo al final y está vinculado al commit y fingerprint del código. Debe ejecutarse el workflow remoto sobre el commit final; su configuración validada localmente no equivale a CI remota aprobada.
+
+Cobertura integrada: invitación/login verificado, producto, caja, efectivo/mixto, IndexedDB offline/sync, retry, anulación/stock, adelanto, abono, refund, cierre, dashboard/Excel y cambio de tenant/sede se encadenan en Chromium + emuladores. Licencia suspendida, roles, aislamiento, impresión, Storage, backup y solicitud/cancelación de eliminación conservan sus suites de integración específicas, sin duplicarlas.
+
+Resultado final: `npm test` aprobó 328 pruebas (16 release/seguridad final, 15 arquitectura, 29 ventas/cola, 21 Functions, 32 reportes, 24 UI y 191 emuladores/integración). Chromium aprobó 17 comprobaciones de impresión/CSP y 17 del flujo autenticado; IndexedDB offline aprobó sus 22 comprobaciones. Los fallos iniciales de las fixtures Chromium/restore se corrigieron; tras resolver la interrupción de PowerShell y un proceso de Emulator huérfano se completó una ejecución integral con cero fallos/omisiones. La revalidación final de fechas/totales e UI aprobó 39 pruebas. Lint, build, presupuesto PWA, configuración CI/release, build reproducible de Emulator y `git diff --check` aprobados. La política de auditoría aprobó con los avisos/excepciones visibles indicados abajo; no equivale a un audit sin vulnerabilidades. Quedan pendientes las comprobaciones reales de Console, configuración Web de producción, CI remota y staging; no hubo deploy ni cambios en producción.
+
+## Auditoría de dependencias
+
+Parches compatibles de Vite/transitivas y gRPC 1.13.6 (mismo major, validado con Emulator) corrigen los avisos altos del frontend. No se aplican majors ni `audit --force`. La auditoría sigue mostrando avisos reales: basic-ftp alto y OpenTelemetry moderado en tooling CLI; uuid moderado por gaxios; esbuild bajo en tooling frontend. No se declara “cero vulnerabilidades”.
+
+`scripts/security-exceptions.json` identifica avisos, alcance, justificación y caducidad (23/11/2026): FTP y baggage no son entradas de usuarios ni dependencias del servidor financiero; gaxios utiliza UUID v4, no los generadores con buffer afectados. La auditoría los muestra expresamente y bloquea avisos nuevos moderados/altos/críticos o excepciones vencidas. Revisar el major compatible del CLI y las actualizaciones upstream antes de renovar excepciones; el aviso bajo se mantiene visible.
+
+## Entornos, App Check y requisitos de Console
+
+`frontend/src/config/environments.js` es la fuente de proyecto/Auth/Functions/Hosting por entorno. Producción conserva los IDs existentes; Emulator usa loopback y desactiva Analytics/App Check real; staging queda sin recursos inventados y rechaza producción como sustituto. La CSP se genera por entorno con orígenes explícitos; GAPI permanece permitido también con Auth Emulator porque el resolver popup del SDK lo carga, mientras los servicios de datos del entorno local solo admiten loopback. Los hooks `predeploy` de Hosting, Functions, Firestore y Storage bloquean el uso accidental de `firebase.json` base y requieren la configuración generada, proyecto exacto, checkout limpio, CI del mismo código y hashes del build/configuración/variables públicas.
+
+Pendiente manual: obtener en Firebase Console la configuración Web pública correcta (API key pública, App ID, Sender ID, bucket y Auth domain), habilitar Google como proveedor y comprobar dominios autorizados del site/preview. No hay configuración Web pública de producción completa disponible en esta ejecución: `release:check --env production` falla expresamente por `VITE_FIREBASE_API_KEY` ausente. No se inventan credenciales ni se alteran archivos `.env`; usar variables por sesión o un archivo local separado no versionado.
+
+App Check queda OFF por defecto. Para rollout futuro: registrar la app Web y una clave pública reCAPTCHA Enterprise; construir con `VITE_APP_CHECK_MODE=monitor` y `VITE_APP_CHECK_SITE_KEY` real. La CSP añade únicamente los orígenes Enterprise necesarios. Observar cobertura/errores antes de habilitar `MIGAPOS_APP_CHECK_ENFORCE` con nombres de Functions separados por coma, empezando por un grupo pequeño. Emulator/CI nunca exigen tokens reales. No activar enforcement abruptamente en Console ni romper clientes anteriores. Referencias oficiales: [cliente Enterprise](https://firebase.google.com/docs/app-check/web/recaptcha-enterprise-provider), [Functions](https://firebase.google.com/docs/app-check/cloud-functions), [logging](https://firebase.google.com/docs/functions/writing-and-viewing-logs).
+
+En Console, revisar también permisos mínimos de administración, billing/budgets, alertas de consumo y métricas basadas en los campos de Cloud Logging (`jsonPayload.event`, `operation`, `outcome`, `errorCode`, `slow`, `metrics`). Configurar alertas para errores, rechazos anómalos, retries crecientes, conciliaciones pendientes y fallos de jobs; los umbrales dependen del tráfico real. No se crearon alertas ni se cambiaron opciones de producción en esta tarea.
+
+## Preparación de staging y checklist de release
+
+- [ ] Si se autoriza en el futuro, configurar un proyecto/site independientes en `environments.js`, con su propia Web config, Auth, Functions y bucket. Actualmente no existen ni se crean; no copiar datos de clientes.
+- [ ] Ejecutar `npm run release:check -- --env staging` y `release:build` para ese entorno; validar Google Auth, Storage, roles/licencias, financial flows, PWA, impresión y Excel con datos sintéticos. `npm run release:smoke -- --env staging --url https://SITE.web.app/` solo admite el site independiente configurado; nunca producción.
+- [ ] Para una publicación futura de la infraestructura existente, completar configuración pública y ejecutar `npm run release:check -- --env production`, luego `npm run release:build -- --env production`. Los artefactos `.release/` y `firebase.production.generated.json` no se versionan ni contienen credenciales privadas.
+- [ ] Confirmar un commit limpio con CI remota aprobada; descargar su `release-verification` como `.release/ci-verification.json`. Establecer explícitamente `MIGAPOS_RELEASE_ENV=production` y `MIGAPOS_ALLOW_RELEASE=migapos/migapos-peru` en la sesión operativa. Cualquier cambio de código, entorno o archivos del build invalida los hashes y obliga a reconstruir.
+- [ ] Revisar `npm run release:plan -- --env production`: solo imprime comandos con proyecto/site explícitos para preview, copia de la versión live a un canal de rollback, publicación Hosting y rollback. El script nunca los ejecuta. Autorizar y validar manualmente preview/smoke antes de publicar; no se ejecutó ninguno aquí.
+- [ ] Revisar compatibilidad frontend/API y clientes previos; desplegar por separado los cambios revisados de backend/Rules cuando exista autorización. No activar enforcement App Check hasta que los clientes estén preparados. No hay migraciones necesarias ni procesos destructivos automáticos nuevos.
+
+## Backup, recuperación y rollback
+
+La suite verifica backup completo, manifest/checksums, assets, aislamiento, cancelación, interrupción/reanudación y bloqueo de purga sin backup válido. El restore dry-run sigue sin escribir datos. Además se ejecuta una recuperación real **solo en namespaces aislados de Emulator**: reconstrucción wire de tipos Firestore (bytes/int64/nanosegundos/referencias), assets con checksums, liberación explícita del fence del backup verificado en tenant/licencia restaurados y una venta funcional; el tenant de origen y los datos ajenos se conservan. Esta prueba de recuperación utiliza las identidades Auth sintéticas existentes del emulador y no valida una importación de cuentas/credenciales Auth en otro proyecto. No se proporciona un comando automático de restauración/purga real ni se certifica recuperación en Firebase real.
+
+Rollback Hosting usa el canal conservado por el plan antes de publicar. **No revierte Functions, Rules, índices ni esquema/datos.** Mantener APIs compatibles/aditivas, conservar los fixes de autorización/turno y preferir un fix hacia delante para backend. Un rollback de frontend requiere revisar la compatibilidad de App Check y de la cola durable con el servidor vigente; no reintroducir permisos antiguos ni borrar pendientes. Toda recuperación real necesita una ejecución aislada y revisión operacional antes de tocar clientes reales.
 
 ## Objetivo
 

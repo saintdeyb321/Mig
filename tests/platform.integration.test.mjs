@@ -7,7 +7,8 @@ import { getAuth, connectAuthEmulator, createUserWithEmailAndPassword } from 'fi
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'firebase/functions';
 import { createAdministrationHandlers, addLicenseMonths } from '../functions/src/platform/administration.js';
 import { createPlatformJobs } from '../functions/src/platform/jobs.js';
-import { SCOPED_COLLECTIONS, checksum, dryRunPart } from '../functions/src/platform/backupFormat.js';
+import { SCOPED_COLLECTIONS, checksum, dryRunPart, restoreDocumentWrite, documentRecord } from '../functions/src/platform/backupFormat.js';
+import { createSalesHandlers } from '../functions/src/sales/handlers.js';
 import { canonicalSale, SaleError } from '../frontend/src/features/sales/domain/saleModel.js';
 import { createSaleQueue } from '../frontend/src/features/sales/application/saleQueue.js';
 import { restoreTenantDryRun, restoreOptions } from '../functions/scripts/restoreTenantDryRun.mjs';
@@ -244,6 +245,66 @@ describe('Private backups, restore verification and recoverable tenant deletion'
     assert.equal(standalone.restorable, true); assert.equal(standalone.writes, 0); assert.ok(reads > backup.partCount);
     assert.throws(() => restoreOptions(['--apply']), /dry-run/);
     assert.throws(() => restoreOptions(['--project=demo-migapos', '--business=tenant-a', '--backup=test']), /confirmación/);
+  });
+  it('restores verified documents/assets into isolated emulator namespaces and executes a functional sale', async () => {
+    assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080');
+    assert.equal(process.env.FIREBASE_STORAGE_EMULATOR_HOST, '127.0.0.1:9199');
+    await fullFixture();
+    const started = await administration().startTenantBackup(request(operation({ businessId: 'tenant-a' })));
+    const backup = await drain(started.jobId), worker = workers();
+    const dry = await worker.startRestoreDryRun(request({ backupId: backup.id }));
+    assert.equal((await drain(dry.jobId, worker)).writes, 0);
+    const isolatedId = 'restore-phase10', isolatedDb = getFirestore(admin, isolatedId);
+    await isolatedDb.listCollections(); // Initializes the Admin emulator's authenticated local transport.
+    const isolatedBucket = getStorage(admin).bucket('demo-migapos-restore.appspot.com');
+    const sourceRoot = 'projects/demo-migapos/databases/(default)/documents/';
+    const targetRoot = 'projects/demo-migapos/databases/' + isolatedId + '/documents/';
+    const rebase = (value, key) => {
+      if (typeof value === 'string' && ['name', 'referenceValue'].includes(key) && value.startsWith(sourceRoot)) return targetRoot + value.slice(sourceRoot.length);
+      if (Buffer.isBuffer(value)) return value;
+      if (Array.isArray(value)) return value.map(entry => rebase(entry));
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([field, entry]) => [field, rebase(entry, field)]));
+      return value;
+    };
+    let documents = 0, assets = 0;
+    try {
+      for (let index = 0; index < backup.partCount; index++) {
+        const { descriptor, bytes } = await worker.readPart(backup, index);
+        if (descriptor.kind === 'asset') {
+          await isolatedBucket.file(descriptor.source).save(bytes, { resumable: false, metadata: { contentType: descriptor.contentType } });
+          assert.equal(checksum((await isolatedBucket.file(descriptor.source).download())[0]), descriptor.sha256); assets++;
+        } else {
+          const records = JSON.parse(bytes.toString('utf8'));
+          const writes = records.map(record => rebase(restoreDocumentWrite(record)));
+          // Pinned Admin SDK wire API preserves int64/bytes/nanoseconds; emulator guards precede every write.
+          await isolatedDb.request('commit', { database: 'projects/demo-migapos/databases/' + isolatedId, writes }, 'isolated-restore-test');
+          documents += writes.length;
+          for (const record of records.filter(record => record.path.endsWith('/details/nested'))) {
+            const restored = restoreDocumentWrite(documentRecord(await isolatedDb.doc(record.path).get()));
+            assert.deepEqual(restored.update.fields, rebase(restoreDocumentWrite(record)).update.fields);
+          }
+        }
+      }
+      assert.ok(documents > 20 && assets > 0);
+      for (const collection of ['licenses', 'tenants']) {
+        const ref = isolatedDb.doc(collection + '/tenant-a'), restored = (await ref.get()).data();
+        if (restored?.maintenanceJobId) {
+          assert.equal(restored.maintenanceJobId, backup.id);
+          await ref.update({ maintenanceJobId: null });
+        }
+      }
+      assert.equal((await isolatedDb.doc('products/product-a').get()).data().stock['a-1'], 100);
+      const result = await createSalesHandlers(isolatedDb, { now: () => clock }).submitSale({ auth: { uid: actors.owner.uid }, data: ticket() });
+      assert.equal(result.status, 'APPLIED');
+      assert.equal((await isolatedDb.doc('products/product-a').get()).data().stock['a-1'], 99);
+      assert.equal((await db.doc('products/product-a').get()).data().stock['a-1'], 100);
+      assert.equal((await isolatedDb.doc('customers/tenant-a-fixture/details/nested').get()).exists, true);
+      assert.equal((await isolatedDb.doc('users/' + actors.other.uid).get()).exists, false);
+    } finally {
+      assert.equal((await fetch('http://127.0.0.1:8080/emulator/v1/projects/demo-migapos/databases/' + isolatedId + '/documents', { method: 'DELETE' })).ok, true);
+      await isolatedBucket.deleteFiles({ force: true });
+      await isolatedDb.terminate();
+    }
   });
   it('interrupted backup unit retries without duplicate parts, and expired process leases resume after restart', async () => {
     let failOnce = true;

@@ -1,15 +1,17 @@
 // src/hooks/useNetworkStatus.js
 import { useSyncExternalStore } from 'react';
+import { reportDiagnostic } from '../core/errors/diagnostics.js';
 
 // 1. Definimos cómo suscribirnos a los eventos del navegador
 const subscribe = (callback) => {
-  window.addEventListener('online', callback);
-  window.addEventListener('offline', callback);
+  const changed = () => { reportDiagnostic('network', null, navigator.onLine ? 'confirmed' : 'offline'); callback(); };
+  window.addEventListener('online', changed);
+  window.addEventListener('offline', changed);
   
   // Limpieza automática
   return () => {
-    window.removeEventListener('online', callback);
-    window.removeEventListener('offline', callback);
+    window.removeEventListener('online', changed);
+    window.removeEventListener('offline', changed);
   };
 };
 

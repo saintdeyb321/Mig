@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { resolveContractImageUrls } from '../infrastructure/contractImages';
+import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 
 const EMPTY_IMAGES = [];
 
@@ -14,6 +15,7 @@ export function useContractImageUrls(images = EMPTY_IMAGES) {
       release = resolved.release;
       setResult({ key, urls: resolved.urls, loading: false, error: null });
     }).catch(error => {
+      reportDiagnostic('storage', error);
       if (!disposed) setResult({ key, urls: [], loading: false, error });
     });
     return () => { disposed = true; release(); };

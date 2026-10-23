@@ -1,0 +1,23 @@
+[
+  {
+    "id": "GHSA-c475-qrg2-pj4r",
+    "scopes": ["root"],
+    "severity": "high",
+    "expires": "2026-11-23",
+    "reason": "basic-ftp solo pertenece a Firebase CLI/proxy tooling; MigaPOS no recibe URLs FTP ni distribuye esta dependencia en frontend/Functions. La corrección requiere actualizar el major transitivo y compatibilidad del CLI; no se aplica automáticamente."
+  },
+  {
+    "id": "GHSA-8988-4f7v-96qf",
+    "scopes": ["root"],
+    "severity": "moderate",
+    "expires": "2026-11-23",
+    "reason": "OpenTelemetry 1.x pertenece al CLI local, no al servidor financiero. No se procesan baggage externos de usuarios de MigaPOS; actualizarlo a 2.8 requiere un cambio mayor de su consumidor."
+  },
+  {
+    "id": "GHSA-w5hq-g745-h8pq",
+    "scopes": ["root", "functions"],
+    "severity": "moderate",
+    "expires": "2026-11-23",
+    "reason": "uuid 9 llega por gaxios: utiliza v4 sin buffer aportado por cliente. El aviso afecta v3/v5/v6 con buffer personalizado; MigaPOS utiliza crypto.randomUUID. No se fuerza uuid 11 en un consumidor de otro major."
+  }
+]

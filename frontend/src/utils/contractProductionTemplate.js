@@ -1,3 +1,4 @@
+import { printDate, paymentDate, printFinancials } from './printValues.js';
 import { brand } from '../config/brand.js';
 import { escapeHtml, multilineHtml, safeImageUrl, escapeAttribute } from '../shared/security/html.js';
 // src/utils/contractProductionTemplate.js
@@ -5,6 +6,7 @@ import { escapeHtml, multilineHtml, safeImageUrl, escapeAttribute } from '../sha
 export const generateContractProductionHTML = (contract, settings, branches = []) => {
   if (!contract) return ''; 
 
+  const financial = printFinancials(contract);
   const company = settings?.companyData || {};
   const razonSocial = company.razonSocial || 'Mi Negocio';
 
@@ -18,12 +20,12 @@ export const generateContractProductionHTML = (contract, settings, branches = []
   }
 
   // Formateo de fechas
-  const orderDate = contract.createdAt?.toDate ? contract.createdAt.toDate() : new Date(contract.createdAt || Date.now());
-  const deliveryDate = contract.deliveryDate?.toDate ? contract.deliveryDate.toDate() : new Date(contract.deliveryDate || Date.now());
+  const orderDate = contract.createdAt;
+  const deliveryDate = contract.deliveryDate;
   
-  const orderDateStr = orderDate.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
-  const deliveryDateStr = deliveryDate.toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const deliveryTimeStr = deliveryDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const orderDateStr = printDate(orderDate, { day: '2-digit', month: 'short', year: 'numeric' });
+  const deliveryDateStr = printDate(deliveryDate, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const deliveryTimeStr = printDate(deliveryDate, { hour: '2-digit', minute: '2-digit', hour12: true });
 
   const safeDetails = contract.details ? multilineHtml(contract.details) : 'Sin especificaciones adicionales.';
 
@@ -37,8 +39,8 @@ export const generateContractProductionHTML = (contract, settings, branches = []
 
   const paymentsHTML = contract.payments && contract.payments.length > 0
     ? contract.payments.map((p, idx) => {
-        const pDate = p.date?.toDate ? p.date.toDate() : new Date(p.date || Date.now());
-        const pDateStr = pDate.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' }) + ' ' + pDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+        const pDateStr = paymentDate(p, { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + paymentDate(p, { hour: '2-digit', minute: '2-digit', hour12: true });
         const isRefund = p.amount < 0;
         
         return `
@@ -47,7 +49,7 @@ export const generateContractProductionHTML = (contract, settings, branches = []
             <td style="color: #64748b; font-size: 11px;">${pDateStr}</td>
             <td style="font-size: 11px; text-transform: uppercase; color: #475569;">${escapeHtml(p.method)}</td>
             <td class="text-right" style="font-weight: bold; color: ${isRefund ? '#b91c1c' : '#15803d'};">
-              ${isRefund ? '' : '+'} S/ ${Math.abs(p.amount).toFixed(2)}
+              ${isRefund ? '-' : '+'} S/ ${Math.abs(p.amount).toFixed(2)}
             </td>
           </tr>
         `;
@@ -132,15 +134,15 @@ export const generateContractProductionHTML = (contract, settings, branches = []
             <div class="finance-summary-row"><span>Cargo Delivery:</span><strong>S/ ${Number(contract.deliveryCost || 0).toFixed(2)}</strong></div>
             <hr style="border:0; border-top: 1px solid #cbd5e1; margin: 4px 0;" />
             <div class="finance-summary-row" style="font-size: 13px;"><strong>TOTAL PEDIDO:</strong><strong>S/ ${Number(contract.total || 0).toFixed(2)}</strong></div>
-            <div class="finance-summary-row"><span style="color: #166534; font-weight: bold;">Total Pagado:</span><strong style="color: #166534;">S/ ${Number(contract.total - contract.balance).toFixed(2)}</strong></div>
+            <div class="finance-summary-row"><span style="color: #166534; font-weight: bold;">Total Pagado:</span><strong style="color: #166534;">S/ ${financial.paidTotal === null ? 'No disponible' : financial.paidTotal.toFixed(2)}</strong></div>
             
             <div class="finance-alert-box" style="
-              background: ${contract.balance > 0 ? '#fef2f2' : '#f0fdf4'}; 
-              color: ${contract.balance > 0 ? '#991b1b' : '#166534'};
-              border: 1px solid ${contract.balance > 0 ? '#fca5a5' : '#bbf7d0'};
+              background: ${financial.balance > 0 ? '#fef2f2' : '#f0fdf4'};
+              color: ${financial.balance > 0 ? '#991b1b' : '#166534'};
+              border: 1px solid ${financial.balance > 0 ? '#fca5a5' : '#bbf7d0'};
             ">
-              <span>${contract.balance > 0 ? 'SALDO PENDIENTE:' : 'ESTADO:'}</span>
-              <span>${contract.balance > 0 ? `S/ ${Number(contract.balance).toFixed(2)}` : 'TOTALMENTE PAGADO ✅'}</span>
+              <span>${financial.balance > 0 ? 'SALDO PENDIENTE:' : 'ESTADO:'}</span>
+              <span>${financial.balance > 0 ? `S/ ${financial.balance.toFixed(2)}` : financial.settledLabel}</span>
             </div>
           </div>
 
@@ -184,6 +186,7 @@ export const generateContractProductionHTML = (contract, settings, branches = []
 export const generateContractTextOnlyHTML = (contract, settings, branches = []) => {
   if (!contract) return ''; 
 
+  const financial = printFinancials(contract);
   const company = settings?.companyData || {};
   const razonSocial = company.razonSocial || 'Mi Negocio';
 
@@ -197,19 +200,19 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
   }
 
   // Formateo de fechas
-  const orderDate = contract.createdAt?.toDate ? contract.createdAt.toDate() : new Date(contract.createdAt || Date.now());
-  const deliveryDate = contract.deliveryDate?.toDate ? contract.deliveryDate.toDate() : new Date(contract.deliveryDate || Date.now());
+  const orderDate = contract.createdAt;
+  const deliveryDate = contract.deliveryDate;
   
-  const orderDateStr = orderDate.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
-  const deliveryDateStr = deliveryDate.toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const deliveryTimeStr = deliveryDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const orderDateStr = printDate(orderDate, { day: '2-digit', month: 'short', year: 'numeric' });
+  const deliveryDateStr = printDate(deliveryDate, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const deliveryTimeStr = printDate(deliveryDate, { hour: '2-digit', minute: '2-digit', hour12: true });
 
   const safeDetails = contract.details ? multilineHtml(contract.details) : 'Sin especificaciones.';
 
   const paymentsHTML = contract.payments && contract.payments.length > 0
     ? contract.payments.map((p, idx) => {
-        const pDate = p.date?.toDate ? p.date.toDate() : new Date(p.date || Date.now());
-        const pDateStr = pDate.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' }) + ' ' + pDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+        const pDateStr = paymentDate(p, { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + paymentDate(p, { hour: '2-digit', minute: '2-digit', hour12: true });
         const isRefund = p.amount < 0;
         
         return `
@@ -218,7 +221,7 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
             <td style="color: #64748b; font-size: 11px;">${pDateStr}</td>
             <td style="font-size: 11px; text-transform: uppercase; color: #475569;">${escapeHtml(p.method)}</td>
             <td class="text-right" style="font-weight: bold; color: ${isRefund ? '#b91c1c' : '#15803d'};">
-              ${isRefund ? '' : '+'} S/ ${Math.abs(p.amount).toFixed(2)}
+              ${isRefund ? '-' : '+'} S/ ${Math.abs(p.amount).toFixed(2)}
             </td>
           </tr>
         `;
@@ -298,15 +301,15 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
             <div class="finance-summary-row"><span>Cargo Delivery:</span><strong>S/ ${Number(contract.deliveryCost || 0).toFixed(2)}</strong></div>
             <hr style="border:0; border-top: 1px solid #cbd5e1; margin: 4px 0;" />
             <div class="finance-summary-row" style="font-size: 13px;"><strong>TOTAL PEDIDO:</strong><strong>S/ ${Number(contract.total || 0).toFixed(2)}</strong></div>
-            <div class="finance-summary-row"><span style="color: #166534; font-weight: bold;">Total Pagado:</span><strong style="color: #166534;">S/ ${Number(contract.total - contract.balance).toFixed(2)}</strong></div>
+            <div class="finance-summary-row"><span style="color: #166534; font-weight: bold;">Total Pagado:</span><strong style="color: #166534;">S/ ${financial.paidTotal === null ? 'No disponible' : financial.paidTotal.toFixed(2)}</strong></div>
             
             <div class="finance-alert-box" style="
-              background: ${contract.balance > 0 ? '#fef2f2' : '#f0fdf4'}; 
-              color: ${contract.balance > 0 ? '#991b1b' : '#166534'};
-              border: 1px solid ${contract.balance > 0 ? '#fca5a5' : '#bbf7d0'};
+              background: ${financial.balance > 0 ? '#fef2f2' : '#f0fdf4'};
+              color: ${financial.balance > 0 ? '#991b1b' : '#166534'};
+              border: 1px solid ${financial.balance > 0 ? '#fca5a5' : '#bbf7d0'};
             ">
-              <span>${contract.balance > 0 ? 'SALDO PENDIENTE:' : 'ESTADO:'}</span>
-              <span>${contract.balance > 0 ? `S/ ${Number(contract.balance).toFixed(2)}` : 'TOTALMENTE PAGADO ✅'}</span>
+              <span>${financial.balance > 0 ? 'SALDO PENDIENTE:' : 'ESTADO:'}</span>
+              <span>${financial.balance > 0 ? `S/ ${financial.balance.toFixed(2)}` : financial.settledLabel}</span>
             </div>
           </div>
 

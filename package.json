@@ -3,17 +3,28 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:architecture && npm run test:sales && npm run test:functions && npm run test:reports && npm run test:ui && npm run test:rules",
+    "test": "npm run test:release && npm run test:architecture && npm run test:sales && npm run test:functions && npm run test:reports && npm run test:ui && npm run test:rules",
     "test:reports": "node --test tests/reports.test.mjs",
     "test:functions": "npm test --prefix functions",
     "test:architecture": "node --test tests/architecture.test.mjs",
     "test:sales": "node --test tests/sales.test.mjs",
     "test:offline-db": "node --test tests/offline-db.browser.test.mjs",
-    "test:rules": "firebase emulators:exec --only firestore,storage,auth,functions --project demo-migapos \"node --test --test-concurrency=1 tests/security.rules.test.mjs tests/sales.integration.test.mjs tests/contracts.integration.test.mjs tests/platform.integration.test.mjs\"",
-    "test:ui": "node --test tests/ui-security.test.mjs tests/ui-security.browser.test.mjs"
+    "test:rules": "firebase emulators:exec --only firestore,storage,auth,functions --project demo-migapos \"node scripts/emulator-guard.mjs && node --test --test-concurrency=1 tests/security.rules.test.mjs tests/sales.integration.test.mjs tests/contracts.integration.test.mjs tests/platform.integration.test.mjs tests/e2e.browser.test.mjs\"",
+    "test:ui": "node --test tests/ui-security.test.mjs tests/ui-security.browser.test.mjs",
+    "release:check": "node scripts/release.mjs check",
+    "release:build": "node scripts/release.mjs build",
+    "release:plan": "node scripts/release.mjs plan",
+    "release:smoke": "node scripts/release.mjs smoke",
+    "test:release": "node --test tests/phase10.test.mjs",
+    "check:release": "node scripts/check-ci.mjs && npm run release:check -- --env emulator",
+    "audit:security": "node scripts/audit-security.mjs",
+    "check:build": "node scripts/check-build.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.2",
     "firebase-tools": "15.32.1"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "1.13.6"
   }
 }

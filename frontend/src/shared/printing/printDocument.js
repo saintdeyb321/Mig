@@ -1,4 +1,5 @@
 import { safeImageUrl } from '../security/html.js';
+import { reportDiagnostic } from '../../core/errors/diagnostics.js';
 
 const printPolicy = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src blob: data: https://firebasestorage.googleapis.com https://storage.googleapis.com; base-uri 'none'; form-action 'none'";
 
@@ -85,6 +86,9 @@ export function createPrintJob({ popup = false, compact = false, host = window, 
       frame.contentWindow.focus();
       try { frame.contentWindow.print(); } catch (error) { close(); await finished.catch(() => {}); throw error; }
       await finished;
+    } catch (error) {
+      if (error.name !== 'AbortError') reportDiagnostic('print', error);
+      throw error;
     } finally { close(); }
   } };
 }

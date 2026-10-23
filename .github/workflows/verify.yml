@@ -22,6 +22,9 @@ jobs:
       VITE_FIREBASE_STORAGE_BUCKET: demo-migapos.appspot.com
       VITE_FIREBASE_MESSAGING_SENDER_ID: '123456789'
       VITE_FIREBASE_APP_ID: '1:123456789:web:emulator-only'
+      VITE_APP_ENV: emulator
+      VITE_USE_EMULATORS: 'true'
+      VITE_APP_CHECK_MODE: 'off'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,6 +44,10 @@ jobs:
           npm ci --no-audit --no-fund
           npm ci --prefix functions --no-audit --no-fund
           npm ci --prefix frontend --no-audit --no-fund
+      - name: Release configuration and security audit
+        run: |
+          npm run check:release
+          npm run audit:security
       - name: Architecture, sales, reports, UI security, platform, Functions and Firebase Emulator Suite
         timeout-minutes: 12
         run: |
@@ -66,4 +73,13 @@ jobs:
             tail -n 60 "$RUNNER_TEMP/build.log"
             exit 1
           fi
+          npm run check:build
       - run: git diff --check
+      - name: Attest successful checks for this exact source
+        run: node scripts/release.mjs attest --env emulator
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-verification
+          path: .release/ci-verification.json
+          include-hidden-files: true
+          retention-days: 7

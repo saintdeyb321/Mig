@@ -1,11 +1,14 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getStorage } from 'firebase/storage';
-import { getFunctions } from 'firebase/functions';
+import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getStorage, connectStorageEmulator } from 'firebase/storage';
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
+import { validateWebEnvironment } from '../../config/environments.js';
+import { reportDiagnostic } from '../errors/diagnostics.js';
 import {
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
+  connectFirestoreEmulator,
 } from 'firebase/firestore';
 
 function readFirebaseConfig(env) {
@@ -42,20 +45,34 @@ function readFirebaseConfig(env) {
 }
 
 const firebaseConfig = readFirebaseConfig(import.meta.env);
+const environment = validateWebEnvironment(import.meta.env);
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const storage = getStorage(app);
-export const functions = getFunctions(app, 'us-central1');
+export const functions = getFunctions(app, environment.region);
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
+if (environment.emulator) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+  connectStorageEmulator(storage, '127.0.0.1', 9199);
+}
+export const appCheckReady = (async () => {
+  if (environment.emulator || import.meta.env.VITE_APP_CHECK_MODE !== 'monitor') return;
+  try {
+    const { initializeAppCheck, ReCaptchaEnterpriseProvider } = await import('firebase/app-check');
+    initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(import.meta.env.VITE_APP_CHECK_SITE_KEY), isTokenAutoRefreshEnabled: true });
+  } catch (error) { reportDiagnostic('functions', error, 'pending'); }
+})();
 
 // Analytics is optional and becomes available asynchronously in supported browsers.
 export let analytics = null;
 
 async function initializeOptionalAnalytics() {
-  if (!firebaseConfig.measurementId || typeof window === 'undefined') return;
+  if (environment.emulator || !firebaseConfig.measurementId || typeof window === 'undefined') return;
 
   try {
     const { getAnalytics, isSupported } = await import('firebase/analytics');

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { createSalesHandlers } from '../functions/src/sales/handlers.js';
+import { createCashSessionHandlers } from '../functions/src/cash-register/handlers.js';
+import { limaTime } from '../functions/src/core/shiftSchedule.js';
 import { createRequire } from 'node:module';
 import { before, beforeEach, after, describe, it } from 'node:test';
 import { initializeApp, deleteApp } from 'firebase/app';
@@ -376,5 +379,67 @@ describe('Financial callables through Functions/Auth/Firestore emulators', () =>
     await submit(ticket); assert.equal((await database.doc(`daily_stats/tenant-a_${saleDay(ticket)}_a-1`).get()).data().totalOrders, 1);
     await rejects(rpc('saveCashSession', { action: 'open', sessionId: 'unreserved', branchId: 'a-1', offline: true,
       session: { openedAt, openingAmount: 0 } }), 'unverified-session');
+  });
+});
+
+
+describe('Phase 10 server-enforced shifts and authorized offline recovery', () => {
+  const outside = async () => {
+    const [hour, minute] = limaTime().split(':').map(Number);
+    const start = (hour * 60 + minute + 60) % 1440;
+    const hhmm = n => String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0');
+    await database.doc('users/' + actors.cashier.uid).update({ shiftStart: hhmm(start), shiftEnd: hhmm((start + 1) % 1440) });
+  };
+  it('rejects new online sales despite forged historical client timestamps; owner remains exempt', async () => {
+    await outside(); await rejects(submit(), 'outside-shift');
+    assert.equal((await database.doc('sales/sale-main').get()).exists, false);
+    await database.doc('cash_sessions/session-a').update({ userId: actors.owner.uid });
+    assert.equal((await submit(input({ userId: actors.owner.uid }), 'owner')).status, 'APPLIED');
+  });
+  it('protects new contract mutations but preserves create/payment/delivery confirmations after the shift', async () => {
+    const data = { contractId: crypto.randomUUID(), operationId: crypto.randomUUID(), branchId: 'a-1', clientName: 'Fixture', subtotal: 100, total: 100,
+      initialPayment: { operationId: crypto.randomUUID(), amount: 20, method: 'yape' } };
+    await rpc('createContract', data);
+    const payment = { contractId: data.contractId, operationId: crypto.randomUUID(), branchId: 'a-1', amount: 30, method: 'yape' };
+    await rpc('addContractPayment', payment); await rpc('markContractDelivered', { contractId: data.contractId }); await outside();
+    assert.equal((await rpc('createContract', data)).status, 'ALREADY_APPLIED');
+    assert.equal((await rpc('addContractPayment', payment)).status, 'ALREADY_APPLIED');
+    assert.equal((await rpc('markContractDelivered', { contractId: data.contractId })).status, 'ALREADY_APPLIED');
+    await rejects(rpc('addContractPayment', { ...payment, operationId: crypto.randomUUID() }), 'outside-shift');
+    await rejects(rpc('updateContract', { contractId: data.contractId, changes: { details: 'Changed' } }), 'outside-shift');
+    await rejects(rpc('cancelContract', { contractId: data.contractId, branchId: 'a-1', operationId: crypto.randomUUID(), reason: 'Fixture' }), 'outside-shift');
+  });
+  it('acknowledges an already applied ticket and void without reapplying after the shift', async () => {
+    const data = input(); await submit(data); await cancel(); await outside();
+    assert.equal((await submit(data)).status, 'ALREADY_APPLIED');
+    assert.equal((await cancel()).status, 'ALREADY_VOIDED');
+    assert.equal((await database.doc('products/product-a').get()).data().stock['a-1'], 20);
+  });
+  it('accepts late offline sync only against the server-issued scoped cash window', async () => {
+    await outside();
+    assert.equal((await submit(input({ origin: 'offline' }))).status, 'APPLIED');
+    await database.doc('cash_sessions/session-a').update({ financialWindow: null });
+    await rejects(submit(input({ localId: 'unverified-offline', origin: 'offline' })), 'unverified-session');
+  });
+  it('rejects offline queuedAt beyond the server authorization, even if createdAt is inside it', async () => {
+    await database.doc('cash_sessions/session-a').update({ 'financialWindow.expiresAt': Timestamp.fromDate(new Date(at(-500000))) });
+    await rejects(submit(input({ origin: 'offline', queuedAt: at(-400000) })), 'invalid-session');
+  });
+  it('evaluates overnight sales from server time and caps fresh grants at 06:00 Lima', async () => {
+    await database.doc('users/' + actors.cashier.uid).update({ shiftStart: '22:00', shiftEnd: '06:00' });
+    const now = Date.parse('2026-10-24T05:00:00Z');
+    await database.doc('licenses/tenant-a').update({ expiry: Timestamp.fromMillis(now + 86400000) });
+    await database.doc('cash_sessions/session-a').delete();
+    const cash = createCashSessionHandlers(database, { now: () => now });
+    const request = { auth: { uid: actors.cashier.uid }, data: { sessionId: 'night-session', branchId: 'a-1', openingAmount: 0 } };
+    const opened = await cash.openCashSession(request);
+    assert.equal(opened.financialWindow.expiresAt, '2026-10-24T11:00:00.000Z');
+    const sales = createSalesHandlers(database, { now: () => now });
+    const data = input({ localId: 'night-sale', sessionId: 'night-session', createdAt: new Date(now).toISOString(), queuedAt: new Date(now).toISOString() });
+    assert.equal((await sales.submitSale({ auth: request.auth, data })).status, 'APPLIED');
+    const after = createSalesHandlers(database, { now: () => now + 6 * 3600000 });
+    assert.equal((await after.submitSale({ auth: request.auth, data })).status, 'ALREADY_APPLIED');
+    await assert.rejects(after.submitSale({ auth: request.auth, data: { ...data, localId: 'outside-night', saleId: 'outside-night', idempotencyKey: 'outside-night' } }), { code: 'outside-shift' });
+    assert.equal((await createCashSessionHandlers(database, { now: () => now + 6 * 3600000 }).openCashSession(request)).id, 'night-session');
   });
 });

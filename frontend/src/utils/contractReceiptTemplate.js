@@ -1,3 +1,4 @@
+import { printDate, paymentDate, printFinancials } from './printValues.js';
 import { brand } from '../config/brand.js';
 import { escapeHtml, multilineHtml, safeImageUrl, escapeAttribute } from '../shared/security/html.js';
 // src/utils/contractReceiptTemplate.js
@@ -33,18 +34,19 @@ export const generateContractReceiptHTML = (contract, settings, branches = []) =
   const telefono = rawTelefono ? `Cel/Tel: ${rawTelefono}` : '';
 
   // 3. Fechas y Formatos 
-  const orderDate = contract.createdAt?.toDate ? contract.createdAt.toDate() : new Date(contract.createdAt || Date.now());
-  const deliveryDate = contract.deliveryDate?.toDate ? contract.deliveryDate.toDate() : new Date(contract.deliveryDate || Date.now());
+  const orderDate = contract.createdAt;
+  const deliveryDate = contract.deliveryDate;
   
-  const orderDateStr = orderDate.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const deliveryDateStr = deliveryDate.toLocaleDateString('es-PE', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
-  const deliveryTimeStr = deliveryDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const orderDateStr = printDate(orderDate, { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const deliveryDateStr = printDate(deliveryDate, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  const deliveryTimeStr = printDate(deliveryDate, { hour: '2-digit', minute: '2-digit', hour12: true });
 
   // 4. Cálculos Financieros
   const total = Number(contract.total) || 0;
-  const balance = Number(contract.balance) || 0;
+  const financial = printFinancials(contract);
+  const balance = financial.balance;
   const deliveryCost = Number(contract.deliveryCost) || 0;
-  const abonado = Math.max(0, total - balance);
+  const abonado = financial.paidTotal;
   
   const safeDetails = contract.details ? multilineHtml(contract.details) : 'Sin detalles adicionales.';
 
@@ -52,10 +54,10 @@ export const generateContractReceiptHTML = (contract, settings, branches = []) =
   if (contract.payments && contract.payments.length > 0) {
     paymentsListHTML += `<div class="divider"></div><div class="text-sm bold" style="margin-bottom: 4px; text-align: center;">--- HISTORIAL DE ABONOS ---</div>`;
     contract.payments.forEach((p, idx) => {
-      const pDate = p.date?.toDate ? p.date.toDate() : new Date(p.date || Date.now());
-      const pDateStr = pDate.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+      const pDateStr = paymentDate(p, { day: '2-digit', month: '2-digit', year: 'numeric' });
       const isRefund = p.amount < 0;
-      const sign = isRefund ? '' : '+';
+      const sign = isRefund ? '-' : '+';
       const label = p.label || (isRefund ? 'Reembolso' : `Cuota ${idx + 1}`);
       
       paymentsListHTML += `
@@ -222,7 +224,7 @@ export const generateContractReceiptHTML = (contract, settings, branches = []) =
         <div class="totals-grid" style="margin-top: 2px;">
           <div class="totals-row">
             <div class="totals-label text-sm">Total Abonado:</div>
-            <div class="totals-value text-sm">S/ ${abonado.toFixed(2)}</div>
+            <div class="totals-value text-sm">S/ ${abonado === null ? 'No disponible' : abonado.toFixed(2)}</div>
           </div>
         </div>
         <div class="totals-grid grand-total" style="border-top: none; margin-top: 2px; padding-top: 0;">

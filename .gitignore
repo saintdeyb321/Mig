@@ -8,6 +8,8 @@ build/
 out/
 .next/
 coverage/
+.release/
+firebase.*.generated.json
 .nyc_output/
 
 # Local environment files (VITE_* values are public browser configuration)

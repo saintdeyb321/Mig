@@ -1,5 +1,6 @@
 import { canonicalSale, assertSaleIdentity, sameSaleOperation, SaleError } from '../domain/saleModel.js';
 import { decodeQueuedSale, migrateSaleRecord, isDeterministicSaleError, isRetryableSaleError, SYNC_LEASE_MS } from '../domain/queueState.js';
+import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 
 export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, withLock, online, now = Date.now, currentIdentity = () => true,
   captureProjection = async () => ({}), verifyReceipt, afterFlush = async () => {} }) {
@@ -77,6 +78,7 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
           await store.update(record.localId, { status: 'synced', sync: true, syncStartedAt: null, lastError: null, nextRetryAt: 0,
             financialAck: true, stockVersions: receipt?.stockVersions ?? {}, syncedAt: receipt?.syncedAt ?? new Date(now()).toISOString() });
           report.synced++;
+          reportDiagnostic('sync', null, 'confirmed');
         } catch (error) {
           const failed = !committed && currentIdentity(identity) && !isRetryableSaleError(error) && isDeterministicSaleError(error);
           const retries = record.retries + 1;
@@ -86,6 +88,7 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
             retries, lastError: error.message, requiresFinancialReview: failed && error.code === 'tenant-restricted', syncStartedAt: null,
             nextRetryAt: failed ? 0 : now() + Math.min(60000, 1000 * 2 ** Math.min(retries, 6)) });
           if (failed) report.failed++; else report.pending = true;
+          reportDiagnostic('sync', error, failed ? error.code === 'tenant-restricted' ? 'review' : 'rejected' : 'pending');
         }
       }
       if (currentIdentity(identity)) {
@@ -105,7 +108,8 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
     let record;
     try { record = await store.get(sale.saleId); }
     catch { return { success: true, isOffline: true, sale }; }
-    if (record.status === 'failed') throw new SaleError('sale-failed', record.lastError);
+    if (record.status === 'failed') { reportDiagnostic('sale', { code: record.lastErrorCode }, record.requiresFinancialReview ? 'review' : 'rejected'); throw new SaleError('sale-failed', record.lastError); }
+    reportDiagnostic('sale', null, record.status === 'synced' ? 'confirmed' : 'pending');
     return { success: true, isOffline: record.status !== 'synced', sale };
   }
   return { enqueue, flush, submit };

@@ -7,6 +7,7 @@ import { processContractPaymentsForExport } from '../application/contractDataPro
 import { buildSalesWorkbook, MAX_EXPORT_ROWS } from '../application/salesWorkbook.js';
 import { reportPeriod } from '../domain/reportPeriod.js';
 import { useTenantData } from '../../branches/context/TenantContext';
+import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 
 export const useExportSales = user => {
   const { businessBranches, activeBranchId, identityKey } = useTenantData();
@@ -41,6 +42,7 @@ export const useExportSales = user => {
       } finally { URL.revokeObjectURL(url); }
       toast.success('Excel financiero descargado', { id: toastId });
     } catch (error) {
+      reportDiagnostic('report', error);
       if (scope.active) toast.error(error.message || 'No se pudo generar el Excel.', { id: toastId }); else toast.dismiss(toastId);
     } finally { processing.current = false; setState(previous => previous === scope ? null : previous); }
   }, [user?.businessId, activeBranchId, scope, businessBranches]);

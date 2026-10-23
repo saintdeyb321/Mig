@@ -1,11 +1,16 @@
 // vite.config.js
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
+import process from 'node:process'
+import { validateWebEnvironment } from './src/config/environments.js'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path' 
 import { brand } from './src/config/brand.js'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = { ...loadEnv(mode, process.cwd(), 'VITE_'), ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith('VITE_'))) };
+  validateWebEnvironment(env);
+  return {
   plugins: [
     { name: 'global-brand', transformIndexHtml: html => html
       .replaceAll('__BRAND_NAME__', brand.name).replaceAll('__BRAND_LOGO__', brand.logo).replaceAll('__THEME_COLOR__', brand.themeColor) },
@@ -20,7 +25,10 @@ export default defineConfig({
       },
       includeAssets: [brand.logo.slice(1)],
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'] 
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // Excel is already lazy-loaded: avoid downloading 870 kB during the first PWA installation.
+        globIgnores: ['**/xlsx*.js'],
+        runtimeCaching: [{ urlPattern: /\/assets\/xlsx[^/]*\.js$/, handler: 'CacheFirst', options: { cacheName: 'migapos-excel-v1', expiration: { maxEntries: 2, maxAgeSeconds: 31536000, purgeOnQuotaError: true } } }]
       },
       
       manifest: {
@@ -62,5 +70,6 @@ export default defineConfig({
       fs: path.resolve('./src/utils/empty.js'),
       crypto: path.resolve('./src/utils/empty.js'),
     }
+  }
   }
 })

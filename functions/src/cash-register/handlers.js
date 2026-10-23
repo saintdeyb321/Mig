@@ -1,6 +1,7 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import { createHash } from 'node:crypto';
-import { actorFor, authorizeBranch } from '../core/authorization.js';
+import { actorFor, authorizeBranch, requireShift } from '../core/authorization.js';
+import { shiftEndMillis } from '../core/shiftSchedule.js';
 import { documentId, SaleError, money, saleDay } from '../sales/domain/saleModel.js';
 import { OFFLINE_WINDOW_MS, milliseconds } from '../sales/sessionWindow.js';
 import { readCashTotals, closingProjection, incompleteCashProjection } from './sessionTotals.js';
@@ -74,6 +75,7 @@ export function createCashSessionHandlers(database, { now = Date.now } = {}) {
           if (['reserved', 'expired'].includes(previous.status)) fail('expired-session', 'La reserva venció; solicita una nueva autorización.');
           return sessionDTO(sessionId, previous);
         }
+        if (!offline) requireShift(actor, time);
         if (action === 'open' && offline && previous?.financialWindow && milliseconds(previous.financialWindow.expiresAt) <= time) {
           const opened = milliseconds(raw.openedAt), end = milliseconds(previous.financialWindow.expiresAt);
           if (opened < milliseconds(previous.financialWindow.start) || opened > end || opened > time) fail('invalid-session', 'Apertura offline inválida.');
@@ -105,7 +107,7 @@ export function createCashSessionHandlers(database, { now = Date.now } = {}) {
             fail('invalid-session', 'Apertura fuera de la autorización offline.');
           }
         }
-        const expiresAt = offline ? previous.financialWindow.expiresAt : Timestamp.fromMillis(time + (action === 'reserve' ? RESERVATION_WINDOW_MS : OFFLINE_WINDOW_MS));
+        const expiresAt = offline ? previous.financialWindow.expiresAt : Timestamp.fromMillis(Math.min(shiftEndMillis(actor, time), time + (action === 'reserve' ? RESERVATION_WINDOW_MS : OFFLINE_WINDOW_MS)));
         if (offline && milliseconds(expiresAt) <= time) fail('expired-session', 'Sincroniza el cierre offline para conservar el turno histórico.');
         let openingDiscrepancy = 0;
         if (action === 'open') {
@@ -130,6 +132,7 @@ export function createCashSessionHandlers(database, { now = Date.now } = {}) {
       const lateOfflineClose = action === 'close' && offline && closed && previous.autoClosed
         && previous.declaredAmount == null && !previous.offlineCloseSynced;
       if (action !== 'preview' && action !== 'reconcile' && closed && !lateOfflineClose) return sessionDTO(sessionId, previous);
+      if (!offline && !['preview', 'reconcile'].includes(action)) requireShift(actor, time);
       if (action === 'reconcile' && !closed) fail('invalid-session', 'La caja todavía no está cerrada.');
       let session = previous, closedTime = time;
       const materializedOpening = offline && ['reserved', 'expired'].includes(previous.status);

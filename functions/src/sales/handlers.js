@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Timestamp } from 'firebase-admin/firestore';
-import { actorFor, authorizeBranch } from '../core/authorization.js';
+import { actorFor, authorizeBranch, requireShift } from '../core/authorization.js';
 import { canonicalSale, documentId, sameSaleOperation, SaleError, money, MONEY_TOLERANCE } from './domain/saleModel.js';
 import { statsReference, writeStats, assertStatsScope } from './stats.js';
 import { validateSaleSession } from './sessionWindow.js';
@@ -48,6 +48,11 @@ export function createSalesHandlers(database, { now = Date.now } = {}) {
     if (request.data.receiptOnly === true) throw new SaleError('pending-session', 'Receipt aún no confirmado; la caja sigue pendiente.');
     const session = (await transaction.get(database.doc(`cash_sessions/${input.sessionId}`))).data();
     validateSaleSession(session, input, actor, now());
+    // Offline sync consumes a previously issued SERVER window, never a client timestamp alone.
+    if (input.origin !== 'offline') requireShift(actor, now());
+    else if (!session.financialWindow?.openedAt || !session.financialWindow?.expiresAt) {
+      throw new SaleError('unverified-session', 'La venta offline requiere una autorización de caja emitida por el servidor.');
+    }
     const snapshots = await transaction.getAll(...input.items.map(item => database.doc(`products/${item.id}`)));
     const products = snapshots.map(snapshot => checkedProduct(snapshot, input));
     input.items.forEach((item, index) => {
@@ -91,6 +96,7 @@ export function createSalesHandlers(database, { now = Date.now } = {}) {
       if (!remote) throw new SaleError('missing-sale', 'Venta no encontrada.');
       await authorizeBranch(transaction, database, actor, remote.branchId, remote.businessId, { requireActive: false });
       if (remote.voided === true) return { status: 'ALREADY_VOIDED' };
+      requireShift(actor, now());
       const sale = { ...remote, totalCost: remote.totalCost ?? 0, grossProfit: remote.grossProfit ?? money(remote.total - (remote.totalCost ?? 0)) };
       if (!Array.isArray(sale.items) || !sale.items.length || new Set(sale.items.map(item => item.id)).size !== sale.items.length) {
         throw new SaleError('invalid-sale', 'Receipt remoto inválido.');

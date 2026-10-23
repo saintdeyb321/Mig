@@ -46,7 +46,7 @@ async function connectCDP(url, onEvent) {
   }) };
 }
 
-export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, mockPng } = {}) {
+export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, mockPng, firebaseSdk = false, fixture } = {}) {
   const browser = findBrowser();
   const root = fileURLToPath(new URL('../../frontend/', import.meta.url));
   const workspace = fileURLToPath(new URL('../../', import.meta.url));
@@ -54,11 +54,15 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
   const profile = await mkdtemp(resolve(tmpdir(), 'migapos-isolated-browser-'));
   let complete, finished = false, stderr = '', requests = 0;
   const report = new Promise(resolve => { complete = value => { if (!finished) { finished = true; resolve(value); } }; });
-  const server = await createServer({ root, configFile: false, clearScreen: false, logLevel: 'error',
-    resolve: { alias: { react: resolve(root, 'node_modules/react'), 'react-dom': resolve(root, 'node_modules/react-dom'), 'xlsx-js-style': resolve(root, 'node_modules/xlsx-js-style') } },
-    optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react-dom/client', ...(mockPng ? ['xlsx-js-style'] : [])] },
+  const server = await createServer({ root, configFile: false, envFile: false, clearScreen: false, logLevel: 'error',
+    esbuild: { jsx: 'automatic' },
+    resolve: { alias: { react: resolve(root, 'node_modules/react'), 'react-dom': resolve(root, 'node_modules/react-dom'), 'xlsx-js-style': resolve(root, 'node_modules/xlsx-js-style'), firebase: resolve(root, 'node_modules/firebase') } },
+    optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react-dom/client', ...(mockPng || firebaseSdk ? ['xlsx-js-style'] : []), ...(firebaseSdk ? ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'] : [])] },
     // saleModel imports the shared Functions domain outside frontend/. Default Vite fs policy denies it.
-    server: { host: '127.0.0.1', port: 0, hmr: false, headers, fs: { allow: [workspace] } }, plugins: [{ name: 'isolated-indexeddb-test', configureServer(server) {
+    server: { host: '127.0.0.1', port: 0, hmr: false, headers, fs: { allow: [workspace] } }, plugins: [{ name: 'isolated-indexeddb-test',
+      resolveId: id => id === 'virtual:browser-fixture' ? '\0browser-fixture' : undefined,
+      load: id => id === '\0browser-fixture' ? 'export default ' + JSON.stringify(fixture || {}) + ';' : undefined,
+      configureServer(server) {
       server.middlewares.use((_request, response, next) => {
         requests++;
         for (const [key, value] of Object.entries(headers)) response.setHeader(key, value);
@@ -110,6 +114,10 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
       page = await connectCDP(target.webSocketDebuggerUrl, event => {
         if (event.method === 'Fetch.requestPaused') {
           const {requestId, request} = event.params;
+          if (!mockPng) {
+            void page.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
+            complete({ ok: false, error: 'Unexpected external request blocked before contacting its destination.' }); return;
+          }
           if (request.url.endsWith('/slow.png')) return; // Local timeout fixture; never contacts Storage.
           const url = new URL(request.url);
           const image = url.hostname === 'firebasestorage.googleapis.com' || url.hostname === 'storage.googleapis.com' || url.hostname === 'www.gstatic.com';

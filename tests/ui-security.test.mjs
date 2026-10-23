@@ -10,6 +10,7 @@ import { generateReceiptHTML } from '../frontend/src/utils/receiptTemplate.js';
 import { generateContractReceiptHTML } from '../frontend/src/utils/contractReceiptTemplate.js';
 import { generateContractProductionHTML, generateContractTextOnlyHTML } from '../frontend/src/utils/contractProductionTemplate.js';
 import { resolveImageSources, usingImageSources } from '../frontend/src/features/contracts/application/imageSources.js';
+import { hostingHeaders, environmentFor } from '../frontend/src/config/environments.js';
 
 const attack = '<img src=x onerror="parent.__xss=1"><script>parent.__xss=1</script>\' &';
 const settings = { companyData: { razonSocial: attack, ruc: attack, direccion: attack, telefono: attack } };
@@ -171,7 +172,7 @@ describe('Shared UI shift rules (Lima, not server authorization)', () => {
 
 describe('Hosting policy and conservative cleanup', () => {
   it('permits exact Firebase/Auth/PWA sources without broad wildcards or eval', () => {
-    const headers = Object.fromEntries(JSON.parse(source('firebase.json')).hosting.headers[0].headers.map(({ key, value }) => [key, value]));
+    const headers = Object.fromEntries(hostingHeaders(environmentFor('production')).map(({ key, value }) => [key, value]));
     const csp = headers['Content-Security-Policy'];
     assert.ok(!csp.includes('*')); assert.ok(!csp.includes('unsafe-eval'));
     assert.ok(csp.includes("script-src 'self' https://apis.google.com"));

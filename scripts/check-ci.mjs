@@ -1,0 +1,16 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import assert from 'node:assert/strict';
+const require = createRequire(new URL('../frontend/package.json', import.meta.url));
+const { load } = require('js-yaml');
+const workflow = load(readFileSync(new URL('../.github/workflows/verify.yml', import.meta.url), 'utf8'));
+assert.equal(workflow.permissions.contents, 'read');
+const job = workflow.jobs.verify;
+assert.equal(job.env.GCLOUD_PROJECT, 'demo-migapos');
+assert.equal(job.env.VITE_FIREBASE_PROJECT_ID, 'demo-migapos');
+assert.equal(job.env.VITE_APP_ENV, 'emulator');
+for (const step of job.steps) assert.ok(!step['continue-on-error'], 'Critical checks cannot continue on failure.');
+const commands = job.steps.map(step => step.run || '').join('\n');
+for (const command of ['npm test', 'npm run test:offline-db', 'npm run lint --prefix frontend', 'npm run build --prefix frontend', 'git diff --check', 'npm run check:release', 'npm run audit:security']) assert.ok(commands.includes(command), `Missing CI command: ${command}`);
+assert.ok(!/firebase (deploy|hosting:channel:deploy|hosting:clone)/.test(commands), 'CI verification must never deploy.');
+console.log('Workflow YAML, mandatory checks and emulator isolation validated.');

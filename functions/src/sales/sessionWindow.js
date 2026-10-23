@@ -20,7 +20,7 @@ export function validateSaleSession(session, sale, actor, now) {
     const start = milliseconds(session.financialWindow?.openedAt ?? session.openedAt);
     if (created < start) throw new SaleError('invalid-session', 'Venta anterior a la apertura de caja.');
     if (sale.origin === 'offline' && session.financialWindow?.expiresAt
-      && created > milliseconds(session.financialWindow.expiresAt)) {
+      && (created > milliseconds(session.financialWindow.expiresAt) || queued > milliseconds(session.financialWindow.expiresAt))) {
       throw new SaleError('invalid-session', 'Autorización offline de caja expirada.');
     }
     return;
