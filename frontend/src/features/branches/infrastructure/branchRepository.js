@@ -6,5 +6,5 @@ export const subscribeBranches = (businessId, onData, onError) => onSnapshot(
   query(collection(db, 'branches'), where('businessId', '==', businessId)),
   snapshot => onData(mapDocuments(snapshot)), onError,
 );
-export const createBranch = data => addDoc(collection(db, 'branches'), data);
+export const createBranch = data => addDoc(collection(db, 'branches'), { ...data, sparkCashVersion: 1 });
 export const updateBranch = (id, data) => updateDoc(doc(db, 'branches', id), data);

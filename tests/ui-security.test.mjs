@@ -177,7 +177,8 @@ describe('Hosting policy and conservative cleanup', () => {
     assert.ok(!csp.includes('*')); assert.ok(!csp.includes('unsafe-eval'));
     assert.ok(csp.includes("script-src 'self' https://apis.google.com"));
     assert.ok(!csp.match(/script-src[^;]*unsafe-inline/));
-    for (const value of ["worker-src 'self'", "manifest-src 'self'", 'https://migapos.firebaseapp.com', 'https://us-central1-migapos.cloudfunctions.net', 'https://firebasestorage.googleapis.com', 'blob:', 'data:']) assert.ok(csp.includes(value), value);
+    for (const value of ["worker-src 'self'", "manifest-src 'self'", 'https://migapos.firebaseapp.com', 'blob:', 'data:']) assert.ok(csp.includes(value), value);
+    assert.doesNotMatch(csp, /cloudfunctions.net|firebasestorage.googleapis.com|storage.googleapis.com/);
     assert.equal(headers['Cross-Origin-Opener-Policy'], 'same-origin-allow-popups');
     assert.equal(headers['X-Content-Type-Options'], 'nosniff');
     assert.equal(headers['Referrer-Policy'], 'strict-origin-when-cross-origin');

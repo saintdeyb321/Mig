@@ -8,7 +8,7 @@ import offlineDB from '../../../offlineDB';
 export function useUsersData(user) {
   const businessId = user?.businessId;
   const role = user?.role;
-  const scopeKey = businessId && ['dueño', 'superadmin'].includes(role) ? getIdentityKey(user) : null;
+  const scopeKey = businessId && role === 'dueño' && businessId !== 'platform-admin' ? getIdentityKey(user) : null;
   const watchUsers = useCallback((onData, onError) => subscribeTenantCache(
     offlineDB, 'users', businessId,
     (next, error) => subscribeUsers(businessId, role, next, error), onData, onError,

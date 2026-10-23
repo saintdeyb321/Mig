@@ -1,8 +1,7 @@
-import { Timestamp } from 'firebase/firestore';
 import { callBackend } from '../../../core/firebase/callable.js';
+import { db, auth } from '../../../core/firebase/client.js';
+import { createSparkAdministrationRepository } from './sparkAdministrationRepository.js';
 
-export const adminCall = (name, data) => callBackend(name, data);
-export const administrationPage = async data => {
-  const page = await adminCall('getTenantAdministration', data);
-  return { ...page, rows: page.rows.map(row => ({ ...row, expiry: row.expiry ? Timestamp.fromDate(new Date(row.expiry)) : null })) };
-};
+const repository = createSparkAdministrationRepository(db, { currentUser: () => auth.currentUser });
+export const administrationPage = data => repository.administrationPage(data);
+export const adminCall = (name, data) => Object.hasOwn(repository, name) ? repository[name](data) : callBackend(name, data);

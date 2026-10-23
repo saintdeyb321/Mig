@@ -1,6 +1,6 @@
 # MigaPOS — Plan de reencaminamiento a Firebase Spark
 
-**Versión:** 1.0 · **Fecha:** 23-10-2026  
+**Versión:** 1.1 · **Fecha:** 23-10-2026
 **Repositorio:** `saintdeyb321/Mig` · **línea base auditada:** `e92c702` (Fase 10)  
 **Proyecto Firebase existente:** `migapos` · **Hosting:** `migapos-peru`  
 **Decisión de producto:** **Spark obligatorio**; **sin Blaze, Cloud Functions desplegadas, Cloud Storage for Firebase ni backend de pago**. No se creará otro proyecto Firebase.
@@ -154,6 +154,14 @@ React / Vite / Firebase Hosting (migapos-peru)
 
 ### SPARK-4 — POS real, anulación y offline
 
+> **Decisiones de la puerta SPARK-3 (23/10/2026, base `4a513df`):** SPARK-1/2 y apertura online de caja implementadas y validadas localmente; publicación y aceptación manual aún pendientes. Alta atómica con recibo y reserva permanente de correo; para usuarios históricos sin reserva, preflight de email como SuperAdmin y prohibición absoluta de sobrescribir su perfil. Rules no puede reemplazar esa consulta por una búsqueda de email global.
+>
+> Las sedes nuevas incorporan `sparkCashVersion: 1` inmutable. El candado conserva `SHA-256(JSON.stringify([businessId, branchId]))`, comprobado también en Rules. Una sede histórica sin marcador conserva lectura y exige una revisión posterior antes de abrir; no se habilita por una escritura libre de React ni se borran sesiones/candados/IndexedDB. Confirmación de apertura con Timestamps de servidor; lectura compatible con ISO anteriores. El cierre no está implementado en Spark todavía.
+>
+> Catálogo: mapa de stock existente, validación acotada a 6 sedes por producto y transacción para detectar ajustes concurrentes. Prototipo de venta **solo en emulador**: máximo 2 productos por ticket online, todos los renglones y descuentos vinculados al receipt, importes/costos canónicos, efectivo/Yape/mixto, idempotencia y concurrencia probadas. Las variantes iniciales de 3/4 líneas alcanzaron el límite de 1000 expresiones. **BLOQUEO ARQUITECTÓNICO del POS general sin límite/offline** hasta diseñar y validar su protocolo: la alternativa Spark demostrada es el ticket online de 2 productos con límite visible. No extrapolar equivalencia a tickets mayores ni publicar las Rules del prototipo. SPARK-4 debe integrar el diseño con catálogo, conservar el dominio/cola y repetir los casos adversariales antes de activar ventas; `financialOperations` y `offlineSync` permanecen OFF.
+>
+> Referencias: [accesos y atomicidad de Rules](https://firebase.google.com/docs/firestore/security/rules-conditions), [hashing](https://firebase.google.com/docs/reference/rules/rules.hashing). Detalle de estados, pruebas y pasos manuales en `MASTER-PLAN.md`.
+
 **Resultado:** flujo completo caja → venta → stock → historial → anulación, sin Functions.
 
 - Implementar venta atómica/limitada conforme al protocolo aprobado en SPARK-3, receipt inmutable e idempotencia.
@@ -236,4 +244,4 @@ React / Vite / Firebase Hosting (migapos-peru)
 - Cuotas Firestore: https://firebase.google.com/docs/firestore/pricing
 - Límite por documento (1 MiB): https://firebase.google.com/docs/firestore/quotas
 
-**Estado actual:** plan aprobado como orientación técnica; **implementación Spark pendiente**. Fase inicial propuesta: **SPARK-0**. No existe certificación de equivalencia funcional o de seguridad hasta aprobar cada puerta de migración.
+**Estado actual:** SPARK-0 y SPARK-1/2 implementadas y verificadas localmente; SPARK-3 completa localmente para apertura nueva y puerta de factibilidad acotada a 2 productos online. Publicación/aceptación manual pendientes; el POS general, cierre y offline siguen bloqueados/deshabilitados. SPARK-4…7 pendientes. No existe certificación de equivalencia funcional o de seguridad del sistema completo en Spark.

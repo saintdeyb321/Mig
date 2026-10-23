@@ -1,0 +1,17 @@
+name: Legacy backend domain (manual, outside Spark runtime)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  legacy-domain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --prefix functions --no-audit --no-fund
+      - name: Historical domain specifications only; no deploy or production connection
+        run: npm run test:functions

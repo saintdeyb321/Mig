@@ -43,7 +43,7 @@ export const useSuperAdmin = user => {
       if (version !== revision.current.value) return false;
       operations.current.delete(key);
       await fetchLicenses();
-      toast.success('Operación confirmada por el servidor.', { id: toastId });
+      toast.success('Operación confirmada por Firestore.', { id: toastId });
       return true;
     } catch (failure) { toast.error(failure.message || 'Operación pendiente; reintenta con los mismos datos.', { id: toastId }); return false; }
     finally { if (version === revision.current.value) { busy.current = false; setIsProcessing(false); } }

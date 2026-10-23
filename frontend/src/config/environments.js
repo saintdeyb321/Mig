@@ -38,14 +38,14 @@ export function validateWebEnvironment(env, requested, profiles = environments) 
 }
 
 export function hostingHeaders(profile, { appCheck = false } = {}) {
-  const connection = profile.emulator ? ['http://127.0.0.1:9099', 'http://127.0.0.1:8080', 'http://127.0.0.1:5001', 'http://127.0.0.1:9199']
-    : ['https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com', 'https://firestore.googleapis.com', 'https://firebasestorage.googleapis.com', 'https://storage.googleapis.com', 'https://firebaseinstallations.googleapis.com', 'https://firebase.googleapis.com', `https://${profile.region}-${profile.projectId}.cloudfunctions.net`, 'https://www.google-analytics.com', 'https://region1.google-analytics.com', 'https://analytics.google.com'];
+  const connection = profile.emulator ? ['http://127.0.0.1:9099', 'http://127.0.0.1:8080']
+    : ['https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com', 'https://firestore.googleapis.com', 'https://firebaseinstallations.googleapis.com', 'https://firebase.googleapis.com', 'https://www.google-analytics.com', 'https://region1.google-analytics.com', 'https://analytics.google.com'];
   const frames = profile.emulator ? ['http://127.0.0.1:9099'] : [`https://${profile.authDomain}`, 'https://accounts.google.com'];
   // Firebase's popup resolver loads GAPI even when its Auth helper is local to Emulator.
   const scripts = ['https://apis.google.com', ...(profile.emulator ? [] : ['https://www.googletagmanager.com'])];
   if (appCheck && !profile.emulator) { scripts.push('https://www.google.com/recaptcha/', 'https://www.gstatic.com/recaptcha/'); frames.push('https://www.google.com/recaptcha/'); connection.push('https://recaptchaenterprise.googleapis.com', 'https://www.google.com/recaptcha/'); }
   // React/toasts and print layouts require inline styles. Scripts remain external; this is not a strict CSP.
-  const policy = `default-src 'self'; script-src 'self' ${scripts.join(' ')}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.gstatic.com https://firebasestorage.googleapis.com https://storage.googleapis.com; font-src 'self'; connect-src 'self' ${connection.join(' ')}; frame-src 'self' ${frames.join(' ')}; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`;
+  const policy = `default-src 'self'; script-src 'self' ${scripts.join(' ')}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.gstatic.com; font-src 'self'; connect-src 'self' ${connection.join(' ')}; frame-src 'self' ${frames.join(' ')}; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`;
   return [
     { key: 'Content-Security-Policy', value: policy }, { key: 'X-Content-Type-Options', value: 'nosniff' },
     { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' }, { key: 'X-Frame-Options', value: 'DENY' },

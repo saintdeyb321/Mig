@@ -5,14 +5,19 @@ import { callBackend } from '../../../core/firebase/callable.js';
 import offlineDB from '../../../offlineDB.js';
 import { encrypt, decrypt } from '../../../crypto.js';
 import { persistCashSession } from '../application/sessionCache.js';
-import { createCashStateReader } from './cashQueryRepository.js';
+import { createCashStateReader, createCashPeriodReader } from './cashQueryRepository.js';
+import { createSparkCashRepository } from './sparkCashRepository.js';
+import { runtimeCapabilities, requireCapability } from '../../../config/runtimeCapabilities.js';
+
+const sparkCash = createSparkCashRepository(db, { currentUser: () => auth.currentUser });
 
 function sessionDTO(session) {
-  return { ...session, ...(session.financialWindow ? { financialWindow: Object.fromEntries(Object.entries(session.financialWindow)
+  return { ...session, ...Object.fromEntries(['openedAt', 'closedAt', 'syncedAt'].filter(key => session[key]?.toDate).map(key => [key, session[key].toDate().toISOString()])), ...(session.financialWindow ? { financialWindow: Object.fromEntries(Object.entries(session.financialWindow)
     .map(([key, value]) => [key, value?.toDate ? value.toDate().toISOString() : value])) } : {}) };
 }
 export const cacheSession = (session, options = {}) => persistCashSession(offlineDB, sessionDTO(session), { encrypt, decrypt, ...options });
 export async function reserveOfflineSession(user, branchId) {
+  requireCapability('offlineSync', 'Autorizar apertura offline');
   if (auth.currentUser?.uid !== user.uid) throw new Error('La sesión cambió.');
   for (const record of await offlineDB.cash_sessions.toArray()) {
     let session;
@@ -37,6 +42,12 @@ export const findLastClosedSession = async (businessId, branchId) => mapDocument
   where('status', 'in', ['closed', 'closed_with_discrepancy']), orderBy('closedAt', 'desc'), limit(1))))[0] ?? null;
 // This is called only by the explicit opening action; checking state never acquires a lock.
 export async function createSession(data) {
+  if (runtimeCapabilities.cashOpening) {
+    if (auth.currentUser?.uid !== data.userId) throw new Error('La sesión cambió.');
+    const historical = await findOpenSession(data.businessId, data.branchId);
+    if (historical && historical.id !== data.sessionId) throw new Error('Ya existe una caja abierta en la sede. Revisa el turno anterior.');
+    return sessionDTO(await sparkCash.open(data));
+  }
   const reserved = await reserveOfflineSession({ uid: data.userId, businessId: data.businessId }, data.branchId);
   if (reserved.status !== 'reserved') throw new Error('La caja anterior aún se está sincronizando.');
   return cacheSession(await callBackend('openCashSession', { sessionId: reserved.id, branchId: data.branchId,
@@ -74,12 +85,7 @@ export async function reconcilePendingSessions(identity) {
     await cacheSession(await callBackend('reconcileCashSession', { sessionId: job.sessionId }));
   }
 }
-const readSessionsByDate = async (field, businessId, startDate, endDate, branchId = 'global') => {
-  const page = await getDocs(query(collection(db, 'cash_sessions'), where('businessId', '==', businessId),
-    ...(branchId === 'global' ? [] : [where('branchId', '==', branchId)]), where(field, '>=', startDate), where(field, '<=', endDate), limit(10001)));
-  if (page.size > 10000) throw new Error('Demasiadas cajas. Selecciona un período menor.');
-  return mapDocuments(page);
-};
+const readSessionsByDate = createCashPeriodReader(db, { project: sessionDTO });
 export const getSessionsOpenedInPeriod = (...args) => readSessionsByDate('openedAt', ...args);
 export const getSessionsInPeriod = async (...args) => {
   const [opened, closed] = await Promise.all([readSessionsByDate('openedAt', ...args), readSessionsByDate('closedAt', ...args)]);

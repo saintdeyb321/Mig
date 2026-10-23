@@ -5,10 +5,12 @@ import { useSuperAdmin } from '../hooks/useSuperAdmin';
 // 🚀 NUEVO: Importamos el hook para exportar la BD de los clientes
 import { useAdminBackup } from '../hooks/useAdminBackup';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
+import { toDateSafe } from '../core/dates/dateValues.js';
 
 const formatDate = (timestamp) => {
   if (!timestamp) return 'Sin fecha';
-  const d = timestamp.toDate();
+  const d = toDateSafe(timestamp);
+  if (!d) return 'Fecha inválida';
   return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
@@ -22,7 +24,8 @@ const ClientCard = memo(({
   handleExport,     // 🚀 Nueva prop
   isBackingUp       // 🚀 Nueva prop para deshabilitar mientras carga
 }) => {
-  const isExpired = !license.expiry || license.expiry.toDate() < new Date();
+  const expiryDate = toDateSafe(license.expiry);
+  const isExpired = !expiryDate || expiryDate < new Date();
   const isInactive = license.status !== 'activa';
   const hasProblem = isExpired || isInactive;
   
@@ -51,8 +54,8 @@ const ClientCard = memo(({
             {/* 🚀 BOTÓN DE EXPORTAR BD */}
             <button 
               onClick={() => handleExport(license.id, license.purgeJobId || license.maintenanceJobId || license.backupId)}
-              disabled={isBackingUp}
-              title="Crear o consultar backup verificado"
+              disabled={!runtimeCapabilities.platformJobs || isBackingUp}
+              title="Backup no disponible en Spark; pendiente de SPARK-7"
               style={{ 
                 background: 'transparent', border: 'none', 
                 cursor: isBackingUp ? 'wait' : 'pointer', 
@@ -67,8 +70,8 @@ const ClientCard = memo(({
             {/* BOTÓN DE ELIMINAR */}
             <button 
               onClick={() => setDeleteModalInfo(license)}
-              disabled={isProcessing || license.tenantStatus !== 'active'}
-              title="Solicitar eliminación recuperable"
+              disabled={!runtimeCapabilities.platformJobs || isProcessing || license.tenantStatus !== 'active'}
+              title="Eliminación no disponible en Spark; pendiente de SPARK-7"
               style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1.1rem', opacity: 0.8, padding: 0 }}
             >
               🗑️
@@ -106,8 +109,8 @@ const ClientCard = memo(({
         <strong>{license.tenantStatus === 'deletion_requested' ? 'Eliminación solicitada' : 'Purga en curso'}</strong>
         {license.purgeAfter && <p>Recuperable hasta {new Date(license.purgeAfter).toLocaleString('es-PE')}</p>}
         {license.tenantStatus === 'deletion_requested' && <>
-          <button disabled={isProcessing} onClick={() => handleCancelDeletion(license.id)}>Cancelar solicitud</button>
-          <button disabled={isProcessing || !!license.maintenanceJobId || new Date(license.purgeAfter) > new Date()} onClick={() => handlePurgeClient(license.id)}>Purgar con backup verificado</button>
+          <button disabled={!runtimeCapabilities.platformJobs || isProcessing} onClick={() => handleCancelDeletion(license.id)}>Cancelar solicitud</button>
+          <button disabled={!runtimeCapabilities.platformJobs || isProcessing || !!license.maintenanceJobId || new Date(license.purgeAfter) > new Date()} onClick={() => handlePurgeClient(license.id)}>Purgar con backup verificado</button>
         </>}
       </div>}
       <div style={{ padding: '15px 20px', display: 'flex', gap: '10px' }}>
@@ -209,18 +212,19 @@ function SuperAdmin({ user }) {
   }
 
   return (
-    <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '1000px' }}>
+    <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '1000px' }} aria-label="Administración de plataforma">
       
       <header className="module-header">
         <h2 className="module-title">
           <span className="module-title-icon">👑</span>
-          <span className="module-title-text">Clientes SaaS</span>
+          <span className="module-title-text">Clientes SaaS · Firebase Spark</span>
         </h2>
         
         <button className="btn-primary btn-add-smart" onClick={() => setShowAddModal(true)}>
           ➕ Nuevo Cliente
         </button>
       </header>
+      <p role="status">Administración Spark mediante Firestore. Usa un Gmail distinto del SuperAdmin para el propietario. Backups, eliminación y purga aún no disponibles.</p>
       {error && <p role="alert">{error}</p>}
       <button disabled={isLoading} onClick={refresh}>Actualizar clientes</button>
       {jobError && <p role="alert">{jobError}</p>}
@@ -263,7 +267,7 @@ function SuperAdmin({ user }) {
         <div className="card fade-in empty-state-dashed">
           <span className="empty-icon-lg">🏢</span>
           <p className="empty-text-muted">
-            {searchTerm ? `No se encontraron clientes para "${searchTerm}"` : 'Aún no tienes clientes registrados.'}
+            {error ? 'No se pudo consultar la lista. Revisa el error y vuelve a intentarlo.' : searchTerm ? `No se encontraron clientes para "${searchTerm}"` : 'Aún no tienes clientes registrados.'}
           </p>
         </div>
       ) : (

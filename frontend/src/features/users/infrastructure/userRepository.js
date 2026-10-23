@@ -2,6 +2,7 @@ import { collection, query, where, onSnapshot, doc, getDoc, setDoc, updateDoc, d
 import { db } from '../../../core/firebase/client';
 import { mapDocuments } from '../../../core/firebase/documents';
 import { brand } from '../../../config/brand';
+import { acceptInvitation } from './acceptInvitation.js';
 
 export const subscribeUsers = (businessId, role, onData, onError) => onSnapshot(
   query(collection(db, 'users'), where('businessId', '==', businessId),
@@ -24,6 +25,7 @@ export const getInvite = async email => {
   return snapshot.exists() ? snapshot.data() : null;
 };
 export const createInvitedProfile = (uid, data) => setDoc(doc(db, 'users', uid), data);
+export const acceptInvitedProfile = user => acceptInvitation(db, user);
 export const subscribeProfile = (uid, onData, onError) => onSnapshot(
   doc(db, 'users', uid), snapshot => onData(snapshot.exists() ? snapshot.data() : null), onError,
 );

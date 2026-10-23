@@ -13,6 +13,8 @@ const waitFor = async predicate => {
   while (!predicate()) { if (Date.now() > until) throw new Error('UI condition timed out'); await new Promise(resolve => setTimeout(resolve, 30)); }
 };
 globalThis.__sparkForbidden = [];
+globalThis.__sparkAdminCalls = [];
+globalThis.__sparkPageCalls = 0;
 let result;
 const root = createRoot(document.getElementById('root'));
 try {
@@ -26,11 +28,25 @@ try {
   check(document.body.textContent.includes('Firebase Spark'), 'SuperAdmin opens directly in Spark platform context');
   check([...document.querySelectorAll('.nav-item')].every(button => button.textContent.includes('SaaS Admin')), 'Desktop and mobile only show SaaS navigation');
   check(document.querySelectorAll('.nav-item').length === 2 && !document.querySelector('.bell-button'), 'No business navigation or notification bell mounted');
-  check(document.querySelector('[aria-label="Administración de plataforma"] button').disabled, 'Creation is honestly pending SPARK-1');
+  check(!document.querySelector('.btn-add-smart').disabled && globalThis.__sparkPageCalls > 0, 'Migrated native administration is enabled');
+  check([...document.querySelectorAll('[title^="Backup"], [title^="Eliminación"]')].every(button => button.disabled), 'Unmigrated platform jobs remain disabled');
+  document.querySelector('.btn-add-smart').click();
+  await waitFor(() => document.querySelector('.smart-form'));
+  const values = ['MigaPOS Laboratorio UI', 'Dueña', 'Prueba', 'titular-test@gmail.com'];
+  [...document.querySelectorAll('.smart-form input')].forEach((input, index) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, values[index]);
+    input.dispatchEvent(new Event('input', {bubbles:true}));
+  });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  document.querySelector('.smart-form').requestSubmit();
+  await waitFor(() => globalThis.__sparkAdminCalls.length > 0);
+  check(globalThis.__sparkAdminCalls[0].name === 'createTenant' && globalThis.__sparkAdminCalls[0].data.ownerEmail === values[3]
+    && typeof globalThis.__sparkAdminCalls[0].data.operationId === 'string', 'Create form sends the owner and stable operation ID to its migrated repository boundary');
+  await waitFor(() => !document.querySelector('.smart-form'));
   document.querySelector('.nav-item').click();
   globalThis.__setSparkUser({uid:'another-platform-user', role:'superadmin', businessId:'old-tenant', hasAcceptedTerms:true});
   await new Promise(resolve => setTimeout(resolve, 150));
-  check(globalThis.__sparkForbidden.length === 0, 'Startup and platform account change invoke no business subscriptions or backend adapters');
+  check(globalThis.__sparkForbidden.length === 0, 'Startup and platform account change invoke no business subscriptions or unmigrated backend adapters');
   globalThis.__setSparkUser(null);
   await waitFor(() => document.querySelector('.auth-logo'));
   check((await offlineDB.settings.get('spark-sentinel')).value === 'keep-me', 'Logout retains persisted IndexedDB data');

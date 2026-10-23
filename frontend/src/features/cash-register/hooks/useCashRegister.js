@@ -6,11 +6,13 @@ import { money } from '../../sales/domain/saleModel.js';
 import offlineDB from '../../../offlineDB';
 import { encrypt, decrypt } from '../../../crypto';
 import { auth } from '../../../core/firebase/client';
+import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
 
 export const useCashRegister = (user, currentBranchId) => {
   const [currentSession, setCurrentSession] = useState(null);
   const [isLoadingSession, setIsLoadingSession] = useState(true);
   const revision = useRef(0), processing = useRef(false);
+  const openings = useRef(new Map());
   const canForce = ['dueño', 'superadmin'].includes(user?.role);
   const checkSession = useCallback(async () => {
     const token = ++revision.current;
@@ -35,7 +37,7 @@ export const useCashRegister = (user, currentBranchId) => {
         const session = await findOpenSession(user.businessId, currentBranchId);
         if (!active()) return;
         if (session?.userId === user.uid) {
-          const cached = await cacheSession(session, { preservePending: true });
+          const cached = session.runtime === 'spark' ? session : await cacheSession(session, { preservePending: true });
           if (active()) setCurrentSession(cached.status === 'open' ? cached : null);
         } else if (session) setCurrentSession({ ...session, needsForceClose: true, canForceClose: canForce });
         else setCurrentSession(null);
@@ -52,6 +54,7 @@ export const useCashRegister = (user, currentBranchId) => {
     return () => { revisionRef.current++; window.removeEventListener('online', online); };
   }, [checkSession]);
   const authorizeOffline = async () => {
+    if (!runtimeCapabilities.offlineSync) { toast.error('La autorización offline sigue pendiente de SPARK-4.'); return; }
     if (!navigator.onLine || processing.current || !user?.uid || currentBranchId === 'global') return;
     processing.current = true;
     try {
@@ -63,13 +66,16 @@ export const useCashRegister = (user, currentBranchId) => {
   const openRegister = async (openingAmount, notes = '') => {
     if (!user?.businessId || currentBranchId === 'global' || processing.current || auth.currentUser?.uid !== user.uid) return false;
     if (typeof openingAmount !== 'number' || !Number.isFinite(openingAmount) || openingAmount < 0) { toast.error('Monto de apertura inválido.'); return false; }
+    if (!navigator.onLine) { toast.error('La apertura Spark requiere conexión. Los pendientes existentes se conservan.'); return false; }
     processing.current = true;
     const token = revision.current;
     const toastId = toast.loading('Abriendo caja...');
     try {
       let session;
+      const command = JSON.stringify([user.uid, user.businessId, currentBranchId, openingAmount, notes]);
+      if (!openings.current.has(command)) openings.current.set(command, crypto.randomUUID());
       if (navigator.onLine) session = await createSession({ userId: user.uid, businessId: user.businessId, branchId: currentBranchId,
-        openingAmount, openingNote: notes });
+        openingAmount, openingNote: notes, sessionId: openings.current.get(command) });
       else {
         let reserved;
         for (const record of await offlineDB.cash_sessions.toArray()) {
@@ -85,12 +91,15 @@ export const useCashRegister = (user, currentBranchId) => {
         session = { ...reserved, status: 'open', openingAmount, openingNote: notes, openedAt: new Date().toISOString(), offlineAuthorized: true };
         await offlineDB.cash_sessions.put({ localId: session.id, data: await encrypt(JSON.stringify(session), user.uid), sync: false });
       }
-      if (auth.currentUser?.uid === user.uid && token === revision.current) setCurrentSession(session);
-      toast.success(navigator.onLine ? 'Caja abierta' : 'Caja abierta offline', { id: toastId }); return true;
+      openings.current.delete(command);
+      if (auth.currentUser?.uid !== user.uid || token !== revision.current) { toast.dismiss(toastId); return false; }
+      setCurrentSession(session);
+      toast.success('Caja abierta y confirmada', { id: toastId }); return true;
     } catch (error) { toast.error(error.message || 'No se pudo abrir la caja.', { id: toastId }); return false; }
     finally { processing.current = false; }
   };
   const calculateClose = async declaredAmount => {
+    if (!runtimeCapabilities.financialOperations) { toast.error('El cierre de caja sigue pendiente de SPARK-5.'); return null; }
     if (!currentSession || (currentSession.needsForceClose && !canForce)) { toast.error('Solicita el cierre al administrador.'); return null; }
     try {
       if (navigator.onLine) return await previewSessionClose(currentSession.id, declaredAmount);
@@ -108,6 +117,7 @@ export const useCashRegister = (user, currentBranchId) => {
     } catch (error) { toast.error(error.message || 'No se pudo calcular el cierre.'); return null; }
   };
   const confirmClose = async (summary, notes = '') => {
+    if (!runtimeCapabilities.financialOperations) { toast.error('El cierre de caja sigue pendiente de SPARK-5.'); return false; }
     if (!currentSession || processing.current || auth.currentUser?.uid !== user.uid) return false;
     if (currentSession.needsForceClose && !canForce) { toast.error('El cierre forzado requiere administración.'); return false; }
     processing.current = true;

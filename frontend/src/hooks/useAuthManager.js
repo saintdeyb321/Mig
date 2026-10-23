@@ -1,7 +1,7 @@
 // src/hooks/useAuthManager.js
 import { useState, useEffect } from 'react';
 import { auth } from '../core/firebase/client';
-import { getUser, getInvite, createInvitedProfile, deleteInvite, subscribeProfile } from '../features/users/infrastructure/userRepository';
+import { getUser, acceptInvitedProfile, subscribeProfile } from '../features/users/infrastructure/userRepository';
 import { isPermissionDenied } from '../core/errors/firebaseErrors';
 import { createSubscriptionScope } from '../shared/utils/subscriptionScope';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -43,35 +43,13 @@ export const useAuthManager = () => {
       setAuthLoading(true);
 
       try {
-        const authenticatedEmail = firebaseUser.email;
         const profile = await getUser(firebaseUser.uid);
         if (!isCurrent()) return;
 
         // Si no existe, crear desde invitación
         if (!profile) {
-          const inviteData = await getInvite(authenticatedEmail);
+          await acceptInvitedProfile(firebaseUser);
           if (!isCurrent()) return;
-
-          if (inviteData) {
-            await createInvitedProfile(firebaseUser.uid, {
-              email: inviteData.email,
-              firstName: inviteData.firstName || '',
-              lastName: inviteData.lastName || '',
-              role: inviteData.role,
-              businessId: inviteData.businessId,
-              branchId: inviteData.branchId || null,
-              shiftStart: inviteData.shiftStart || null,
-              shiftEnd: inviteData.shiftEnd || null,
-              status: inviteData.status || 'activo',
-              createdAt: new Date().toISOString(),
-            });
-            if (!isCurrent()) return;
-            await deleteInvite(authenticatedEmail);
-            if (!isCurrent()) return;
-          } else {
-            handleSecurityExit('Tu correo no está registrado en el sistema.');
-            return;
-          }
         }
         let profileRevision = 0;
         const subscribeToProfile = (retryCount = 0) => {
@@ -139,7 +117,7 @@ export const useAuthManager = () => {
       } catch (error) {
         if (!isCurrent()) return;
         console.error('Error al configurar Auth:', error);
-        handleSecurityExit('Error interno al iniciar sesión.');
+        handleSecurityExit(error.message || 'Error al iniciar sesión.');
       }
     });
 

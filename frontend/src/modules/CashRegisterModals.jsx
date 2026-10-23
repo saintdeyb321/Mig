@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
+import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 
 export const CashRegisterModals = ({
   showOpenModal, setShowOpenModal,
@@ -70,7 +71,7 @@ export const CashRegisterModals = ({
             <span style={{ fontSize: '3rem', display: 'block', marginBottom: '10px' }}>🔐</span>
             <h3 style={{ margin: '0 0 5px 0', fontSize: '1.4rem', color: 'var(--text-main)' }}>Apertura de Caja</h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>
-              Ingresa el efectivo inicial (sencillo) para activar el punto de venta.
+              Registra el efectivo inicial con confirmación de Firestore. Ventas y cierre siguen pendientes de SPARK-4/5.
             </p>
             <form onSubmit={handleOpen}>
               <div style={{ marginBottom: '20px', textAlign: 'left' }}>
@@ -95,7 +96,7 @@ export const CashRegisterModals = ({
                 </button>
               </div>
             </form>
-            <button type="button" onClick={authorizeOffline} disabled={isLoadingSession || !navigator.onLine} className="btn-secondary">
+            <button type="button" onClick={authorizeOffline} disabled={!runtimeCapabilities.offlineSync || isLoadingSession || !navigator.onLine} className="btn-secondary">
               Autorizar apertura offline (15 min)
             </button>
           </div>

@@ -11,8 +11,8 @@ import { brand } from '../frontend/src/config/brand.js';
 it('fixes Spark capabilities independently of account, environment or browser flags', () => {
   assert.equal(runtimeCapabilities.mode, 'spark');
   assert.equal(runtimeCapabilities.repositoryStrategy, 'spark');
-  for (const name of ['cloudFunctions', 'cloudStorage', 'tenantAdministration', 'financialOperations', 'offlineSync', 'platformJobs']) assert.equal(runtimeCapabilities[name], false, name);
-  for (const name of ['authentication', 'firestore', 'hosting', 'localPersistence', 'localExports']) assert.equal(runtimeCapabilities[name], true, name);
+  for (const name of ['cloudFunctions', 'cloudStorage', 'financialOperations', 'offlineSync', 'platformJobs']) assert.equal(runtimeCapabilities[name], false, name);
+  for (const name of ['authentication', 'firestore', 'hosting', 'localPersistence', 'localExports', 'tenantAdministration', 'tenantProvisioning', 'licenseAdministration', 'cashOpening']) assert.equal(runtimeCapabilities[name], true, name);
   assert.throws(() => { runtimeCapabilities.cloudFunctions = true; }, TypeError);
 });
 

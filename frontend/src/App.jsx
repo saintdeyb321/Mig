@@ -9,6 +9,7 @@ import { SessionProviders } from './app/providers/SessionProviders';
 import { useShiftMonitor } from './hooks/useShiftMonitor';
 import { useMaintenance } from './hooks/useMaintenance';
 import { getSessionTab, isBusinessSession } from './core/session/context.js';
+import { getIdentityKey } from './core/session/identity.js';
 import { runtimeCapabilities } from './config/runtimeCapabilities.js';
 
 // Componentes y Layout
@@ -41,7 +42,9 @@ const NO_OP_FUNCTION = () => {};
 function SessionGuards({ user, handleLogout, children }) {
   if (!isBusinessSession(user)) return children;
   return <LicenseGuard user={user} handleLogout={handleLogout}>
-    <BranchGuard user={user} handleLogout={handleLogout}>{children}</BranchGuard>
+    <SessionProviders user={user}>
+      <BranchGuard user={user} handleLogout={handleLogout}>{children}</BranchGuard>
+    </SessionProviders>
   </LicenseGuard>;
 }
 
@@ -119,8 +122,7 @@ function App() {
           />
         </>
       ) : (
-        <SessionProviders user={user}>
-          <SessionGuards user={user} handleLogout={handleLogout}>
+          <SessionGuards key={getIdentityKey(user)} user={user} handleLogout={handleLogout}>
 
               <Toaster
                 position="top-right"
@@ -196,7 +198,6 @@ function App() {
               </AppLayout>
 
           </SessionGuards>
-        </SessionProviders>
       )}
     </>
   );

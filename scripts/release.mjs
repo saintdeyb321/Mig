@@ -28,7 +28,9 @@ async function buildFingerprint() {
 }
 export function releaseConfig(base, profile, appCheck = false) {
   const result = structuredClone(base);
-  for (const resource of ['functions', 'firestore', 'storage', 'hosting']) result[resource].predeploy = [`node scripts/release.mjs guard --config firebase.${profile.name}.generated.json`];
+  delete result.functions; delete result.storage;
+  if (result.emulators) { delete result.emulators.functions; delete result.emulators.storage; }
+  for (const resource of ['firestore', 'hosting']) result[resource].predeploy = [`node scripts/release.mjs guard --config firebase.${profile.name}.generated.json`];
   delete result.hosting.target;
   result.hosting.site = profile.emulator ? profile.projectId : profile.hostingSite;
   result.hosting.headers = [{ source: '**', headers: hostingHeaders(profile, { appCheck }) }];

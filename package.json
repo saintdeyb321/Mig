@@ -3,13 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npm run test:release && npm run test:architecture && npm run test:sales && npm run test:functions && npm run test:reports && npm run test:ui && npm run test:rules",
+    "test": "npm run test:spark && npm run test:spark:rules",
+    "test:spark": "node --test --test-concurrency=1 tests/spark-mode.test.mjs tests/spark-tooling.test.mjs tests/ui-security.test.mjs tests/spark-startup.browser.test.mjs",
+    "test:spark:rules": "firebase emulators:exec --only firestore --project demo-migapos \"node scripts/spark-emulator-guard.mjs && node --test --test-concurrency=1 tests/spark.rules.test.mjs tests/spark-sale-prototype.test.mjs\"",
+    "test:legacy": "npm run test:release && npm run test:architecture && npm run test:sales && npm run test:functions && npm run test:reports && npm run test:ui && npm run test:legacy:rules",
     "test:reports": "node --test tests/reports.test.mjs",
     "test:functions": "npm test --prefix functions",
     "test:architecture": "node --test tests/architecture.test.mjs",
     "test:sales": "node --test tests/sales.test.mjs",
     "test:offline-db": "node --test tests/offline-db.browser.test.mjs",
-    "test:rules": "firebase emulators:exec --only firestore,storage,auth,functions --project demo-migapos \"node scripts/emulator-guard.mjs && node --test --test-concurrency=1 tests/security.rules.test.mjs tests/sales.integration.test.mjs tests/contracts.integration.test.mjs tests/platform.integration.test.mjs tests/e2e.browser.test.mjs\"",
+    "test:rules": "npm run test:spark:rules",
+    "test:legacy:rules": "firebase emulators:exec --only firestore,storage,auth,functions --project demo-migapos \"node scripts/emulator-guard.mjs && node --test --test-concurrency=1 tests/security.rules.test.mjs tests/sales.integration.test.mjs tests/contracts.integration.test.mjs tests/platform.integration.test.mjs tests/e2e.browser.test.mjs\"",
     "test:ui": "node --test tests/ui-security.test.mjs tests/ui-security.browser.test.mjs",
     "release:check": "node scripts/release.mjs check",
     "release:build": "node scripts/release.mjs build",
@@ -22,9 +26,11 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.2",
-    "firebase-tools": "^14.23.0"
+    "firebase-tools": "15.34.1"
   },
   "overrides": {
-    "@grpc/grpc-js": "1.13.6"
+    "@grpc/grpc-js": "1.13.6",
+    "firebase-tools": { "@google-cloud/pubsub": "6.3.1" },
+    "gaxios@6.7.1": { "uuid": "11.1.1" }
   }
 }

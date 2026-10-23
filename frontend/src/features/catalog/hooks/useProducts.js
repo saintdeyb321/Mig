@@ -148,7 +148,7 @@ export const useProducts = (user) => {
       };
 
       if (editing) {
-        await updateProduct(editing, productData);
+        await updateProduct(editing, productData, currentProduct?.remoteStock ?? currentProduct?.rawStock ?? currentProduct?.stock);
         toast.success('Producto actualizado con éxito', { id: toastId });
       } else {
         productData.createdAt = timestampNow();
@@ -159,7 +159,7 @@ export const useProducts = (user) => {
       setShowFormModal(false);
     } catch (error) {
       console.error("Error al guardar producto:", error);
-      toast.error('Error al guardar el producto.', { id: toastId });
+      toast.error(error.message || 'Error al guardar el producto.', { id: toastId });
     } finally {
       setIsLoading(false);
     }

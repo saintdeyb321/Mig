@@ -33,7 +33,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            functions/package-lock.json
             frontend/package-lock.json
       - uses: actions/setup-java@v4
         with:
@@ -42,16 +41,15 @@ jobs:
       - name: Install locked dependencies
         run: |
           npm ci --no-audit --no-fund
-          npm ci --prefix functions --no-audit --no-fund
           npm ci --prefix frontend --no-audit --no-fund
       - name: Release configuration and security audit
         run: |
           npm run check:release
           npm run audit:security
-      - name: Architecture, sales, reports, UI security, platform, Functions and Firebase Emulator Suite
-        timeout-minutes: 12
+      - name: Spark capabilities, UI, Rules, transactions and bounded sale feasibility
+        timeout-minutes: 6
         run: |
-          if npm test > "$RUNNER_TEMP/tests.log" 2>&1; then
+          if (npm run test:spark && npm run test:spark:rules) > "$RUNNER_TEMP/tests.log" 2>&1; then
             tail -n 20 "$RUNNER_TEMP/tests.log"
           else
             grep -n -A 18 -B 2 -E 'not ok|Error:' "$RUNNER_TEMP/tests.log" || true

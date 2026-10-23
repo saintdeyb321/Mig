@@ -67,9 +67,9 @@ describe('Environment/release guardrails', () => {
   });
   it('builds exact CSP per environment and only adds Enterprise origins when explicitly enabled', () => {
     const policies = Object.fromEntries(['production', 'emulator', 'staging'].map(name => [name, hostingHeaders(environmentFor(name, staging))[0].value]));
-    assert.ok(policies.production.includes('us-central1-migapos.cloudfunctions.net'));
+    assert.ok(!policies.production.includes('cloudfunctions.net')); assert.ok(!policies.production.includes('storage.googleapis.com'));
     assert.ok(!policies.staging.includes('https://migapos.firebaseapp.com')); assert.ok(!policies.staging.includes('us-central1-migapos.cloudfunctions.net'));
-    assert.ok(policies.emulator.includes('http://127.0.0.1:5001')); assert.ok(!policies.emulator.includes('cloudfunctions.net'));
+    assert.ok(!policies.emulator.includes('http://127.0.0.1:5001')); assert.ok(!policies.emulator.includes('cloudfunctions.net'));
     assert.ok(policies.emulator.includes("script-src 'self' https://apis.google.com"));
     for (const policy of Object.values(policies)) { assert.ok(!policy.includes('*')); assert.ok(!policy.includes('unsafe-eval')); assert.ok(!/script-src[^;]*unsafe-inline/.test(policy)); }
     const appCheck = hostingHeaders(environmentFor('production'), { appCheck: true })[0].value;
@@ -87,7 +87,8 @@ describe('Environment/release guardrails', () => {
     const config = releaseConfig({ hosting: { target: 'app' }, functions: {}, firestore: {}, storage: {} }, profile);
     assert.equal(config.hosting.site, 'migapos-peru'); assert.equal(config.hosting.target, undefined);
     assert.equal(releaseConfig({ hosting: {}, functions: {}, firestore: {}, storage: {} }, environmentFor('emulator')).hosting.site, 'demo-migapos');
-    for (const name of ['functions', 'firestore', 'storage', 'hosting']) assert.ok(config[name].predeploy[0].includes('--config firebase.production.generated.json'));
+    assert.equal(config.functions, undefined); assert.equal(config.storage, undefined);
+    for (const name of ['firestore', 'hosting']) assert.ok(config[name].predeploy[0].includes('--config firebase.production.generated.json'));
     const plan = releasePlan(profile, 'f3e558c123456789');
     assert.ok(plan.every(command => command.includes('--project migapos')));
     assert.ok(plan.some(command => command.includes('migapos-peru:rollback-f3e558c12345')));

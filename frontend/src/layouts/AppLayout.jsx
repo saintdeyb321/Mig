@@ -102,7 +102,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
 
         <main className="content-area">
           {isBusinessSession(user) && !runtimeCapabilities.financialOperations && <p role="status" className="card">
-            Modo Spark: ventas, caja, pagos y contratos aún no disponibles para confirmación remota.
+            Modo Spark: apertura online de caja disponible en sedes nuevas. Ventas, cierre de caja, pagos y contratos siguen pendientes de migración.
             La cola local se conserva; su sincronización está pausada hasta completar la migración.
           </p>}
           {children}

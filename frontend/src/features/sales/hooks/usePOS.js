@@ -7,6 +7,7 @@ import { useCatalogData } from '../../catalog/context/CatalogContext';
 import { useTenantData } from '../../branches/context/TenantContext';
 import { generateReceiptHTML } from '../../../utils/receiptTemplate';
 import { usePrintJobs } from '../../../shared/printing/usePrintJobs';
+import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
 
 export const usePOS = (user, currentSession) => {
   const runPrint = usePrintJobs();
@@ -98,6 +99,7 @@ export const usePOS = (user, currentSession) => {
   }, [tenantSettings, businessBranches, activeBranchId, runPrint]);
 
   const processSale = useCallback(async () => {
+    if (!runtimeCapabilities.financialOperations) { toast.error('Confirmación de ventas pendiente de SPARK-4. No se ha creado ninguna venta.'); return; }
     if (!user?.businessId || processingRef.current) return;
 
     const VAL_TOAST_ID = 'pos-validation-error';
@@ -205,6 +207,7 @@ export const usePOS = (user, currentSession) => {
     clearCart, setCart, activeBranchId, catalogProducts, businessBranches, currentSession]);
 
   const handleCheckoutClick = useCallback(() => {
+    if (!runtimeCapabilities.financialOperations) { toast.error('Confirmación de ventas pendiente de SPARK-4.'); return; }
     if (cart.length === 0) {
       toast.error('🛒 El carrito está vacío', { id: 'pos-validation-error' });
       return;

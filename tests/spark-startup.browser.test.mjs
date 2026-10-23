@@ -19,13 +19,22 @@ it('opens the real SuperAdmin shell without tenant subscriptions, backend calls 
     [module('features/catalog/infrastructure/catalogRepository.js')]: `export function subscribeProducts() {${forbidden}} export function subscribeCategories() {${forbidden}}`,
     [module('features/notifications/infrastructure/notificationRepository.js')]: `export function subscribeUnreadNotifications() {${forbidden}} export function markNotificationRead() {${forbidden}} export function markAllNotificationsRead() {${forbidden}}`,
     [module('features/licenses/infrastructure/licenseRepository.js')]: `export function subscribeLicense() {${forbidden}}`,
-    [module('features/licenses/infrastructure/administrationRepository.js')]: `export async function adminCall() {${forbidden}} export async function administrationPage() {${forbidden}}`,
+    [module('features/licenses/infrastructure/administrationRepository.js')]: `
+      const expiry = {toDate:() => new Date(Date.now() + 86400000)};
+      const rows = [{id:'fixture-tenant', businessName:'Negocio existente', status:'activa', tenantStatus:'active', expiry}];
+      export async function administrationPage() {globalThis.__sparkPageCalls++; return {rows:[...rows], cursor:null};}
+      export async function adminCall(name, data) {
+        if (!['createTenant','extendTenantLicense','setTenantLicenseStatus'].includes(name)) {${forbidden}}
+        globalThis.__sparkAdminCalls.push({name, data});
+        if(name === 'createTenant') rows.push({id:data.operationId, businessName:data.businessName, ownerEmail:data.ownerEmail, tenantStatus:'active', status:'activa', expiry});
+        return {businessId:data.operationId};
+      }`,
     [module('utils/offlineRetry.js')]: `export async function retryOfflineSales() {${forbidden}}`,
   };
   const result = await runBrowserFixture({ htmlFile: new URL('./spark-startup.browser.html', import.meta.url), route: '/spark-startup-test', moduleMocks,
     // Fail before any external endpoint is contacted. Only these forbidden services are intercepted.
     setupPage: page => page.send('Fetch.enable', { patterns: ['*cloudfunctions.net*', '*firebasestorage.googleapis.com*', '*storage.googleapis.com*'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) }),
   });
-  assert.equal(result.checks.length, 8);
+  assert.equal(result.checks.length, 10);
   console.log(`Spark startup: ${result.checks.length} isolated browser checks passed; no real login or Firebase connection.`);
 });
