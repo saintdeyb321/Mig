@@ -99,8 +99,9 @@ export const usePOS = (user, currentSession) => {
   }, [tenantSettings, businessBranches, activeBranchId, runPrint]);
 
   const processSale = useCallback(async () => {
-    if (!runtimeCapabilities.financialOperations) { toast.error('Confirmación de ventas pendiente de SPARK-4. No se ha creado ninguna venta.'); return; }
+    if (!runtimeCapabilities.saleOnline) { toast.error('Confirmación de ventas pendiente de SPARK-4. No se ha creado ninguna venta.'); return; }
     if (!user?.businessId || processingRef.current) return;
+    if (cart.length > 2) { toast.error('Máximo 2 productos distintos por ticket Spark. No se cobra un ticket parcial.'); return; }
 
     const VAL_TOAST_ID = 'pos-validation-error';
 
@@ -178,10 +179,10 @@ export const usePOS = (user, currentSession) => {
     try {
       const result = await saveSaleTransaction(sale, cartBackup, products, user);
 
-      sale = result.sale;
+      sale = { ...result.sale, isOffline: result.isOffline, status: result.isOffline ? 'pending' : 'confirmed' };
 
       toast.dismiss(toastId);
-      toast.success(result.isOffline ? 'Venta offline guardada' : 'Venta registrada', { id: 'sale-success', icon: result.isOffline ? '🏠' : '✅' });
+      toast.success(result.isOffline ? 'Pendiente local: sin confirmar; revisa antes de volver a cobrar' : 'Venta confirmada por Firestore', { id: 'sale-success', icon: result.isOffline ? '🏠' : '✅' });
       isSuccess = true;
 
     } catch (err) {
@@ -207,7 +208,7 @@ export const usePOS = (user, currentSession) => {
     clearCart, setCart, activeBranchId, catalogProducts, businessBranches, currentSession]);
 
   const handleCheckoutClick = useCallback(() => {
-    if (!runtimeCapabilities.financialOperations) { toast.error('Confirmación de ventas pendiente de SPARK-4.'); return; }
+    if (!runtimeCapabilities.saleOnline) { toast.error('Confirmación de ventas pendiente de SPARK-4.'); return; }
     if (cart.length === 0) {
       toast.error('🛒 El carrito está vacío', { id: 'pos-validation-error' });
       return;

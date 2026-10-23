@@ -13,7 +13,7 @@ export function useContractImageUrls(images = EMPTY_IMAGES) {
     resolveContractImageUrls(JSON.parse(key)).then(resolved => {
       if (disposed) { resolved.release(); return; }
       release = resolved.release;
-      setResult({ key, urls: resolved.urls, loading: false, error: null });
+      setResult({ key, urls: resolved.urls, loading: false, error: resolved.warnings?.length ? new Error(resolved.warnings.join(' ')) : null });
     }).catch(error => {
       reportDiagnostic('storage', error);
       if (!disposed) setResult({ key, urls: [], loading: false, error });

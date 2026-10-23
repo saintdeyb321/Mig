@@ -19,16 +19,17 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
     return sale;
   }
 
-  async function flush(identity, { forceId } = {}) {
+  async function flush(identity, { forceId, onlyId } = {}) {
     if (!identity?.uid || !identity.businessId || !online() || !currentIdentity(identity)) return { pending: true };
     return withLock(async () => {
       if (!online() || !currentIdentity(identity)) return { pending: true };
-      const blockedSessions = await syncSessions(identity);
+      const blockedSessions = onlyId ? new Map() : await syncSessions(identity);
       const records = await store.list();
       const report = { synced: 0, failed: 0, pending: false };
       for (const original of records) {
         if (!currentIdentity(identity)) return { ...report, pending: true };
         const record = migrateSaleRecord(original);
+        if (onlyId && record.localId !== onlyId) continue;
         if (record.status === 'synced' || record.status === 'failed') continue;
         if (record.status === 'syncing' && now() - (record.syncStartedAt ?? 0) < SYNC_LEASE_MS) { report.pending = true; continue; }
         if (record.localId !== forceId && (record.nextRetryAt ?? 0) > now()) { report.pending = true; continue; }
@@ -91,18 +92,18 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
           reportDiagnostic('sync', error, failed ? error.code === 'tenant-restricted' ? 'review' : 'rejected' : 'pending');
         }
       }
-      if (currentIdentity(identity)) {
+      if (!onlyId && currentIdentity(identity)) {
         try { await afterFlush(identity); } catch (error) { console.warn('Reconciliación de caja pendiente:', error); }
       }
       return report;
     });
   }
 
-  async function submit(input, identity) {
+  async function submit(input, identity, { isolated = false } = {}) {
     const sale = await enqueue(input, identity);
-    if (online()) {
+    if (online() && (!isolated || sale.origin === 'online')) {
       // If local acknowledgement fails after commit, the durable syncing record is recoverable.
-      try { await flush(identity, { forceId: sale.saleId }); }
+      try { await flush(identity, { forceId: sale.saleId, ...(isolated ? { onlyId: sale.saleId } : {}) }); }
       catch (error) { console.warn('La venta queda en la cola durable:', error); }
     }
     let record;
@@ -110,7 +111,7 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
     catch { return { success: true, isOffline: true, sale }; }
     if (record.status === 'failed') { reportDiagnostic('sale', { code: record.lastErrorCode }, record.requiresFinancialReview ? 'review' : 'rejected'); throw new SaleError('sale-failed', record.lastError); }
     reportDiagnostic('sale', null, record.status === 'synced' ? 'confirmed' : 'pending');
-    return { success: true, isOffline: record.status !== 'synced', sale };
+    return { success: true, isOffline: record.status !== 'synced', sale: isolated && record.status === 'synced' ? { ...sale, confirmedAt: record.syncedAt } : sale };
   }
   return { enqueue, flush, submit };
 }

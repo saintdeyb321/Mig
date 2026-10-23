@@ -14,15 +14,22 @@ export const runtimeCapabilities = Object.freeze({
   tenantProvisioning: true,
   licenseAdministration: true,
   cashOpening: true,
-  financialOperations: false,
+  saleOnline: true,
+  saleVoid: false,
+  contractPayments: true,
+  cashClosing: true,
+  cashReconciliation: false,
   offlineSync: false,
   platformJobs: false,
 });
 
 export class CapabilityUnavailableError extends Error {
   constructor(capability, operation) {
-    const service = capability === 'cloudStorage' ? 'Firebase Storage' : 'Cloud Functions';
-    super(`${operation}: no disponible en modo Spark. ${service} está deshabilitado; esta operación aún no se ha migrado. No se confirmó ningún cambio.`);
+    const reason = { cloudStorage: 'Firebase Storage está deshabilitado.', cloudFunctions: 'Cloud Functions está deshabilitado.',
+      saleVoid: 'Falta validar atómicamente la compensación de stock y el reembolso de caja.',
+      offlineSync: 'Sin protocolo de aceptación que pruebe hora, caja y precios; conserva los pendientes para revisión.',
+      cashReconciliation: 'Rules no puede certificar la suma de un libro arbitrario.' }[capability] ?? 'Esta operación aún no se ha migrado.';
+    super(`${operation}: no disponible en modo Spark. ${reason} No se confirmó ningún cambio.`);
     this.name = 'CapabilityUnavailableError';
     this.code = 'capability-unavailable';
     this.capability = capability;

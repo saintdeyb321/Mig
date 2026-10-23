@@ -71,7 +71,7 @@ export const CashRegisterModals = ({
             <span style={{ fontSize: '3rem', display: 'block', marginBottom: '10px' }}>🔐</span>
             <h3 style={{ margin: '0 0 5px 0', fontSize: '1.4rem', color: 'var(--text-main)' }}>Apertura de Caja</h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>
-              Registra el efectivo inicial con confirmación de Firestore. Ventas y cierre siguen pendientes de SPARK-4/5.
+              Registra el efectivo inicial con confirmación de Firestore. Tickets online de hasta 2 productos; cierre operativo con conciliación pendiente.
             </p>
             <form onSubmit={handleOpen}>
               <div style={{ marginBottom: '20px', textAlign: 'left' }}>
@@ -109,7 +109,7 @@ export const CashRegisterModals = ({
           <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'left', padding: '30px', borderTop: '8px solid #ef4444' }}>
             <h3 style={{ margin: '0 0 5px 0', fontSize: '1.4rem', color: 'var(--text-main)' }}>🔒 ¿Cuánto dinero tienes en la caja?</h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>
-              Para cerrar tu turno, cuenta toda la plata que tienes físicamente (billetes y monedas) y escribe el total abajo.
+              Cierre operativo: el resumen es una estimación del navegador, sin conciliación certificada. Cuenta toda la plata que tienes físicamente (billetes y monedas) y escribe el total abajo.
             </p>
             <form onSubmit={handleCalculate}>
               <div style={{ marginBottom: '25px' }}>
@@ -143,11 +143,11 @@ export const CashRegisterModals = ({
         <div className="fade-in" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflowY: 'auto' }}>
           <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center', padding: '30px', borderTop: '8px solid var(--text-main)', margin: 'auto' }}>
             <h3 style={{ margin: '0 0 5px 0', fontSize: '1.4rem', color: 'var(--text-main)' }}>Confirmar Cierre</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>Revisa el estado de tu caja antes de guardar.</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>Estimación del navegador. El cierre será operativo y quedará pendiente de conciliación; no certifica el libro completo.</p>
             
             <div style={{ background: 'var(--bg-app)', padding: '20px', borderRadius: '12px', textAlign: 'left', marginBottom: '20px', border: '1px solid var(--border)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '0.95rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Ventas + Fondo Inicial:</span> 
+                <span style={{ color: 'var(--text-muted)' }}>Efectivo esperado (estimación):</span>
                 <strong>S/ {tempSummary.expectedAmount.toFixed(2)}</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', fontSize: '1.1rem' }}>
@@ -157,16 +157,17 @@ export const CashRegisterModals = ({
               <hr style={{ border: 'none', borderTop: '2px dashed var(--border)', margin: '15px 0' }}/>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '800', letterSpacing: '0.5px' }}>RESULTADO DEL CUADRE:</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '800', letterSpacing: '0.5px' }}>DIFERENCIA FRENTE A LA ESTIMACIÓN:</span>
                 <div style={{ fontSize: '1.2rem', fontWeight: '900', color: tempSummary.difference < 0 ? '#dc2626' : (tempSummary.difference > 0 ? '#d97706' : '#16a34a'), display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {tempSummary.difference === 0 && <><span style={{fontSize:'1.4rem'}}>✅</span> ¡Cuadre Perfecto!</>}
+                  {tempSummary.difference === 0 && <><span style={{fontSize:'1.4rem'}}>✅</span> Conteo sin diferencia estimada</>}
                   {tempSummary.difference > 0 && <><span style={{fontSize:'1.4rem'}}>⚠️</span> Sobran S/ {tempSummary.difference.toFixed(2)}</>}
                   {tempSummary.difference < 0 && <><span style={{fontSize:'1.4rem'}}>❌</span> Faltan S/ {Math.abs(tempSummary.difference).toFixed(2)}</>}
                 </div>
               </div>
             </div>
 
-            {/* 🚀 FIX: Todo el bloque de botones y notas ahora es un Formulario nativo */}
+            <p>Fondo: S/ {Number(tempSummary.openingAmount).toFixed(2)} · POS efectivo (incluye mixtos): S/ {Number(tempSummary.posCash).toFixed(2)} · Contratos efectivo: S/ {Number(tempSummary.contractCash).toFixed(2)} · Digital (incluye mixtos): S/ {Number(tempSummary.digitalTotal).toFixed(2)}</p>
+            {/* La declaración es real; los totales permanecen pendientes de conciliación. */}
             <form onSubmit={handleFinalSave}>
               {tempSummary.difference !== 0 && (
                 <div className="fade-in" style={{ marginBottom: '20px', textAlign: 'left', background: '#fffbeb', border: '1px solid #fcd34d', padding: '15px', borderRadius: '8px' }}>

@@ -1,5 +1,8 @@
-import { auth } from '../../../core/firebase/client';
+import { db, auth } from '../../../core/firebase/client';
 import { callBackend } from '../../../core/firebase/callable.js';
+import { createSparkSalesRepository } from './sparkSalesRepository.js';
+import { requireCapability } from '../../../config/runtimeCapabilities.js';
+const sparkSales = createSparkSalesRepository(db, { currentUser: () => auth.currentUser });
 import { syncLocalSession, reconcilePendingSessions } from '../../cash-register/infrastructure/cashRegisterRepository.js';
 import offlineDB from '../../../offlineDB';
 import { encrypt, decrypt } from '../../../crypto';
@@ -38,7 +41,7 @@ export const saleQueue = createSaleQueue({
   currentIdentity: identity => auth.currentUser?.uid === identity.uid,
   verifyReceipt: (sale, identity) => {
     if (auth.currentUser?.uid !== identity.uid) throw new SaleError('session-changed', 'La sesión cambió.');
-    return callBackend('submitSale', { ...sale, receiptOnly: true });
+    return sparkSales.verify(sale);
   },
   captureProjection: async sale => Object.fromEntries((await offlineDB.products.bulkGet(sale.items.map(item => item.id)))
     .flatMap((product, index) => product?.businessId === sale.businessId ? [[sale.items[index].id, {
@@ -46,15 +49,31 @@ export const saleQueue = createSaleQueue({
     }]] : [])),
   apply: (sale, identity) => {
     if (auth.currentUser?.uid !== identity.uid) throw new SaleError('session-changed', 'La sesión cambió; la venta queda pendiente.');
-    return callBackend('submitSale', sale);
+    return sparkSales.submit(sale);
   },
 });
 
 export const saveSaleTransaction = (sale, cartItems, products, user) =>
   saleQueue.submit(canonicalSale({ ...sale, items: cartItems, queuedAt: new Date().toISOString(),
-    origin: navigator.onLine ? 'online' : 'offline' }, products), user);
+    origin: navigator.onLine ? 'online' : 'offline' }, products), user, { isolated: true });
+
+// Read-only remote verification can recover a lost local acknowledgment; it never submits a sale.
+export async function verifyPendingSaleTransaction(sale, user) {
+  if (!navigator.onLine) throw new Error('Conéctate para consultar el receipt remoto.');
+  const record = await offlineDB.sales.get(sale.localId);
+  if (!record || record.userId !== user.uid || record.businessId !== user.businessId || auth.currentUser?.uid !== user.uid) {
+    throw new Error('El pendiente no pertenece a esta identidad.');
+  }
+  const frozen = JSON.parse(await decrypt(record.data, user.uid));
+  const receipt = await sparkSales.verify(frozen);
+  if (auth.currentUser?.uid !== user.uid) throw new Error('La sesión cambió.');
+  await offlineDB.sales.update(record.localId, { status: 'synced', sync: true, financialAck: true,
+    stockVersions: receipt.stockVersions, syncedAt: receipt.syncedAt, lastError: null, syncStartedAt: null });
+  return receipt;
+}
 
 export async function voidSaleTransaction(sale) {
   if (!navigator.onLine) throw new Error('Debes tener conexión a internet para anular una venta.');
+  requireCapability('saleVoid', 'Anulación: la compensación de stock y el reembolso aún no tienen un protocolo validado');
   return callBackend('voidSale', { saleId: sale.id, reason: sale.voidReason || 'Sin justificación registrada' });
 }

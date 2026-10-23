@@ -1,5 +1,6 @@
+import { getContractsInPeriod } from '../../contracts/infrastructure/contractRepository.js';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { getDailyStats, subscribeDailyStats } from '../infrastructure/dailyStatsRepository';
+import { getDailyStats } from '../infrastructure/dailyStatsRepository';
 import { getPaymentsInPeriod } from '../../payments/infrastructure/paymentRepository';
 import { useTenantData } from '../../branches/context/TenantContext';
 import { reportPeriod, reportDay } from '../domain/reportPeriod.js';
@@ -19,19 +20,19 @@ export const useReports = user => {
     if (!user?.businessId || !activeBranchId) return;
     const current = createReportResource({ key, businessId: user.businessId, branchId: activeBranchId, period, cache,
       readStats: () => getDailyStats(user.businessId, activeBranchId, period.start, period.end),
+      readContracts: () => getContractsInPeriod(user.businessId, period.startDate, period.endDate, activeBranchId),
       readPayments: () => getPaymentsInPeriod(user.businessId, period.startDate, period.endDate, activeBranchId, { requireMigrated: true, maxRows: 10000 }),
-      ...(timeFilter === 'hoy' ? { subscribeStats: (onData, onError) => subscribeDailyStats(user.businessId, activeBranchId, period.start, period.end, onData, onError) } : {}),
       onState: setState });
     resource.current = current;
-    const timer = setInterval(() => { setDay(reportDay(new Date())); void current.refresh(); }, REPORT_TTL);
-    const refresh = () => { setDay(reportDay(new Date())); void current.refresh(true); };
+    const timer = setInterval(() => { setDay(reportDay(new Date())); }, REPORT_TTL);
+    const refresh = () => { setDay(reportDay(new Date())); void current.refresh(); };
     window.addEventListener('focus', refresh); window.addEventListener('online', refresh);
     return () => { current.close(); clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); };
   }, [key, user?.businessId, activeBranchId, period, timeFilter]);
   const current = state.key === key ? state : { isLoading: true, error: null };
   const model = current.model;
   const refreshReport = useCallback(() => resource.current?.refresh(true), []);
-  return { summary: model?.summary ?? emptyMetrics(), topProducts: model?.topProducts ?? [], chartData: model?.chartData ?? [],
+  return { contractCounts: model?.contractCounts ?? { pending: 0, delivered: 0, cancelled: 0, withDebt: 0 }, summary: model?.summary ?? emptyMetrics(), topProducts: model?.topProducts ?? [], chartData: model?.chartData ?? [],
     isLoading: current.isLoading, error: current.error, timeFilter, setTimeFilter, refreshReport, updatedAt: current.updatedAt,
     maxProductQty: Math.max(1, ...(model?.topProducts ?? []).map(row => row.qty)) };
 };

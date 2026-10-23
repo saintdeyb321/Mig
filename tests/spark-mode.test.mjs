@@ -7,12 +7,24 @@ import { callBackend } from '../frontend/src/core/firebase/callable.js';
 import { readStorageBlob, uploadStorageBlob, deleteStorageObject, requireLocalImageSources } from '../frontend/src/core/firebase/storage.js';
 import { validateWebEnvironment, environments } from '../frontend/src/config/environments.js';
 import { brand } from '../frontend/src/config/brand.js';
+import { salesToDailyStats } from '../frontend/src/features/reports/domain/sparkReport.js';
+import { aggregateReport } from '../frontend/src/features/reports/domain/reportTotals.js';
+
+it('retains historical product names and totals without inventing absent cost or profit', () => {
+  const stats = salesToDailyStats([{ businessId: 'tenant', branchId: 'branch', createdAt: '2026-10-23T12:00:00.000Z',
+    total: 3, payment: 'efectivo', items: [{ name: 'Pan', qty: 1, price: 1 }, { name: 'Torta', qty: 1, price: 2 }] }]);
+  const report = aggregateReport({ stats });
+  assert.equal(report.summary.posRevenue, 3);
+  assert.deepEqual(report.topProducts.map(row => row.name).sort(), ['Pan', 'Torta']);
+  assert.equal(stats[0].totalCost, undefined);
+  assert.equal(stats[0].grossProfit, undefined);
+});
 
 it('fixes Spark capabilities independently of account, environment or browser flags', () => {
   assert.equal(runtimeCapabilities.mode, 'spark');
   assert.equal(runtimeCapabilities.repositoryStrategy, 'spark');
-  for (const name of ['cloudFunctions', 'cloudStorage', 'financialOperations', 'offlineSync', 'platformJobs']) assert.equal(runtimeCapabilities[name], false, name);
-  for (const name of ['authentication', 'firestore', 'hosting', 'localPersistence', 'localExports', 'tenantAdministration', 'tenantProvisioning', 'licenseAdministration', 'cashOpening']) assert.equal(runtimeCapabilities[name], true, name);
+  for (const name of ['cloudFunctions', 'cloudStorage', 'saleVoid', 'cashReconciliation', 'offlineSync', 'platformJobs']) assert.equal(runtimeCapabilities[name], false, name);
+  for (const name of ['authentication', 'firestore', 'hosting', 'localPersistence', 'localExports', 'tenantAdministration', 'tenantProvisioning', 'licenseAdministration', 'cashOpening', 'saleOnline', 'contractPayments', 'cashClosing']) assert.equal(runtimeCapabilities[name], true, name);
   assert.throws(() => { runtimeCapabilities.cloudFunctions = true; }, TypeError);
 });
 

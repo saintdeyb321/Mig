@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8"><title>Spark local tests</title>
+<script type="module">
+import db from '/src/offlineDB.js';
+import { auth } from '/src/core/firebase/client.js';
+import { prepareContractImages, resolveContractImageUrls, withResolvedContractImages } from '/src/features/contracts/infrastructure/contractImages.js';
+import { createSaleQueue } from '/src/features/sales/application/saleQueue.js';
+import { dexieSaleStore, createQueueLock } from '/src/features/sales/infrastructure/saleQueueStore.js';
+import { encrypt, decrypt } from '/src/crypto.js';
+import { generateReceiptHTML } from '/src/utils/receiptTemplate.js';
+const checks = [], check = (ok, name) => { if (!ok) throw Error(name); checks.push(name); };
+let result;
+try {
+  const uid = 'local-fixture-user', businessId = 'local-fixture-business', contractId = '11111111-1111-4111-8111-111111111111';
+  auth.currentUser = { uid };
+  const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 800;
+  const context = canvas.getContext('2d'); context.fillStyle = '#fa4'; context.fillRect(0, 0, 1200, 800);
+  const input = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  const refs = await prepareContractImages({ businessId, contractId, newImages: [input] });
+  check(refs.length === 1 && refs[0].startsWith('local-image:'), 'Firestore receives only a small local reference');
+  const saved = await db.settings.get(`contract-image:${uid}:${refs[0]}`);
+  check(saved.main.size <= 262144 && saved.thumbnail.size <= 65536 && saved.deviceOnly, 'Real canvas compression is bounded and persisted in IndexedDB');
+  const first = await resolveContractImageUrls(refs); check(first.urls[0].startsWith('blob:'), 'Stored photo resolves after reading IndexedDB'); first.release();
+  auth.currentUser = { uid: 'other-account' };
+  const foreign = await resolveContractImageUrls(refs); check(foreign.urls.length === 0 && foreign.warnings.length === 1, 'Another account cannot resolve local photos');
+  auth.currentUser = { uid };
+  await withResolvedContractImages({ referenceImages: ['https://firebasestorage.googleapis.com/no-network'] }, contract => {
+    check(contract.referenceImages.length === 0 && contract.imageAvailabilityNote.includes('conservada'), 'Unavailable legacy photo preserves reference and permits text printing');
+  });
+  const applied = [], identity = { uid, businessId, role: 'cajero', branchId: 'branch' };
+  const queue = createSaleQueue({ store: dexieSaleStore(db), encrypt, decrypt, withLock: createQueueLock(db), online: () => true,
+    syncSessions: () => { throw Error('Legacy cash flush must remain paused'); }, afterFlush: () => { throw Error('Reconciliation must remain paused'); },
+    apply: async sale => { applied.push(sale.saleId); return { stockVersions: { p: 1 }, syncedAt: new Date().toISOString() }; } });
+  const sale = id => ({ localId: id, businessId, branchId: 'branch', userId: uid, sessionId: 'session', items: [{ id: 'p', name: 'Pan', qty: 1, price: 1, cost: 0 }], total: 1, payment: 'efectivo', amountPaid: 1, change: 0, createdAt: '2026-10-23T12:00:00.000Z' });
+  await queue.enqueue({ ...sale('preserved-offline'), origin: 'offline' }, identity);
+  const before = (await db.sales.get('preserved-offline')).data;
+  const online = await queue.submit({ ...sale('new-online'), origin: 'online' }, identity, { isolated: true });
+  check(!online.isOffline && applied.join() === 'new-online', 'Explicit online submit applies only its own ID and never drains the previous queue');
+  check((await db.sales.get('preserved-offline')).data === before && (await db.sales.get('preserved-offline')).status === 'pending', 'Encrypted durable historical queue remains intact');
+  const pending = await queue.submit({ ...sale('new-offline'), origin: 'offline' }, identity, { isolated: true });
+  check(pending.isOffline && applied.length === 1, 'Offline capture stays pending and never invokes remote application');
+  const html = generateReceiptHTML({ ...pending.sale, isOffline: true }, {});
+  check(html.includes('PENDIENTE LOCAL') && html.includes('SIN CONFIRMACIÓN REMOTA'), 'Printed local pending has an explicit non-confirmation label');
+  result = { ok: true, checks };
+} catch (error) { result = { ok: false, checks, error: error.stack }; }
+await fetch('/__phase4-report', { method: 'POST', body: JSON.stringify(result) });
+</script>

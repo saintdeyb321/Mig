@@ -153,6 +153,7 @@ export const generateContractReceiptHTML = (contract, settings, branches = []) =
       </style>
     </head>
     <body>
+      ${contract.imageAvailabilityNote ? `<p>${escapeHtml(contract.imageAvailabilityNote)}</p>` : ''}
       <div class="ticket">
         
         <div class="brand-container">

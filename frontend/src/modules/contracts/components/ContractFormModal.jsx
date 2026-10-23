@@ -106,12 +106,12 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
-    if (images.length + files.length > 4) {
-      return toast.error("Máximo 4 imágenes de referencia por pedido.");
+    if (images.length + files.length > 20) {
+      return toast.error("Máximo 20 imágenes de referencia por pedido.");
     }
     if (files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
       || !/\.(jpe?g|png|webp)$/i.test(file.name) || file.size > 5 * 1024 * 1024)) {
-      return toast.error('Usa imágenes JPEG, PNG o WebP de hasta 5 MB.');
+      return toast.error('Usa imágenes JPEG, PNG o WebP de hasta 5 MB. Se comprimen y guardan solo en este dispositivo.');
     }
 
     const newImages = files.map(file => {
@@ -179,6 +179,7 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
           </div>
 
           <form onSubmit={handleFormSubmit} className="cfm-body">
+            <p role="status">Fotos JPEG/PNG/WebP hasta 5 MB de entrada, comprimidas a 256 KiB + miniatura de 64 KiB; solo en este dispositivo/cuenta. Guarda sin foto si no está disponible.</p>
 
             <div className="cfm-section">
               <h4 className="cfm-section-title">1. Datos del Cliente</h4>

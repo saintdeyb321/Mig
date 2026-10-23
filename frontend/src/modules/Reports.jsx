@@ -82,7 +82,7 @@ const TopProductItem = memo(({ name, qty, index, isLast, maxProductQty }) => {
 
 export default function Reports({ user }) {
   const {
-    summary,
+    summary, contractCounts,
     topProducts,
     chartData,
     isLoading,
@@ -116,7 +116,9 @@ export default function Reports({ user }) {
   if (error) return <div className="card" role="alert">No se puede mostrar un reporte completo: {error} <button onClick={refreshReport}>Reintentar</button></div>;
   return (
     <div className="fade-in max-container padding-bottom-lg">
+      <p role="status">Movimientos confirmados; excluye pendientes locales. Lecturas paginadas: máximo 10000 movimientos y 500 contratos por negocio para compatibilidad histórica. Los cierres operativos conservan conciliación pendiente.</p>
 
+      <p>Pedidos creados en el período: {contractCounts.pending} pendientes · {contractCounts.delivered} entregados · {contractCounts.cancelled} cancelados · {contractCounts.withDebt} con saldo.</p>
       <header className="module-header">
         <h2 className="module-title">
           <span className="module-title-icon">📊</span>

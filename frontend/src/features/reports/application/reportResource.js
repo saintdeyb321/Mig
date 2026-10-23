@@ -1,3 +1,4 @@
+import { contractCounts } from '../domain/sparkReport.js';
 import { aggregateReport } from '../domain/reportTotals.js';
 import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 
@@ -14,16 +15,18 @@ export function createReportCache({ ttl = REPORT_TTL, max = 12, now = Date.now }
     get size() { return entries.size; },
   };
 }
-export function createReportResource({ key, businessId, branchId, period, cache, readStats, readPayments, subscribeStats, onState, now = Date.now }) {
+export function createReportResource({ key, businessId, branchId, period, cache, readStats, readPayments, readContracts = async () => [], subscribeStats, onState, now = Date.now }) {
   const ttl = reportTTL(period);
   const cached = cache.get(key);
   let active = true, stats = cached?.stats ?? null, payments = cached?.payments ?? null, loadedAt = cached?.loadedAt ?? -Infinity;
+  let contracts = cached?.contracts ?? [];
   let pending = null, generation = 0, stop = () => {};
   const emit = () => {
     if (!active || stats === null || payments === null) return;
     try {
       const model = aggregateReport({ stats, payments, businessId, branchId, period });
-      cache.set(key, { stats, payments, loadedAt, ttl });
+      model.contractCounts = contractCounts(contracts);
+      cache.set(key, { stats, payments, contracts, loadedAt, ttl });
       onState({ key, model, isLoading: false, error: null, updatedAt: loadedAt });
     } catch (error) { fail(error); }
   };
@@ -35,11 +38,11 @@ export function createReportResource({ key, businessId, branchId, period, cache,
     const revision = ++generation;
     pending = (async () => {
       try {
-        const [nextStats, nextPayments] = await Promise.all([subscribeStats && stats !== null ? stats : readStats(), readPayments()]);
+        const [nextStats, nextPayments, nextContracts] = await Promise.all([subscribeStats && stats !== null ? stats : readStats(), readPayments(), readContracts()]);
         if (!active || revision !== generation) return;
         // A live snapshot may have advanced while the payment query was pending.
         if (!subscribeStats || stats === null) stats = nextStats;
-        payments = nextPayments; loadedAt = now(); emit();
+        contracts = nextContracts; payments = nextPayments; loadedAt = now(); emit();
       } catch (error) { if (revision === generation) { payments = null; fail(error); } }
       finally { if (revision === generation) pending = null; }
     })();

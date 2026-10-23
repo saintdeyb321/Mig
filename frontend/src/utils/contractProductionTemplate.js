@@ -102,6 +102,7 @@ export const generateContractProductionHTML = (contract, settings, branches = []
       </style>
     </head>
     <body>
+      ${contract.imageAvailabilityNote ? `<p>${escapeHtml(contract.imageAvailabilityNote)}</p>` : ''}
       <div class="container">
         
         <div class="header">
@@ -269,6 +270,7 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
       </style>
     </head>
     <body>
+      ${contract.imageAvailabilityNote ? `<p>${escapeHtml(contract.imageAvailabilityNote)}</p>` : ''}
       <div class="container">
         
         <div class="header">

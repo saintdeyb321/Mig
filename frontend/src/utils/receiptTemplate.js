@@ -25,7 +25,8 @@ export const generateReceiptHTML = (saleData, settings, currentBranch = null) =>
   const telefono = rawTelefono ? `Cel/Tel: ${rawTelefono}` : '';
 
   // 3. Fechas y Formatos
-  const saleDate = saleData.date?.toDate ? saleData.date.toDate() : new Date(saleData.date || Date.now());
+  const rawDate = saleData.confirmedAt ?? saleData.createdAt ?? saleData.date;
+  const saleDate = rawDate?.toDate ? rawDate.toDate() : new Date(rawDate || Date.now());
   const dateStr = saleDate.toLocaleDateString('es-PE');
   const timeStr = saleDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
 
@@ -90,6 +91,7 @@ export const generateReceiptHTML = (saleData, settings, currentBranch = null) =>
     </head>
     <body>
       <div class="ticket">
+        ${saleData.isOffline || saleData.status === 'pending' ? '<div class="center bold">PENDIENTE LOCAL — SIN CONFIRMACIÓN REMOTA</div>' : ''}
         
         <div class="center bold" style="font-size: 15px; margin-bottom: 4px; text-transform: uppercase;">
           ${escapeHtml(razonSocial)}

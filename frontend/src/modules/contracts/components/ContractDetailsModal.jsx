@@ -44,6 +44,7 @@ const ContractDetailsModal = ({
   if (!contract) return null;
 
   // ESTADOS LOGÍSTICOS Y FINANCIEROS SEPARADOS
+  const restricted = contract.sparkContractVersion !== 1;
   const isCancelled = contract.status === 'cancelado';
   const isPaid = contract.balance <= 0;
   const isDelivered = contract.status === 'entregado' || contract.status === 'entregado_con_deuda';
@@ -153,19 +154,19 @@ const ContractDetailsModal = ({
               <div className="cd-toolbar-actions">
                 {/* Botón de Marcar Entregado (Restaurado) */}
                 {!isDelivered && !isCancelled && (
-                  <button onClick={markAsDelivered} className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.85rem', marginRight: '8px' }}>
+                  <button disabled={restricted || isProcessing} title="Entrega disponible solo para contratos Spark" onClick={markAsDelivered} className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.85rem', marginRight: '8px' }}>
                     📦 Marcar Entregado
                   </button>
                 )}
 
                 {!isDelivered && !isCancelled && (
-                  <button onClick={() => onEditRequest(contract)} className="cd-btn cd-btn-edit">
+                  <button disabled={restricted} title={restricted ? "Contrato histórico: solo lectura, sin migración automática" : "Editar datos permitidos"} onClick={() => onEditRequest(contract)} className="cd-btn cd-btn-edit">
                     ✏️ Editar
                   </button>
                 )}
 
                 {!isCancelled && (
-                  <button onClick={() => onCancelRequest(contract)} className="cd-btn cd-btn-danger">
+                  <button disabled={restricted || user.role !== 'dueño'} title="Cancelación Spark: solo dueño y contratos nuevos" onClick={() => onCancelRequest(contract)} className="cd-btn cd-btn-danger">
                     🗑️ Anular
                   </button>
                 )}
@@ -317,7 +318,7 @@ const ContractDetailsModal = ({
                     <input
                       type="number" min="0.1" max={contract.balance} step="0.50"
                       value={payAmount} onChange={e => setPayAmount(e.target.value)}
-                      disabled={isProcessing} placeholder={`Max: ${contract.balance.toFixed(2)}`}
+                      disabled={isProcessing || restricted} placeholder={`Max: ${contract.balance.toFixed(2)}`}
                       style={{ width: '100%', padding: '10px', border: '1px solid #fcd34d', borderRadius: '6px', fontWeight: 'bold' }}
                     />
                   </div>
@@ -326,7 +327,7 @@ const ContractDetailsModal = ({
                     <select
                       value={payMethod}
                       onChange={e => setPayMethod(e.target.value)}
-                      disabled={isProcessing}
+                      disabled={isProcessing || restricted}
                       style={{ width: '100%', padding: '10px', border: '1px solid #fcd34d', borderRadius: '6px', fontWeight: 'bold', background: 'white' }}
                     >
                       <option value="efectivo">💵 Efectivo (A esta Caja)</option>
@@ -335,7 +336,7 @@ const ContractDetailsModal = ({
                   </div>
                   <button
                     onClick={handlePaymentSubmit}
-                    disabled={isProcessing || !payAmount || Number(payAmount) <= 0}
+                    disabled={isProcessing || restricted || !payAmount || Number(payAmount) <= 0}
                     className="cd-btn-confirm-pay"
                     style={{ padding: '10px 20px', background: isDelivered ? '#ef4444' : '#f59e0b', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
                   >
@@ -347,9 +348,10 @@ const ContractDetailsModal = ({
 
             {/* TARJETA 6: Auditoría de Pagos */}
             {paymentResult.key !== paymentKey && <p>Cargando movimientos del pedido...</p>}
-            {paymentError && <p role="alert">No se pudo cargar la auditoría de pagos.</p>}
+            {paymentError && <p role="alert">{paymentError.message}</p>}
+            {imageReferences.length > 0 && <p>Fotos locales: solo este dispositivo/cuenta. Referencias antiguas conservadas.</p>}
             {imagesLoading && <p>Cargando imágenes de referencia...</p>}
-            {imagesError && <p role="alert">No se pudieron cargar las imágenes de referencia.</p>}
+            {imagesError && <p role="alert">{imagesError.message}</p>}
             {payments.length > 0 && (
                <div className="cd-card">
                  <h3 className="cd-card-title">Auditoría de Transacciones</h3>

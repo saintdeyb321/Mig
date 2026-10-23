@@ -1,19 +1,18 @@
-import { collection, query, where, onSnapshot, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../core/firebase/client';
-import { mapDocuments } from '../../../core/firebase/documents';
-import { createSalesPeriodReader } from './salesQueryRepository.js';
+import { createSalesPeriodReader, createSalesSessionReader } from './salesQueryRepository.js';
 
 export function subscribeRecentSales(businessId, branchId, onData, onError) {
-  return onSnapshot(query(collection(db, 'sales'), where('businessId', '==', businessId),
-    ...(branchId === 'global' ? [] : [where('branchId', '==', branchId)]),
-    orderBy('createdAt', 'desc'), limit(50)), { includeMetadataChanges: true },
-  snapshot => onData(snapshot.docs.map(document => ({
-    ...document.data(), id: document.id, isOffline: document.metadata.hasPendingWrites,
-  }))), onError);
+  const rows = new Map();
+  const stops = ['confirmedAt', 'createdAt'].map(field => onSnapshot(query(collection(db, 'sales'), where('businessId', '==', businessId),
+    ...(branchId === 'global' ? [] : [where('branchId', '==', branchId)]), orderBy(field, 'desc'), limit(50)),
+  { includeMetadataChanges: true }, snapshot => {
+    rows.set(field, snapshot.docs.filter(document => !document.metadata.hasPendingWrites && !snapshot.metadata.fromCache)
+      .map(document => ({ ...document.data(), id: document.id, isOffline: false }))
+      .filter(row => field === 'confirmedAt' ? row.status === 'confirmed' : row.confirmedAt == null));
+    onData([...new Map([...rows.values()].flat().map(row => [row.id, { ...row, createdAt: row.confirmedAt ?? row.createdAt }])).values()]);
+  }, onError));
+  return () => stops.forEach(stop => stop());
 }
-export const getSessionSales = async session => mapDocuments(await getDocs(query(
-  collection(db, 'sales'), where('businessId', '==', session.businessId),
-  where('branchId', '==', session.branchId), where('sessionId', '==', session.id),
-)));
-
+export const getSessionSales = createSalesSessionReader(db);
 export const getSalesInPeriod = createSalesPeriodReader(db);

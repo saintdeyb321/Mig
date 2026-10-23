@@ -220,24 +220,26 @@ function POS({ user }) {
           </div>
         </section>
 
+        <p role="status">Spark: máximo 2 productos distintos por ticket. Sincronización offline pausada; pendientes conservados para revisión en Historial.</p>
         <div className={`cart-mobile-overlay ${isCartOpen ? 'open' : ''}`} onClick={() => setIsCartOpen(false)}></div>
 
         <div id="cart-section" className={`cart-section ${isCartOpen ? 'open' : ''}`}>
           {lastSale ? (
-            <div className="card fade-in" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ecfdf5', border: '2px solid var(--success)', textAlign: 'center', padding: '2rem', position: 'relative' }}>
-              <div style={{ background: 'white', width: '70px', height: '70px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', marginBottom: '1rem', boxShadow: '0 4px 10px rgba(16, 185, 129, 0.2)' }}>✅</div>
-              <h2 style={{ color: 'var(--success)', marginBottom: '0.5rem', fontSize: '1.5rem' }}>¡Cobro Exitoso!</h2>
+            <div className="card fade-in" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: lastSale.isOffline ? '#fff7ed' : '#ecfdf5', border: lastSale.isOffline ? '2px solid #f59e0b' : '2px solid var(--success)', textAlign: 'center', padding: '2rem', position: 'relative' }}>
+              <div style={{ background: 'white', width: '70px', height: '70px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', marginBottom: '1rem', boxShadow: '0 4px 10px rgba(16, 185, 129, 0.2)' }}>{lastSale.isOffline ? '⏳' : '✅'}</div>
+              <h2 style={{ color: lastSale.isOffline ? '#b45309' : 'var(--success)', marginBottom: '0.5rem', fontSize: '1.5rem' }}>{lastSale.isOffline ? 'Pendiente local, sin confirmar' : '¡Venta confirmada!'}</h2>
               <p style={{ color: 'var(--text-main)', marginBottom: '1.5rem', fontSize: '1.1rem' }}>
-                Total cobrado: <strong style={{ fontSize: '1.3rem' }}>S/ {lastSale.total.toFixed(2)}</strong>
+                {lastSale.isOffline ? 'Importe pendiente:' : 'Total confirmado:'} <strong style={{ fontSize: '1.3rem' }}>S/ {lastSale.total.toFixed(2)}</strong>
               </p>
+              <p>ID: {lastSale.saleId}</p>
               {lastSale.payment === 'efectivo' && lastSale.change > 0 && (
                 <div style={{ background: 'var(--success)', color: 'white', padding: '10px', borderRadius: '8px', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '1.5rem', width: '100%' }}>
-                  Vuelto a entregar: S/ {lastSale.change.toFixed(2)}
+                  {lastSale.isOffline ? 'Vuelto calculado (pendiente):' : 'Vuelto a entregar:'} S/ {lastSale.change.toFixed(2)}
                 </div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
                 <button onClick={() => printReceipt(lastSale)} style={{ padding: '12px', fontSize: '1rem', background: 'var(--text-main)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 'bold' }}>
-                  <span style={{ fontSize: '1.2rem' }}>🖨️</span> Imprimir Ticket
+                  <span style={{ fontSize: '1.2rem' }}>🖨️</span> {lastSale.isOffline ? 'Imprimir pendiente (sin confirmar)' : 'Imprimir Ticket'}
                 </button>
                 <button onClick={handleNuevaVenta} style={{ padding: '12px', fontSize: '1rem', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 'bold' }}>
                   <span style={{ fontSize: '1.2rem' }}>➕</span> Nueva Venta
@@ -387,7 +389,7 @@ function POS({ user }) {
                   <button
                     className="btn-primary"
                     onClick={handleCheckoutClick}
-                    disabled={!runtimeCapabilities.financialOperations || cart.length === 0 || !isPaymentValid || isProcessing || branchStatus.isReadOnly}
+                    disabled={!runtimeCapabilities.saleOnline || cart.length === 0 || !isPaymentValid || isProcessing || branchStatus.isReadOnly}
                     style={{ width: '100%', padding: '15px', fontSize: '1.1rem', fontWeight: '900', textTransform: 'uppercase', borderRadius: '8px', cursor: (cart.length === 0 || !isPaymentValid || branchStatus.isReadOnly) ? 'not-allowed' : 'pointer', opacity: branchStatus.isReadOnly ? 0.5 : 1, border: 'none' }}
                   >
                     {branchStatus.isReadOnly ? '🔒 MODO LECTURA' : isProcessing ? 'Procesando...' : `COBRAR`}
@@ -414,7 +416,7 @@ function POS({ user }) {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '20px' }}>Verifica en tu celular que el abono se haya realizado.</p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => setShowQrModal(false)} disabled={isProcessing} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '2px solid var(--border)', background: 'transparent', color: 'var(--text-main)', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={processSale} disabled={!runtimeCapabilities.financialOperations || isProcessing} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: 'var(--success)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>{isProcessing ? 'Procesando...' : '✅ Validar Pago'}</button>
+              <button onClick={processSale} disabled={!runtimeCapabilities.saleOnline || isProcessing} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: 'var(--success)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>{isProcessing ? 'Procesando...' : '✅ Validar Pago'}</button>
             </div>
           </div>
         </div>

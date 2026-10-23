@@ -126,6 +126,7 @@ function ContractManager({ user }) {
 
   return (
     <div className="fade-in max-container padding-bottom-lg">
+      <p role="status">Contratos Spark en sede de origen; cobros y devoluciones requieren caja propia abierta. Históricos en lectura, sin migración automática. Fotos comprimidas solo en este dispositivo/cuenta; no se sincronizan. Cancelación con devolución: solo dueño.</p>
       <header className="module-header">
         <h2 className="module-title">
           <span className="module-title-icon">🎂</span>

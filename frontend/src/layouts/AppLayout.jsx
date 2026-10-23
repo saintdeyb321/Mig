@@ -7,7 +7,6 @@ import { NotificationBell } from '../components/NotificationBell';
 import { useTenantData } from '../features/branches/context/TenantContext';
 import { useAlerts } from '../features/notifications/hooks/useAlerts';
 import { isBusinessSession } from '../core/session/context.js';
-import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 import '../styles/layout.css';
 
 const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
@@ -101,9 +100,8 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
         </header>
 
         <main className="content-area">
-          {isBusinessSession(user) && !runtimeCapabilities.financialOperations && <p role="status" className="card">
-            Modo Spark: apertura online de caja disponible en sedes nuevas. Ventas, cierre de caja, pagos y contratos siguen pendientes de migración.
-            La cola local se conserva; su sincronización está pausada hasta completar la migración.
+          {isBusinessSession(user) && <p role="status" className="card">
+            Spark: ventas online (máximo 2 productos), contratos nuevos y cierre operativo. Cola cifrada conservada; sincronización offline y anulación POS pausadas. Cierres pendientes de conciliación.
           </p>}
           {children}
         </main>

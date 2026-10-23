@@ -7,6 +7,9 @@ import { encrypt, decrypt } from '../../../crypto.js';
 import { persistCashSession } from '../application/sessionCache.js';
 import { createCashStateReader, createCashPeriodReader } from './cashQueryRepository.js';
 import { createSparkCashRepository } from './sparkCashRepository.js';
+import { createSparkCashClosingRepository } from './sparkCashClosingRepository.js';
+import { getSessionSales } from '../../sales/infrastructure/salesRepository.js';
+import { getPaymentsBySession } from '../../payments/infrastructure/paymentRepository.js';
 import { runtimeCapabilities, requireCapability } from '../../../config/runtimeCapabilities.js';
 
 const sparkCash = createSparkCashRepository(db, { currentUser: () => auth.currentUser });
@@ -53,10 +56,12 @@ export async function createSession(data) {
   return cacheSession(await callBackend('openCashSession', { sessionId: reserved.id, branchId: data.branchId,
     openingAmount: data.openingAmount, notes: data.openingNote }));
 }
-export const previewSessionClose = (id, declaredAmount) => callBackend('previewCashSessionClose', { sessionId: id, declaredAmount });
-export const updateSession = async (id, data, _branchId, { force = false } = {}) => cacheSession(await callBackend(
-  force ? 'forceCloseCashSession' : 'closeCashSession', { sessionId: id, declaredAmount: data.declaredAmount, notes: data.closingNote }));
+const closing = createSparkCashClosingRepository(db, { currentUser: () => auth.currentUser,
+  readSales: getSessionSales, readPayments: session => getPaymentsBySession(session.businessId, session.id, session.branchId, { sparkOnly: session.runtime === 'spark' }) });
+export const previewSessionClose = (id, declaredAmount) => closing.preview(id, declaredAmount);
+export const updateSession = async (id, data) => sessionDTO(await closing.close(id, data.declaredAmount, data.closingNote));
 export async function syncLocalSession(id, session, acknowledgedData) {
+  requireCapability('offlineSync', 'Sincronizar caja histórica');
   const saved = session.status === 'open'
     ? await callBackend('openCashSession', { sessionId: id, branchId: session.branchId, openingAmount: session.openingAmount,
       notes: session.openingNote, openedAt: session.openedAt, offline: true })
@@ -65,6 +70,7 @@ export async function syncLocalSession(id, session, acknowledgedData) {
   return cacheSession(saved, { acknowledgedData });
 }
 export async function reconcilePendingSessions(identity) {
+  requireCapability('cashReconciliation', 'Conciliación financiera');
   const waiting = await offlineDB.sales.where('[businessId+userId+status]').anyOf([
     [identity.businessId, identity.uid, 'pending'], [identity.businessId, identity.uid, 'syncing'],
   ]).toArray();

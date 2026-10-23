@@ -99,7 +99,8 @@ export const useCashRegister = (user, currentBranchId) => {
     finally { processing.current = false; }
   };
   const calculateClose = async declaredAmount => {
-    if (!runtimeCapabilities.financialOperations) { toast.error('El cierre de caja sigue pendiente de SPARK-5.'); return null; }
+    if (!runtimeCapabilities.cashClosing) { toast.error('El cierre de caja sigue pendiente de SPARK-5.'); return null; }
+    if (!navigator.onLine) { toast.error('El cierre operativo requiere conexión; pendientes locales conservados.'); return null; }
     if (!currentSession || (currentSession.needsForceClose && !canForce)) { toast.error('Solicita el cierre al administrador.'); return null; }
     try {
       if (navigator.onLine) return await previewSessionClose(currentSession.id, declaredAmount);
@@ -117,7 +118,8 @@ export const useCashRegister = (user, currentBranchId) => {
     } catch (error) { toast.error(error.message || 'No se pudo calcular el cierre.'); return null; }
   };
   const confirmClose = async (summary, notes = '') => {
-    if (!runtimeCapabilities.financialOperations) { toast.error('El cierre de caja sigue pendiente de SPARK-5.'); return false; }
+    if (!runtimeCapabilities.cashClosing) { toast.error('El cierre de caja sigue pendiente de SPARK-5.'); return false; }
+    if (!navigator.onLine) { toast.error('El cierre Spark requiere conexión.'); return false; }
     if (!currentSession || processing.current || auth.currentUser?.uid !== user.uid) return false;
     if (currentSession.needsForceClose && !canForce) { toast.error('El cierre forzado requiere administración.'); return false; }
     processing.current = true;
@@ -133,7 +135,7 @@ export const useCashRegister = (user, currentBranchId) => {
         await offlineDB.cash_sessions.put({ localId: session.id, data: await encrypt(JSON.stringify(session), user.uid), sync: false });
       }
       if (token === revision.current) setCurrentSession(null);
-      toast.success('Cierre confirmado', { id: toastId }); return true;
+      toast.success('Caja cerrada; conciliación pendiente (estimación local)', { id: toastId }); return true;
     } catch (error) { toast.error(error.message || 'No se pudo cerrar la caja.', { id: toastId }); return false; }
     finally { processing.current = false; }
   };

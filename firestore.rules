@@ -391,6 +391,210 @@ service cloud.firestore {
         && session.status == 'open' && session.openedAt == request.time && session.runtime == 'spark';
     }
 
+    function cashClosing(sessionId) {
+      let d = request.resource.data;
+      let previous = resource.data;
+      let lockPath = /databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, d.branchId));
+      return cashActor(previous.businessId, previous.branchId) && previous.runtime == 'spark' && previous.status == 'open'
+        && (previous.userId == request.auth.uid || currentRole() == 'dueño')
+        && d.diff(previous).affectedKeys().hasOnly(['status', 'declaredAmount', 'closingNote', 'closedAt', 'closedBy', 'reconciliationPending', 'closeEstimate'])
+        && d.closedAt == request.time && d.closedBy == request.auth.uid && d.reconciliationPending == true
+        && cents(d.declaredAmount) && d.closingNote is string && d.closingNote.size() <= 2000
+        && d.closeEstimate.authority == 'client-estimate' && d.closeEstimate.reconciliationPending == true
+        && d.closeEstimate.declaredAmount == d.declaredAmount
+        && d.closeEstimate.difference == (math.round(d.declaredAmount * 100) - math.round(d.closeEstimate.expectedCash * 100)) / 100.0
+        && (d.closeEstimate.difference == 0 || d.closingNote.size() >= 5)
+        && d.status == (d.closeEstimate.difference == 0 ? 'closed' : 'closed_with_discrepancy')
+        && get(lockPath).data.sessionId == sessionId && !existsAfter(lockPath);
+    }
+    function releaseCashLock() {
+      let before = get(/databases/$(database)/documents/cash_sessions/$(resource.data.sessionId)).data;
+      let after = getAfter(/databases/$(database)/documents/cash_sessions/$(resource.data.sessionId)).data;
+      return before.status == 'open' && before.runtime == 'spark' && after.closedAt == request.time
+        && after.closedBy == request.auth.uid && after.status in ['closed', 'closed_with_discrepancy']
+        && after.reconciliationPending == true && after.businessId == resource.data.businessId
+        && after.branchId == resource.data.branchId;
+    }
+    // Financial authority uses server time and the canonical lock. Client dates are informational.
+    function saleContext(d) {
+      let user = currentUser();
+      let license = get(/databases/$(database)/documents/licenses/$(d.businessId)).data;
+      let tenant = get(/databases/$(database)/documents/tenants/$(d.businessId));
+      let branch = get(/databases/$(database)/documents/branches/$(d.branchId)).data;
+      let session = getAfter(/databases/$(database)/documents/cash_sessions/$(d.sessionId)).data;
+      let lock = getAfter(/databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, d.branchId))).data;
+      return authenticated() && user.get('status', 'activo') == 'activo' && user.role in ['dueño', 'cajero']
+        && user.businessId == d.businessId && d.userId == request.auth.uid && d.businessId != 'platform-admin'
+        && (user.role == 'dueño' || user.branchId == d.branchId) && withinCashShift(user)
+        && d.businessId.matches('^[A-Za-z0-9_-]{1,128}$') && d.branchId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && license.businessId == d.businessId && license.status == 'activa' && license.expiry > request.time
+        && license.get('tenantStatus', 'active') == 'active' && license.get('maintenanceJobId', null) == null
+        && (tenant == null || (tenant.data.status == 'active' && tenant.data.get('maintenanceJobId', null) == null))
+        && branch.businessId == d.businessId && branch.get('status', 'activo') == 'activo' && branch.sparkCashVersion == 1
+        && session.userId == d.userId && session.businessId == d.businessId && session.branchId == d.branchId
+        && session.status == 'open' && session.runtime == 'spark' && session.openedAt <= request.time
+        && lock.sessionId == d.sessionId && lock.userId == d.userId && lock.status == 'open';
+    }
+    function line(d, index) {
+      let item = d.items[index];
+      let product = getAfter(/databases/$(database)/documents/products/$(item.id)).data;
+      return item == {'id': d.productIds[index], 'name': product.name, 'category': product.get('category', ''),
+          'qty': item.qty, 'price': product.price, 'cost': product.get('cost', 0)}
+        && item.qty is int && item.qty > 0 && item.qty <= 1000000
+        && product.businessId == d.businessId && product.get('status', 'activo') == 'activo'
+        && product.price >= 0 && product.get('cost', 0) >= 0
+        && product.posLastSaleId == d.saleId && d.stockVersions[item.id] == product.posStockVersion[d.branchId];
+    }
+    function slot(d, index) { return d.items.size() <= index || line(d, index); }
+    function price(d, index) { return d.items.size() <= index ? 0 : math.round(d.items[index].price * 100) * d.items[index].qty; }
+    function cost(d, index) { return d.items.size() <= index ? 0 : math.round(d.items[index].cost * 100) * d.items[index].qty; }
+    function cents(value) { return value is number && value >= 0 && value <= 1000000000 && value == math.round(value * 100) / 100.0; }
+    function validPayment(d) {
+      return d.payment == 'efectivo'
+        ? cents(d.amountPaid) && d.amountPaid >= d.total && d.change == (math.round(d.amountPaid * 100) - math.round(d.total * 100)) / 100.0
+        : d.amountPaid == d.total && d.change == 0 && (d.payment == 'yape' || (d.payment == 'mixto' && mixedPayment(d)));
+    }
+    function mixedPayment(d) {
+      let split = d.splitPayments;
+      // The second component is derived exactly, avoiding duplicate evaluation.
+      return split.keys().hasOnly(['efectivo', 'yape']) && cents(split.efectivo) && split.efectivo <= d.total
+        && split.yape == (math.round(d.total * 100) - math.round(split.efectivo * 100)) / 100.0;
+    }
+    function sale(id) {
+      let d = request.resource.data;
+      let total = price(d, 0) + price(d, 1);
+      let totalCost = cost(d, 0) + cost(d, 1);
+      return saleContext(d) && d.keys().hasOnly(['saleId', 'localId', 'idempotencyKey', 'version', 'businessId', 'branchId', 'userId', 'sessionId',
+          'items', 'total', 'totalCost', 'grossProfit', 'payment', 'amountPaid', 'change', 'splitPayments', 'createdAt', 'queuedAt', 'origin', 'cashierName', 'productIds', 'stockVersions', 'confirmedAt', 'status'])
+        && d.saleId == id && d.localId == id && d.idempotencyKey == id && d.version == 1
+        && d.origin == 'online' && d.status == 'confirmed' && d.confirmedAt == request.time
+        && d.createdAt is string && d.createdAt.size() <= 40 && d.queuedAt is string && d.queuedAt.size() <= 40
+        && d.cashierName is string && d.cashierName.size() <= 250
+        && d.items is list && d.items.size() >= 1 && d.items.size() <= 2
+        && d.stockVersions is map && d.stockVersions.keys().hasOnly(d.productIds)
+        && d.productIds is list && d.productIds.size() == d.items.size() && d.productIds.toSet().size() == d.items.size()
+        && slot(d, 0) && slot(d, 1)
+        && d.total > 0 && d.total <= 1000000000 && d.total == total / 100.0
+        && d.totalCost <= 1000000000 && d.totalCost == totalCost / 100.0
+        && d.grossProfit == (total - totalCost) / 100.0 && validPayment(d);
+    }
+    function debitAt(d, productId, index) {
+      return d.items.size() > index && d.items[index].id == productId
+        && request.resource.data.stock[d.branchId] == resource.data.stock[d.branchId] - d.items[index].qty;
+    }
+    function debit(productId) {
+      let d = getAfter(/databases/$(database)/documents/sales/$(request.resource.data.posLastSaleId)).data;
+      return request.auth != null && d.userId == request.auth.uid && d.businessId == resource.data.businessId
+        && d.confirmedAt == request.time && !exists(/databases/$(database)/documents/sales/$(d.saleId))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastSaleId'])
+        && request.resource.data.posStockVersion is map
+        && request.resource.data.posStockVersion.diff(resource.data.get('posStockVersion', {})).affectedKeys().hasOnly([d.branchId])
+        && request.resource.data.posStockVersion[d.branchId] is int
+        && request.resource.data.posStockVersion[d.branchId] > 0 && request.resource.data.posStockVersion[d.branchId] <= 9007199254740991
+        && request.resource.data.posStockVersion[d.branchId] == resource.data.get('posStockVersion', {}).get(d.branchId, 0) + 1
+        && request.resource.data.stock.diff(resource.data.stock).affectedKeys().hasOnly([d.branchId])
+        && request.resource.data.stock[d.branchId] is int && request.resource.data.stock[d.branchId] >= 0
+        && (debitAt(d, productId, 0) || debitAt(d, productId, 1));
+    }
+
+    function projectedContractStatus(balance, previous) {
+      return previous in ['entregado', 'entregado_con_deuda']
+        ? (balance == 0 ? 'entregado' : 'entregado_con_deuda')
+        : (balance == 0 ? 'listo_para_entrega' : (previous == 'en_produccion' ? 'en_produccion' : 'pendiente'));
+    }
+    function contractFields(d, id) {
+      return cents(d.subtotal) && cents(d.deliveryCost) && cents(d.total)
+        && d.total == (math.round(d.subtotal * 100) + math.round(d.deliveryCost * 100)) / 100.0
+        && d.clientName is string && d.clientName.size() > 0 && d.clientName.size() <= 200
+        && d.clientPhone is string && d.clientPhone.size() <= 60 && d.details is string && d.details.size() <= 10000
+        && d.deliveryType is string && d.deliveryType.size() > 0 && d.deliveryType.size() <= 150
+        && d.deliveryAddress is string && d.deliveryAddress.size() <= 1000
+        && (d.deliveryDate == null || d.deliveryDate is timestamp)
+        && d.referenceImages is list && d.referenceImages.size() <= 20
+        && d.referenceImages.join('|').matches('^(local-image:' + d.businessId + ':' + id + ':[A-Za-z0-9_-]{36}[|]?){0,20}$');
+    }
+    function contractBalance(d) {
+      return d.paidByMethod.keys().hasOnly(['efectivo', 'yape', 'plin'])
+        && cents(d.paidByMethod.efectivo) && cents(d.paidByMethod.yape) && cents(d.paidByMethod.plin)
+        && d.paidTotal == (math.round(d.paidByMethod.efectivo * 100) + math.round(d.paidByMethod.yape * 100) + math.round(d.paidByMethod.plin * 100)) / 100.0
+        && d.paidTotal <= d.total && d.balance == (math.round(d.total * 100) - math.round(d.paidTotal * 100)) / 100.0;
+    }
+    function initialContractPayment(d, id) {
+      let p = getAfter(/databases/$(database)/documents/payments/$(d.lastPaymentId)).data;
+      return d.ledgerVersion == 1 && p.sourceId == id && p.type == 'advance' && p.userId == d.createdBy
+        && p.amount == d.paidTotal && p.businessId == d.businessId && p.branchId == d.branchId
+        && p.occurredAt == request.time && d.paidByMethod[p.method] == p.amount;
+    }
+    function createSparkContract(id) {
+      let d = request.resource.data;
+      return cashActor(d.businessId, d.branchId) && id.matches('^[A-Za-z0-9_-]{36}$')
+        && d.keys().hasOnly(['clientName', 'clientPhone', 'deliveryDate', 'details', 'deliveryType', 'deliveryAddress', 'deliveryCost', 'subtotal', 'total', 'referenceImages',
+          'businessId', 'branchId', 'contractNumber', 'contractId', 'paidTotal', 'balance', 'status', 'paidByMethod', 'ledgerVersion', 'lastPaymentId', 'sparkContractVersion',
+          'createdBy', 'creatorName', 'startDate', 'createdAt', 'updatedAt', 'paymentsMigrated', 'createOperationId', 'createRequestHash'])
+        && d.sparkContractVersion == 1 && d.createdBy == request.auth.uid && d.createdAt == request.time
+        && d.startDate == request.time && d.updatedAt == request.time && d.paymentsMigrated == true
+        && d.createOperationId.matches('^[A-Za-z0-9_-]{36}$') && d.createRequestHash.matches('^[a-f0-9]{64}$')
+        && getAfter(/databases/$(database)/documents/spark_contract_operations/$(d.createOperationId)).data.contractId == id
+        && !exists(/databases/$(database)/documents/spark_contract_operations/$(d.createOperationId))
+        && d.creatorName is string && d.creatorName.size() <= 250 && d.contractNumber.matches('^PED-[A-F0-9]{8}$') && d.contractId == d.contractNumber
+        && contractFields(d, id) && contractBalance(d) && d.status == projectedContractStatus(d.balance, 'pendiente')
+        && (d.lastPaymentId == null ? d.ledgerVersion == 0 && d.paidTotal == 0 : initialContractPayment(d, id));
+    }
+    function positiveContractPayment(id, d, old) {
+      let p = getAfter(/databases/$(database)/documents/payments/$(d.lastPaymentId)).data;
+      return d.diff(old).affectedKeys().hasOnly(['paidTotal', 'balance', 'status', 'paidByMethod', 'ledgerVersion', 'lastPaymentId', 'updatedAt'])
+        && d.ledgerVersion == old.ledgerVersion + 1 && p.sourceId == id && p.type == 'payment' && p.amount > 0
+        && p.occurredAt == request.time && !exists(/databases/$(database)/documents/payments/$(d.lastPaymentId))
+        && d.paidByMethod.diff(old.paidByMethod).affectedKeys().hasOnly([p.method])
+        && d.paidByMethod[p.method] == (math.round(old.paidByMethod[p.method] * 100) + math.round(p.amount * 100)) / 100.0
+        && contractBalance(d) && d.status == projectedContractStatus(d.balance, old.status);
+    }
+    function refundSlot(id, d, old, method) {
+      let p = getAfter(/databases/$(database)/documents/payments/$(d.cancelOperationId + '_' + method)).data;
+      return old.paidByMethod[method] == 0 || (p.sourceId == id && p.method == method && p.type == 'refund'
+        && p.amount == -old.paidByMethod[method] && p.occurredAt == request.time && p.operationId == d.cancelOperationId
+        && !exists(/databases/$(database)/documents/payments/$(d.cancelOperationId + '_' + method)));
+    }
+    function cancelSparkContract(id, d, old) {
+      return currentRole() == 'dueño' && d.status == 'cancelado' && d.paidTotal == 0 && d.balance == 0
+        && d.paidByMethod == {'efectivo': 0, 'yape': 0, 'plin': 0} && d.ledgerVersion == old.ledgerVersion + 1
+        && d.cancelOperationId.matches('^[A-Za-z0-9_-]{36}$') && d.voidedBy == request.auth.uid && d.voidedAt == request.time
+        && d.voidReason is string && d.voidReason.size() > 0 && d.voidReason.size() <= 1000
+        && d.diff(old).affectedKeys().hasOnly(['paidTotal', 'balance', 'status', 'paidByMethod', 'ledgerVersion', 'cancelOperationId', 'voidReason', 'voidedBy', 'voidedAt', 'updatedAt'])
+        && refundSlot(id, d, old, 'efectivo') && refundSlot(id, d, old, 'yape') && refundSlot(id, d, old, 'plin');
+    }
+    function updateSparkContract(id) {
+      let d = request.resource.data;
+      let old = resource.data;
+      return old.get('sparkContractVersion', 0) == 1 && old.status != 'cancelado' && cashActor(old.businessId, old.branchId)
+        && d.updatedAt == request.time
+        && (positiveContractPayment(id, d, old) || cancelSparkContract(id, d, old)
+          || (d.diff(old).affectedKeys().hasOnly(['clientName', 'clientPhone', 'deliveryDate', 'details', 'deliveryType', 'deliveryAddress', 'deliveryCost', 'subtotal', 'total', 'referenceImages', 'balance', 'status', 'updatedAt'])
+            && contractFields(d, id) && contractBalance(d) && d.status == projectedContractStatus(d.balance, old.status))
+          || (d.diff(old).affectedKeys().hasOnly(['balance', 'status', 'deliveredAt', 'deliveredBy', 'updatedAt'])
+            && !old.keys().hasAny(['deliveredAt']) && d.deliveredAt == request.time && d.deliveredBy == request.auth.uid
+            && d.status == projectedContractStatus(d.balance, 'entregado') && d.balance == old.balance));
+    }
+    function sparkPayment(id) {
+      let p = request.resource.data;
+      let old = get(/databases/$(database)/documents/contracts/$(p.sourceId));
+      let after = getAfter(/databases/$(database)/documents/contracts/$(p.sourceId)).data;
+      return saleContext(p) && p.runtime == 'spark' && p.sourceType == 'contract' && after.sparkContractVersion == 1
+        && after.businessId == p.businessId && after.branchId == p.branchId && p.contractNumber == after.contractNumber
+        && p.clientName == after.clientName && p.cashierName is string && p.cashierName.size() <= 250
+        && p.occurredAt == request.time && p.createdAt == request.time && p.operationId.matches('^[A-Za-z0-9_-]{36}$')
+        && (p.type in ['advance', 'payment']
+          ? p.keys().hasOnly(['businessId', 'branchId', 'userId', 'sessionId', 'cashierName', 'sourceType', 'sourceId', 'contractNumber', 'clientName', 'operationId', 'amount', 'method', 'type', 'runtime', 'occurredAt', 'createdAt'])
+            && cents(p.amount) && p.amount > 0 && p.method in ['efectivo', 'yape', 'plin'] && id == p.operationId
+            && after.lastPaymentId == id && after.updatedAt == request.time
+            && (old == null ? p.type == 'advance' && after.ledgerVersion == 1 && after.createdBy == p.userId
+              : p.type == 'payment' && old.data.status != 'cancelado' && after.ledgerVersion == old.data.ledgerVersion + 1)
+          : p.type == 'refund' && p.keys().hasOnly(['businessId', 'branchId', 'userId', 'sessionId', 'cashierName', 'sourceType', 'sourceId', 'contractNumber', 'clientName', 'operationId', 'amount', 'method', 'type', 'runtime', 'occurredAt', 'createdAt', 'reason', 'reversalScope'])
+            && p.amount < 0 && p.amount == -old.data.paidByMethod[p.method] && p.method in ['efectivo', 'yape', 'plin']
+            && id == p.operationId + '_' + p.method && after.cancelOperationId == p.operationId
+            && after.status == 'cancelado' && after.voidedAt == request.time && after.voidedBy == p.userId
+            && after.ledgerVersion == old.data.ledgerVersion + 1 && p.reason == after.voidReason && p.reversalScope == 'contract-method-balance');
+    }
     match /users/{userId} {
       allow read: if authenticated() && (request.auth.uid == userId || superadmin()
         || (owner() && sameTenantResource() && tenantEnabled(currentBusiness())));
@@ -437,29 +641,47 @@ service cloud.firestore {
       allow read: if tenantReader();
       allow create: if tenantCreator() && validProduct() && validStock(request.resource.data.stock)
         && request.resource.data.keys().hasOnly(['businessId', 'name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'createdAt', 'updatedAt']);
-      allow update: if businessUnchanged() && tenantManager() && validProduct()
+      allow update: if debit(productId) || (businessUnchanged() && tenantManager() && validProduct()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'updatedAt'])
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['stock']) || validStock(request.resource.data.stock));
-      allow delete: if tenantManager();
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['stock']) || validStock(request.resource.data.stock)));
+      allow delete: if tenantManager() && resource.data.get('posStockVersion', {}).size() == 0;
     }
 
     match /sales/{saleId} {
       // Transactions must be able to check an absent receipt. Existing receipts stay tenant/branch scoped.
       allow get: if activeUser() && (resource == null || permittedFinancialResource());
       allow list: if permittedFinancialResource();
-      allow create, update, delete: if false;
+      allow create: if sale(saleId);
+      allow update, delete: if false;
     }
 
+    match /spark_contract_operations/{id} {
+      allow get: if activeUser() && (resource == null || permittedFinancialResource());
+      allow list: if permittedFinancialResource();
+      allow create: if authenticated() && request.resource.data.keys().hasOnly(['businessId', 'branchId', 'userId', 'contractId', 'requestHash', 'createdAt'])
+        && request.resource.data.userId == request.auth.uid && request.resource.data.createdAt == request.time
+        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.createOperationId == id
+        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.createdAt == request.time
+        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.createdBy == request.auth.uid
+        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.businessId == request.resource.data.businessId
+        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.branchId == request.resource.data.branchId
+        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.createRequestHash == request.resource.data.requestHash;
+      allow update, delete: if false;
+    }
     match /contracts/{contractId} {
       // Cleanup can confirm an absent new contract; existing documents remain tenant scoped.
       allow get: if activeUser() && (resource == null || tenantReader());
       allow list: if tenantReader();
-      allow create, update, delete: if false;
+      allow create: if createSparkContract(contractId);
+      allow update: if updateSparkContract(contractId);
+      allow delete: if false;
     }
 
     match /payments/{paymentId} {
-      allow read: if permittedFinancialResource();
-      allow create, update, delete: if false;
+      allow get: if activeUser() && (resource == null || permittedFinancialResource());
+      allow list: if permittedFinancialResource();
+      allow create: if sparkPayment(paymentId);
+      allow update, delete: if false;
     }
 
     match /customers/{customerId} {
@@ -495,8 +717,9 @@ service cloud.firestore {
       allow get: if (resource == null && activeUser() && currentRole() in ['dueño', 'cajero'] && tenantEnabled(currentBusiness())) || permittedFinancialResource();
       allow list: if permittedFinancialResource();
       allow create: if cashOpening(sessionId);
-      // Closing, offline grants and reconciliation stay disabled until SPARK-4/5.
-      allow update, delete: if false;
+      // Estimates remain explicitly uncertified; closing creates a barrier for new operations.
+      allow update: if cashClosing(sessionId);
+      allow delete: if false;
     }
 
     match /alerts/{alertId} {
@@ -515,7 +738,8 @@ service cloud.firestore {
       allow get: if (resource == null && activeUser() && currentRole() in ['dueño', 'cajero'] && tenantEnabled(currentBusiness())) || permittedFinancialResource();
       allow list: if permittedFinancialResource();
       allow create: if newCashLock(lockId);
-      allow update, delete: if false;
+      allow delete: if releaseCashLock();
+      allow update: if false;
     }
 
     match /audit_events/{eventId} {
@@ -523,13 +747,28 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    function operationNotice(id) {
+      let n = request.resource.data;
+      let source = n.sourceType == 'sale'
+        ? getAfter(/databases/$(database)/documents/sales/$(n.sourceId)).data
+        : getAfter(/databases/$(database)/documents/payments/$(n.sourceId)).data;
+      return authenticated() && n.sourceType in ['sale', 'payment'] && id == n.sourceType + '_' + n.sourceId
+        && n.keys().hasOnly(['businessId', 'branchId', 'userId', 'sourceType', 'sourceId', 'authority', 'readAt', 'title', 'message', 'actorName', 'createdAt'])
+        && n.businessId == source.businessId && n.branchId == source.branchId && n.userId == request.auth.uid && source.userId == n.userId
+        && n.createdAt == request.time && n.readAt == null && n.authority == 'informational'
+        && n.actorName == source.cashierName && n.title == 'Operación registrada'
+        && n.message == 'Aviso informativo. Consulta el movimiento confirmado; este aviso no certifica importes.'
+        && (n.sourceType == 'sale' ? source.confirmedAt == request.time && !exists(/databases/$(database)/documents/sales/$(n.sourceId))
+          : source.createdAt == request.time && !exists(/databases/$(database)/documents/payments/$(n.sourceId)));
+    }
     match /notifications/{notificationId} {
       allow read: if activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid && tenantEnabled(currentBusiness());
       allow update: if activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid
         && tenantEnabled(currentBusiness())
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
         && request.resource.data.readAt is timestamp && request.resource.data.readAt == request.time;
-      allow create, delete: if false;
+      allow create: if operationNotice(notificationId);
+      allow delete: if false;
     }
 
     match /system/{docId} {

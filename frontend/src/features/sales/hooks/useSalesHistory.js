@@ -4,10 +4,11 @@ import { toDateSafe } from '../../../core/dates/dateValues';
 import { getFirebaseErrorCode } from '../../../core/errors/firebaseErrors';
 import { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { voidSaleTransaction } from '../infrastructure/saleTransactions';
+import { voidSaleTransaction, verifyPendingSaleTransaction } from '../infrastructure/saleTransactions';
 
 export const useSalesHistory = (user) => {
-  const { sales: globalSales, isLoading: isGlobalLoading, error } = useRecentSales(user);
+  const [pendingOnly, setPendingOnly] = useState(false);
+  const { sales: globalSales, isLoading: isGlobalLoading, error } = useRecentSales(user, { pendingOnly });
   const { businessBranches } = useTenantData();
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -64,5 +65,12 @@ export const useSalesHistory = (user) => {
     }
   };
 
-  return { sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, businessBranches };
+  const verificarPendiente = async sale => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try { await verifyPendingSaleTransaction(sale, user); toast.success('Receipt remoto verificado; no se volvió a cobrar.'); }
+    catch (error) { toast.error(error.message || 'Sigue pendiente para revisión.'); }
+    finally { setIsProcessing(false); }
+  };
+  return { pendingOnly, setPendingOnly, sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, verificarPendiente, businessBranches };
 };

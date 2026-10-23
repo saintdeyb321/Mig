@@ -1,10 +1,11 @@
+import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 // src/modules/SalesHistory.jsx
 import React, { useState } from 'react';
 import { useSalesHistory } from '../features/sales/hooks/useSalesHistory';
 import toast from 'react-hot-toast';
 
 function SalesHistory({ user }) {
-  const { sales, error, isLoading, formatDate, anularVentaConfirmada, isProcessing, businessBranches } = useSalesHistory(user);
+  const { pendingOnly, setPendingOnly, sales, error, isLoading, formatDate, anularVentaConfirmada, verificarPendiente, isProcessing, businessBranches } = useSalesHistory(user);
   const [saleToCancel, setSaleToCancel] = useState(null);
   const [voidReason, setVoidReason] = useState('');
 
@@ -30,6 +31,8 @@ function SalesHistory({ user }) {
         </span>
       </header>
 
+      <p role="status">Pendientes locales: revisa ID, sede e importe con el libro remoto antes de volver a cobrar. Se conservan cifrados; sincronización offline deshabilitada. La anulación POS sigue restringida: falta validar la compensación de stock junto al reembolso y su sesión de caja.</p>
+      <label><input type="checkbox" checked={pendingOnly} onChange={event => setPendingOnly(event.target.checked)} /> Revisar únicamente pendientes locales (últimos 50, sin sincronizarlos)</label>
       {error && <p role="alert">No se pudo cargar el historial. Revisa la conexión y los permisos.</p>}
       {sales.length === 0 ? (
         <div className="card fade-in empty-state">
@@ -66,7 +69,7 @@ function SalesHistory({ user }) {
                       )}
                     </div>
                     <span className="ticket-id">ID: {s.id.substring(0, 8).toUpperCase()} • 🏢 {branchName}</span>
-                    {s.queueStatus === 'failed' && <span role="alert">{s.lastError || 'La venta no pudo sincronizarse.'}</span>}
+                    {s.lastError && <span role="alert">{s.lastError || 'La venta no pudo sincronizarse.'}</span>}
                   </div>
 
                   <div className="ticket-amount">
@@ -143,11 +146,12 @@ function SalesHistory({ user }) {
                   </div>
 
 
+                  {s.isOffline && <button disabled={isProcessing} onClick={() => verificarPendiente(s)}>Consultar receipt remoto (sin cobrar)</button>}
                   {!isAnulada && !s.isOffline && (user?.role === 'dueño' || user?.role === 'superadmin' || user?.role === 'cajero') && (
                     <button
                       className="btn-danger-solid"
                       onClick={() => setSaleToCancel(s)}
-                      disabled={isProcessing}
+                      disabled={isProcessing || !runtimeCapabilities.saleVoid} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado"
                     >
                       {isProcessing ? '...' : 'Anular Ticket'}
                     </button>
@@ -196,10 +200,10 @@ function SalesHistory({ user }) {
               </div>
 
               <div className="modal-actions" style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" className="btn-cancel" onClick={() => { setSaleToCancel(null); setVoidReason(''); }} disabled={isProcessing} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '2px solid var(--border)', background: 'transparent', color: 'var(--text-main)', fontWeight: 'bold', cursor: 'pointer' }}>
+                <button type="button" className="btn-cancel" onClick={() => { setSaleToCancel(null); setVoidReason(''); }} disabled={isProcessing || !runtimeCapabilities.saleVoid} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado" style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '2px solid var(--border)', background: 'transparent', color: 'var(--text-main)', fontWeight: 'bold', cursor: 'pointer' }}>
                   Cancelar
                 </button>
-                <button type="submit" className="btn-danger" disabled={isProcessing} style={{ flex: 1, padding: '12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                <button type="submit" className="btn-danger" disabled={isProcessing || !runtimeCapabilities.saleVoid} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado" style={{ flex: 1, padding: '12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
                   {isProcessing ? 'Anulando...' : 'Sí, anular venta'}
                 </button>
               </div>

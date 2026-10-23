@@ -12,8 +12,8 @@ function requiredId(value) {
 }
 
 export function createPaymentRepository(database, { sdk = firestoreSDK } = {}) {
-  const { collection, query, where, orderBy, documentId, limit, startAfter, getDocs, Timestamp } = sdk;
-  async function readPayments(businessId, filters, branchId = 'global', { maxRows = Infinity } = {}) {
+  const { collection, query, where, orderBy, documentId, limit, startAfter, getDocsFromServer: getDocs, Timestamp } = sdk;
+  async function readPayments(businessId, filters, branchId = 'global', { maxRows = 10000 } = {}) {
     requiredId(businessId);
     const constraints = [where('businessId', '==', businessId), ...filters,
       ...(branchId === 'global' ? [] : [where('branchId', '==', requiredId(branchId))]),

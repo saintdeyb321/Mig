@@ -11,7 +11,8 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = [], payments = []
   const scope = { businessId, branchId, period };
   const scopedSales = reportRows(sales, scope, row => row.createdAt);
   const scopedPayments = reportRows(payments, scope);
-  if (scopedSales.reduce((count, sale) => count + (sale.items?.length ?? 0) + 1, scopedPayments.length) > MAX_EXPORT_ROWS) throw new Error('Demasiadas filas de detalle. Selecciona un período menor.');
+  const scopedContracts = reportRows(contracts.filter(contract => contract.createdAt != null), scope, row => row.createdAt);
+  if (scopedSales.reduce((count, sale) => count + (sale.items?.length ?? 0) + 1, scopedPayments.length + scopedContracts.length) > MAX_EXPORT_ROWS) throw new Error('Demasiadas filas de detalle. Selecciona un período menor.');
   const processed = detailed ? processSales(scopedSales, branchesMap, scopedPayments, scope) : processDailyStats(stats, scopedPayments, scope);
   const { model } = processed, metrics = model.summary;
   const wb = XLSX.utils.book_new();
@@ -44,6 +45,11 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = [], payments = []
   ];
   const summary = append('Resumen_Financiero', summaryRows, { currency: ['B'], widths: [{ wch: 52 }, { wch: 32 }] });
   summaryRows.forEach((row, index) => { if (index >= 14 && summary[`B${index + 2}`]) summary[`B${index + 2}`].z = '0'; });
+  if (scopedContracts.length) append('Estado_Pedidos', scopedContracts.map(contract => ({
+    Pedido: contract.contractNumber ?? contract.contractId ?? contract.id, Cliente: contract.clientName,
+    Sede: branchesMap[contract.branchId] ?? contract.branchId, Estado: contract.status,
+    'Total comercial (referencia)': contract.total, 'Neto abonado': contract.paidTotal ?? '', Saldo: contract.balance,
+  })), { currency: ['E', 'F', 'G'], widths: [24, 30, 24, 24, 24, 20, 20].map(wch => ({ wch })) });
   const audit = buildContractLedgerReport(scopedPayments, contracts, branchesMap);
   if (audit.contractPaymentRows.length) append('Auditoría_Pedidos', audit.contractPaymentRows, {
     currency: ['F', 'G', 'I', 'K', 'P'], widths: [22, 22, 25, 22, 22, 20, 18, 18, 18, 18, 18, 22, 38, 55, 22, 22].map(wch => ({ wch })) });
