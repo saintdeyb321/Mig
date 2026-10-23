@@ -1,14 +1,18 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import { getAuth } from 'firebase-admin/auth';
 import { callable } from './core/callable.js';
 import { createSalesHandlers } from './sales/handlers.js';
 import { createCashSessionHandlers } from './cash-register/handlers.js';
 import { createCashAutoCloser } from './cash-register/scheduled.js';
 import { createAuditNotificationHandler } from './audit/events.js';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { createContractHandlers } from './contracts/handlers.js';
 import { createLegacyPaymentReader } from './contracts/legacyReader.js';
+import { createAdministrationHandlers } from './platform/administration.js';
+import { createPlatformJobs } from './platform/jobs.js';
 
 initializeApp();
 const database = getFirestore();
@@ -25,7 +29,7 @@ export const previewCashSessionClose = callable(cash.previewCashSessionClose);
 export const reconcileCashSession = callable(cash.reconcileCashSession);
 export const autoCloseCashSessions = onSchedule({ schedule: 'every 15 minutes', timeZone: 'America/Lima', region: 'us-central1', maxInstances: 1 },
   createCashAutoCloser(database));
-export const notifyAuditEvent = onDocumentCreated({ document: 'audit_events/{eventId}', region: 'us-central1', maxInstances: 10 },
+export const notifyAuditEvent = onDocumentCreated({ document: 'audit_events/{eventId}', region: 'us-central1', maxInstances: 10, retry: true },
   event => createAuditNotificationHandler(database)(event.params.eventId));
 const contracts = createContractHandlers(database);
 export const createContract = callable(contracts.createContract);
@@ -34,3 +38,24 @@ export const addContractPayment = callable(contracts.addContractPayment);
 export const cancelContract = callable(contracts.cancelContract);
 export const markContractDelivered = callable(contracts.markContractDelivered);
 export const getLegacyContractPayments = callable(createLegacyPaymentReader(database));
+const administration = createAdministrationHandlers(database);
+const jobs = createPlatformJobs(database, getStorage().bucket(), getAuth());
+export const createTenant = callable(administration.createTenant);
+export const extendTenantLicense = callable(administration.extendTenantLicense);
+export const setTenantLicenseStatus = callable(administration.setTenantLicenseStatus);
+export const getTenantAdministration = callable(administration.getTenantAdministration);
+export const startTenantBackup = callable(administration.startTenantBackup);
+export const requestTenantDeletion = callable(administration.requestTenantDeletion);
+export const cancelTenantDeletion = callable(administration.cancelTenantDeletion);
+export const startTenantPurge = callable(administration.startTenantPurge);
+export const getPlatformJob = callable(jobs.getPlatformJob);
+export const retryPlatformJob = callable(jobs.retryPlatformJob);
+export const startRestoreDryRun = callable(jobs.startRestoreDryRun);
+export const getBackupDownload = callable(jobs.getBackupDownload);
+export const cancelPlatformBackup = callable(jobs.cancelPlatformBackup);
+export const processPlatformJob = onDocumentWritten({ document: 'platform_jobs/{jobId}', region: 'us-central1', maxInstances: 5, timeoutSeconds: 120, memory: '512MiB', retry: true }, event => {
+  const before = event.data?.before.data(), after = event.data?.after.data();
+  if (after?.status !== 'queued' || (before?.status === 'queued' && before.unit === after.unit)) return;
+  return jobs.runUnit(event.params.jobId);
+});
+export const resumePlatformJobs = onSchedule({ schedule: 'every 1 minutes', region: 'us-central1', maxInstances: 1, timeoutSeconds: 120 }, jobs.sweep);

@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import { validateSaleSession, OFFLINE_WINDOW_MS } from '../functions/src/sales/sessionWindow.js';
 import { canonicalSale as serverModel } from '../functions/src/sales/domain/saleModel.js';
 import { canonicalSale as clientModel } from '../frontend/src/features/sales/domain/saleModel.js';
+import { documentRecord, restoreDocumentWrite } from '../functions/src/platform/backupFormat.js';
 
 const actor = { uid: 'u', businessId: 'b' };
 const sale = { branchId: 'branch', createdAt: '2026-10-02T12:10:00Z', queuedAt: '2026-10-02T12:10:00Z', origin: 'offline' };
@@ -32,4 +33,18 @@ describe('Shared financial model and trusted session boundaries', () => {
     }
   });
   it('offline authorization has a finite window', () => assert.equal(OFFLINE_WINDOW_MS, 18 * 60 * 60 * 1000));
+});
+
+describe('Restorable Firestore wire format', () => {
+  it('round-trips IDs, int64, double, nanoseconds, bytes, reference, empty values, maps and arrays without a write API', () => {
+    const fields = { bigint: { integerValue: '9007199254740993' }, precise: { doubleValue: 1 }, negzero: { doubleValue: -0 },
+      epoch: { timestampValue: {} }, time: { timestampValue: { seconds: '1500000000', nanos: 999999999 } },
+      bytes: { bytesValue: Buffer.from([0, 255, 128]) }, geo: { geoPointValue: {} },
+      reference: { referenceValue: 'projects/demo-migapos/databases/(default)/documents/products/p' },
+      array: { arrayValue: { values: [{ nullValue: 'NULL_VALUE' }, { doubleValue: NaN }, { doubleValue: Infinity }, { booleanValue: false }, { mapValue: { fields: { empty: { arrayValue: {} } } } }] } } };
+    const document = { name: 'projects/demo-migapos/databases/(default)/documents/customers/id', fields };
+    const record = documentRecord({ ref: { path: 'customers/id' }, toDocumentProto: () => document });
+    const portable = JSON.parse(JSON.stringify(record));
+    assert.deepEqual(restoreDocumentWrite(portable), { update: document });
+  });
 });

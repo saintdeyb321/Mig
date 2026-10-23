@@ -53,7 +53,7 @@ Usar esta tabla como control de avance.
 | 5 | Contratos, pedidos y ledger de pagos | COMPLETADA |
 | 6 | Caja, alertas y auditoría | COMPLETADA |
 | 7 | Reportes, dashboard y Excel | COMPLETADA |
-| 8 | Licencias, SuperAdmin, backups y borrado | PENDIENTE |
+| 8 | Licencias, SuperAdmin, backups y borrado | COMPLETADA |
 | 9 | Branding MigaPOS y limpieza general | PENDIENTE |
 | 10 | Tests, CI, observabilidad y release | PENDIENTE |
 
@@ -758,6 +758,10 @@ Validación: arquitectura (15), ventas (28), dominio Functions (20), reportes/wo
 
 # FASE 8 — Licencias, SuperAdmin, backups y borrado
 
+## Estado
+
+COMPLETADA. Validación local realizada el 22 de octubre de 2026.
+
 ## Objetivo
 
 Mover funciones de plataforma fuera del navegador.
@@ -831,6 +835,18 @@ Backup debe usar una snapshot/estrategia consistente y no depender de la UI.
 ## Criterio de aprobación
 
 Un cliente manipulado no puede ejecutar operaciones de plataforma.
+
+## Implementación
+
+Las acciones de SuperAdmin pasan por callables y perfiles protegidos: provisionamiento transaccional con UUID, recibos idempotentes, renovación concurrente con fin de mes, suspensión y administración paginada. Rules cierra escrituras cliente de licencias, metadata, jobs, privilegios de plataforma y system. Ventas, contratos y caja comprueban licencia vigente y estado del tenant con hora del servidor. Los tenants antiguos usan su licencia protegida sin exigir metadata nueva; una licencia ausente o inválida restringe operaciones. Firestore y Storage aplican el estado administrativo reflejado atómicamente en la licencia. Las cargas Storage consultan únicamente perfil y licencia; el backend valida la asociación de imágenes al contrato. Los pendientes offline se conservan y los rechazos por licencia quedan para revisión, incluidas cajas bloqueadas; un recibo ya aplicado puede confirmarse sin repetir la venta.
+
+Los backups privados pausan escrituras del tenant y usan unidades reanudables, leases y recuperación programada. Incluyen las colecciones de negocio actuales, documentos maestros sin businessId, subcolecciones con padres ausentes dentro de raíces atribuibles al tenant y assets bajo contracts/{businessId}/. Conservan IDs y valores wire de Firestore, int64, bytes, referencias y precisión temporal almacenada. El manifiesto e índices tienen conteos, checksums y cadena de integridad; se verifican partes y generaciones de Storage antes de liberar la pausa. Los adaptadores de formato/paginación dependen del SDK Admin fijado en el lockfile y fallan de forma explícita si cambia su interfaz. Artefactos legacy mayores al límite admitido o datos sin procedencia verificable requieren revisión; no se certifican copias incompletas. Cada descarga entrega una parte acotada mediante el callable autenticado, sin tokens públicos ni claves de firma; la URL Blob local se revoca al minuto. El callable de restore dry-run y functions/scripts/restoreTenantDryRun.mjs reconstruyen/validan writes en memoria, sin restaurar datos; el script exige proyecto coincidente con GCLOUD_PROJECT, bucket, tenant confirmado y --authorize-read, y rechaza --apply. Auth requiere recuperación de identidad separada; no se respaldan credenciales.
+
+La eliminación usa active → deletion_requested → deleting → deleted. Solicita confirmación exacta del tenant, prepara backup y permite cancelación antes de la purga, invalidando cualquier lease pendiente. TENANT_DELETION_RECOVERY_HOURS configura el período recuperable (168 horas por defecto; mínimo 24 fuera de emuladores). La purga vuelve a verificar el backup de esa solicitud, procesa páginas y subárboles, protege Auth de otros tenants y superadmins, elimina maestros al final y verifica el resultado. Conserva únicamente tombstone, recibos idempotentes y auditoría mínima de plataforma, además del backup privado necesario para recuperación. Se retiró deleteHelpers del navegador; la UI presenta estados, cancelación, reintentos y verificación dry-run. No se ejecutaron backups ni purgas reales.
+
+La corrección de Fase 7 mantiene refresco de día/semana cada 30 segundos y TTL de 15 minutos para mes/año, con actualización por foco, conexión o petición, deduplicación de consultas pendientes e invalidación por identidad/sede/período.
+
+Validación: npm test aprobado (280 pruebas: arquitectura 15, ventas/cola 29, dominio Functions 21, reportes 32 y emuladores 183). Los fallos iniciales se corrigieron y se completó otra ejecución integral; la descarga autenticada se revalidó después en las 18 pruebas de plataforma. IndexedDB aprobó 22 comprobaciones, frontend lint sin errores/warnings, build y git diff --check aprobados. Permanecen los avisos previos de tamaño de chunks/Browserslist. El workflow existente incorpora la suite de plataforma mediante npm test; no se afirma ejecución remota de CI. Solo se usó demo-migapos con Firebase Emulator Suite: no hubo deploy, migraciones ni operaciones contra producción. Fases 9–10 permanecen pendientes.
 
 ---
 

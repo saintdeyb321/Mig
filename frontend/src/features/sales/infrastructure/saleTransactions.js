@@ -9,18 +9,24 @@ import { dexieSaleStore, createQueueLock } from './saleQueueStore.js';
 
 async function syncCashSessions(identity) {
   const pending = await offlineDB.cash_sessions.filter(record => record.sync === false).toArray();
-  const blockedSessions = new Set();
+  const blockedSessions = new Map();
   for (const record of pending) {
     if (auth.currentUser?.uid !== identity.uid) break;
     let session;
     try { session = JSON.parse(await decrypt(record.data, identity.uid)); }
     catch { continue; }
     if (session.userId !== identity.uid || session.businessId !== identity.businessId) continue;
+    if (record.requiresFinancialReview) {
+      blockedSessions.set(record.localId, new SaleError('tenant-restricted', record.lastError || 'Caja pendiente de revisión administrativa.'));
+      continue;
+    }
     try {
       await syncLocalSession(record.localId, session, record.data);
     } catch (error) {
-      blockedSessions.add(record.localId);
-      console.warn(`Caja pendiente ${record.localId}:`, error);
+      blockedSessions.set(record.localId, error);
+      await offlineDB.cash_sessions.update(record.localId, { lastError: error.message,
+        requiresFinancialReview: error.code === 'tenant-restricted' });
+      console.warn('Caja pendiente de sincronización o revisión administrativa.');
     }
   }
   return blockedSessions;

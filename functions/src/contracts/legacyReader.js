@@ -52,7 +52,7 @@ export async function readLegacyPaymentPage(database, input, { transaction } = {
 }
 export function createLegacyPaymentReader(database) {
   return async request => {
-    const actor = await database.runTransaction(tx => actorFor(tx, database, request.auth?.uid));
+    const actor = await database.runTransaction(tx => actorFor(tx, database, request.auth?.uid, { operational: false }));
     const input = request.data ?? {};
     const branchId = input.branchId ?? (actor.role === 'cajero' ? actor.branchId : 'global');
     if (actor.role === 'cajero' && branchId !== actor.branchId) throw new SaleError('permission-denied', 'Sede no autorizada.');

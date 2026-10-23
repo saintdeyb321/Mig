@@ -1,6 +1,7 @@
 import { SaleError, documentId } from '../sales/domain/saleModel.js';
+import { requireActiveTenant } from '../platform/access.js';
 
-export async function actorFor(transaction, database, uid) {
+export async function actorFor(transaction, database, uid, { operational = true } = {}) {
   if (!uid) throw new SaleError('unauthenticated', 'Inicia sesión para continuar.');
   const snapshot = await transaction.get(database.doc(`users/${documentId(uid)}`));
   const profile = snapshot.data();
@@ -10,6 +11,7 @@ export async function actorFor(transaction, database, uid) {
   }
   // Even platform operators submit financial operations only within their assigned tenant.
   const businessId = documentId(profile.businessId);
+  if (operational) await requireActiveTenant(transaction, database, businessId);
   const name = `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim()
     || profile.displayName || profile.email?.split('@')[0] || 'Cajero';
   return { uid, businessId, branchId: profile.branchId, role: profile.role, name };

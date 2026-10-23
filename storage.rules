@@ -8,6 +8,14 @@ service firebase.storage {
         && (profile.role == 'superadmin' || profile.businessId == businessId);
     }
 
+    function tenantEnabled(businessId) {
+      let license = firestore.get(/databases/(default)/documents/licenses/$(businessId)).data;
+      return license.businessId == businessId && license.status == 'activa'
+        && license.expiry is timestamp && license.expiry > request.time
+        && license.get('tenantStatus', 'active') == 'active'
+        && license.get('maintenanceJobId', null) == null;
+    }
+
     function permittedContract(businessId, contractId) {
       return !firestore.exists(/databases/(default)/documents/contracts/$(contractId))
         || firestore.get(/databases/(default)/documents/contracts/$(contractId)).data.businessId == businessId;
@@ -15,8 +23,15 @@ service firebase.storage {
 
     function authorizedPath(businessId, contractId) {
       // New contract images are uploaded before the callable creates the document.
-      return request.auth != null && authorizedTenant(businessId)
-        && permittedContract(businessId, contractId);
+      return request.auth != null && authorizedTenant(businessId) && permittedContract(businessId, contractId);
+    }
+
+    function authorizedUpload(businessId) {
+      // Storage permits at most TWO Firestore documents per evaluation: profile + license.
+      // https://firebase.google.com/docs/storage/security/rules-conditions
+      // All bytes stay under the authenticated tenant prefix. Contract attachment/identity is
+      // independently checked by the financial callable; an unused upload cannot mutate a contract.
+      return request.auth != null && authorizedTenant(businessId) && tenantEnabled(businessId);
     }
 
     function validImage(fileName) {
@@ -28,14 +43,14 @@ service firebase.storage {
 
     match /contracts/{businessId}/{contractId}/{fileName} {
       allow read: if authorizedPath(businessId, contractId);
-      allow create, update: if authorizedPath(businessId, contractId) && validImage(fileName);
-      allow delete: if authorizedPath(businessId, contractId);
+      allow create, update: if authorizedUpload(businessId) && validImage(fileName);
+      allow delete: if authorizedUpload(businessId);
     }
 
     match /contracts/{businessId}/{contractId}/thumbs/{fileName} {
       allow read: if authorizedPath(businessId, contractId);
-      allow create, update: if authorizedPath(businessId, contractId) && validImage(fileName);
-      allow delete: if authorizedPath(businessId, contractId);
+      allow create, update: if authorizedUpload(businessId) && validImage(fileName);
+      allow delete: if authorizedUpload(businessId);
     }
 
     match /{file=**} {

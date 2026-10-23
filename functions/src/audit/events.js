@@ -45,6 +45,9 @@ export function createAuditNotificationHandler(database) {
       const users = ids.slice(offset, offset + 100);
       await database.runTransaction(async transaction => {
         if (!(await transaction.get(eventRef)).exists) return;
+        const tenant = (await transaction.get(database.doc('tenants/' + event.businessId))).data();
+        if (tenant && (tenant.status ?? 'active') !== 'active') return;
+        if (tenant?.maintenanceJobId) throw new Error('tenant-backup-in-progress');
         const profiles = await transaction.getAll(...users.map(id => database.doc('users/' + id)));
         const references = users.map(id => database.doc('notifications/' + eventId + '_' + id));
         const existing = await transaction.getAll(...references);

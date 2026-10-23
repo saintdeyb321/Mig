@@ -6,6 +6,7 @@ import { statsReference, writeStats, assertStatsScope } from './stats.js';
 import { validateSaleSession } from './sessionWindow.js';
 import { writeAuditEvent } from '../audit/events.js';
 import { prepareClosedSessionReconciliation } from '../cash-register/sessionTotals.js';
+import { requireActiveTenant } from '../platform/access.js';
 
 function checkedProduct(snapshot, sale) {
   const product = snapshot.data();
@@ -27,7 +28,7 @@ function moveStock(transaction, snapshots, products, sale, direction) {
 
 export function createSalesHandlers(database, { now = Date.now } = {}) {
   const submitSale = async request => database.runTransaction(async transaction => {
-    const actor = await actorFor(transaction, database, request.auth?.uid);
+    const actor = await actorFor(transaction, database, request.auth?.uid, { operational: false });
     const input = canonicalSale(request.data);
     if (input.userId !== actor.uid || input.businessId !== actor.businessId) {
       throw new SaleError('identity-mismatch', 'Identidad de venta falsificada.');
@@ -43,6 +44,7 @@ export function createSalesHandlers(database, { now = Date.now } = {}) {
       }
       return { status: 'ALREADY_APPLIED', stockVersions: existing.stockVersions ?? {}, syncedAt: existing.syncedAt?.toDate?.().toISOString() ?? null };
     }
+    await requireActiveTenant(transaction, database, actor.businessId, now());
     if (request.data.receiptOnly === true) throw new SaleError('pending-session', 'Receipt aún no confirmado; la caja sigue pendiente.');
     const session = (await transaction.get(database.doc(`cash_sessions/${input.sessionId}`))).data();
     validateSaleSession(session, input, actor, now());

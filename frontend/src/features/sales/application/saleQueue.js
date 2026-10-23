@@ -42,6 +42,7 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
         }
         if (!currentIdentity(identity)) return { ...report, pending: true };
         if (blockedSessions?.has(sale.sessionId)) {
+          let restriction = blockedSessions.get?.(sale.sessionId);
           // A blocked legacy cash merge must not hide an already committed sale.
           // Verification can acknowledge an existing receipt, never create a new one.
           if (verifyReceipt) {
@@ -53,7 +54,15 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
                   lastError: null, syncStartedAt: null, nextRetryAt: 0 });
                 report.synced++; continue;
               }
-            } catch (error) { await store.update(record.localId, { lastError: error.message }); }
+            } catch (error) {
+              if (error.code === 'tenant-restricted') restriction = error;
+              await store.update(record.localId, { lastError: error.message });
+            }
+          }
+          if (restriction?.code === 'tenant-restricted') {
+            await store.update(record.localId, { status: 'failed', sync: 'failed', requiresFinancialReview: true,
+              lastError: restriction.message, projectionState: null, syncStartedAt: null, nextRetryAt: 0 });
+            report.failed++; continue;
           }
           report.pending = true; continue;
         }
@@ -74,7 +83,7 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
           await store.update(record.localId, { status: failed ? 'failed' : 'pending', sync: failed ? 'failed' : false,
             ...(committed ? { financialAck: true, stockVersions: receipt?.stockVersions ?? {}, syncedAt: receipt?.syncedAt } : {}),
             ...(failed ? { projectionState: null } : {}),
-            retries, lastError: error.message, syncStartedAt: null,
+            retries, lastError: error.message, requiresFinancialReview: failed && error.code === 'tenant-restricted', syncStartedAt: null,
             nextRetryAt: failed ? 0 : now() + Math.min(60000, 1000 * 2 ** Math.min(retries, 6)) });
           if (failed) report.failed++; else report.pending = true;
         }

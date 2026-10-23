@@ -323,6 +323,9 @@ beforeEach(async () => {
   assert.equal(database.projectId, projectId);
   assert.equal((await fetch('http://127.0.0.1:8080/emulator/v1/projects/' + projectId + '/databases/(default)/documents', { method: 'DELETE' })).ok, true);
   const batch = database.batch();
+  for (const businessId of ['tenant-a', 'tenant-b']) batch.set(database.doc('licenses/' + businessId), {
+    businessId, status: 'activa', expiry: Timestamp.fromMillis(Date.now() + 365 * 86400000),
+  });
   for (const [name, actor] of Object.entries(actors)) batch.set(database.doc('users/' + actor.uid), {
     businessId: name === 'other' ? 'tenant-b' : 'tenant-a', branchId: name === 'other' ? 'b-1' : 'a-1',
     role: name.startsWith('owner') ? 'dueño' : 'cajero', status: 'activo', firstName: name,

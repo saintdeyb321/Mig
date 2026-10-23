@@ -16,11 +16,12 @@ const ClientCard = memo(({
   setDeleteModalInfo, 
   setExtendModalInfo, 
   handleToggleStatus,
+  handleCancelDeletion, handlePurgeClient,
   handleExport,     // 🚀 Nueva prop
   isBackingUp       // 🚀 Nueva prop para deshabilitar mientras carga
 }) => {
-  const isExpired = license.expiry && license.expiry.toDate() < new Date();
-  const isInactive = license.status === 'inactiva';
+  const isExpired = !license.expiry || license.expiry.toDate() < new Date();
+  const isInactive = license.status !== 'activa';
   const hasProblem = isExpired || isInactive;
   
   const fullName = `${license.ownerFirstName || ''} ${license.ownerLastName || ''}`.trim() || 'Dueño';
@@ -47,9 +48,9 @@ const ClientCard = memo(({
             
             {/* 🚀 BOTÓN DE EXPORTAR BD */}
             <button 
-              onClick={() => handleExport(license.id)}
+              onClick={() => handleExport(license.id, license.purgeJobId || license.maintenanceJobId || license.backupId)}
               disabled={isBackingUp}
-              title="Descargar base de datos completa del cliente"
+              title="Crear o consultar backup verificado"
               style={{ 
                 background: 'transparent', border: 'none', 
                 cursor: isBackingUp ? 'wait' : 'pointer', 
@@ -64,7 +65,8 @@ const ClientCard = memo(({
             {/* BOTÓN DE ELIMINAR */}
             <button 
               onClick={() => setDeleteModalInfo(license)}
-              title="Eliminar Cliente permanentemente"
+              disabled={isProcessing || license.tenantStatus !== 'active'}
+              title="Solicitar eliminación recuperable"
               style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1.1rem', opacity: 0.8, padding: 0 }}
             >
               🗑️
@@ -98,13 +100,21 @@ const ClientCard = memo(({
       </div>
 
       {/* Botonera de Tarjeta */}
+      {license.tenantStatus !== 'active' && <div style={{ padding: '15px 20px' }}>
+        <strong>{license.tenantStatus === 'deletion_requested' ? 'Eliminación solicitada' : 'Purga en curso'}</strong>
+        {license.purgeAfter && <p>Recuperable hasta {new Date(license.purgeAfter).toLocaleString('es-PE')}</p>}
+        {license.tenantStatus === 'deletion_requested' && <>
+          <button disabled={isProcessing} onClick={() => handleCancelDeletion(license.id)}>Cancelar solicitud</button>
+          <button disabled={isProcessing || !!license.maintenanceJobId || new Date(license.purgeAfter) > new Date()} onClick={() => handlePurgeClient(license.id)}>Purgar con backup verificado</button>
+        </>}
+      </div>}
       <div style={{ padding: '15px 20px', display: 'flex', gap: '10px' }}>
-        <button onClick={() => setExtendModalInfo(license.id)} className="btn-primary" style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }}>
+        <button disabled={isProcessing || license.tenantStatus !== 'active' || !!license.maintenanceJobId} onClick={() => setExtendModalInfo(license.id)} className="btn-primary" style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }}>
           🚀 Renovar
         </button>
         <button 
           onClick={() => handleToggleStatus(license.id, license.status)} 
-          disabled={isProcessing} 
+          disabled={isProcessing || license.tenantStatus !== 'active' || !!license.maintenanceJobId}
           className="btn-icon" 
           style={{ border: '1px solid var(--border)', opacity: isProcessing ? 0.5 : 1, borderRadius: '8px' }} 
           title={isInactive ? 'Activar Servicio' : 'Suspender Servicio'}
@@ -120,13 +130,14 @@ const ClientCard = memo(({
 function SuperAdmin({ user }) {
   const { 
     isLoading, isProcessing, handleCreateClient, handleExtendLicense, 
-    handleToggleStatus, handleDeleteClient,
+    handleToggleStatus, handleDeleteClient, handleCancelDeletion, handlePurgeClient,
     searchTerm, setSearchTerm, filteredLicenses,
-    licenses
+    licenses, error, hasMore, loadMore, refresh
   } = useSuperAdmin(user);
 
   // 🚀 Instanciamos el hook de Backup Exclusivo
-  const { isBackingUp, downloadTenantBackup } = useAdminBackup(user);
+  const { isBackingUp, downloadTenantBackup, job, error: jobError, retryJob, cancelBackup, restoreDryRun, downloadPart } = useAdminBackup(user);
+  const [partIndex, setPartIndex] = useState(0);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [extendModalInfo, setExtendModalInfo] = useState(null); 
@@ -195,6 +206,27 @@ function SuperAdmin({ user }) {
           ➕ Nuevo Cliente
         </button>
       </header>
+      {error && <p role="alert">{error}</p>}
+      <button disabled={isLoading} onClick={refresh}>Actualizar clientes</button>
+      {jobError && <p role="alert">{jobError}</p>}
+      {job && <section className="card" aria-label="Job administrativo">
+        <p>{job.kind} · {job.businessId} · {job.status} · etapa {job.phase}</p>
+        <p>ID: {job.id} · unidades procesadas: {job.unit}</p>
+        {job.lastError && <p role="alert">{job.lastError}</p>}
+        {job.status === 'failed' && <button disabled={isBackingUp} onClick={retryJob}>Reintentar job</button>}
+        {job.kind === 'backup' && !['completed', 'cancelled'].includes(job.status) && <button disabled={isBackingUp} onClick={cancelBackup}>Cancelar backup y liberar pausa</button>}
+        {job.kind === 'backup' && job.verified && <>
+          <p>Copia verificada: {job.partCount} partes privadas, con manifiesto y checksums.</p>
+          <button disabled={isBackingUp} onClick={() => downloadPart()}>Descargar manifiesto</button>
+          {job.partCount > 0 && <label>Parte (0–{job.partCount - 1})
+            <input type="number" min="0" max={job.partCount - 1} value={partIndex} onChange={event => setPartIndex(Number(event.target.value))} />
+            <button disabled={isBackingUp} onClick={() => downloadPart(partIndex)}>Descargar parte</button>
+          </label>}
+          <button disabled={isBackingUp} onClick={restoreDryRun}>Verificar restore dry-run</button>
+          <button disabled={isBackingUp} onClick={() => downloadTenantBackup(job.businessId)}>Crear nueva copia</button>
+        </>}
+        {job.kind === 'restore-dry-run' && job.verified && <p>Restauración validada en dry-run. Escrituras de restauración: 0.</p>}
+      </section>}
 
       <div className="filter-bar-container" style={{ marginBottom: '20px' }}>
         <div className="search-container">
@@ -204,7 +236,7 @@ function SuperAdmin({ user }) {
             className="search-input"
             value={searchTerm} 
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar por negocio, dueño, correo o ID..."
+            placeholder="Buscar entre clientes cargados por negocio, dueño, correo o ID..."
           />
           {searchTerm && (
             <button onClick={() => setSearchTerm('')} className="btn-clear-search">✖</button>
@@ -229,12 +261,15 @@ function SuperAdmin({ user }) {
               setDeleteModalInfo={setDeleteModalInfo} 
               setExtendModalInfo={setExtendModalInfo} 
               handleToggleStatus={handleToggleStatus}
+              handleCancelDeletion={handleCancelDeletion}
+              handlePurgeClient={handlePurgeClient}
               handleExport={downloadTenantBackup} // 🚀 Pasamos la función
               isBackingUp={isBackingUp}           // 🚀 Pasamos el estado de carga
             />
           ))}
         </div>
       )}
+      {hasMore && <button disabled={isLoading} onClick={loadMore}>Cargar más clientes</button>}
 
       {/* MODAL: NUEVO CLIENTE */}
       {showAddModal && (
@@ -321,18 +356,18 @@ function SuperAdmin({ user }) {
       {deleteModalInfo && (
         <div className="modal-overlay fade-in">
           <div className="modal-content card" style={{ maxWidth: '400px', borderTop: '5px solid var(--danger)' }}>
-            <h3 className="modal-header-title">⚠️ Eliminar Cliente</h3>
+            <h3 className="modal-header-title">Solicitar eliminación</h3>
             
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px', lineHeight: 1.5 }}>
               ¿Estás seguro de eliminar a <strong>{deleteModalInfo.businessName}</strong>? <br/><br/>
-              Se destruirá por completo su Licencia, <strong style={{color: 'var(--danger)'}}>Usuarios, Sucursales, Productos, Ventas y Estadísticas</strong>. <br/><br/>
-              Esta acción <u>NO se puede deshacer</u>.
+              Se bloquearán operaciones nuevas y se preparará un backup privado verificable. La solicitud puede cancelarse durante el período recuperable. <br/><br/>
+              La purga definitiva requiere otra confirmación y un backup verificado.
             </p>
             
             <div className="modal-actions-footer">
               <button type="button" onClick={() => setDeleteModalInfo(null)} disabled={isProcessing} className="btn-cancel">Cancelar</button>
               <button type="button" onClick={submitDelete} disabled={isProcessing} className="btn-primary flex-1" style={{ background: 'var(--danger)' }}>
-                {isProcessing ? 'Eliminando...' : 'Sí, Eliminar Todo'}
+                {isProcessing ? 'Solicitando...' : 'Solicitar y preparar backup'}
               </button>
             </div>
           </div>

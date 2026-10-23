@@ -3,6 +3,7 @@ import { OFFLINE_WINDOW_MS, milliseconds } from '../sales/sessionWindow.js';
 import { readCashTotals, closingProjection, incompleteCashProjection } from './sessionTotals.js';
 import { cashLockId } from './handlers.js';
 import { writeAuditEvent } from '../audit/events.js';
+import { writableBackgroundTenant } from '../platform/access.js';
 
 export function createCashAutoCloser(database, { now = Date.now } = {}) {
   return async () => {
@@ -25,6 +26,7 @@ export function createCashAutoCloser(database, { now = Date.now } = {}) {
             const result = await database.runTransaction(async transaction => {
               const session = (await transaction.get(doc.ref)).data();
               if (!session || !['open', 'reserved'].includes(session.status)) return 'skipped';
+              if (!await writableBackgroundTenant(transaction, database, session.businessId)) return 'skipped';
               const expiry = session.financialWindow?.expiresAt ? milliseconds(session.financialWindow.expiresAt)
                 : milliseconds(session.openedAt) + OFFLINE_WINDOW_MS;
               if (expiry > cutoff) return 'skipped';

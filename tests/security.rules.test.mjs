@@ -111,6 +111,41 @@ const cashierDb = () => db('cashier-a');
 const adminDb = () => db('admin');
 const ownDb = () => db('invited');
 
+describe('Platform license enforcement in Firestore and Storage', () => {
+  for (const [state, change] of [
+    ['suspended', { status: 'inactiva' }], ['expired', { expiry: Timestamp.fromMillis(1) }],
+    ['deletion requested', { tenantStatus: 'deletion_requested' }], ['purging', { tenantStatus: 'deleting' }],
+    ['backup fence', { maintenanceJobId: 'trusted-job' }],
+  ]) it(`${state} blocks operational writes, onboarding and new images while keeping authorized recovery reads`, async () => {
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'licenses/tenant-a'), change));
+    await assertFails(setDoc(doc(ownerDb(), 'customers/new'), { businessId: 'tenant-a', name: 'Blocked' }));
+    await assertFails(updateDoc(doc(ownerDb(), 'products/product-a'), { name: 'Blocked' }));
+    await assertFails(updateDoc(doc(ownerDb(), 'settings/tenant-a'), { companyData: { razonSocial: 'Blocked' } }));
+    await assertFails(setDoc(doc(ownerDb(), 'invites/new@example.test'), { ...invitation, email: 'new@example.test' }));
+    await assertFails(setDoc(doc(ownDb(), 'users/invited'), invitedUser));
+    await assertFails(uploadBytes(ref(context('cashier-a').storage(), 'contracts/tenant-a/contract-a/blocked.jpg'), new Uint8Array([1]), { contentType: 'image/jpeg' }));
+    await assertSucceeds(getDoc(doc(ownerDb(), 'licenses/tenant-a')));
+    await assertSucceeds(getDocs(query(collection(ownerDb(), 'contracts'), where('businessId', '==', 'tenant-a'))));
+    await assertSucceeds(getBytes(ref(context('admin').storage(), 'contracts/tenant-a/contract-a/fixture.jpg')));
+  });
+  it('missing legacy license fails closed, and metadata/job fields cannot be forged by any client role', async () => {
+    await env.withSecurityRulesDisabled(ctx => deleteDoc(doc(ctx.firestore(), 'licenses/legacy-tenant')));
+    await assertFails(updateDoc(doc(db('legacy-owner'), 'settings/legacy-tenant'), { businessId: 'legacy-tenant' }));
+    for (const client of [ownerDb(), cashierDb(), adminDb()]) {
+      await assertFails(setDoc(doc(client, 'tenants/tenant-a'), { businessId: 'tenant-a', status: 'active' }));
+      await assertFails(setDoc(doc(client, 'platform_jobs/forged'), { businessId: 'tenant-a', status: 'completed', verifiedAt: now }));
+      await assertFails(updateDoc(doc(client, 'licenses/tenant-a'), { tenantStatus: 'active', maintenanceJobId: null }));
+    }
+    await assertFails(updateDoc(doc(adminDb(), 'users/owner-a'), { role: 'superadmin' }));
+  });
+  it('backup objects and index files are private; only an authorized backend can grant short-lived access', async () => {
+    for (const uid of ['owner-a', 'cashier-a', 'admin']) {
+      await assertFails(uploadBytes(ref(context(uid).storage(), 'platform-backups/tenant-a/job/data/000000000.json'), new Uint8Array([1])));
+      await assertFails(getBytes(ref(context(uid).storage(), 'platform-backups/tenant-a/job/manifest.json')));
+    }
+  });
+});
+
 before(async () => {
   env = await initializeTestEnvironment({
     projectId,
@@ -121,6 +156,7 @@ before(async () => {
     await uploadBytes(ref(ctx.storage(), 'private/fixture.txt'), new Uint8Array([1, 2, 3]));
     await uploadBytes(ref(ctx.storage(), 'contracts/tenant-a/contract-a/fixture.jpg'), new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' });
     await uploadBytes(ref(ctx.storage(), 'contracts/tenant-b/contract-b/fixture.jpg'), new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' });
+    await uploadBytes(ref(ctx.storage(), 'contracts/tenant-a/contract-b/fixture.jpg'), new Uint8Array([1, 2, 3]), { contentType: 'image/jpeg' });
   });
 });
 
@@ -152,8 +188,9 @@ beforeEach(async () => {
       'settings/tenant-a': { businessId: 'tenant-a', companyData: { razonSocial: 'A' } },
       'settings/tenant-b': { businessId: 'tenant-b', companyData: { razonSocial: 'B' } },
       'settings/legacy-tenant': { companyData: { razonSocial: 'Legacy' } },
-      'licenses/tenant-a': { businessId: 'tenant-a', status: 'activa', expiry: now },
-      'licenses/tenant-b': { businessId: 'tenant-b', status: 'activa', expiry: now },
+      'licenses/tenant-a': { businessId: 'tenant-a', status: 'activa', expiry: Timestamp.fromMillis(Date.now() + 365 * 86400000) },
+      'licenses/tenant-b': { businessId: 'tenant-b', status: 'activa', expiry: Timestamp.fromMillis(Date.now() + 365 * 86400000) },
+      'licenses/legacy-tenant': { businessId: 'legacy-tenant', status: 'activa', expiry: Timestamp.fromMillis(Date.now() + 365 * 86400000) },
       'sales/sale-a': sale(),
       'sales/sale-a2': sale('tenant-a', 'a-2', 'cashier-a2'),
       'sales/sale-b': sale('tenant-b', 'b-1', 'cashier-b'),
@@ -261,9 +298,9 @@ describe('Identity and invitations', () => {
     await assertFails(setDoc(doc(ownerDb(), 'invites/new@example.test'), { ...invitation, email: 'new@example.test', role: 'superadmin' }));
     await assertFails(updateDoc(doc(ownerDb(), 'invites/invited@example.test'), { branchId: 'b-1' }));
   });
-  it('superadmins administer invitations cross-tenant', async () => {
-    await assertSucceeds(updateDoc(doc(adminDb(), 'invites/other@example.test'), { firstName: 'Actualizado' }));
-    await assertSucceeds(deleteDoc(doc(adminDb(), 'invites/other@example.test')));
+  it('platform invitation administration requires a callable even for superadmins', async () => {
+    await assertFails(updateDoc(doc(adminDb(), 'invites/other@example.test'), { firstName: 'Actualizado' }));
+    await assertFails(deleteDoc(doc(adminDb(), 'invites/other@example.test')));
   });
   it('own personal names and terms acceptance can be changed safely', async () => {
     await assertSucceeds(updateDoc(doc(cashierDb(), 'users/cashier-a'), { firstName: 'Nuevo', lastName: 'Nombre' }));
@@ -369,11 +406,11 @@ describe('Licenses', () => {
     await assertFails(deleteDoc(doc(ownerDb(), 'licenses/tenant-a')));
     await assertFails(setDoc(doc(ownerDb(), 'licenses/new'), { businessId: 'tenant-a', status: 'activa', expiry: now }));
   });
-  it('superadmins administer licenses cross-tenant', async () => {
+  it('superadmins read licenses cross-tenant but all mutations require callables', async () => {
     await assertSucceeds(getDocs(collection(adminDb(), 'licenses')));
-    await assertSucceeds(updateDoc(doc(adminDb(), 'licenses/tenant-b'), { expiry: now }));
-    await assertSucceeds(setDoc(doc(adminDb(), 'licenses/tenant-c'), { businessId: 'tenant-c', status: 'activa', expiry: now }));
-    await assertSucceeds(deleteDoc(doc(adminDb(), 'licenses/tenant-c')));
+    await assertFails(updateDoc(doc(adminDb(), 'licenses/tenant-b'), { expiry: now }));
+    await assertFails(setDoc(doc(adminDb(), 'licenses/tenant-c'), { businessId: 'tenant-c', status: 'activa', expiry: now }));
+    await assertFails(deleteDoc(doc(adminDb(), 'licenses/tenant-c')));
   });
 });
 
@@ -512,10 +549,10 @@ describe('Alerts, platform and Storage', () => {
     await assertSucceeds(getDocs(query(collection(ownerDb(), 'alerts'), where('businessId', '==', 'tenant-a'), where('read', '==', false))));
     await assertFails(getDocs(query(collection(ownerDb(), 'alerts'), where('read', '==', false))));
   });
-  it('public maintenance reads remain available while writes require a superadmin', async () => {
+  it('public maintenance reads remain available while platform writes require the backend', async () => {
     await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), 'system/status')));
     await assertFails(updateDoc(doc(ownerDb(), 'system/status'), { maintenanceEnabled: true }));
-    await assertSucceeds(updateDoc(doc(adminDb(), 'system/status'), { maintenanceEnabled: true }));
+    await assertFails(updateDoc(doc(adminDb(), 'system/status'), { maintenanceEnabled: true }));
   });
   it('the final wildcard denies undeclared collections', async () => {
     await assertFails(getDoc(doc(adminDb(), 'unknown/secret')));
@@ -546,9 +583,9 @@ describe('Contract Storage authorization', () => {
     await assertSucceeds(uploadBytes(object('cashier-a', 'contracts/tenant-a/new-document/new.png'), image, { contentType: 'image/png' }));
     await assertFails(uploadBytes(object('cashier-a', 'contracts/tenant-b/new-document/new.jpg'), image, { contentType: 'image/jpeg' }));
   });
-  it('cross-tenant paths and a foreign document ID hidden under the actor tenant are rejected', async () => {
+  it('cross-tenant uploads and reading a foreign document ID hidden under the actor tenant are rejected', async () => {
     await assertFails(uploadBytes(object('cashier-a', 'contracts/tenant-b/contract-b/attack.jpg'), image, { contentType: 'image/jpeg' }));
-    await assertFails(uploadBytes(object('cashier-a', 'contracts/tenant-a/contract-b/attack.jpg'), image, { contentType: 'image/jpeg' }));
+    await assertFails(getBytes(object('cashier-a', 'contracts/tenant-a/contract-b/fixture.jpg')));
   });
   it('unauthenticated, suspended and profile-less users cannot access contract images', async () => {
     await assertFails(getBytes(ref(env.unauthenticatedContext().storage(), 'contracts/tenant-a/contract-a/fixture.jpg')));

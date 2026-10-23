@@ -34,6 +34,7 @@ function harness(options = {}) {
   const queue = createSaleQueue({ store, encrypt, decrypt, online: () => online, now: () => clock,
     currentIdentity: options.currentIdentity ?? (() => true),
     withLock: options.withLock ?? (callback => callback()), syncSessions: options.syncSessions ?? (async () => { events.push('sessions'); }),
+    verifyReceipt: options.verifyReceipt,
     apply: options.apply ?? (async sale => { events.push('sale'); applied.push(sale); }) });
   return { queue, store, applied, events, goOnline: () => { online = true; }, advance: ms => { clock += ms; } };
 }
@@ -242,6 +243,16 @@ describe('Phase 4 durable queue', () => {
     await h.queue.flush(identity);
     assert.deepEqual(h.applied.map(sale => sale.saleId), ['sale-2']);
     assert.equal((await h.store.get('sale-1')).status, 'pending');
+  });
+  it('a license-restricted offline cash session retains encrypted sales for review; an existing receipt may still be acknowledged', async () => {
+    const syncSessions = async () => new Map([['session-a', new SaleError('tenant-restricted', 'Revisión de licencia requerida.')]]);
+    const h = harness({ syncSessions }); await h.queue.enqueue(canonicalSale(input()), identity);
+    const before = await h.store.get('sale-1'); await h.queue.flush(identity);
+    const after = await h.store.get('sale-1'); assert.equal(after.data, before.data);
+    assert.equal(after.status, 'failed'); assert.equal(after.requiresFinancialReview, true); assert.equal(h.applied.length, 0);
+    const committed = harness({ syncSessions, verifyReceipt: async () => ({ status: 'ALREADY_APPLIED' }) });
+    await committed.queue.enqueue(canonicalSale(input()), identity); await committed.queue.flush(identity);
+    assert.equal((await committed.store.get('sale-1')).status, 'synced'); assert.equal(committed.applied.length, 0);
   });
   it('a session identity change prevents an old flush from applying more sales', async () => {
     const h = harness({ currentIdentity: () => false });

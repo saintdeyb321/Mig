@@ -44,7 +44,7 @@ export function useLicenseAccess(user) {
           );
         }
 
-        if (isExpired || data.status === 'inactiva' || data.status === 'suspendida') {
+        if (isExpired || data.status !== 'activa' || (data.tenantStatus ?? 'active') !== 'active' || data.maintenanceJobId) {
           setLicenseState(isExpired ? 'expired' : 'inactive');
         } else {
           setLicenseState('active');

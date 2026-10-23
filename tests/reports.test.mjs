@@ -205,6 +205,20 @@ describe('Phase 7 bounded data and lifecycle', () => {
     now = 30001; await resource.refresh(); assert.equal(reads, 2);
     resource.close();
   });
+  for (const filter of ['mes', 'todo']) it(`${filter} does not reload its historical ledger every 30s; focus/manual refresh deduplicates pending reads`, async () => {
+    let now = 0, reads = 0, release;
+    const history = reportPeriod(filter, date('12')), cache = createReportCache({ now: () => now });
+    const resource = createReportResource({ ...scope, period: history, key: filter, cache, now: () => now,
+      readStats: async () => stats, readPayments: async () => { reads++; if (reads > 1) await new Promise(resolve => { release = resolve; }); return payments; }, onState: () => {} });
+    await resource.ready;
+    for (let tick = 1; tick <= 20; tick++) { now = tick * 30000; await resource.refresh(); }
+    assert.equal(reads, 1); assert.ok(cache.get(filter));
+    const focus = resource.refresh(true), manual = resource.refresh(true);
+    assert.equal(reads, 2); release(); await Promise.all([focus, manual]);
+    now += 15 * 60000 + 1;
+    const expired = resource.refresh(); assert.equal(reads, 3); release(); await expired;
+    resource.close(); await resource.refresh(true); assert.equal(reads, 3);
+  });
   it('late callbacks after scope changes cannot publish or cache old tenant results', async () => {
     let finish, states = 0;
     const cache = createReportCache();

@@ -48,6 +48,8 @@ async function seed() {
   assert.equal(response.ok, true);
   const batch = database.batch();
   const fixtures = {
+    'licenses/tenant-a': { businessId: 'tenant-a', status: 'activa', expiry: Timestamp.fromMillis(Date.now() + 365 * 86400000) },
+    'licenses/tenant-b': { businessId: 'tenant-b', status: 'activa', expiry: Timestamp.fromMillis(Date.now() + 365 * 86400000) },
     [`users/${actors.cashier.uid}`]: { businessId: 'tenant-a', branchId: 'a-1', role: 'cajero', status: 'activo', firstName: 'Ana', lastName: 'Pérez' },
     [`users/${actors.other.uid}`]: { businessId: 'tenant-b', branchId: 'b-1', role: 'cajero', status: 'activo' },
     [`users/${actors.owner.uid}`]: { businessId: 'tenant-a', role: 'dueño', status: 'activo', firstName: 'Dueño' },
