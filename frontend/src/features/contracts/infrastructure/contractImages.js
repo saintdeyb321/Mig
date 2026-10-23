@@ -1,6 +1,7 @@
 import { getBlob, ref, uploadBytes, deleteObject } from 'firebase/storage';
 import { doc, getDocFromServer } from 'firebase/firestore';
 import { storage, db, auth } from '../../../core/firebase/client';
+import { resolveImageSources, usingImageSources } from '../application/imageSources.js';
 import offlineDB from '../../../offlineDB.js';
 import { cleanupUnreferencedImages, imagePaths } from '../application/imageCleanup.js';
 
@@ -161,28 +162,10 @@ export async function cleanupRetiredContractImages(businessId, contractId, previ
 }
 
 export async function resolveContractImageUrls(images, { thumbnails = false } = {}) {
-  const createdUrls = [];
-  const release = () => createdUrls.splice(0).forEach(value => URL.revokeObjectURL(value));
-  const resolved = await Promise.allSettled((images ?? []).map(async image => {
-    // Legacy data strings remain readable until their explicit Storage migration.
-    if (typeof image === 'string') return image;
-    const path = thumbnails ? image?.thumbnailPath || image?.storagePath : image?.storagePath;
-    if (typeof path !== 'string' || !path.startsWith('contracts/')) throw new Error('Referencia de imagen inválida.');
-    const blob = await getBlob(ref(storage, path), MAX_IMAGE_BYTES);
-    const url = URL.createObjectURL(blob);
-    createdUrls.push(url);
-    return url;
-  }));
-  const failure = resolved.find(result => result.status === 'rejected');
-  if (failure) { release(); throw failure.reason; }
-  return { urls: resolved.map(result => result.value), release };
+  return resolveImageSources(images, { thumbnails, load: path => getBlob(ref(storage, path), MAX_IMAGE_BYTES) });
 }
 
 export async function withResolvedContractImages(contract, callback) {
-  const { urls, release } = await resolveContractImageUrls(contractImageList(contract));
-  try {
-    return await callback({ ...contract, referenceImages: urls, referenceImage: urls[0] || null });
-  } finally {
-    release();
-  }
+  return usingImageSources(contractImageList(contract), urls => callback({ ...contract, referenceImages: urls, referenceImage: urls[0] || null }),
+    { load: path => getBlob(ref(storage, path), MAX_IMAGE_BYTES) });
 }

@@ -1,4 +1,5 @@
-// src/utils/contractReceiptTemplate.js
+import { brand } from '../config/brand.js';
+import { escapeHtml, multilineHtml } from '../shared/security/html.js';
 
 export const generateReceiptHTML = (saleData, settings, currentBranch = null) => {
   const company = settings?.companyData || {};
@@ -30,13 +31,12 @@ export const generateReceiptHTML = (saleData, settings, currentBranch = null) =>
 
   const itemsHTML = saleData.items.map(i => `
     <tr>
-      <td class="col-qty">${i.qty}</td>
-      <td class="col-desc">${i.name}</td>
+      <td class="col-qty">${escapeHtml(i.qty)}</td>
+      <td class="col-desc">${escapeHtml(i.name)}</td>
       <td class="col-total">S/ ${(i.price * i.qty).toFixed(2)}</td>
     </tr>
   `).join('');
 
-  // 🚀 HTML y CSS 100% Fluido. Se adapta a la Escala del navegador.
   return `
     <!DOCTYPE html>
     <html>
@@ -46,13 +46,13 @@ export const generateReceiptHTML = (saleData, settings, currentBranch = null) =>
       <style>
         * { box-sizing: border-box; }
         
-        /* 🚀 Le quitamos el 'size' para que el Driver de la impresora mande */
+
         @page { margin: 0; } 
         
         html, body { 
           margin: 0; 
           padding: 0; 
-          width: 100%; /* 🚀 Ocupa todo el ancho que le de el navegador */
+          width: 100%;
           max-width: 100%;
           font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; 
           font-size: 12px; /* Tamaño intermedio perfecto */
@@ -92,19 +92,21 @@ export const generateReceiptHTML = (saleData, settings, currentBranch = null) =>
       <div class="ticket">
         
         <div class="center bold" style="font-size: 15px; margin-bottom: 4px; text-transform: uppercase;">
-          ${razonSocial}
+          ${escapeHtml(razonSocial)}
         </div>
-        ${ruc ? `<div class="center bold text-sm">${ruc}</div>` : ''}
+        ${ruc ? `<div class="center bold text-sm">${escapeHtml(ruc)}</div>` : ''}
         
-        ${nombreSucursal ? `<div class="center text-sm" style="margin-top: 4px;"><b>${nombreSucursal}</b></div>` : ''}
-        ${direccionImprimir ? `<div class="center text-sm">${direccionImprimir}</div>` : ''}
-        ${telefono ? `<div class="center text-sm">${telefono}</div>` : ''}
+        ${nombreSucursal ? `<div class="center text-sm" style="margin-top: 4px;"><b>${escapeHtml(nombreSucursal)}</b></div>` : ''}
+        ${direccionImprimir ? `<div class="center text-sm">${escapeHtml(direccionImprimir)}</div>` : ''}
+        ${telefono ? `<div class="center text-sm">${escapeHtml(telefono)}</div>` : ''}
         
         <div class="divider"></div>
         
         <div class="text-sm">
-          <div><span class="bold">TICKET:</span> ${saleData.localId ? saleData.localId.substring(0,8).toUpperCase() : '000001'}</div>
+          <div><span class="bold">TICKET:</span> ${escapeHtml(saleData.localId ? String(saleData.localId).substring(0,8).toUpperCase() : '000001')}</div>
           <div><span class="bold">FECHA:</span> ${dateStr} ${timeStr}</div>
+          ${saleData.cashierName ? `<div><span class="bold">CAJERO:</span> ${escapeHtml(saleData.cashierName)}</div>` : ''}
+          ${saleData.voidReason ? `<div><span class="bold">ANULACIÓN:</span> ${multilineHtml(saleData.voidReason)}</div>` : ''}
         </div>
         
         <div class="divider"></div>
@@ -126,10 +128,10 @@ export const generateReceiptHTML = (saleData, settings, currentBranch = null) =>
         <div class="totals-grid">
           <div class="totals-row">
             <div class="totals-label text-sm">Método de Pago:</div>
-            <div class="totals-value text-sm" style="text-transform: uppercase;">${saleData.payment || 'EFECTIVO'}</div>
+            <div class="totals-value text-sm" style="text-transform: uppercase;">${escapeHtml(saleData.payment || 'EFECTIVO')}</div>
           </div>
           
-          ${/* 🚀 LÓGICA DE IMPRESIÓN DINÁMICA DE PAGOS */ ''}
+          ${ ''}
           ${saleData.payment === 'mixto' && saleData.splitPayments ? `
             <div class="totals-row">
               <div class="totals-label text-sm" style="padding-left: 8px;">• Efectivo:</div>
@@ -163,7 +165,7 @@ export const generateReceiptHTML = (saleData, settings, currentBranch = null) =>
           ¡Gracias por su preferencia!
         </div>
         <div class="center text-sm" style="margin-top: 4px; color: #555;">
-           Generado por MigaPOS
+           Generado por ${escapeHtml(brand.name)}
         </div>
         
       </div>

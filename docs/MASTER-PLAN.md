@@ -54,7 +54,7 @@ Usar esta tabla como control de avance.
 | 6 | Caja, alertas y auditoría | COMPLETADA |
 | 7 | Reportes, dashboard y Excel | COMPLETADA |
 | 8 | Licencias, SuperAdmin, backups y borrado | COMPLETADA |
-| 9 | Branding MigaPOS y limpieza general | PENDIENTE |
+| 9 | Branding MigaPOS y limpieza general | COMPLETADA |
 | 10 | Tests, CI, observabilidad y release | PENDIENTE |
 
 Este estado debe actualizarse a medida que se aprueben fases.
@@ -851,6 +851,16 @@ Validación: npm test aprobado (280 pruebas: arquitectura 15, ventas/cola 29, do
 ---
 
 # FASE 9 — Branding MigaPOS y limpieza general
+
+## Estado
+
+COMPLETADA. Validación local del 23/10/2026 sobre `main`, base `8c193a4`.
+
+Marca, logos, versión de términos y enlaces opcionales HTTPS centralizados. Eliminados los fallbacks comerciales y el contacto personal de renovación; los comprobantes conservan datos del tenant. Las cuatro plantillas escapan textos y atributos, conservan detalles multilínea y validan imágenes Storage, Blob y raster legacy. Impresión compartida sin scripts, con espera de imágenes, límites de carga y limpieza de ventanas, iframes y URLs al terminar, fallar o desmontar.
+
+Turnos unificados en Lima (inicio inclusivo, fin exclusivo; horario nocturno y día completo), con un único monitor y cancelación de efectos obsoletos. CSP con orígenes explícitos, sin eval ni scripts inline; los estilos inline siguen permitidos para React/toasts e impresión. Retirados adaptador Firebase, utilidades, assets y documentos legacy sin consumidores; este Master Plan es el único Markdown versionado conservado. Sin cambios en cálculos, ledger, licencias, backups, purgas, Rules, índices ni APIs.
+
+Validación: `npm test` aprobó 304 pruebas (15 arquitectura, 29 ventas, 21 Functions, 32 reportes, 24 UI y 183 emuladores). UI incluye 23 pruebas unitarias y 17 comprobaciones en Chromium: impresión nativa, XSS, imágenes, cierre/desmontaje, rutas Auth/Firebase simuladas, service worker y generación/descarga real de Excel. La ampliación final de UI se revalidó por separado. Offline aprobó sus 22 comprobaciones; lint, build y `git diff --check` aprobados. Persisten únicamente los avisos previos de chunks grandes y Browserslist. CI existente incorpora `test:ui` mediante `npm test`; no se afirma ejecución remota. Solo servicios simulados y `demo-migapos` con emuladores, sin deploy ni operaciones de producción. Fase 10 pendiente.
 
 ## Objetivo
 

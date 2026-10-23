@@ -1,3 +1,4 @@
+import { brand } from '../config/brand';
 // src/modules/SuperAdmin.jsx
 import React, { useState, memo } from 'react';
 import { useSuperAdmin } from '../hooks/useSuperAdmin'; 
@@ -154,7 +155,7 @@ function SuperAdmin({ user }) {
     return (
       <div className="fade-in max-container padding-bottom-lg" style={{ textAlign: 'center', paddingTop: '50px' }}>
         <h2 style={{ color: 'var(--text-main)', fontSize: '1.5rem', marginBottom: '10px' }}>⛔ Acceso Denegado</h2>
-        <p style={{ color: 'var(--text-muted)' }}>Esta área es exclusiva para el CEO de MigaPOS.</p>
+        <p style={{ color: 'var(--text-muted)' }}>Esta área es exclusiva para el CEO de {brand.name}.</p>
       </div>
     );
   }
@@ -188,7 +189,7 @@ function SuperAdmin({ user }) {
     return (
       <div className="module-loader fade-in">
         <div className="spinner"></div>
-        <p className="loader-text">Cargando Clientes de MigaPOS...</p>
+        <p className="loader-text">Cargando Clientes de {brand.name}...</p>
       </div>
     );
   }
@@ -301,7 +302,7 @@ function SuperAdmin({ user }) {
 
               <div className="form-group">
                 <label className="form-label">CORREO GMAIL</label>
-                <input type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} placeholder="juanperez@gmail.com" required disabled={isProcessing} />
+                <input type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} placeholder="Correo del titular" required disabled={isProcessing} />
               </div>
 
               <div className="form-group">

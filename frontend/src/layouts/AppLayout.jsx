@@ -1,3 +1,4 @@
+import { brand } from '../config/brand';
 // src/layouts/AppLayout.jsx
 import React, { useMemo, memo } from 'react';
 import BottomNav from '../BottomNav';
@@ -40,7 +41,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
               className="brand-title"
               style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0, userSelect: 'none', fontSize: '1.4rem' }}
             >
-              <span>🪐</span> MigaPOS
+              <span>{brand.symbol}</span> {brand.name}
             </h2>
             <NotificationBell {...notifications} isDesktop={true} />
           </div>
@@ -84,7 +85,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
 
         <header className="mobile-header">
           <h2 className="mobile-brand" style={{ display: 'flex', alignItems: 'center', gap: '8px', userSelect: 'none' }}>
-            <span>🥧</span> MigaPOS
+            <span>{brand.symbol}</span> {brand.name}
           </h2>
 
           <div className="mobile-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>

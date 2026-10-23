@@ -13,8 +13,10 @@ import { generateContractReceiptHTML } from '../../utils/contractReceiptTemplate
 import { generateContractProductionHTML, generateContractTextOnlyHTML } from '../../utils/contractProductionTemplate';
 import { withResolvedContractImages } from '../../features/contracts/infrastructure/contractImages';
 import { getPaymentsByContract } from '../../features/payments/infrastructure/paymentRepository';
+import { usePrintJobs } from '../../shared/printing/usePrintJobs';
 
 function ContractManager({ user }) {
+  const runPrint = usePrintJobs();
   const { activeBranchId, businessBranches, settings } = useTenantData();
   const [viewFilter, setViewFilter] = useState('activos');
 
@@ -77,28 +79,19 @@ function ContractManager({ user }) {
   }, [contracts, searchTerm, viewFilter, sortBy]);
 
   const printContract = useCallback(async (contractData, template, compact = false) => {
-    const printWindow = window.open('', '', compact ? 'width=350,height=600' : 'width=800,height=900');
-    if (!printWindow) { toast.error('Permite las ventanas emergentes.'); return; }
     try {
-      const ledger = await getPaymentsByContract(user.businessId, contractData.id, user.role === 'cajero' ? user.branchId : 'global');
-      const payments = contractData.paymentsMigrated || ledger.length > 0 ? ledger : (contractData.payments || []);
-      await withResolvedContractImages({ ...contractData, payments }, async resolved => {
-        const html = template(resolved, settings || {}, businessBranches);
-        printWindow.document.open(); printWindow.document.write(html); printWindow.document.close();
-        await Promise.all([...printWindow.document.images].map(img => img.complete ? Promise.resolve() : new Promise(resolve => {
-          img.onload = resolve;
-          img.onerror = resolve;
-        })));
-        printWindow.focus();
-        printWindow.print();
-        await new Promise(resolve => printWindow.setTimeout(resolve, 500));
-        printWindow.close();
-      });
+      await runPrint(async job => {
+        const ledger = await getPaymentsByContract(user.businessId, contractData.id, user.role === 'cajero' ? user.branchId : 'global');
+        const payments = contractData.paymentsMigrated || ledger.length > 0 ? ledger : (contractData.payments || []);
+        await withResolvedContractImages({ ...contractData, payments }, async resolved => {
+          const html = template(resolved, settings || {}, businessBranches);
+          await job.print(html);
+        });
+      }, { popup: true, compact });
     } catch (error) {
-      printWindow.close();
-      toast.error(error.message || 'No se pudo preparar la impresión.');
+      if (error.name !== 'AbortError') toast.error(error.message || 'No se pudo preparar la impresión.');
     }
-  }, [settings, businessBranches, user.businessId, user.role, user.branchId]);
+  }, [settings, businessBranches, user.businessId, user.role, user.branchId, runPrint]);
 
   const handlePrintTicket = useCallback(contract => printContract(contract, generateContractReceiptHTML, true), [printContract]);
   const handlePrintProduction = useCallback(contract => printContract(contract, generateContractProductionHTML), [printContract]);

@@ -1,12 +1,15 @@
+import { brand } from '../config/brand.js';
+import { escapeHtml, multilineHtml, safeImageUrl, escapeAttribute } from '../shared/security/html.js';
 // src/utils/contractReceiptTemplate.js
 
 export const generateContractReceiptHTML = (contract, settings, branches = []) => {
   if (!contract) return ''; 
 
+  const referenceImage = safeImageUrl(contract.referenceImage);
   const company = settings?.companyData || {};
   
   // 1. Datos Fiscales Generales
-  const razonSocial = company.razonSocial || "K'prichitos Angie"; 
+  const razonSocial = company.razonSocial || 'Mi Negocio';
   const ruc = company.ruc ? `RUC: ${company.ruc}` : '';
 
   // 2. Determinar Sucursal/Local
@@ -43,9 +46,8 @@ export const generateContractReceiptHTML = (contract, settings, branches = []) =
   const deliveryCost = Number(contract.deliveryCost) || 0;
   const abonado = Math.max(0, total - balance);
   
-  const safeDetails = contract.details ? String(contract.details).replace(/\n/g, '<br>') : 'Sin detalles adicionales.';
+  const safeDetails = contract.details ? multilineHtml(contract.details) : 'Sin detalles adicionales.';
 
-  // 🚀 LÓGICA DE HISTORIAL DE PAGOS PARA TICKET TÉRMICO
   let paymentsListHTML = '';
   if (contract.payments && contract.payments.length > 0) {
     paymentsListHTML += `<div class="divider"></div><div class="text-sm bold" style="margin-bottom: 4px; text-align: center;">--- HISTORIAL DE ABONOS ---</div>`;
@@ -58,14 +60,13 @@ export const generateContractReceiptHTML = (contract, settings, branches = []) =
       
       paymentsListHTML += `
         <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 2px;">
-          <span>${pDateStr} - ${label} (${p.method.toUpperCase()})</span>
+          <span>${pDateStr} - ${escapeHtml(label)} (${escapeHtml(String(p.method ?? '').toUpperCase())})</span>
           <span style="font-weight: bold;">${sign} S/ ${Math.abs(p.amount).toFixed(2)}</span>
         </div>
       `;
     });
   }
 
-  // 🚀 HTML y CSS 100% Fluido con soporte para imágenes térmicas.
   return `
     <!DOCTYPE html>
     <html>
@@ -93,7 +94,7 @@ export const generateContractReceiptHTML = (contract, settings, branches = []) =
         .details-box { padding: 4px 0; word-break: break-word; }
         .alert-box { border-top: 1px solid #000; border-bottom: 1px solid #000; text-align: center; padding: 4px 0; font-weight: bold; margin: 6px 0; }
         
-        /* 🚀 DISEÑO ELEGANTE DE MARCA TIPO INSIGNIA / ROMBO */
+
         .brand-container {
           text-align: center;
           margin: 15px 0 12px 0;
@@ -154,21 +155,21 @@ export const generateContractReceiptHTML = (contract, settings, branches = []) =
         
         <div class="brand-container">
           <div class="brand-badge">
-            <div class="brand-name">${razonSocial}</div>
+            <div class="brand-name">${escapeHtml(razonSocial)}</div>
           </div>
         </div>
 
-        ${ruc ? `<div class="center bold text-sm">${ruc}</div>` : ''}
-        ${currentBranch ? `<div class="center text-sm" style="margin-top: 4px;"><b>Sucursal: ${currentBranch.name}</b></div>` : ''}
-        ${direccionImprimir ? `<div class="center text-sm">${direccionImprimir}</div>` : ''}
-        ${telefono ? `<div class="center text-sm">${telefono}</div>` : ''}
+        ${ruc ? `<div class="center bold text-sm">${escapeHtml(ruc)}</div>` : ''}
+        ${currentBranch ? `<div class="center text-sm" style="margin-top: 4px;"><b>Sucursal: ${escapeHtml(currentBranch.name)}</b></div>` : ''}
+        ${direccionImprimir ? `<div class="center text-sm">${escapeHtml(direccionImprimir)}</div>` : ''}
+        ${telefono ? `<div class="center text-sm">${escapeHtml(telefono)}</div>` : ''}
         
         <div class="alert-box" style="margin-top: 12px;">COMPROBANTE DE PEDIDO</div>
         
         <div class="text-sm">
-          <div><span class="bold">PEDIDO ID:</span> ${contract.contractId || 'S/N'}</div>
-          <div><span class="bold">CLIENTE:</span> ${contract.clientName || 'Cliente'}</div>
-          ${contract.clientPhone ? `<div><span class="bold">CELULAR:</span> ${contract.clientPhone}</div>` : ''}
+          <div><span class="bold">PEDIDO ID:</span> ${escapeHtml(contract.contractId || 'S/N')}</div>
+          <div><span class="bold">CLIENTE:</span> ${escapeHtml(contract.clientName || 'Cliente')}</div>
+          ${contract.clientPhone ? `<div><span class="bold">CELULAR:</span> ${escapeHtml(contract.clientPhone)}</div>` : ''}
           <div><span class="bold">PEDIDO EL:</span> ${orderDateStr}</div>
         </div>
         
@@ -181,17 +182,18 @@ export const generateContractReceiptHTML = (contract, settings, branches = []) =
 
         <div class="text-sm bold">DETALLES DEL PRODUCTO:</div>
         <div class="details-box text-sm">${safeDetails}</div>
+        ${contract.voidReason ? `<div class="details-box text-sm"><b>ANULACIÓN:</b> ${multilineHtml(contract.voidReason)}<br>${escapeHtml(contract.voidedByName)}</div>` : ''}
         
-        ${contract.referenceImage ? `
+        ${referenceImage ? `
           <div class="img-container">
-            <img src="${contract.referenceImage}" class="ticket-img" alt="Ref" />
+            <img src="${escapeAttribute(referenceImage)}" class="ticket-img" alt="Ref" />
           </div>
         ` : ''}
 
         <div class="divider"></div>
 
         <div class="text-sm bold">MODO DE ENTREGA:</div>
-        <div class="text-sm" style="margin-bottom: 6px; text-transform: uppercase;">${deliveryText}</div>
+        <div class="text-sm" style="margin-bottom: 6px; text-transform: uppercase;">${escapeHtml(deliveryText)}</div>
         <div class="divider"></div>
 
         <div class="totals-grid">
@@ -233,7 +235,7 @@ export const generateContractReceiptHTML = (contract, settings, branches = []) =
         <div class="divider"></div>
         <div class="center bold text-sm" style="margin-top: 10px;">Para recoger su pedido es<br>OBLIGATORIO presentar este ticket.</div>
         <div class="center text-sm" style="margin-top: 4px;">* Revise su producto al retirar.<br>No hay reclamos posteriores.</div>
-        <div class="center text-sm" style="margin-top: 8px; color: #555;">Generado por MigaPOS</div>
+        <div class="center text-sm" style="margin-top: 8px; color: #555;">Generado por ${escapeHtml(brand.name)}</div>
       </div>
     </body>
     </html>

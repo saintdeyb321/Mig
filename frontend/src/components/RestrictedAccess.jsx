@@ -1,14 +1,11 @@
 // src/components/RestrictedAccess.jsx
 import React, { memo, useCallback } from 'react';
-import { auth } from '../firebase';
+import { auth } from '../core/firebase/client';
 import { signOut } from 'firebase/auth';
+import { brand } from '../config/brand';
 
-// 🚀 OPTIMIZACIÓN 1: React.memo
-// Congela toda esta pantalla. Solo se redibujará si cambia el estado de la licencia.
 const RestrictedAccess = memo(({ licenseState, expirationDateStr, user }) => {
   
-  // 🚀 OPTIMIZACIÓN 2: useCallback
-  // Congelamos la función de cerrar sesión para que no se recree en cada renderizado.
   const handleSignOut = useCallback(async () => {
     try {
       await signOut(auth);
@@ -29,7 +26,7 @@ const RestrictedAccess = memo(({ licenseState, expirationDateStr, user }) => {
       
       <p style={{ fontSize: '1.1rem', maxWidth: '450px', color: '#cbd5e1', marginBottom: '30px', lineHeight: '1.5' }}>
         {licenseState === 'missing' 
-          ? 'Este negocio ya no existe en la base de datos de MigaPOS.'
+          ? `Este negocio ya no existe en la base de datos de ${brand.name}.`
           : licenseState === 'inactive'
           ? 'La cuenta de este negocio ha sido suspendida temporalmente.'
           : `Tu suscripción expiró el ${expirationDateStr}.`
@@ -37,14 +34,14 @@ const RestrictedAccess = memo(({ licenseState, expirationDateStr, user }) => {
         <br/><br/>
         {user?.role === 'cajero' 
           ? 'Comunícate de inmediato con el administrador.' 
-          : 'Renueva tu suscripción para seguir utilizando MigaPOS.'}
+          : `Renueva tu suscripción para seguir utilizando ${brand.name}.`}
       </p>
 
-      {user?.role === 'dueño' && (
+      {user?.role === 'dueño' && (brand.billingUrl || brand.supportUrl) && (
         <div style={{ background: 'white', color: 'black', padding: '25px', borderRadius: '16px', marginBottom: '30px', maxWidth: '320px', width: '100%' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: 'var(--primary)' }}>Renueva con Yape</h3>
-          <p style={{ margin: '0 0 5px 0', fontWeight: '900', fontSize: '1.8rem' }}>975 108 337</p>
-          <p style={{ margin: '0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Titular: Deyvid Pariona</p>
+          <h3>Contacto de plataforma</h3>
+          {brand.billingUrl && <p><a href={brand.billingUrl} target="_blank" rel="noopener noreferrer">Gestionar suscripción</a></p>}
+          {brand.supportUrl && <p><a href={brand.supportUrl} target="_blank" rel="noopener noreferrer">Soporte</a></p>}
         </div>
       )}
 

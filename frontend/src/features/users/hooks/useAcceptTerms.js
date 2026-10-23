@@ -1,3 +1,4 @@
+import { brand } from '../../../config/brand';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { acceptTerms } from '../infrastructure/userRepository';
@@ -9,7 +10,7 @@ export function useAcceptTerms(user, onAccepted) {
     const loadId = toast.loading('Registrando aceptación...');
     try {
       await acceptTerms(user.uid);
-      toast.success('¡Bienvenido a MigaPOS!', { id: loadId });
+      toast.success(`¡Bienvenido a ${brand.name}!`, { id: loadId });
       onAccepted?.();
     } catch (error) {
       console.error('Error al aceptar términos:', error);

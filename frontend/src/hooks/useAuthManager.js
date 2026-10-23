@@ -6,20 +6,7 @@ import { isPermissionDenied } from '../core/errors/firebaseErrors';
 import { createSubscriptionScope } from '../shared/utils/subscriptionScope';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import toast from 'react-hot-toast';
-import { getOfficialTime } from '../utils/security';
-let cachedTime = null;
-let lastTimeFetch = 0;
-
-const getCachedOfficialTime = async () => {
-  const now = Date.now();
-  if (cachedTime && (now - lastTimeFetch < 60000)) {
-    return cachedTime;
-  }
-  cachedTime = await getOfficialTime();
-  lastTimeFetch = now;
-  return cachedTime;
-};
-
+import { isWithinShift } from '../core/auth/shiftAccess';
 export const useAuthManager = () => {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -35,7 +22,7 @@ export const useAuthManager = () => {
     await signOut(auth);
     setUser(null);
   };
-  // 1️⃣ FLUJO DE AUTENTICACIÓN Y SNAPSHOT
+  // Suscripción de autenticación y perfil.
   useEffect(() => {
     let unsubscribeProfile = null;
     const authScope = createSubscriptionScope();
@@ -108,14 +95,10 @@ export const useAuthManager = () => {
                 return;
               }
 
-              // VALIDACIÓN BLOQUEANTE OPTIMIZADA (Gatekeeper)
-              if (userData.role === 'cajero' && userData.shiftStart && userData.shiftEnd) {
-                const horaActual = await getCachedOfficialTime();
-                if (!isCurrent() || revision !== profileRevision) return;
-                if (horaActual < userData.shiftStart || horaActual > userData.shiftEnd) {
-                  handleSecurityExit(`Fuera de horario. Turno: ${userData.shiftStart} a ${userData.shiftEnd}`);
-                  return;
-                }
+              // Comprobación de horario UI; Rules y Functions conservan la autorización real.
+              if (!isWithinShift(userData)) {
+                handleSecurityExit(`Fuera de horario. Turno: ${userData.shiftStart} a ${userData.shiftEnd}`);
+                return;
               }
 
               // Usuario válido, actualizamos estado y quitamos loader
@@ -167,20 +150,5 @@ export const useAuthManager = () => {
       if (unsubscribeProfile) unsubscribeProfile();
     };
   }, []);
-  // 2️⃣ EL "WATCHDOG" DE SEGURIDAD (Cronómetro en vivo)
-  useEffect(() => {
-    if (!user || user.role !== 'cajero' || !user.shiftStart || !user.shiftEnd) return;
-
-    let active = true;
-    const interval = setInterval(async () => {
-      const horaActual = await getOfficialTime();
-      if (active && horaActual > user.shiftEnd) {
-        handleSecurityExit(`Tu turno ha terminado (${user.shiftEnd}). Sesión cerrada por seguridad.`);
-      }
-    }, 60000); // 1 minuto
-
-    return () => { active = false; clearInterval(interval); };
-  }, [user]);
-
   return { user, authLoading, handleLogout };
 };

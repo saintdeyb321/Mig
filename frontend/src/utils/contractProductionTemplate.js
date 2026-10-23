@@ -1,10 +1,12 @@
+import { brand } from '../config/brand.js';
+import { escapeHtml, multilineHtml, safeImageUrl, escapeAttribute } from '../shared/security/html.js';
 // src/utils/contractProductionTemplate.js
 
 export const generateContractProductionHTML = (contract, settings, branches = []) => {
   if (!contract) return ''; 
 
   const company = settings?.companyData || {};
-  const razonSocial = company.razonSocial || "K'prichitos Angie"; 
+  const razonSocial = company.razonSocial || 'Mi Negocio';
 
   // Determinar Sucursal de Recojo
   let deliveryText = 'Sede Principal';
@@ -23,17 +25,16 @@ export const generateContractProductionHTML = (contract, settings, branches = []
   const deliveryDateStr = deliveryDate.toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const deliveryTimeStr = deliveryDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-  const safeDetails = contract.details ? String(contract.details).replace(/\n/g, '<br>') : 'Sin especificaciones adicionales.';
+  const safeDetails = contract.details ? multilineHtml(contract.details) : 'Sin especificaciones adicionales.';
 
   // LÓGICA DE GALERÍA A4
-  const images = contract.referenceImages || (contract.referenceImage ? [contract.referenceImage] : []);
+  const images = (contract.referenceImages || (contract.referenceImage ? [contract.referenceImage] : [])).map(value => safeImageUrl(value)).filter(Boolean);
 
   // Calculamos la altura dinámica para que no se desborde la hoja A4 si hay muchas fotos o datos financieros
   let itemHeight = '320px';
   if (images.length === 2) itemHeight = '260px';
   else if (images.length >= 3) itemHeight = '180px';
 
-  // 🚀 LÓGICA DE AUDITORÍA DE CUOTAS PARA EL HTML IMPRESO
   const paymentsHTML = contract.payments && contract.payments.length > 0
     ? contract.payments.map((p, idx) => {
         const pDate = p.date?.toDate ? p.date.toDate() : new Date(p.date || Date.now());
@@ -42,9 +43,9 @@ export const generateContractProductionHTML = (contract, settings, branches = []
         
         return `
           <tr>
-            <td style="font-weight: bold; color: #334155;">${p.label || (isRefund ? 'REEMBOLSO' : `Cuota ${idx + 1}`)}</td>
+            <td style="font-weight: bold; color: #334155;">${escapeHtml(p.label || (isRefund ? 'REEMBOLSO' : `Cuota ${idx + 1}`))}</td>
             <td style="color: #64748b; font-size: 11px;">${pDateStr}</td>
-            <td style="font-size: 11px; text-transform: uppercase; color: #475569;">${p.method}</td>
+            <td style="font-size: 11px; text-transform: uppercase; color: #475569;">${escapeHtml(p.method)}</td>
             <td class="text-right" style="font-weight: bold; color: ${isRefund ? '#b91c1c' : '#15803d'};">
               ${isRefund ? '' : '+'} S/ ${Math.abs(p.amount).toFixed(2)}
             </td>
@@ -58,7 +59,7 @@ export const generateContractProductionHTML = (contract, settings, branches = []
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>Orden de Producción - ${contract.contractId}</title>
+      <title>Orden de Producción - ${escapeHtml(contract.contractId)}</title>
       <style>
         * { box-sizing: border-box; }
         @page { size: A4 portrait; margin: 0; }
@@ -75,7 +76,7 @@ export const generateContractProductionHTML = (contract, settings, branches = []
         .section-title { font-size: 14px; font-weight: bold; border-bottom: 2px solid #cbd5e1; padding-bottom: 3px; margin-top: 15px; margin-bottom: 8px; color: #1e293b; letter-spacing: 0.5px; }
         .details-content { font-size: 15px; line-height: 1.4; padding: 10px 12px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 12px; }
 
-        /* 🚀 DISEÑO DE SECCIÓN FINANCIERA EN DOS COLUMNAS */
+
         .finance-container { display: flex; gap: 12px; margin-bottom: 12px; width: 100%; }
         .finance-summary-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: center; }
         .finance-summary-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px; }
@@ -102,8 +103,8 @@ export const generateContractProductionHTML = (contract, settings, branches = []
       <div class="container">
         
         <div class="header">
-          <div><h1 class="header-title">ORDEN DE PRODUCCIÓN</h1><div style="color:#475569; font-weight:bold; font-size:12px;">${razonSocial}</div></div>
-          <div style="text-align: right;"><div class="meta-label">ID PEDIDO</div><div style="font-size: 16px; font-weight: bold; color: #0f172a;">${contract.contractId}</div></div>
+          <div><h1 class="header-title">ORDEN DE PRODUCCIÓN</h1><div style="color:#475569; font-weight:bold; font-size:12px;">${escapeHtml(razonSocial)}</div></div>
+          <div style="text-align: right;"><div class="meta-label">ID PEDIDO</div><div style="font-size: 16px; font-weight: bold; color: #0f172a;">${escapeHtml(contract.contractId)}</div></div>
         </div>
 
         <div class="delivery-banner">
@@ -114,13 +115,14 @@ export const generateContractProductionHTML = (contract, settings, branches = []
 
         <div class="meta-grid">
           <div class="meta-box"><span class="meta-label">Tomado el</span><span class="meta-value">${orderDateStr}</span></div>
-          <div class="meta-box"><span class="meta-label">Cliente</span><span class="meta-value">${contract.clientName}</span></div>
-          <div class="meta-box"><span class="meta-label">Contacto</span><span class="meta-value">${contract.clientPhone || 'No registrado'}</span></div>
-          <div class="meta-box"><span class="meta-label">Destino Logístico</span><span class="meta-value">${deliveryText}</span></div>
+          <div class="meta-box"><span class="meta-label">Cliente</span><span class="meta-value">${escapeHtml(contract.clientName)}</span></div>
+          <div class="meta-box"><span class="meta-label">Contacto</span><span class="meta-value">${escapeHtml(contract.clientPhone || 'No registrado')}</span></div>
+          <div class="meta-box"><span class="meta-label">Destino Logístico</span><span class="meta-value">${escapeHtml(deliveryText)}</span></div>
         </div>
 
         <div class="section-title">📝 ESPECIFICACIONES DE PASTELERÍA</div>
         <div class="details-content">${safeDetails}</div>
+        ${contract.voidReason ? `<div class="details-content"><b>ANULACIÓN:</b> ${multilineHtml(contract.voidReason)}<br>${escapeHtml(contract.voidedByName)}</div>` : ''}
 
         <div class="section-title">💳 CONTROL FINANCIERO Y CUOTAS DE PEDIDO</div>
         <div class="finance-container">
@@ -165,7 +167,7 @@ export const generateContractProductionHTML = (contract, settings, branches = []
           <div class="image-gallery">
             ${images.map(img => `
               <div class="image-item">
-                <img src="${img}" alt="Referencia Visual" />
+                <img src="${escapeAttribute(img)}" alt="Referencia Visual" />
               </div>
             `).join('')}
           </div>
@@ -183,7 +185,7 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
   if (!contract) return ''; 
 
   const company = settings?.companyData || {};
-  const razonSocial = company.razonSocial || "K'prichitos Angie"; 
+  const razonSocial = company.razonSocial || 'Mi Negocio';
 
   // Determinar Sucursal de Recojo
   let deliveryText = 'Sede Principal';
@@ -202,9 +204,8 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
   const deliveryDateStr = deliveryDate.toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const deliveryTimeStr = deliveryDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-  const safeDetails = contract.details ? String(contract.details).replace(/\n/g, '<br>') : 'Sin especificaciones.';
+  const safeDetails = contract.details ? multilineHtml(contract.details) : 'Sin especificaciones.';
 
-  // 🚀 LÓGICA DE AUDITORÍA DE CUOTAS PARA EL HTML IMPRESO (Mismo que el completo)
   const paymentsHTML = contract.payments && contract.payments.length > 0
     ? contract.payments.map((p, idx) => {
         const pDate = p.date?.toDate ? p.date.toDate() : new Date(p.date || Date.now());
@@ -213,9 +214,9 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
         
         return `
           <tr>
-            <td style="font-weight: bold; color: #334155;">${p.label || (isRefund ? 'REEMBOLSO' : `Cuota ${idx + 1}`)}</td>
+            <td style="font-weight: bold; color: #334155;">${escapeHtml(p.label || (isRefund ? 'REEMBOLSO' : `Cuota ${idx + 1}`))}</td>
             <td style="color: #64748b; font-size: 11px;">${pDateStr}</td>
-            <td style="font-size: 11px; text-transform: uppercase; color: #475569;">${p.method}</td>
+            <td style="font-size: 11px; text-transform: uppercase; color: #475569;">${escapeHtml(p.method)}</td>
             <td class="text-right" style="font-weight: bold; color: ${isRefund ? '#b91c1c' : '#15803d'};">
               ${isRefund ? '' : '+'} S/ ${Math.abs(p.amount).toFixed(2)}
             </td>
@@ -229,7 +230,7 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>Orden de Horneado - ${contract.contractId}</title>
+      <title>Orden de Horneado - ${escapeHtml(contract.contractId)}</title>
       <style>
         * { box-sizing: border-box; }
         @page { size: A4 portrait; margin: 0; } 
@@ -246,7 +247,7 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
         .section-title { font-size: 14px; font-weight: bold; border-bottom: 2px solid #cbd5e1; padding-bottom: 3px; margin-top: 15px; margin-bottom: 8px; color: #1e293b; letter-spacing: 0.5px; }
         .details-content { font-size: 15px; line-height: 1.4; padding: 10px 12px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 12px; }
 
-        /* 🚀 DISEÑO DE SECCIÓN FINANCIERA EN DOS COLUMNAS IDÉNTICO A LA ORDEN COMPLETA */
+
         .finance-container { display: flex; gap: 12px; margin-bottom: 12px; width: 100%; }
         .finance-summary-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: center; }
         .finance-summary-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px; }
@@ -268,8 +269,8 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
       <div class="container">
         
         <div class="header">
-          <div><h1 class="header-title">ORDEN DE HORNEADO (MASA)</h1><div style="color:#475569; font-weight:bold; font-size:12px;">${razonSocial}</div></div>
-          <div style="text-align: right;"><div class="meta-label">ID PEDIDO</div><div style="font-size: 16px; font-weight: bold; color: #0f172a;">${contract.contractId}</div></div>
+          <div><h1 class="header-title">ORDEN DE HORNEADO (MASA)</h1><div style="color:#475569; font-weight:bold; font-size:12px;">${escapeHtml(razonSocial)}</div></div>
+          <div style="text-align: right;"><div class="meta-label">ID PEDIDO</div><div style="font-size: 16px; font-weight: bold; color: #0f172a;">${escapeHtml(contract.contractId)}</div></div>
         </div>
 
         <div class="delivery-banner">
@@ -280,13 +281,14 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
 
         <div class="meta-grid">
           <div class="meta-box"><span class="meta-label">Tomado el</span><span class="meta-value">${orderDateStr}</span></div>
-          <div class="meta-box"><span class="meta-label">Cliente</span><span class="meta-value">${contract.clientName}</span></div>
-          <div class="meta-box"><span class="meta-label">Contacto</span><span class="meta-value">${contract.clientPhone || 'No registrado'}</span></div>
-          <div class="meta-box"><span class="meta-label">Destino Logístico</span><span class="meta-value">${deliveryText}</span></div>
+          <div class="meta-box"><span class="meta-label">Cliente</span><span class="meta-value">${escapeHtml(contract.clientName)}</span></div>
+          <div class="meta-box"><span class="meta-label">Contacto</span><span class="meta-value">${escapeHtml(contract.clientPhone || 'No registrado')}</span></div>
+          <div class="meta-box"><span class="meta-label">Destino Logístico</span><span class="meta-value">${escapeHtml(deliveryText)}</span></div>
         </div>
 
         <div class="section-title">📝 ESPECIFICACIONES DE PASTELERÍA</div>
         <div class="details-content">${safeDetails}</div>
+        ${contract.voidReason ? `<div class="details-content"><b>ANULACIÓN:</b> ${multilineHtml(contract.voidReason)}<br>${escapeHtml(contract.voidedByName)}</div>` : ''}
 
         <div class="section-title">💳 CONTROL FINANCIERO Y CUOTAS DE PEDIDO</div>
         <div class="finance-container">
@@ -326,7 +328,7 @@ export const generateContractTextOnlyHTML = (contract, settings, branches = []) 
 
         </div>
 
-        <div class="footer">Nota: Las fotos de referencia se encuentran exclusivamente en la Orden de Producción Principal. | Documento interno generado por MigaPOS.</div>
+        <div class="footer">Nota: Las fotos de referencia se encuentran exclusivamente en la Orden de Producción Principal. | Documento interno generado por ${escapeHtml(brand.name)}.</div>
       </div>
     </body>
     </html>

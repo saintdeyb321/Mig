@@ -1,3 +1,4 @@
+import { brand } from '../config/brand';
 // src/components/MaintenanceScreen.jsx
 import React from 'react';
 
@@ -17,7 +18,7 @@ export default function MaintenanceScreen({ message }) {
 
         {/* Título más amigable y con el color de la marca */}
         <h1 style={{ color: '#43278e', marginBottom: '15px', marginTop: '10px' }}>
-          Actualizando MigaPOS
+          Actualizando {brand.name}
         </h1>
         
         {/* Mensaje fijo: Corto, directo y tranquilizador */}

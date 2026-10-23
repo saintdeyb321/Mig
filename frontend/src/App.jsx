@@ -1,3 +1,4 @@
+import { brand } from './config/brand';
 // src/App.jsx
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import './index.css';
@@ -86,7 +87,7 @@ function App() {
     return (
       <div className="loader-container">
         <div className="spinner"></div>
-        <h2 className="loader-text">Iniciando MigaPOS...</h2>
+        <h2 className="loader-text">Iniciando {brand.name}...</h2>
       </div>
     );
   }

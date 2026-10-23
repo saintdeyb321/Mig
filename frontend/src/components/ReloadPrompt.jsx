@@ -1,3 +1,4 @@
+import { brand } from '../config/brand';
 import { useEffect, useRef, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
@@ -120,7 +121,7 @@ export default function ReloadPrompt({ user }) {
 
       <p style={{ marginBottom: 15, fontSize: '0.9rem', lineHeight: 1.4, color: 'var(--text-muted)' }}>
         {needRefresh
-          ? 'Hay una nueva versión de MigaPOS disponible. Actualiza para disfrutar las mejoras.'
+          ? `Hay una nueva versión de ${brand.name} disponible. Actualiza para disfrutar las mejoras.`
           : 'La aplicación ahora funciona incluso si se cae el internet.'}
       </p>
 

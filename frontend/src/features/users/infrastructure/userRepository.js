@@ -1,6 +1,7 @@
 import { collection, query, where, onSnapshot, doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../core/firebase/client';
 import { mapDocuments } from '../../../core/firebase/documents';
+import { brand } from '../../../config/brand';
 
 export const subscribeUsers = (businessId, role, onData, onError) => onSnapshot(
   query(collection(db, 'users'), where('businessId', '==', businessId),
@@ -27,5 +28,5 @@ export const subscribeProfile = (uid, onData, onError) => onSnapshot(
   doc(db, 'users', uid), snapshot => onData(snapshot.exists() ? snapshot.data() : null), onError,
 );
 export const acceptTerms = uid => updateUser(uid, {
-  hasAcceptedTerms: true, termsAcceptedAt: serverTimestamp(), termsVersion: '1.1',
+  hasAcceptedTerms: true, termsAcceptedAt: serverTimestamp(), termsVersion: brand.termsVersion,
 });

@@ -6,8 +6,10 @@ import { getSafeStock } from '../domain/cartStock';
 import { useCatalogData } from '../../catalog/context/CatalogContext';
 import { useTenantData } from '../../branches/context/TenantContext';
 import { generateReceiptHTML } from '../../../utils/receiptTemplate';
+import { usePrintJobs } from '../../../shared/printing/usePrintJobs';
 
 export const usePOS = (user, currentSession) => {
+  const runPrint = usePrintJobs();
   const { products: catalogProducts, categories: catalogCategories } = useCatalogData();
   const { activeBranchId, businessBranches, settings: tenantSettings } = useTenantData();
 
@@ -90,27 +92,10 @@ export const usePOS = (user, currentSession) => {
     const currentBranch = businessBranches?.find(b => b.id === activeBranchId) || null;
     const html = generateReceiptHTML(saleData, tenantSettings || {}, currentBranch);
 
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '-10000px';
-    iframe.style.bottom = '-10000px';
-    document.body.appendChild(iframe);
-
-    iframe.contentWindow.document.open();
-    iframe.contentWindow.document.write(html);
-    iframe.contentWindow.document.close();
-
-    iframe.onload = () => {
-      try {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-      } finally {
-        setTimeout(() => {
-          if (iframe && iframe.parentNode) iframe.remove();
-        }, 2000);
-      }
-    };
-  }, [tenantSettings, businessBranches, activeBranchId]);
+    return runPrint(job => job.print(html)).catch(error => {
+      if (error.name !== 'AbortError') toast.error(error.message || 'No se pudo imprimir el comprobante.');
+    });
+  }, [tenantSettings, businessBranches, activeBranchId, runPrint]);
 
   const processSale = useCallback(async () => {
     if (!user?.businessId || processingRef.current) return;

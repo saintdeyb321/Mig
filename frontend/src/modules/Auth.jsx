@@ -1,9 +1,10 @@
 // src/modules/Auth.jsx
 import React, { useState, useCallback, memo } from 'react';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth } from '../firebase'; 
+import { auth } from '../core/firebase/client';
 import toast from 'react-hot-toast';
-import InstallButton from '../components/InstallButton'; // 🚀 IMPORTAMOS NUESTRO BOTÓN INTELIGENTE
+import InstallButton from '../components/InstallButton';
+import { brand } from '../config/brand';
 
 const Auth = memo(({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
@@ -39,15 +40,15 @@ const Auth = memo(({ onLogin }) => {
         <div className="auth-header">
           <div>
             <img 
-              src="/img/Logo_MP.png" 
-              alt="Logo MigaPOS" 
+              src={brand.logo}
+              alt={`Logo ${brand.name}`}
               className="auth-logo"
             />
           </div>
 
           <div>
             <h1 className="auth-title">
-              K'prichitos<span className="auth-title-highlight">Angie</span>
+              {brand.name}
             </h1>
             <p className="auth-subtitle">
               Sistema de gestión y punto de venta.
@@ -61,7 +62,6 @@ const Auth = memo(({ onLogin }) => {
             Acceso exclusivo solo para personal autorizado.
           </div>
 
-          {/* 🚀 ENVOLVEMOS LOS DOS BOTONES PARA PEGARLOS */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
             
             <button 
@@ -69,7 +69,7 @@ const Auth = memo(({ onLogin }) => {
               onClick={handleGoogle} 
               disabled={isLoading} 
               className="btn-primary auth-google-btn"
-              style={{ margin: 0 }} /* Le quitamos cualquier margen extra aquí */
+              style={{ margin: 0 }}
             >
               <div className="auth-google-icon-wrapper">
                 <img 
@@ -81,7 +81,6 @@ const Auth = memo(({ onLogin }) => {
               {isLoading ? 'Cargando...' : 'Ingresar con Google'}
             </button>
 
-            {/* 🚀 El botón PWA ahora está íntimamente ligado al de Google */}
             <InstallButton />
             
           </div>
@@ -96,7 +95,7 @@ const Auth = memo(({ onLogin }) => {
           <div className="auth-divider"></div>
           
           <footer className="auth-copyright">
-            © 2026 MigaPOS
+            © {new Date().getFullYear()} {brand.name}
           </footer>
         </div>
 

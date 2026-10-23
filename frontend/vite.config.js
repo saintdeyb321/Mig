@@ -3,9 +3,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path' 
+import { brand } from './src/config/brand.js'
 
 export default defineConfig({
   plugins: [
+    { name: 'global-brand', transformIndexHtml: html => html
+      .replaceAll('__BRAND_NAME__', brand.name).replaceAll('__BRAND_LOGO__', brand.logo).replaceAll('__THEME_COLOR__', brand.themeColor) },
     react(),
     VitePWA({
       registerType: 'prompt', 
@@ -15,20 +18,19 @@ export default defineConfig({
         enabled: true,
         type: 'module',
       },
-      includeAssets: ['vite.svg'], 
+      includeAssets: [brand.logo.slice(1)],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'] 
       },
       
       manifest: {
-        name: 'MigaPOS - Sistema de Ventas',
-        short_name: 'MigaPOS',
+        name: `${brand.name} - Sistema de Ventas`,
+        short_name: brand.name,
         description: 'Punto de venta inteligente para negocios',
-        theme_color: '#341b3a',
+        theme_color: brand.themeColor,
         background_color: '#f8fafc',
         display: 'standalone', 
         
-        /* 🚀 FIX VITAL: Chrome Android exige esto para permitir la instalación */
         start_url: '/', 
         
         launch_handler: {
@@ -37,13 +39,13 @@ export default defineConfig({
 
         icons: [
           {
-            src: '/img/Logo_192.png', 
+            src: brand.icon192,
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/img/Logo_512.png', 
+            src: brand.icon512,
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
@@ -52,6 +54,8 @@ export default defineConfig({
       }
     })
   ],
+  // Hosting CSP permits inline styles for React/toasts and printable layouts; scripts remain external (no unsafe-eval).
+  // COOP same-origin-allow-popups preserves Firebase Google Auth's popup channel.
   resolve: {
     alias: {
       stream: path.resolve('./src/utils/empty.js'),

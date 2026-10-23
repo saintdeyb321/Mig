@@ -1,5 +1,9 @@
 {
-  "functions": { "source": "functions", "codebase": "financial", "runtime": "nodejs22" },
+  "functions": {
+    "source": "functions",
+    "codebase": "financial",
+    "runtime": "nodejs22"
+  },
   "firestore": {
     "database": "(default)",
     "location": "nam5",
@@ -10,8 +14,14 @@
     "rules": "storage.rules"
   },
   "emulators": {
-    "functions": { "host": "127.0.0.1", "port": 5001 },
-    "auth": { "host": "127.0.0.1", "port": 9099 },
+    "functions": {
+      "host": "127.0.0.1",
+      "port": 5001
+    },
+    "auth": {
+      "host": "127.0.0.1",
+      "port": 9099
+    },
     "firestore": {
       "host": "127.0.0.1",
       "port": 8080
@@ -37,6 +47,37 @@
       {
         "source": "**",
         "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'self'; script-src 'self' https://apis.google.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.gstatic.com https://firebasestorage.googleapis.com https://storage.googleapis.com; font-src 'self'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://storage.googleapis.com https://firebaseinstallations.googleapis.com https://firebase.googleapis.com https://us-central1-migapos.cloudfunctions.net https://www.google-analytics.com https://region1.google-analytics.com https://analytics.google.com; frame-src 'self' https://migapos.firebaseapp.com https://accounts.google.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          },
+          {
+            "key": "Cross-Origin-Opener-Policy",
+            "value": "same-origin-allow-popups"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "camera=(), microphone=(), geolocation=()"
+          }
+        ]
       }
     ]
   }
