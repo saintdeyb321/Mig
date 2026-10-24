@@ -12,7 +12,8 @@ const ContractFormModal = ({
   activeLocations,
   onClose,
   onSubmit,
-  isProcessing
+  isProcessing,
+  cashAction
 }) => {
   const isEditing = !!contractToEdit;
   const {
@@ -250,6 +251,7 @@ const ContractFormModal = ({
                 </div>
               </div>
             </SectionCard>
+            {cashAction}
             <ContractFinanceFields formData={formData} isProcessing={isProcessing} isEditing={isEditing} totals={totals} handleChange={handleChange} />
           </div>
           <DialogFooter className="static m-0 gap-3 bg-panel px-4 py-4 sm:m-0 sm:px-6">

@@ -54,7 +54,7 @@ const rawBundle = (database, data, { omit, mutate = entries => entries } = {}) =
 const cashRepository = (database, uid = 'owner') => createSparkCashRepository(database, { currentUser: () => ({ uid }), sdk });
 const rawCash = async (database, businessId, branchId, { userId = 'owner', sessionId = 'cash-opening-123456789', session = {}, lock = {}, omit } = {}) => {
   const id = await cashLockId(businessId, branchId), timestamp = serverTimestamp(), batch = writeBatch(database);
-  if (omit !== 'session') batch.set(doc(database, 'cash_sessions', sessionId), { businessId, branchId, userId, status: 'open', openingAmount: 20, openingNote: '', cashierName: 'Dueña Prueba', openedAt: timestamp, syncedAt: timestamp, runtime: 'spark', ...session });
+  if (omit !== 'session') batch.set(doc(database, 'cash_sessions', sessionId), { businessId, branchId, userId, status: 'open', openingAmount: 20, openingNote: '', cashierName: 'Dueña Prueba', openedAt: timestamp, syncedAt: timestamp, runtime: 'spark', durationHours: 10, ...session });
   if (omit !== 'lock') batch.set(doc(database, 'active_cash_sessions', id), { businessId, branchId, userId, sessionId, status: 'open', runtime: 'spark', updatedAt: timestamp, ...lock });
   return batch.commit();
 };
@@ -216,6 +216,7 @@ describe('SPARK-3 online cash opening', () => {
     const { database, businessId, branchId } = await businessOwner(), repo = cashRepository(database);
     const command = { businessId, branchId, sessionId: 'cash-opening-123456789', openingAmount: 20.25, openingNote: 'Fondo' };
     const session = await repo.open(command), repeated = await repo.open(command);
+    assert.equal(session.durationHours, 10);
     assert.equal(session.openedAt.toMillis(), repeated.openedAt.toMillis());
     assert.ok(Math.abs(session.openedAt.toMillis() - Date.now()) < 10000);
     const lockId = await cashLockId(businessId, branchId);
@@ -233,7 +234,7 @@ describe('SPARK-3 online cash opening', () => {
   });
   it('rejects partial openings, invalid amounts, arbitrary edits, forged windows and foreign actor/branch', async () => {
     const { database, businessId, branchId } = await businessOwner();
-    for (const patch of [{ omit: 'session' }, { omit: 'lock' }, { userId: 'another' }, { session: { openingAmount: -1 } }, { session: { openingAmount: 0.001 } },
+    for (const patch of [{ omit: 'session' }, { omit: 'lock' }, { userId: 'another' }, { session: { durationHours: 12 } }, { session: { openingAmount: -1 } }, { session: { openingAmount: 0.001 } },
       { session: { financialWindow: { expiresAt: Timestamp.fromMillis(Date.now() + 86400000) } } }, { session: { openedAt: Timestamp.fromMillis(Date.now() + 86400000) } }, { lock: { branchId: 'foreign' } }]) await assertFails(rawCash(database, businessId, branchId, patch));
     await assertFails(rawCash(dbFor('admin'), businessId, branchId, { userId: 'admin' }));
     await rawCash(database, businessId, branchId);

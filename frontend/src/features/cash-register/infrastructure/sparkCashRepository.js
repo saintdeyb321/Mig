@@ -31,7 +31,7 @@ export function createSparkCashRepository(database, { currentUser, sdk = firesto
         if (lock.exists()) throw new Error('Ya existe una caja activa o un candado histórico en esta sede. El cierre/mantenimiento sigue pendiente de migración.');
         const timestamp = serverTimestamp(), p = profile.data() ?? {};
         const cashierName = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim();
-        tx.set(ref, { businessId, branchId, userId, cashierName, status: 'open', openingAmount, openingNote, openedAt: timestamp, syncedAt: timestamp, runtime: 'spark' });
+        tx.set(ref, { businessId, branchId, userId, cashierName, status: 'open', openingAmount, openingNote, openedAt: timestamp, syncedAt: timestamp, runtime: 'spark', durationHours: 10 });
         tx.set(lockRef, { businessId, branchId, userId, sessionId, status: 'open', runtime: 'spark', updatedAt: timestamp });
       });
       // Never return a provisional serverTimestamp as confirmation.

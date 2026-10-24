@@ -1,7 +1,10 @@
+import { useCashRegister } from '../../features/cash-register/hooks/useCashRegister';
+import { CashRegisterModals } from '../CashRegisterModals';
+import { CashStatus } from '../pos/TicketParts';
 import FirestoreQueryError from '../../components/FirestoreQueryError';
 import { isBranchOperational } from '../../features/branches/domain/branchPolicy';
 import { CakeSlice } from 'lucide-react';
-import { Button, PageHeader, Select, cn, SearchField, EmptyState } from "../../shared/ui";
+import { Alert, Button, PageHeader, Select, cn, SearchField, EmptyState } from "../../shared/ui";
 // src/modules/contracts/ContractManager.jsx
 import React, { useState, useMemo, useCallback } from 'react';
 import { useContracts } from '../../features/contracts/hooks/useContracts';
@@ -27,6 +30,12 @@ function ContractManager({
     businessBranches,
     settings
   } = useTenantData();
+  const cash = useCashRegister(user, activeBranchId);
+  const [openCashBranch, setOpenCashBranch] = useState(null);
+  const [closeCashBranch, setCloseCashBranch] = useState(null);
+  const physicalCashBranch = activeBranchId && activeBranchId !== 'global' && businessBranches?.some(branch => branch.id === activeBranchId && isBranchOperational(branch));
+  const canManageCash = physicalCashBranch && (user.role === 'dueño' || user.role === 'cajero' && user.branchId === activeBranchId);
+  const canCollect = cash.currentSession && !cash.currentSession.needsForceClose && !cash.isExpired && !cash.readError;
   const [viewFilter, setViewFilter] = useSessionState(`contracts:filter:${activeBranchId}`, 'activos');
   const {
     contracts,
@@ -115,21 +124,25 @@ function ContractManager({
   const handlePrintProduction = useCallback(contract => printContract(contract, generateContractProductionHTML), [printContract]);
   const handlePrintTextOnly = useCallback(contract => printContract(contract, generateContractTextOnlyHTML), [printContract]);
   const handleFormSubmit = useCallback(async (contractData, _unusedImageFile, editId) => {
+    if (!editId && contractData.initialPayment?.amount > 0 && !canCollect) { toast.error('Abre una caja vigente en esta sede antes de registrar el anticipo. El formulario se conserva.'); return; }
     const success = editId ? await updateContract(editId, contractData) : await createContract(contractData);
     if (success) {
       setShowCreateModal(false);
       setContractToEdit(null);
     }
-  }, [createContract, updateContract]);
+  }, [createContract, updateContract, canCollect]);
   const handleCancelSubmit = useCallback(async (docId, reason) => {
+    const paid = contracts.find(contract => contract.id === docId)?.paidTotal ?? 0;
+    if (paid > 0 && !canCollect) { toast.error('Abre una caja vigente antes de devolver dinero.'); return false; }
     const success = await cancelContract(docId, reason);
     if (success) setContractToCancel(null);
-  }, [cancelContract]);
+  }, [cancelContract, contracts, canCollect]);
   const handleAddPayment = useCallback(async (docId, amount, method) => {
+    if (!canCollect) { toast.error('Abre una caja vigente en esta sede antes de cobrar.'); return false; }
     const success = await addPayment(docId, amount, method);
     if (success) setContractToView(null); // Refresca cerrando modal
     return success;
-  }, [addPayment]);
+  }, [addPayment, canCollect]);
   if (isLoading) {
     return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6 flex justify-center items-center min-h-64">
         <div className="text-center text-muted">
@@ -139,7 +152,11 @@ function ContractManager({
       </div>;
   }
   return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6">
-      <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." actions={<><Button onClick={() => {
+      <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." actions={<>
+        {canManageCash && <CashStatus readOnly={false} session={cash.currentSession} isExpired={cash.isExpired} expiresAt={cash.expiresAt} remainingMinutes={cash.remainingMinutes} />}
+        {canManageCash && !cash.currentSession && !cash.readError && <Button variant="secondary" disabled={cash.isLoadingSession} onClick={() => setOpenCashBranch(activeBranchId)}>Abrir caja</Button>}
+        {canManageCash && cash.currentSession && (!cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button variant="secondary" onClick={() => setCloseCashBranch(activeBranchId)}>Cerrar caja</Button>}
+        <Button onClick={() => {
         if (!activeBranchId || activeBranchId === 'global') return toast.error('Selecciona una sede física.');
         setContractToEdit(null);
         setShowCreateModal(true);
@@ -147,6 +164,9 @@ function ContractManager({
           ➕ Nuevo Pedido
         </Button></>} />
 
+      {cash.isExpired && <Alert variant="warning" title="Caja vencida">Cierra el turno y abre una caja nueva para anticipos, abonos o devoluciones. Puedes preparar pedidos sin anticipo.</Alert>}
+      {cash.currentSession?.needsForceClose && canManageCash && <Alert variant="warning" title="Turno anterior pendiente">Solicita al administrador el cierre del turno anterior antes de cobrar.</Alert>}
+      <FirestoreQueryError error={cash.readError} area="cash-open" user={user} onRetry={cash.checkSession} />
       <p role="status" className="text-sm text-muted">{isStale ? 'Agenda en caché, pendiente de servidor.' : `Agenda recibida: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`}{historyUpdatedAt > 0 && ` Historial leído: ${new Date(historyUpdatedAt).toLocaleTimeString('es-PE')}.`}</p>
       <FirestoreQueryError error={error} area="contracts-active" user={user} onRetry={retry} />
 
@@ -186,10 +206,16 @@ function ContractManager({
         La agenda muestra los 100 pedidos activos con entrega más próxima. La búsqueda se aplica a esos pedidos.
       </p>}
 
+      <CashRegisterModals key={activeBranchId} {...cash} showOpenModal={openCashBranch === activeBranchId} setShowOpenModal={show => setOpenCashBranch(show ? activeBranchId : null)}
+        showCloseModal={closeCashBranch === activeBranchId} setShowCloseModal={show => setCloseCashBranch(show ? activeBranchId : null)} />
       {(showCreateModal || contractToEdit) && <ContractFormModal contractToEdit={contractToEdit} activeLocations={activeLocations} onClose={() => {
       setShowCreateModal(false);
       setContractToEdit(null);
-    }} onSubmit={handleFormSubmit} isProcessing={isProcessing} />}
+    }} onSubmit={handleFormSubmit} isProcessing={isProcessing} cashAction={!canCollect && <Alert variant="warning" title="Los cobros requieren caja vigente">
+        Puedes guardar el pedido sin anticipo.
+        {canManageCash && !cash.readError && (!cash.currentSession || !cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={cash.isLoadingSession}
+          onClick={() => cash.currentSession ? setCloseCashBranch(activeBranchId) : setOpenCashBranch(activeBranchId)}>{cash.currentSession ? 'Cerrar turno anterior' : 'Abrir caja'}</Button>}
+      </Alert>} />}
       {contractToView && <ContractDetailsModal user={user} contract={contracts.find(c => c.id === contractToView.id) || contractToView} branches={businessBranches} settings={settings} onClose={() => setContractToView(null)} onAddPayment={handleAddPayment} onMarkDelivered={markDelivered} onEditRequest={contract => {
       setContractToView(null);
       setContractToEdit(contract);

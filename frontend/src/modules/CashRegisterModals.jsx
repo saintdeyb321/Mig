@@ -76,7 +76,7 @@ export const CashRegisterModals = ({
   };
 
   return <>
-    {showOpenModal && !tempSummary && <Dialog icon={WalletCards} title="Apertura de caja" onClose={() => setShowOpenModal(false)} busy={busy} description="Cuenta el fondo inicial antes de empezar tu turno.">
+    {showOpenModal && !tempSummary && <Dialog icon={WalletCards} title="Apertura de caja" onClose={() => setShowOpenModal(false)} busy={busy} description="Cuenta el fondo inicial. La nueva caja admite cobros durante un máximo de 10 horas; después debes cerrarla.">
       <form onSubmit={submit(handleOpen)}>
         <fieldset disabled={busy} className="space-y-4">
           <FormField label="Monto inicial (S/)"><Input type="number" step="0.10" required value={openingAmount} onChange={e => setOpeningAmount(e.target.value)} placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" /></FormField>

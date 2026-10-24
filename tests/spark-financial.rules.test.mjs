@@ -311,3 +311,38 @@ it('Plan03 rejects sales and new contracts on an inactive or unknown-status bran
     assert.equal((await inspect('products/bread')).data().stock[branchId], 10);
   }
 });
+
+it('Plan04 expires new ten-hour cash sessions using server time, refuses financial writes and permits authorized late closing', async () => {
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'dueño' }));
+  const db = database(), contracts = createSparkContractsRepository(db, { sdk, currentUser: () => ({ uid }) });
+  const contractId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const paymentId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  await contracts.create({ contractId, operationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', branchId, clientName: 'Prueba',
+    total: 20, subtotal: 20, deliveryCost: 0, initialPayment: { operationId: paymentId, amount: 2, method: 'efectivo' } });
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), {
+    durationHours: 10, openedAt: Timestamp.fromMillis(Date.now() - 10 * 3600000 - 60000),
+  }));
+  await assertFails(commit(payload('expired-cash-sale', 2)));
+  await assert.rejects(contracts.addPayment({ contractId, branchId, operationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', amount: 1, method: 'efectivo' }));
+  await assert.rejects(contracts.cancel({ contractId, branchId, operationId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', reason: 'Reembolso bloqueado' }));
+  await assertFails(updateDoc(doc(db, 'cash_sessions', sessionId), { durationHours: 12 }));
+  await assertFails(updateDoc(doc(db, 'cash_sessions', sessionId), { openedAt: serverTimestamp() }));
+  assert.equal((await inspect('sales/expired-cash-sale')).exists(), false);
+  assert.equal((await inspect('products/bread')).data().stock[branchId], 10);
+  assert.equal((await inspect('contracts/' + contractId)).data().paidTotal, 2);
+  const payment = (await inspect('payments/' + paymentId)).data();
+  const closing = createSparkCashClosingRepository(db, { sdk, currentUser: () => ({ uid }), readSales: async () => [], readPayments: async () => [payment] });
+  assert.equal((await closing.close(sessionId, 12)).status, 'closed');
+  assert.equal((await inspect('payments/' + paymentId)).data().amount, 2);
+});
+it('Plan04 preserves old-session policy and accepts new sessions before expiry; no-advance orders do not need cash', async () => {
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), { openedAt: Timestamp.fromMillis(Date.now() - 12 * 3600000) }));
+  await commit(payload('historical-cash-sale', 1));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), { durationHours: 10, openedAt: Timestamp.fromMillis(Date.now() - 9 * 3600000) }));
+  await commit(payload('valid-cash-sale', 1));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), { openedAt: Timestamp.fromMillis(Date.now() - 11 * 3600000) }));
+  const contracts = createSparkContractsRepository(database(), { sdk, currentUser: () => ({ uid }) });
+  await contracts.create({ contractId: '11111111-1111-4111-8111-111111111111', operationId: '22222222-2222-4222-8222-222222222222',
+    branchId, clientName: 'Pedido sin anticipo', total: 10, subtotal: 10, deliveryCost: 0 });
+  assert.equal((await inspect('contracts/11111111-1111-4111-8111-111111111111')).data().paidTotal, 0);
+});

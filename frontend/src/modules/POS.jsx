@@ -20,7 +20,7 @@ function POS({ user }) {
   const { error: catalogError, retry: retryCatalog } = useCatalogData();
 
   const {
-    currentSession, readError, checkSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
+    currentSession, isExpired, expiresAt, remainingMinutes, readError, checkSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
   } = useCashRegister(user, activeBranchId);
 
   const {
@@ -84,7 +84,7 @@ function POS({ user }) {
     setIsCartOpen(false);
   };
 
-  const isGlobalDisabled = branchStatus.isReadOnly || (!currentSession && !branchStatus.isReadOnly) || currentSession?.needsForceClose;
+  const isGlobalDisabled = branchStatus.isReadOnly || (!currentSession && !branchStatus.isReadOnly) || currentSession?.needsForceClose || isExpired;
 
   if (isLoading || isLoadingSession) return <LoadingState>Preparando caja registradora…</LoadingState>;
   const selectPayment = method => {
@@ -95,13 +95,14 @@ function POS({ user }) {
   const requestCheckout = () => {
     setCheckoutAttempted(true);
     if (checkoutBlocked) return;
+    if (isExpired) return;
     handleCheckoutClick();
   };
   const action = readError ? <Button variant="secondary" onClick={checkSession}>Reintentar lectura de caja</Button> : !currentSession&&!branchStatus.isReadOnly
     ? <Button className="w-full" onClick={()=>setShowOpenModal(true)}><UnlockKeyhole />Abrir caja para vender</Button>
     : currentSession?.needsForceClose
       ? <Button variant="danger" className="w-full" onClick={()=>setShowCloseModal(true)} disabled={!currentSession.canForceClose}>{currentSession.canForceClose?'Cerrar turno anterior':'Requiere administrador'}</Button>
-      : <Button className="w-full" size="lg" onClick={requestCheckout} loading={isProcessing} disabled={!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>{branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':'Cobrar'}</Button>;
+      : <Button className="w-full" size="lg" onClick={requestCheckout} loading={isProcessing} disabled={isExpired||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>{branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':'Cobrar'}</Button>;
   const ticket = lastSale ? <SaleStatus sale={lastSale} onPrint={printReceipt} onNew={handleNuevaVenta} />
     : <Ticket drawer={isCartOpen} cart={cart} total={total} onQty={updateQty} onRemove={removeFromCart} isProcessing={isProcessing} action={action}>
       {checkoutAttempted && checkoutBlocked && <Alert variant="warning" title="No se puede confirmar este ticket">{checkoutBlocked} El carrito se conserva completo; no se ha registrado ningún cobro.</Alert>}
@@ -109,10 +110,11 @@ function POS({ user }) {
       <PaymentFields payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} disabled={branchStatus.isReadOnly||isProcessing} />
     </Ticket>;
   return <div className="min-w-0 space-y-5">
+    {isExpired && <Alert variant="warning" title="Caja vencida">Cierra este turno y abre uno nuevo para cobrar. Los movimientos se conservan.</Alert>}
     <FirestoreQueryError error={readError} area="cash-open" user={user} onRetry={checkSession} />
     <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
     <PageHeader title="Punto de venta" icon={ShoppingBag} eyebrow="Venta del día" description="Elige productos y prepara tu ticket." actions={<>
-      <CashStatus readOnly={branchStatus.isReadOnly} session={currentSession} />
+      <CashStatus readOnly={branchStatus.isReadOnly} session={currentSession} isExpired={isExpired} expiresAt={expiresAt} remainingMinutes={remainingMinutes} />
       {currentSession&&!branchStatus.isReadOnly&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={()=>setShowCloseModal(true)}><LockKeyhole />{currentSession.needsForceClose?'Forzar cierre de caja':'Cerrar caja'}</Button>}
     </>} />
     {branchStatus.isReadOnly&&<Alert variant="warning" title="Modo lectura">{branchStatus.reason==='global'?'Estás en la vista global. Selecciona una sucursal específica en el menú.':`La sucursal ${branchStatus.name} está inactiva.`}</Alert>}
