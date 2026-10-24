@@ -1401,3 +1401,5 @@ Base actualizada `7a0deb2`, conservando importes en céntimos. Checkpoint A impl
 
 
 Plan 03, B implementado localmente: sedes operativas centralizadas, selector oscuro/normalizado, stock histórico preservado y cupo 1–100 fijado solo por SuperAdmin (política inicial visible: 1). Registro transaccional de plazas en licencia + Rules con getAfter; no se inactiva con lock de caja ni sin revisión histórica de ciclo de vida. Históricos requieren regularización explícita antes de nuevas altas. 12 casos seleccionados de emulador aprobados, incluyendo concurrencia y conservación financiera; lint/build aprobados. Ver Plan 03 para precondiciones manuales. No se publicó Rules ni se tocó Firebase real.
+
+Checkpoint C implementado: conectividad/notificaciones en el encabezado desktop, salida al pie; región de navegación enfocable con scroll nativo y barra fina visible en Firefox/Chromium. CSS especializado reducido, sin restaurar hojas heredadas. Verificación visual manual con el propietario pendiente.
