@@ -1,3 +1,4 @@
+import { CakeSlice } from 'lucide-react';
 import { Button, PageHeader, Select, cn, SearchField, EmptyState } from "../../shared/ui";
 // src/modules/contracts/ContractManager.jsx
 import React, { useState, useMemo, useCallback } from 'react';
@@ -136,26 +137,20 @@ function ContractManager({
       </div>;
   }
   return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6">
-      <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Contratos Spark en sede de origen; cobros y devoluciones requieren caja propia abierta. Históricos en lectura, sin migración automática. Fotos comprimidas solo en este dispositivo/cuenta; no se sincronizan. Cancelación con devolución: solo dueño.</p>
-      <p role="status" className="text-sm text-muted">{isStale ? 'Agenda en caché, pendiente de servidor.' : `Agenda recibida: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`}{historyUpdatedAt > 0 && ` Historial leído: ${new Date(historyUpdatedAt).toLocaleTimeString('es-PE')}.`}</p>
-      {error && <p role="alert" className="text-danger">No se pudo leer la agenda; no se confirma que esté vacía. <Button onClick={retry} variant="secondary">Reintentar lectura</Button></p>}
-      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
-          <span className="text-2xl">🎂</span>
-          <span className="break-words">Gestión de Pedidos</span>
-        </h1>
-        <Button onClick={() => {
+      <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." actions={<><Button onClick={() => {
         if (!activeBranchId || activeBranchId === 'global') return toast.error('Selecciona una sede física.');
         setContractToEdit(null);
         setShowCreateModal(true);
       }} className="shrink-0 py-2.5 px-5 text-base" type="button" variant="primary">
           ➕ Nuevo Pedido
-        </Button>
-      </PageHeader>
+        </Button></>} />
 
-      <div className="mb-5 bg-panel p-4 rounded-xl shadow-card flex gap-4 flex-wrap items-center">
+      <p role="status" className="text-sm text-muted">{isStale ? 'Agenda en caché, pendiente de servidor.' : `Agenda recibida: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`}{historyUpdatedAt > 0 && ` Historial leído: ${new Date(historyUpdatedAt).toLocaleTimeString('es-PE')}.`}</p>
+      {error && <p role="alert" className="text-danger">No se pudo leer la agenda; no se confirma que esté vacía. <Button onClick={retry} variant="secondary">Reintentar lectura</Button></p>}
+
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-panel p-4 shadow-card">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por cliente, teléfono o ID..." />
-        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+        <div className="flex min-w-0 flex-1 basis-full items-center gap-2.5 sm:basis-64">
           <span className="font-bold text-muted text-sm">ORDENAR:</span>
           <Select value={sortBy} onChange={e => setSortBy(e.target.value)} className="py-2.5 px-4 rounded-xl border border-line bg-panel font-bold min-w-0 flex-1 cursor-pointer">
             <option value="urgencia">🚨 Más Próximos a Entregar</option>
@@ -175,7 +170,7 @@ function ContractManager({
         </span>
       </div>
 
-      <div className="flex flex-col">
+      <div className="grid gap-4">
         {filteredContracts.length === 0 ? <EmptyState title={<>No hay pedidos en esta vista</>} /> : filteredContracts.map(c => <ContractCard key={c.id} contract={c} onView={setContractToView} branches={businessBranches} onPrint={handlePrintTicket} onPrintProduction={handlePrintProduction} onPrintTextOnly={handlePrintTextOnly} />)}
       </div>
 

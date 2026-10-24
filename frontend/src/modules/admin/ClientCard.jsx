@@ -28,7 +28,7 @@ export const ClientCard = memo(({
       {/* Cabecera de Tarjeta */}
       <div className="p-5 flex flex-col gap-2">
         <div className="flex flex-wrap justify-between items-start gap-3">
-          <h3 className="m-0 text-ink text-lg break-all">
+          <h3 className="m-0 text-brand-deep text-lg font-bold break-words">
             {license.businessName}
           </h3>
           <div className="flex gap-3 items-center">
@@ -44,13 +44,13 @@ export const ClientCard = memo(({
           </div>
         </div>
 
-        <span className="text-sm text-muted font-mono">
+        <span className="break-all text-xs text-muted font-mono">
           ID: {license.id}
         </span>
       </div>
 
       {/* Detalles de Tarjeta */}
-      <div className="bg-subtle py-4 px-5 border-t border-t-line border-b border-b-line grid gap-2.5">
+      <div className="bg-primary-soft/40 py-4 px-5 border-t border-t-line border-b border-b-line grid gap-2.5">
         <div className="flex items-center gap-2.5 text-sm">
           <span className="text-xl">👤</span>
           <div>
@@ -71,7 +71,7 @@ export const ClientCard = memo(({
 
       {/* Botonera de Tarjeta */}
       {license.tenantStatus !== 'active' && <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Estado histórico: {license.tenantStatus}. Mantenimiento privilegiado no disponible en Spark.</p>}
-      <div className="py-4 px-5 flex gap-2.5">
+      <div className="py-4 px-5 flex flex-wrap gap-2.5">
         <Button disabled={isProcessing || license.tenantStatus !== 'active' || !!license.maintenanceJobId} onClick={() => setExtendModalInfo(license.id)} className="min-w-0 flex-1 p-2 text-sm" type="button" variant="primary">
           🚀 Renovar
         </Button>

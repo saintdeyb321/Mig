@@ -1,3 +1,4 @@
+import { CakeSlice, LockKeyhole, ShoppingBag, Sparkles } from 'lucide-react';
 import { Button, Card } from "../shared/ui";
 // src/modules/Auth.jsx
 import React, { useState, useCallback, memo } from 'react';
@@ -34,59 +35,35 @@ const Auth = memo(({
       setIsLoading(false);
     }
   }, [onLogin]);
-  return <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-primary-soft via-canvas to-accent-soft px-4 py-10">
-      <Card className="animate-enter motion-reduce:animate-none grid w-full max-w-md gap-8 rounded-3xl p-6 text-center shadow-float sm:p-9" as="div">
-
-        {/* 1. SECCIÓN SUPERIOR: Identidad */}
+  return <div className="flex min-h-dvh items-center justify-center bg-linear-to-br from-brand-deep via-sidebar to-primary px-4 py-8 sm:px-6">
+    <div className="grid w-full max-w-5xl items-center gap-10 lg:grid-cols-[minmax(0,1fr)_25rem] lg:gap-16">
+      <section className="hidden space-y-8 text-white lg:block">
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold text-white/85"><Sparkles aria-hidden="true" className="size-4" />Tu negocio, en orden</div>
+        <h2 className="max-w-lg text-5xl font-extrabold leading-tight tracking-tight">Más tiempo para<br /><span className="text-violet-300">lo que creas.</span></h2>
+        <p className="max-w-md text-base leading-relaxed text-white/75">Ventas, pedidos y equipo en un solo espacio. Empieza tu jornada con todo a mano.</p>
+        <div className="grid gap-3 text-sm">
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><ShoppingBag aria-hidden="true" className="size-5 text-violet-300" /><span>Punto de venta y control por sede</span></div>
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><CakeSlice aria-hidden="true" className="size-5 text-violet-300" /><span>Pedidos, anticipos y entregas</span></div>
+        </div>
+      </section>
+      <Card className="animate-enter grid w-full max-w-md justify-self-center gap-7 rounded-3xl border-white/20 p-6 text-center shadow-float motion-reduce:animate-none sm:p-9" as="div">
         <div className="grid justify-items-center gap-4">
-          <div>
-            <img src={brand.logo} alt={`Logo ${brand.name}`} className="h-20 w-auto object-contain" />
-          </div>
-
-          <div>
-            <h1 className="text-4xl font-bold tracking-tight text-primary">
-              {brand.name}
-            </h1>
-            <p className="mt-2 text-sm leading-relaxed text-muted">
-              Sistema de gestión y punto de venta.
-            </p>
-          </div>
+          <span className="flex size-24 items-center justify-center rounded-3xl border border-primary/10 bg-primary-soft shadow-card"><img src={brand.logo} alt={`Logo ${brand.name}`} className="size-18 rounded-2xl object-contain" /></span>
+          <div><p className="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-accent">Bienvenido a</p><h1 className="text-4xl font-extrabold tracking-tight text-brand-deep">{brand.name}</h1><p className="mt-3 text-sm leading-relaxed text-muted">Tu espacio de gestión y punto de venta.</p></div>
         </div>
-
-        {/* 2. SECCIÓN CENTRAL: Acción Directa */}
         <div className="grid gap-4">
-          <div className="rounded-xl bg-subtle p-3 text-sm text-muted">
-            Acceso exclusivo solo para personal autorizado.
-          </div>
-
-          <div className="flex flex-col gap-2.5 mt-2.5">
-
-            <Button type="button" onClick={handleGoogle} disabled={isLoading} className="w-full m-0" variant="primary">
-              <div className="rounded-full bg-white p-1">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" className="size-5" />
-              </div>
-              {isLoading ? 'Cargando...' : 'Ingresar con Google'}
-            </Button>
-
-            <InstallButton />
-
-          </div>
+          <p className="rounded-xl border border-primary/10 bg-primary-soft/50 p-3 text-xs leading-relaxed text-muted">Ingresa con la cuenta autorizada de tu negocio.</p>
+          <Button type="button" onClick={handleGoogle} loading={isLoading} size="lg" className="w-full">
+            {!isLoading && <span aria-hidden="true" className="flex size-7 items-center justify-center rounded-full bg-white text-base font-bold text-primary">G</span>}{isLoading ? 'Verificando acceso…' : 'Ingresar con Google'}
+          </Button>
+          <InstallButton />
         </div>
-
-        {/* 3. SECCIÓN INFERIOR: Seguridad y Copyright */}
-        <div className="grid gap-4">
-          <div className="flex items-center justify-center gap-2 text-xs text-muted">
-            <span className="text-base">🔒</span> Autenticación segura y encriptada
-          </div>
-
-          <div className="h-px bg-line"></div>
-
-          <footer className="text-xs text-muted">
-            © {new Date().getFullYear()} {brand.name}
-          </footer>
+        <div className="space-y-5 border-t border-line pt-5">
+          <p className="flex items-center justify-center gap-2 text-xs text-muted"><LockKeyhole aria-hidden="true" className="size-4 text-success" />Acceso seguro con tu cuenta Google</p>
+          <footer className="text-xs text-muted">© {new Date().getFullYear()} {brand.name}</footer>
         </div>
-
       </Card>
-    </div>;
+    </div>
+  </div>;
 });
 export default Auth;

@@ -9,7 +9,7 @@ const QRPaymentCard = memo(({
 }) => {
   return (
     // Le quitamos la clase "card" para que encaje perfecto dentro del modal de la sucursal, pero mantenemos tu diseño.
-    <div className="border-t-4 border-t-accent py-4 px-0 mt-4">
+    <div className="space-y-4 rounded-2xl border border-accent/20 bg-accent-soft/40 p-4">
       <h3 className="text-lg font-semibold">Pagos Digitales (Opcional)</h3>
       <p className="text-sm leading-relaxed text-muted">
         Sube la imagen del código QR de Yape/Plin para esta sede. El sistema la optimizará automáticamente.
@@ -22,9 +22,9 @@ const QRPaymentCard = memo(({
         </div>
 
         <div className="grid w-full gap-2">
-          <Input type="file" id="qr-upload" accept="image/*" onChange={handleImageChange} className="hidden" disabled={isProcessing} />
+          <Input type="file" id="qr-upload" accept="image/*" onChange={handleImageChange} className="peer sr-only" disabled={isProcessing} />
 
-          <div className="flex gap-2.5 w-full flex-wrap">
+          <div className="flex w-full flex-wrap gap-2.5 peer-focus-visible:[&_label]:outline-2 peer-focus-visible:[&_label]:outline-focus">
             <label htmlFor="qr-upload" className="cursor-pointer rounded-xl border border-line bg-panel text-sm font-medium hover:bg-subtle flex-[1_1_200px] text-center m-0 min-h-12 flex items-center justify-center py-0 px-4">
               {qrImageBase64 ? '🔄 Cambiar imagen' : '📁 Seleccionar QR'}
             </label>

@@ -1,3 +1,4 @@
+import { ContactRound } from 'lucide-react';
 import { useConfirmDialog } from '../shared/ui/useConfirmDialog';
 import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Badge, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
 // src/modules/agenda/AgendaManager.jsx
@@ -28,8 +29,8 @@ const ContactCard = memo(({
 
       {/* 3. ACCIÓN (Botón Editar y Eliminar) */}
       <div className="col-span-2 flex flex-wrap items-center justify-between border-t border-line pt-3 sm:col-span-1 sm:border-0 sm:pt-0 flex-row gap-1">
-        <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-subtle min-h-8.5 min-w-8.5" title="Editar" type="button" variant="ghost" aria-label="Editar">✏️</Button>
-        <Button onClick={() => handleDelete(c.id)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-danger-soft text-danger min-h-8.5 min-w-8.5" title="Eliminar" type="button" variant="ghost" aria-label="Eliminar">🗑️</Button>
+        <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-subtle min-h-11 min-w-11" title="Editar" type="button" variant="ghost" aria-label="Editar">✏️</Button>
+        <Button onClick={() => handleDelete(c.id)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-danger-soft text-danger min-h-11 min-w-11" title="Eliminar" type="button" variant="ghost" aria-label="Eliminar">🗑️</Button>
       </div>
 
     </Card>;
@@ -68,25 +69,19 @@ function AgendaManager({
       {error && <p role="alert" className="text-danger">No se pudo leer la agenda; no se confirma que esté vacía. <Button onClick={retry} variant="secondary">Reintentar lectura</Button></p>}
       {isStale && <p role="status" className="text-sm text-muted">Contactos en caché; pendiente de validar con el servidor.</p>}
 
-      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
-          <span className="text-2xl">📖</span>
-          <span className="break-words">Agenda VIP</span>
-        </h1>
-        <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
+      <PageHeader title="Agenda VIP" icon={ContactRound} eyebrow="Relaciones con clientes" description="Tus contactos frecuentes, siempre a mano." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
           ➕ Nuevo Contacto
-        </Button>
-      </PageHeader>
+        </Button></>} />
 
       <div className="flex flex-wrap items-center gap-3">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar contacto por nombre o celular..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
       </div>
 
-      <h3 className="text-sm font-semibold text-muted">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-muted">
         Lista de Contactos Frecuentes ({filteredContacts.length})
       </h3>
 
-      <div className="grid gap-3">
+      <div className="grid gap-3 xl:grid-cols-2">
         {filteredContacts.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `Nadie coincide con "${searchTerm}"` : 'Aún no has registrado clientes VIP.'}
             </>} /> : filteredContacts.map(c => <ContactCard key={c.id} c={c} openEditForm={openEditForm} handleDelete={handleDelete} isLoading={isLoading} />)}

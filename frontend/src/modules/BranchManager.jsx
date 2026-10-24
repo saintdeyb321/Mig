@@ -1,3 +1,4 @@
+import { Building2 } from 'lucide-react';
 import { Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, DialogFooter, SearchField, EmptyState } from "../shared/ui";
 // src/modules/BranchManager.jsx
 import React, { memo, useState } from 'react';
@@ -10,7 +11,7 @@ const BranchCard = memo(({
 }) => {
   const isInactive = b.status?.toLowerCase() === 'inactivo';
   const hasQR = Boolean(b.yapeQrUrl);
-  return <Card className={cn(`flex min-w-0 flex-wrap items-center justify-between gap-4       animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65" : ''} `)} as="div">
+  return <Card className={cn(`flex min-w-0 flex-wrap items-center justify-between gap-4       p-4 sm:p-4 animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65" : ''} `)} as="div">
       <div className="flex min-w-0 flex-[1_1_15rem] items-center gap-3">
         <div className="flex size-12 shrink-0 items-center justify-center rounded-xl text-2xl bg-subtle relative">
           <span className={cn(isInactive ? "opacity-50" : "opacity-100")}>🏢</span>
@@ -92,15 +93,9 @@ function BranchManager({
   }
   return <div className={cn(isEmbedded ? "animate-enter motion-reduce:animate-none" : "animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6", isEmbedded ? "" : "w-full max-w-6xl m-[0_auto]")}>
 
-      {!isEmbedded && <PageHeader className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
-            <span className="text-2xl">🏢</span>
-            <span className="break-words">Mis Sucursales</span>
-          </h1>
-          <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
+      {!isEmbedded && <PageHeader title="Mis sucursales" icon={Building2} eyebrow="Tus locales" description="Organiza las sedes y sus métodos de pago." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
             ➕ Nueva Sede
-          </Button>
-        </PageHeader>}
+          </Button></>} />}
 
       <div className="flex flex-wrap gap-3 items-center mb-5">
 
@@ -120,7 +115,7 @@ function BranchManager({
         Lista de Sedes ({filteredBranches.length})
       </h3>
 
-      <div className="grid gap-3">
+      <div className="grid gap-3 xl:grid-cols-2">
         {filteredBranches.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'Aún no hay sucursales registradas.'}
             </>} /> : filteredBranches.map(b => <BranchCard key={b.id} b={b} openEditForm={openEditForm} isProcessing={isProcessing} />)}

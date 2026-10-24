@@ -1,3 +1,4 @@
+import { Tags } from 'lucide-react';
 import { Dialog, cn, Button, LoadingState, PageHeader, Input, FormField, Select, Badge, SearchField, Card, DialogFooter, EmptyState } from "../shared/ui";
 // src/modules/CategoryManager.jsx
 import React, { memo } from 'react';
@@ -12,7 +13,7 @@ const CategoryCard = memo(({
   const isInactive = c.status === 'inactivo';
 
   // Reutilizamos el estilo de las tarjetas de productos
-  let cardClasses = `grid min-w-0 grid-cols-[3rem_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto] animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65 border-l-4 border-l-muted" : ''} `;
+  let cardClasses = `grid min-w-0 grid-cols-[3rem_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto] p-4 sm:p-4 animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65 border-l-4 border-l-muted" : ''} `;
   return <Card className={cn(cardClasses, !isInactive ? "border-l-4 border-l-primary" : "")} as="div">
 
       {/* 1. ICONO */}
@@ -34,7 +35,7 @@ const CategoryCard = memo(({
 
       {/* 3. ACCIÓN (Botón Editar) */}
       <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 sm:col-span-1 sm:border-0 sm:pt-0">
-        <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-subtle min-h-8.5 min-w-8.5 flex items-center justify-center" title="Editar" type="button" variant="ghost" aria-label="Editar">
+        <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-subtle min-h-11 min-w-11 flex items-center justify-center" title="Editar" type="button" variant="ghost" aria-label="Editar">
           ✏️
         </Button>
       </div>
@@ -70,16 +71,9 @@ function CategoryManager({
   return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
 
       {/* HEADER REFACTORIZADO */}
-      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
-          <span className="text-2xl">📂</span>
-          <span className="break-words">Categorias</span>
-        </h1>
-
-        <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
+      <PageHeader title="Categorías" icon={Tags} eyebrow="Organización" description="Un catálogo claro para encontrar cada producto." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
           ➕ Nueva Categoria
-        </Button>
-      </PageHeader>
+        </Button></>} />
 
       {/* BARRA DE BÚSQUEDA Y TOGGLE */}
       <div className="flex flex-wrap items-center gap-3">
@@ -91,11 +85,11 @@ function CategoryManager({
         </label>
       </div>
 
-      <h3 className="text-sm font-semibold text-muted">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-muted">
         Lista de Categorías ({filteredCategories.length})
       </h3>
 
-      <div className="grid gap-3">
+      <div className="grid gap-3 xl:grid-cols-2">
         {filteredCategories.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'Aún no has registrado ninguna categoría.'}
             </>} /> : filteredCategories.map(c => (/* 🚀 Invocamos la tarjeta blindada */

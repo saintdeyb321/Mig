@@ -1,3 +1,4 @@
+import { UsersRound } from 'lucide-react';
 import { useConfirmDialog } from '../shared/ui/useConfirmDialog';
 import { Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
 import React, { memo } from 'react';
@@ -16,7 +17,7 @@ const UserCard = memo(({
   const isSuperAdmin = u.role === 'superadmin';
   const isInvite = u.isInvite;
   const branchName = isDueño || isSuperAdmin ? '🌐 Acceso Global' : branches.find(b => b.id === u.branchId)?.name || (isInvite ? '⏳ Esperando registro...' : '⚠️ Sin sede asignada');
-  return <Card className={cn(`flex min-w-0 flex-wrap items-center justify-between gap-4       animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65" : ''} `, isInvite ? "border-l-warning" : "")} as="div">
+  return <Card className={cn(`flex min-w-0 flex-wrap items-center justify-between gap-4       p-4 sm:p-4 animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65" : ''} `, isInvite ? "border-l-warning" : "")} as="div">
 
       <div className="flex min-w-0 flex-[1_1_15rem] items-center gap-3">
         <div className={cn(`flex size-12 shrink-0 items-center justify-center rounded-xl text-2xl ${isDueño || isSuperAdmin ? "bg-warning-soft" : "bg-subtle"} `, isInvite ? "bg-warning-soft border-warning-soft" : "")}>
@@ -128,15 +129,9 @@ function UserManagement({
   return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
       {confirmation}
 
-      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
-          <span className="text-2xl">👥</span>
-          <span className="break-words">Personal</span>
-        </h1>
-        <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
+      <PageHeader title="Personal" icon={UsersRound} eyebrow="Tu equipo" description="Administra los accesos y las sedes asignadas." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
           ➕ Nuevo Empleado
-        </Button>
-      </PageHeader>
+        </Button></>} />
 
       <div className="flex flex-wrap items-center gap-3">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre o correo..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
@@ -147,7 +142,7 @@ function UserManagement({
         </label>
       </div>
 
-      <h3 className="text-sm font-semibold text-muted">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-muted">
         Personal ({sortedUsers.length})
       </h3>
 

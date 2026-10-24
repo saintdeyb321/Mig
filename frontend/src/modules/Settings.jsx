@@ -1,4 +1,5 @@
-import { PageHeader, cn, Button, Input, FormField, Card } from "../shared/ui";
+import { Settings2 } from 'lucide-react';
+import { PageHeader, cn, Button, Input, FormField, Card, HelpDisclosure } from "../shared/ui";
 import CapabilitiesPanel from '../components/CapabilitiesPanel';
 // src/modules/Settings.jsx
 import React, { useState } from 'react';
@@ -22,20 +23,15 @@ function Settings({
   return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
 
       {/* HEADER SIMÉTRICO NATIVO */}
-      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
-          <span className="text-2xl">⚙️</span>
-          <span className="break-words">Configuración Global</span>
-        </h1>
-      </PageHeader>
+      <PageHeader title="Configuración global" icon={Settings2} eyebrow="Tu negocio" description="Datos comerciales y preferencias del sistema." />
 
       {/* =========================================
           🚀 1. GESTIÓN DE SEDES
        ========================================= */}
-      <section className="mb-8">
-        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-b-line pb-2.5 mb-4">
+      <Card className="space-y-5" tone="accent">
+        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-line pb-4">
           <div>
-            <h3 className="m-0 text-xl text-ink">🏢 Sucursales</h3>
+            <h3 className="m-0 text-base font-bold text-brand-deep">🏢 Sucursales</h3>
             <p className="m-0 text-sm text-muted">Administra tus locales físicos y sus métodos de pago.</p>
           </div>
 
@@ -50,15 +46,15 @@ function Settings({
         {showBranches && <Card className="animate-enter motion-reduce:animate-none" as="div">
             <BranchManager user={user} isEmbedded={true} />
           </Card>}
-      </section>
+      </Card>
 
       {/* =========================================
           🚀 2. DATOS FISCALES
        ========================================= */}
-      <section className="mb-8">
-        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-b-line pb-2.5 mb-4">
+      <Card className="space-y-5" tone="accent">
+        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-line pb-4">
           <div>
-            <h3 className="m-0 text-xl text-ink">🧾 Datos para Boletas / Facturas</h3>
+            <h3 className="m-0 text-base font-bold text-brand-deep">🧾 Datos para Boletas / Facturas</h3>
             <p className="m-0 text-sm text-muted">Información para los tickets y facturas.</p>
           </div>
           {hasCompanyData && !isEditingCompany && <Button onClick={() => setIsEditingCompany(true)} type="button" variant="secondary" className="py-1.5 px-3 rounded-lg border border-line bg-warning-soft cursor-pointer text-sm font-semibold">
@@ -122,9 +118,9 @@ function Settings({
               </div>
             </div>
           </Card>}
-      </section>
+      </Card>
 
-      <CapabilitiesPanel />
+      <HelpDisclosure title="Disponibilidad de funciones del sistema"><CapabilitiesPanel /></HelpDisclosure>
     </div>;
 }
 export default Settings;

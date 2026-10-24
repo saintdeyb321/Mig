@@ -1,3 +1,4 @@
+import { Package } from 'lucide-react';
 import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Select, SearchField, Card, DialogFooter, cn, EmptyState } from "../shared/ui";
 // src/modules/ProductCatalog.jsx
 import React, { useCallback, memo } from 'react';
@@ -135,16 +136,9 @@ function ProductCatalog({
   }
   return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
 
-      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
-          <span className="text-2xl">☕</span>
-          <span className="break-words">Productos</span>
-        </h1>
-
-        <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
+      <PageHeader title="Productos" icon={Package} eyebrow="Catálogo e inventario" description="Precios, existencias y referencias de cada sede." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
           ➕ Nuevo Producto
-        </Button>
-      </PageHeader>
+        </Button></>} />
 
       <div className="flex flex-wrap items-center gap-3">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar producto..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
@@ -155,11 +149,11 @@ function ProductCatalog({
         </label>
       </div>
 
-      <h3 className="text-sm font-semibold text-muted">
+      <h3 className="text-xs font-bold uppercase tracking-wide text-muted">
         Inventario {activeBranchId === 'global' ? 'Global' : 'de la Sede'} ({filteredProducts.length})
       </h3>
 
-      <div className="grid gap-3">
+      <div className="grid gap-3 xl:grid-cols-2">
         {filteredProducts.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `No se encontraron productos para "${searchTerm}"` : 'Aún no tienes productos.'}
             </>} /> : filteredProducts.map(p => <ProductCard key={p.id} p={p} activeBranchId={activeBranchId} openEditForm={openEditForm} isLoading={isLoading} />)}

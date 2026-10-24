@@ -33,7 +33,7 @@ export function SaleHistoryCard({
                   </div>
 
                   <div className="grid gap-2 text-right">
-                    <span className="text-xl font-bold">S/ {Number(s.total).toFixed(2)}</span>
+                    <span className="text-2xl font-extrabold text-brand-deep tabular-nums">S/ {Number(s.total).toFixed(2)}</span>
                     {isAnulada ? <Badge className="inline-flex items-center justify-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold bg-danger-soft text-danger">❌ ANULADA</Badge> : <Badge className={cn(`inline-flex items-center justify-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${isEfectivo ? "bg-success-soft text-success" : isYape ? "bg-accent-soft text-accent" : isMixto ? "bg-primary-soft text-primary" : ''} `)}>
                         {isEfectivo ? '💵 EFECTIVO' : isYape ? '📲 YAPE' : isMixto ? '🔄 MIXTO' : s.payment}
                       </Badge>}
@@ -41,7 +41,7 @@ export function SaleHistoryCard({
                 </div>
 
                 {/* DETALLE COMPRA */}
-                <div className="grid flex-1 gap-3 border-t border-dashed border-line bg-subtle/60 p-4">
+                <div className="grid flex-1 gap-3 border-t border-dashed border-line bg-primary-soft/25 p-4">
                   <p className="text-xs font-semibold text-muted">Detalle del Ticket</p>
 
                   <div className="grid divide-y divide-line">

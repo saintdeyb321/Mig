@@ -22,13 +22,13 @@ export const MetricCard = memo(({
   borderColor,
   bgColor,
   valueColor
-}) => <Card className={cn(`flex min-w-0 items-start gap-3 ${borderColor} `)} as="div">
-    <div className={cn(`flex size-10 shrink-0 items-center justify-center rounded-xl ${bgColor} `)}>
+}) => <Card className={cn(`flex min-w-0 items-start gap-3 border-t-4 ${borderColor} `)} as="div">
+    <div className={cn(`flex size-10 shrink-0 items-center justify-center rounded-2xl ${bgColor} `)}>
       <span className="text-xl">{emoji}</span>
     </div>
     <div className="grid min-w-0 flex-1 gap-1.5">
       <h4 className="text-xs font-medium text-muted">{title}</h4>
-      <p className={cn(`break-words text-xl font-bold tracking-tight ${valueColor || ''} `)}>{value}</p>
+      <p className={cn(`break-words text-2xl font-extrabold tracking-tight tabular-nums ${valueColor || ''} `)}>{value}</p>
       {subtext && <span className="text-xs leading-relaxed text-muted">{subtext}</span>}
     </div>
   </Card>);

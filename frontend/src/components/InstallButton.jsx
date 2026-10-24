@@ -20,11 +20,12 @@ export default function InstallButton() {
       e.preventDefault();
       setDeferredPrompt(e);
     };
+    const handleInstalled = () => setIsInstalled(true);
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', () => setIsInstalled(true));
+    window.addEventListener('appinstalled', handleInstalled);
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', () => setIsInstalled(true));
+      window.removeEventListener('appinstalled', handleInstalled);
     };
   }, [isInstalled]);
   const handleInstallClick = async () => {

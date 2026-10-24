@@ -1,5 +1,6 @@
+import { ChartNoAxesCombined } from 'lucide-react';
 import { MetricCard, ChartColumn, TopProductItem } from "./reports/ReportParts.jsx";
-import { LoadingState, Button, PageHeader, Card, cn } from "../shared/ui";
+import { LoadingState, Button, PageHeader, Card, cn, HelpDisclosure } from "../shared/ui";
 // src/modules/Reports.jsx
 import { useMemo } from 'react';
 import { readDiagnostics } from '../core/firebase/readDiagnostics.js';
@@ -46,22 +47,19 @@ export default function Reports({
   }
   if (error) return <Card role="alert" as="div">No se puede mostrar un reporte completo: {error} <Button onClick={refreshReport} type="button" variant="secondary">Reintentar</Button></Card>;
   return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6">
-      <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Movimientos confirmados; excluye pendientes locales. Lecturas paginadas: máximo 10000 movimientos y 500 contratos por negocio para compatibilidad histórica. Los cierres operativos conservan conciliación pendiente.</p>
+
+
+      <PageHeader title="Dashboard gerencial" icon={ChartNoAxesCombined} eyebrow="Resumen del negocio" description="Consulta los movimientos confirmados del período." actions={<><div className="flex flex-wrap gap-1 rounded-xl border border-line bg-panel p-1">
+          {Object.entries(TIME_FILTERS).map(([key, label]) => <Button key={key} onClick={() => setTimeFilter(key)} className={cn(`text-xs sm:text-sm ${timeFilter === key ? "bg-primary-soft text-primary" : ''} `)} type="button" variant="secondary">
+              {label}
+            </Button>)}
+        </div></>} />
 
       <p role="status" className="text-sm text-muted">Lectura del reporte: {updatedAt ? new Date(updatedAt).toLocaleString('es-PE') : 'pendiente'}. Informe histórico, no saldo en tiempo real. <Button onClick={refreshReport} variant="secondary">Actualizar período</Button></p>
       {import.meta.env.DEV && <details><summary>Lecturas observadas</summary><pre className="overflow-auto text-xs">{JSON.stringify({ queries: readDiagnostics(), navigation: resources.diagnostics() }, null, 2)}</pre><p>Documentos recibidos, no facturación; no incluye accesos internos de Rules ni índices.</p></details>}
       <p>Pedidos creados en el período: {contractCounts.pending} pendientes · {contractCounts.delivered} entregados · {contractCounts.cancelled} cancelados · {contractCounts.withDebt} con saldo.</p>
-      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
-          <span className="text-2xl">📊</span>
-          <span className="break-words">Dashboard Gerencial</span>
-        </h1>
-        <div className="flex flex-wrap gap-1 rounded-xl border border-line bg-panel p-1">
-          {Object.entries(TIME_FILTERS).map(([key, label]) => <Button key={key} onClick={() => setTimeFilter(key)} className={cn(`text-xs sm:text-sm ${timeFilter === key ? "bg-primary-soft text-primary" : ''} `)} type="button" variant="secondary">
-              {label}
-            </Button>)}
-        </div>
-      </PageHeader>
+
+      <HelpDisclosure title="Alcance de este informe">Movimientos confirmados; excluye pendientes locales. Lectura limitada a 10000 movimientos y 500 contratos por negocio. Los cierres operativos conservan conciliación pendiente.</HelpDisclosure>
 
       <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Ingresos Netos" value={`S/ ${formatMoney(total)}`} subtext={`POS: S/ ${formatMoney(summary.posRevenue)} · Pedidos: S/ ${formatMoney(summary.contractRevenue)}`} emoji="💰" borderColor="border-primary" bgColor="bg-primary-soft" />
@@ -76,7 +74,7 @@ export default function Reports({
 
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <Card className="min-w-0 overflow-hidden p-0 sm:p-0" as="div">
-          <div className="border-b border-line bg-subtle/50 p-4">
+          <div className="border-b border-primary/10 bg-primary-soft/50 p-4">
             <h3 className="text-base font-semibold">📈 Evolución de Ventas</h3>
           </div>
           <div className={cn(`flex h-80 min-w-0 items-end gap-4 overflow-x-auto overscroll-x-contain p-5 pt-10 ${chartData.length > 10 ? "gap-3" : ''} `)}>
@@ -85,7 +83,7 @@ export default function Reports({
         </Card>
 
         <Card className="min-w-0 overflow-hidden p-0 sm:p-0" as="div">
-          <div className="border-b border-line bg-subtle/50 p-4">
+          <div className="border-b border-primary/10 bg-primary-soft/50 p-4">
             <h3 className="text-base font-semibold">🏆 Top 5 Productos</h3>
           </div>
           {topProducts.length === 0 ? <div className="grid min-h-48 place-content-center gap-3 p-5 text-center text-sm text-muted">

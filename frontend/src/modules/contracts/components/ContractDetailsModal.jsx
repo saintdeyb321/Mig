@@ -172,7 +172,7 @@ const ContractDetailsModal = ({
                </div>}
 
             <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-              <div className="grid min-w-0 gap-4 rounded-xl border border-line bg-panel p-4">
+              <div className="grid min-w-0 gap-4 rounded-2xl border border-line bg-panel p-4 shadow-card">
                 <h3 className="border-b border-line pb-3 text-sm font-semibold">Datos del Cliente</h3>
                 <div className="grid gap-4">
 
@@ -202,7 +202,7 @@ const ContractDetailsModal = ({
                 </div>
               </div>
 
-              <div className="grid min-w-0 gap-4 rounded-xl border border-line bg-panel p-4">
+              <div className="grid min-w-0 gap-4 rounded-2xl border border-line bg-panel p-4 shadow-card">
                 <h3 className="border-b border-line pb-3 text-sm font-semibold">Fotos de Referencia</h3>
                 <div className="min-w-0">
                    {allImages.length > 0 ? <div className={cn("grid gap-2 min-h-30", allImages.length > 1 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1")}>
@@ -215,7 +215,7 @@ const ContractDetailsModal = ({
               </div>
             </div>
 
-            <div className="grid min-w-0 gap-4 rounded-xl border border-line bg-panel p-4">
+            <div className="grid min-w-0 gap-4 rounded-2xl border border-line bg-panel p-4 shadow-card">
               <h3 className="border-b border-line pb-3 text-sm font-semibold">Detalles de Preparación</h3>
               <div className="whitespace-pre-wrap break-words rounded-xl bg-subtle p-4 text-sm leading-relaxed">
                 {contract.details}
@@ -236,7 +236,7 @@ const ContractDetailsModal = ({
               </div>
             </div>
 
-            <div className="min-w-0 rounded-xl border border-line p-4 flex flex-wrap items-center justify-between gap-4 bg-primary-soft">
+            <div className="min-w-0 rounded-2xl border border-finance-line bg-success-soft p-5 flex flex-wrap items-center justify-between gap-4">
               <div className="grid gap-1 text-sm [&>label]:text-muted">
                 <label className="text-sm leading-relaxed text-muted">Total General</label>
                 <span className={cn("text-2xl font-bold", isCancelled ? "line-through" : "no-underline")}>
@@ -290,7 +290,7 @@ const ContractDetailsModal = ({
             {imageReferences.length > 0 && <p>Fotos locales: solo este dispositivo/cuenta. Referencias antiguas conservadas.</p>}
             {imagesLoading && <p>Cargando imágenes de referencia...</p>}
             {imagesError && <p role="alert" className="rounded-xl border border-danger/20 bg-danger-soft p-3 text-sm text-danger">{imagesError.message}</p>}
-            {payments.length > 0 && <div className="grid min-w-0 gap-4 rounded-xl border border-line bg-panel p-4">
+            {payments.length > 0 && <div className="grid min-w-0 gap-4 rounded-2xl border border-line bg-panel p-4 shadow-card">
                  <h3 className="border-b border-line pb-3 text-sm font-semibold">Auditoría de Transacciones</h3>
 
                  <div className="grid gap-2">

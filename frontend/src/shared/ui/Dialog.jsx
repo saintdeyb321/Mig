@@ -42,7 +42,7 @@ function DialogSurface({ open = true, onOpenChange, onClose, title, description,
           <Primitive.Description className={cn('mt-1 text-xs leading-relaxed text-white/75', !description && 'sr-only')}>{description || 'Revisa y completa los datos de esta operación.'}</Primitive.Description></div>
         {dismissible && <Close asChild><IconButton label="Cerrar diálogo" disabled={busy} className="-mr-1 -mt-1 text-white/80 hover:bg-white/10 hover:text-white"><X /></IconButton></Close>}
       </DialogHeader>
-      <div className={cn("min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-5 sm:p-6", bodyClassName)}><fieldset disabled={busy} className="contents">{children}</fieldset></div>
+      <div className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6", bodyClassName)}><fieldset disabled={busy} className="contents space-y-4">{children}</fieldset></div>
     </Primitive.Content>
     </div>
   </Primitive.Portal></Primitive.Root>;

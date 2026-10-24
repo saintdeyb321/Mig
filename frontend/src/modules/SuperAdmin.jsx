@@ -1,5 +1,6 @@
+import { ShieldCheck } from 'lucide-react';
 import { ClientCard } from "./admin/ClientCard.jsx";
-import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Select, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
+import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Select, Card, SearchField, DialogFooter, EmptyState, HelpDisclosure } from "../shared/ui";
 import { brand } from '../config/brand';
 // src/modules/SuperAdmin.jsx
 import { useState } from 'react';
@@ -76,17 +77,10 @@ function SuperAdmin({
   }
   return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl" aria-label="Administración de plataforma">
 
-      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
-          <span className="text-2xl">👑</span>
-          <span className="break-words">Clientes SaaS · Firebase Spark</span>
-        </h1>
-
-        <Button className="shrink-0" onClick={() => setShowAddModal(true)} type="button" variant="primary">
+      <PageHeader title="Clientes SaaS" icon={ShieldCheck} eyebrow="Administración de plataforma" description="Negocios, accesos y vigencia de licencias." actions={<><Button className="shrink-0" onClick={() => setShowAddModal(true)} type="button" variant="primary">
           ➕ Nuevo Cliente
-        </Button>
-      </PageHeader>
-      <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Administración Spark mediante Firestore. Usa un Gmail distinto del SuperAdmin para el propietario. Exportación local bajo demanda; el dueño puede exportar sus datos operativos desde Ajustes. Purga, eliminación masiva, restauración privilegiada, scheduler y jobs backend deshabilitados.</p>
+        </Button></>} />
+      <HelpDisclosure title="Alcance de la administración">Firebase Spark. Exportación empresarial disponible solo en plataforma, bajo demanda y por negocio. Purga, restauración privilegiada y jobs backend deshabilitados. Las solicitudes de baja se coordinan externamente con el propietario.</HelpDisclosure>
       {error && <p role="alert" className="rounded-xl border border-danger/20 bg-danger-soft p-3 text-sm text-danger">{error}</p>}
       <Button disabled={isLoading} onClick={refresh} type="button" variant="secondary">Actualizar clientes</Button>
       {backupBusinessId && <BackupPanel key={`${user.uid}:${backupBusinessId}`} user={user} businessId={backupBusinessId} onClose={() => setBackupBusinessId(null)} />}
@@ -127,7 +121,7 @@ function SuperAdmin({
                 </FormField>
               </div>
 
-              <FormField label={<>CORREO GMAIL</>}>
+              <FormField label={<>CORREO GMAIL</>} hint="Usa una cuenta diferente a la del SuperAdmin.">
 
                 <Input type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} placeholder="Correo del titular" required disabled={isProcessing} />
               </FormField>

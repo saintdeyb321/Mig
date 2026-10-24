@@ -13,7 +13,7 @@ const sizes = { sm: 'min-h-11 px-3 py-2 text-xs sm:min-h-9 sm:py-1.5', md: 'min-
 
 export function Button({ variant = 'primary', size = 'md', loading = false, disabled, type = 'button', className, children, ref, ...props }) {
   return <button ref={ref} type={type} disabled={disabled || loading} aria-busy={loading || undefined}
-    className={cn('inline-flex shrink-0 items-center justify-center gap-2 rounded-xl font-semibold transition-[color,background-color,box-shadow] motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:pointer-events-none disabled:opacity-50 [&>svg]:size-4', variants[variant], sizes[size], className)} {...props}>
+    className={cn('inline-flex min-w-0 max-w-full shrink-0 items-center justify-center gap-2 rounded-xl font-semibold transition-[color,background-color,box-shadow] motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:pointer-events-none disabled:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0', variants[variant], sizes[size], className)} {...props}>
     {loading && <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" />}{children}
   </button>;
 }

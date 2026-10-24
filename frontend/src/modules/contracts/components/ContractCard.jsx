@@ -138,7 +138,7 @@ const ContractCard = memo(({
   const urgency = getUrgencyBadge(contract.deliveryDate, contract.status);
   const statusConfig = getStatusConfig(contract.status);
   const deliveryText = getDeliveryText(contract.deliveryType, branches);
-  return <Card className={cn(`grid gap-4 ${isCancelled ? "border-danger/25 bg-danger-soft/30" : ''} `, criticalDebt ? "border-l-4 border-l-danger" : "")} as="div">
+  return <Card className={cn(`grid gap-4 border-t-4 border-t-primary/40 ${isCancelled ? "border-danger/25 bg-danger-soft/30" : ''} `, criticalDebt ? "border-l-4 border-l-danger" : "")} as="div">
 
       <div className="flex-wrap gap-2 border-b border-line pb-3 flex justify-between items-center">
         <div className="flex gap-2 flex-wrap">
@@ -171,7 +171,7 @@ const ContractCard = memo(({
           </div>
         </div>
 
-        <div className="grid gap-1 rounded-xl border border-line bg-subtle p-3 sm:text-right">
+        <div className="grid gap-1 rounded-xl border border-accent/15 bg-accent-soft/50 p-3 sm:text-right">
           <div className="text-xs font-medium text-muted">FECHA DE ENTREGA</div>
           <div className="text-sm font-semibold text-primary">{formatDateTime(contract.deliveryDate)}</div>
           {urgency && <Badge className={cn(`inline-flex w-fit items-center gap-1 ${urgency.pulse ? "ring-1 ring-danger/30" : ''} `)} style={{
@@ -184,10 +184,10 @@ const ContractCard = memo(({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-line pt-4">
-        <div className="flex w-full flex-wrap justify-between gap-4 sm:w-auto">
+        <div className="flex w-full flex-wrap items-center justify-between gap-4 rounded-xl bg-success-soft/40 p-3 sm:w-auto">
           <div className="grid gap-1">
             <span className="text-xs text-muted">Total</span>
-            <span className="text-base font-bold">S/ {contract.total.toFixed(2)}</span>
+            <span className="text-xl font-extrabold text-success tabular-nums">S/ {contract.total.toFixed(2)}</span>
           </div>
           <div className="grid gap-1">
             <span className="text-xs text-muted">Abonado</span>
