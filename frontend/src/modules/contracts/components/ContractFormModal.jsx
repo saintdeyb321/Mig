@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { useCustomers } from '../../../features/customers/hooks/useCustomers';
 import { toDateSafe } from '../../../core/dates/dateValues';
 import { useContractImageUrls } from '../../../features/contracts/hooks/useContractImageUrls';
+import { MAX_CONTRACT_IMAGES } from '../../../features/contracts/infrastructure/contractImages';
 const ContractFormModal = ({
   contractToEdit,
   activeLocations,
@@ -135,8 +136,8 @@ const ContractFormModal = ({
   const handleImageChange = e => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
-    if (images.length + files.length > 20) {
-      return toast.error("Máximo 20 imágenes de referencia por pedido.");
+    if (images.length + files.length > MAX_CONTRACT_IMAGES) {
+      return toast.error(`Máximo ${MAX_CONTRACT_IMAGES} imágenes de referencia por pedido.`);
     }
     if (files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || !/\.(jpe?g|png|webp)$/i.test(file.name) || file.size > 5 * 1024 * 1024)) {
       return toast.error('Usa imágenes JPEG, PNG o WebP de hasta 5 MB. Se comprimen y guardan solo en este dispositivo.');
@@ -260,13 +261,13 @@ const ContractFormModal = ({
                 </FormField>
 
                 <div className="grid min-w-0 gap-1.5">
-                  <label className="text-sm leading-relaxed text-muted">Fotos de Referencia (Max 4)</label>
+                  <p className="text-sm leading-relaxed text-muted">Fotos de referencia (máximo {MAX_CONTRACT_IMAGES}) · {images.length}/{MAX_CONTRACT_IMAGES}</p>
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                     {images.map((_image, idx) => <div key={idx} className="relative aspect-square overflow-hidden rounded-xl border border-line bg-subtle">
                         {displayedImages[idx] ? <img src={displayedImages[idx]} alt={`Ref ${idx}`} className="size-full object-cover" /> : <span>Cargando imagen...</span>}
                         <Button type="button" onClick={() => handleRemoveImage(idx)} disabled={isProcessing} className="absolute right-1 top-1 z-10 size-8 min-h-8 rounded-full p-1" title="Eliminar foto" variant="danger" aria-label="Eliminar foto">✖</Button>
                       </div>)}
-                    {images.length < 4 && <div className="relative flex aspect-square items-center justify-center rounded-xl border border-dashed border-primary/40 bg-primary-soft focus-within:ring-2 focus-within:ring-focus" title="Subir foto">
+                    {images.length < MAX_CONTRACT_IMAGES && <div className="relative flex aspect-square items-center justify-center rounded-xl border border-dashed border-primary/40 bg-primary-soft focus-within:ring-2 focus-within:ring-focus" title="Subir foto">
                         <Input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handleImageChange} disabled={isProcessing} className="absolute inset-0 size-full cursor-pointer opacity-0" aria-label="Seleccionar imagen de referencia" />
                         <span className="pointer-events-none text-2xl text-primary">➕</span>
                       </div>}

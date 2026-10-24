@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import * as AlertPrimitive from '@radix-ui/react-alert-dialog';
 import { X } from 'lucide-react';
@@ -26,7 +26,7 @@ function DialogSurface({ open = true, onOpenChange, onClose, title, description,
       onCloseAutoFocus={event => {
         event.preventDefault();
         requestAnimationFrame(() => {
-          const activeDialog = document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]');
+          const activeDialog = [...document.querySelectorAll('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]')].at(-1);
           const trigger = returnFocus.current;
           if (activeDialog && !activeDialog.contains(trigger)) return;
           if (trigger?.isConnected) trigger.focus({ preventScroll: true });
@@ -48,8 +48,24 @@ function DialogSurface({ open = true, onOpenChange, onClose, title, description,
 export function Dialog(props) { return <DialogSurface {...props} />; }
 export function Drawer(props) { return <DialogSurface {...props} drawer />; }
 export function ConfirmDialog({ onConfirm, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', children, busy, ...props }) {
-  return <DialogSurface {...props} busy={busy} alert>{children}{onConfirm && <DialogFooter>
-    <AlertPrimitive.Cancel asChild><Button variant="secondary" disabled={busy}>{cancelLabel}</Button></AlertPrimitive.Cancel>
-    <AlertPrimitive.Action asChild><Button variant="danger" loading={busy} onClick={event => { event.preventDefault(); onConfirm(event); }}>{confirmLabel}</Button></AlertPrimitive.Action>
+  const inFlight = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  const occupied = busy || pending;
+  const confirm = async event => {
+    event.preventDefault();
+    if (busy || inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
+    setError('');
+    try { await onConfirm(event); }
+    catch (error) { setError(error?.message || 'No se pudo completar la operación. Intenta nuevamente.'); }
+    finally { inFlight.current = false; setPending(false); }
+  };
+  return <DialogSurface {...props} busy={occupied} alert>{children}
+    {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+    {onConfirm && <DialogFooter>
+    <AlertPrimitive.Cancel asChild><Button variant="secondary" disabled={occupied}>{cancelLabel}</Button></AlertPrimitive.Cancel>
+    <AlertPrimitive.Action asChild><Button variant="danger" loading={occupied} onClick={confirm}>{confirmLabel}</Button></AlertPrimitive.Action>
   </DialogFooter>}</DialogSurface>;
 }

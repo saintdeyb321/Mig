@@ -57,7 +57,9 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
   const server = await createServer({ root, configFile: false, envFile: false, clearScreen: false, logLevel: 'error',
     esbuild: { jsx: 'automatic' },
     resolve: { alias: { react: resolve(root, 'node_modules/react'), 'react-dom': resolve(root, 'node_modules/react-dom'), 'xlsx-js-style': resolve(root, 'node_modules/xlsx-js-style'), firebase: resolve(root, 'node_modules/firebase') } },
-    optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom/client', ...(mockPng || firebaseSdk ? ['xlsx-js-style'] : []), ...(firebaseSdk ? ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'] : [])] },
+    // Discovery is disabled for isolated/mocked fixtures. Radix also imports the CJS
+    // react-dom root (portals/flushSync), so prebundle it alongside react-dom/client.
+    optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom', 'react-dom/client', ...(mockPng || firebaseSdk ? ['xlsx-js-style'] : []), ...(firebaseSdk ? ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'] : [])] },
     // saleModel imports the shared Functions domain outside frontend/. Default Vite fs policy denies it.
     server: { host: '127.0.0.1', port: 0, hmr: false, headers, fs: { allow: [workspace] } }, plugins: [{ name: 'isolated-indexeddb-test',
       resolveId: id => id === 'virtual:browser-fixture' ? '\0browser-fixture' : Object.hasOwn(moduleMocks, id) ? id : undefined,
