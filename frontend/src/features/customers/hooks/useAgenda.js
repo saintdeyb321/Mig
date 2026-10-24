@@ -4,7 +4,9 @@ import { timestampNow } from '../../../core/firebase/timestamps';
 import { useState, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
-export const useAgenda = (user) => {
+const confirmInBrowser = message => window.confirm(message);
+
+export const useAgenda = (user, { confirm = confirmInBrowser } = {}) => {
   const { customers: globalAgenda, isLoading: isGlobalLoading } = useCustomers();
 
   const [isLoading, setIsLoading] = useState(false);
@@ -70,7 +72,7 @@ export const useAgenda = (user) => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("¿Seguro que deseas eliminar a este contacto de tu agenda?")) return;
+    if (!await confirm("¿Seguro que deseas eliminar a este contacto de tu agenda?")) return;
     try {
       await deleteCustomer(id);
       toast.success("Contacto eliminado correctamente");

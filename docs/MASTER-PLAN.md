@@ -1321,3 +1321,8 @@ Principios finales:
 - producto sin personalización fija;
 - despliegues reproducibles;
 - arquitectura preparada para crecer.
+
+
+## Modernización frontend UX · Tailwind v4 / Radix
+
+UX-TW-0 a UX-TW-5 implementadas en `refactor/ux-tailwind-v4`, pendientes de aceptación manual del propietario. Checkpoints A `8fd282f` (sistema visual/layout), B `bb45265` (POS/diálogos) y C (vistas restantes/retirada de CSS). Ver [plan UX](PLAN-REFAC-FRONTEND-UX-MIGAPOS.md). Lint, build/PWA y diff-check aprobados; sin pruebas de navegador, deploy ni merge. Dominio Spark e invariantes financieros conservados. SPARK-7 sigue **IMPLEMENTADA, PENDIENTE DE PUBLICACIÓN Y ACEPTACIÓN MANUAL**.

@@ -1,4 +1,4 @@
-import { Dialog } from "../shared/ui";
+import { Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, DialogFooter, SearchField, EmptyState } from "../shared/ui";
 // src/modules/BranchManager.jsx
 import React, { memo, useState } from 'react';
 import { useBranches } from '../features/branches/hooks/useBranches';
@@ -10,66 +10,46 @@ const BranchCard = memo(({
 }) => {
   const isInactive = b.status?.toLowerCase() === 'inactivo';
   const hasQR = Boolean(b.yapeQrUrl);
-  return <div className={`user-card fade-in ${isInactive ? 'inactive' : ''}`}>
-      <div className="user-card-content">
-        <div className="user-avatar avatar-staff" style={{
-        position: 'relative'
-      }}>
-          <span style={{
-          opacity: isInactive ? 0.5 : 1
-        }}>🏢</span>
+  return <Card className={cn(`flex min-w-0 flex-wrap items-center justify-between gap-4       animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65" : ''} `)} as="div">
+      <div className="flex min-w-0 flex-[1_1_15rem] items-center gap-3">
+        <div className="flex size-12 shrink-0 items-center justify-center rounded-xl text-2xl bg-subtle relative">
+          <span className={cn(isInactive ? "opacity-50" : "opacity-100")}>🏢</span>
         </div>
 
-        <div className="user-info">
-          <div className="user-name-row">
-            <span className={`user-name ${isInactive ? 'text-strikethrough text-muted' : 'text-main'}`}>
+        <div className="grid min-w-0 flex-1 gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn(`break-words font-semibold ${isInactive ? "line-through text-muted" : "text-ink"} `)}>
               {b.name}
             </span>
-            <div style={{
-            display: 'flex',
-            gap: '4px'
-          }}>
-              {hasQR && <span className="user-badge" style={{
-              background: '#e0e7ff',
-              color: '#3730a3'
-            }}>
+            <div className="flex gap-1">
+              {hasQR && <Badge className="bg-primary-soft text-accent">
                   📱 QR Activo
-                </span>}
-              <span className="user-badge" style={{
-              background: isInactive ? '#fee2e2' : '#dcfce7',
-              color: isInactive ? 'var(--danger)' : '#166534'
-            }}>
+                </Badge>}
+              <Badge className={cn(isInactive ? "bg-danger-soft" : "bg-success-soft", isInactive ? "text-danger" : "text-success")}>
                 {isInactive ? '🔴 INACTIVA' : '🟢 ACTIVA'}
-              </span>
+              </Badge>
             </div>
           </div>
 
-          <span className="employee-card-email" style={{
-          marginTop: '4px'
-        }}>
+          <span className="break-all text-xs text-muted mt-1">
             📍 {b.address || 'Sin dirección'}
           </span>
 
-          <div className="user-shift" style={{
-          marginTop: '2px'
-        }}>
-            <span className="shift-icon">📞</span>
-            <span className="shift-text" style={{
-            color: 'var(--text-muted)',
-            fontWeight: '500'
-          }}>
+          <div className="flex flex-wrap items-center gap-1 text-xs text-primary mt-0.5">
+            <span className="text-sm">📞</span>
+            <span className="text-muted font-medium">
               {b.phone || 'Sin teléfono'}
             </span>
           </div>
         </div>
       </div>
 
-      <div className="user-actions">
-        <button onClick={() => openEditForm(b)} disabled={isProcessing} className="btn-user-action btn-edit-user">
+      <div className="flex w-full flex-wrap items-center gap-2 border-t border-line pt-3 sm:w-auto sm:border-0 sm:pt-0">
+        <Button onClick={() => openEditForm(b)} disabled={isProcessing} className="flex-1 sm:flex-none" type="button" variant="secondary">
           <span>✏️</span> Editar
-        </button>
+        </Button>
       </div>
-    </div>;
+    </Card>;
 });
 function BranchManager({
   user,
@@ -105,70 +85,45 @@ function BranchManager({
     return matchesSearch && matchesStatus;
   });
   if (isLoading && !showFormModal) {
-    return <div className="loading-container fade-in" style={{
-      padding: '20px'
-    }}>
-        <span className="loading-icon">🏢</span>
-        <p className="loading-text">Cargando sucursales...</p>
+    return <div className="flex min-h-64 flex-col items-center justify-center gap-4 animate-enter motion-reduce:animate-none p-5">
+        <span className="text-3xl">🏢</span>
+        <p className="text-sm text-muted">Cargando sucursales...</p>
       </div>;
   }
-  return <div className={isEmbedded ? "fade-in" : "fade-in max-container padding-bottom-lg"} style={isEmbedded ? {} : {
-    maxWidth: '900px',
-    margin: '0 auto'
-  }}>
+  return <div className={cn(isEmbedded ? "animate-enter motion-reduce:animate-none" : "animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6", isEmbedded ? "" : "w-full max-w-6xl m-[0_auto]")}>
 
-      {!isEmbedded && <header className="module-header">
-          <h2 className="module-title">
-            <span className="module-title-icon">🏢</span>
-            <span className="module-title-text">Mis Sucursales</span>
-          </h2>
-          <button onClick={openAddForm} className="btn-primary btn-add-smart">
+      {!isEmbedded && <PageHeader className="flex flex-wrap items-center justify-between gap-4">
+          <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
+            <span className="text-2xl">🏢</span>
+            <span className="break-words">Mis Sucursales</span>
+          </h1>
+          <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
             ➕ Nueva Sede
-          </button>
-        </header>}
+          </Button>
+        </PageHeader>}
 
-      <div className="filter-bar-container" style={{
-      display: 'flex',
-      flexWrap: 'wrap',
-      gap: '12px',
-      alignItems: 'center',
-      marginBottom: '20px'
-    }}>
+      <div className="flex flex-wrap gap-3 items-center mb-5">
 
-        <div className="search-container" style={{
-        flex: '1 1 200px',
-        margin: 0
-      }}>
-          <span className="search-icon">🔍</span>
-          <input type="text" className="search-input" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre..." />
-          {searchTerm && <button onClick={() => setSearchTerm('')} className="btn-clear-search">✖</button>}
-        </div>
+        <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre..." onClear={() => setSearchTerm('')} />
 
-        <label className="toggle-label" style={{
-        margin: 0
-      }}>
-          <input type="checkbox" className="toggle-checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
+        <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted m-0">
+          <Input type="checkbox" className="shrink-0" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Ver inactivos
         </label>
 
-        {isEmbedded && <button onClick={openAddForm} className="btn-primary btn-add-smart">
+        {isEmbedded && <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
             ➕ Nueva Sede
-          </button>}
+          </Button>}
       </div>
 
-      <h3 className="inventory-title" style={{
-      marginTop: 0
-    }}>
+      <h3 className="text-sm font-semibold text-muted mt-0">
         Lista de Sedes ({filteredBranches.length})
       </h3>
 
-      <div className="user-list-container">
-        {filteredBranches.length === 0 ? <div className="card empty-state-dashed fade-in">
-            <span className="empty-icon-lg">🏢</span>
-            <p className="empty-text-muted">
+      <div className="grid gap-3">
+        {filteredBranches.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'Aún no hay sucursales registradas.'}
-            </p>
-          </div> : filteredBranches.map(b => <BranchCard key={b.id} b={b} openEditForm={openEditForm} isProcessing={isProcessing} />)}
+            </>} /> : filteredBranches.map(b => <BranchCard key={b.id} b={b} openEditForm={openEditForm} isProcessing={isProcessing} />)}
       </div>
 
       {/* MODAL FORMULARIO */}
@@ -176,42 +131,38 @@ function BranchManager({
               {editingBranch ? '✏️ Editar Sede' : '➕ Nueva Sede'}
             </>} busy={isProcessing} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
+            <form onSubmit={handleSave} className="grid gap-4">
+              <FormField label={<>NOMBRE DE LA SEDE</>}>
 
-            <form onSubmit={handleSave} className="smart-form">
-              <div className="form-group">
-                <label className="form-label">NOMBRE DE LA SEDE</label>
-                <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Sede Principal" required disabled={isProcessing} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">DIRECCIÓN FÍSICA</label>
-                <input value={address} onChange={e => setAddress(e.target.value)} placeholder="Ej: Av. Las Begonias 123" disabled={isProcessing} />
-              </div>
+                <Input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Sede Principal" required disabled={isProcessing} />
+              </FormField>
+              <FormField label={<>DIRECCIÓN FÍSICA</>}>
 
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">TELÉFONO DE ATENCIÓN</label>
-                  <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Opcional" disabled={isProcessing} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">ESTADO</label>
-                  <select value={status} onChange={e => setStatus(e.target.value)} disabled={isProcessing}>
+                <Input value={address} onChange={e => setAddress(e.target.value)} placeholder="Ej: Av. Las Begonias 123" disabled={isProcessing} />
+              </FormField>
+
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <FormField label={<>TELÉFONO DE ATENCIÓN</>}>
+
+                  <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Opcional" disabled={isProcessing} />
+                </FormField>
+                <FormField label={<>ESTADO</>}>
+
+                  <Select value={status} onChange={e => setStatus(e.target.value)} disabled={isProcessing}>
                     <option value="activo">🟢 Activa</option>
                     <option value="inactivo">🔴 Inactiva</option>
-                  </select>
-                </div>
+                  </Select>
+                </FormField>
               </div>
-
 
               <QRPaymentCard qrImageBase64={qrImageBase64} isProcessing={isProcessing} handleImageChange={handleImageChange} onRemoveImage={removeQrImage} />
 
-              <div className="modal-actions-footer" style={{
-          marginTop: '25px'
-        }}>
-                <button type="button" onClick={() => setShowFormModal(false)} disabled={isProcessing} className="btn-cancel">Cancelar</button>
-                <button type="submit" className="btn-yape-solid flex-1" disabled={isProcessing}>
+              <DialogFooter>
+                <Button type="button" onClick={() => setShowFormModal(false)} disabled={isProcessing} variant="secondary">Cancelar</Button>
+                <Button type="submit" className="flex-1" disabled={isProcessing} variant="accent">
                   {isProcessing ? 'Guardando...' : 'Guardar Sede'}
-                </button>
-              </div>
+                </Button>
+              </DialogFooter>
             </form>
           </Dialog>}
     </div>;

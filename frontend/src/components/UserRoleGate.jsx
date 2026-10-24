@@ -1,6 +1,10 @@
+import { Card } from "../shared/ui";
 import React, { useMemo, memo } from 'react';
-
-const UserRoleGate = memo(({ user, allowedRoles = [], children }) => {
+const UserRoleGate = memo(({
+  user,
+  allowedRoles = [],
+  children
+}) => {
   const hasAccess = useMemo(() => {
     if (!user) return false;
     const userRole = String(user.role || '').toLowerCase();
@@ -8,58 +12,26 @@ const UserRoleGate = memo(({ user, allowedRoles = [], children }) => {
     const normalizedAllowedRoles = allowedRoles.map(role => role.toLowerCase());
     return normalizedAllowedRoles.includes(userRole);
   }, [user, allowedRoles]);
-
   if (!hasAccess) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', padding: '20px' }}>
-        <div className="card fade-in" style={{ 
-          maxWidth: '450px', 
-          width: '100%',
-          textAlign: 'center',
-          borderTop: '5px solid var(--danger)',
-          padding: '2.5rem 2rem',
-          boxShadow: 'var(--shadow-md)'
-        }}>
-          <div style={{ 
-            background: '#fee2e2', 
-            width: '65px', 
-            height: '65px', 
-            borderRadius: '50%', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            fontSize: '2rem',
-            margin: '0 auto 20px auto'
-          }}>
+    return <div className="flex justify-center items-center h-full p-5">
+        <Card className="animate-enter motion-reduce:animate-none max-w-lg w-full text-center border-t-4 border-t-danger p-[2.5rem_2rem]" as="div">
+          <div className="bg-danger-soft w-[65px] h-[65px] rounded-full flex items-center justify-center text-3xl m-[0_auto_20px_auto]">
             🚫
           </div>
-          <h3 style={{ color: 'var(--text-main)', marginBottom: '10px', fontSize: '1.4rem' }}>
+          <h3 className="text-ink mb-2.5 text-xl">
             Acceso Restringido
           </h3>
-          <p style={{ color: 'var(--text-muted)', lineHeight: '1.6', fontSize: '0.95rem', marginBottom: '20px' }}>
-            Tu cuenta actual con el rol de <strong style={{ color: 'var(--danger)', textTransform: 'uppercase' }}>{user?.role}</strong> no tiene los permisos necesarios para visualizar esta sección.
+          <p className="text-muted text-base mb-5">
+            Tu cuenta actual con el rol de <strong className="text-danger uppercase">{user?.role}</strong> no tiene los permisos necesarios para visualizar esta sección.
           </p>
-          <div style={{ 
-            background: 'var(--bg-app)', 
-            padding: '12px', 
-            borderRadius: '8px',
-            fontSize: '0.85rem', 
-            color: 'var(--text-muted)',
-            fontWeight: '600',
-            border: '1px solid var(--border)'
-          }}>
+          <div className="bg-subtle p-3 rounded-xl text-sm text-muted font-semibold border border-line">
             Contacta al administrador si necesitas acceso.
           </div>
-        </div>
-      </div>
-    );
+        </Card>
+      </div>;
   }
-
-  return (
-    <div className="fade-in" style={{ height: '100%' }}>
+  return <div className="animate-enter motion-reduce:animate-none h-full">
       {children}
-    </div>
-  );
+    </div>;
 });
-
 export default UserRoleGate;

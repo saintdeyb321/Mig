@@ -1,10 +1,10 @@
+import { Button, PageHeader, Select, cn, SearchField, EmptyState } from "../../shared/ui";
 // src/modules/contracts/ContractManager.jsx
 import React, { useState, useMemo, useCallback } from 'react';
 import { useContracts } from '../../features/contracts/hooks/useContracts';
 import { useTenantData } from '../../features/branches/context/TenantContext';
 import toast from 'react-hot-toast';
 import { toMillisSafe } from '../../core/dates/dateValues';
-
 import ContractCard from './components/ContractCard';
 import ContractDetailsModal from './components/ContractDetailsModal';
 import ContractFormModal from './components/ContractFormModal';
@@ -14,18 +14,33 @@ import { generateContractProductionHTML, generateContractTextOnlyHTML } from '..
 import { withResolvedContractImages } from '../../features/contracts/infrastructure/contractImages';
 import { getPaymentsByContract } from '../../features/payments/infrastructure/paymentRepository';
 import { usePrintJobs } from '../../shared/printing/usePrintJobs';
-
-function ContractManager({ user }) {
+function ContractManager({
+  user
+}) {
   const runPrint = usePrintJobs();
-  const { activeBranchId, businessBranches, settings } = useTenantData();
-  const [viewFilter, setViewFilter] = useState('activos');
-
   const {
-    contracts, isLoading, isProcessing,
-    createContract, updateContract, cancelContract, addPayment, markDelivered,
-    isHistoryLoading, historyStarted, hasMoreHistory, loadMoreHistory, activeLimitReached,
-  } = useContracts(user, { historyEnabled: viewFilter === 'historial' });
-
+    activeBranchId,
+    businessBranches,
+    settings
+  } = useTenantData();
+  const [viewFilter, setViewFilter] = useState('activos');
+  const {
+    contracts,
+    isLoading,
+    isProcessing,
+    createContract,
+    updateContract,
+    cancelContract,
+    addPayment,
+    markDelivered,
+    isHistoryLoading,
+    historyStarted,
+    hasMoreHistory,
+    loadMoreHistory,
+    activeLimitReached
+  } = useContracts(user, {
+    historyEnabled: viewFilter === 'historial'
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('urgencia'); // urgencia | recientes
 
@@ -33,7 +48,6 @@ function ContractManager({ user }) {
   const [contractToEdit, setContractToEdit] = useState(null);
   const [contractToView, setContractToView] = useState(null);
   const [contractToCancel, setContractToCancel] = useState(null);
-
   const activeLocations = useMemo(() => businessBranches?.filter(b => b.status === 'activo') || [], [businessBranches]);
   const filteredContracts = useMemo(() => {
     let result = [...contracts];
@@ -51,11 +65,7 @@ function ContractManager({ user }) {
     // 2. BÚSQUEDA TEXTUAL
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
-      result = result.filter(c =>
-        c.contractId?.toLowerCase().includes(q) ||
-        c.clientName?.toLowerCase().includes(q) ||
-        c.clientPhone?.includes(q)
-      );
+      result = result.filter(c => c.contractId?.toLowerCase().includes(q) || c.clientName?.toLowerCase().includes(q) || c.clientPhone?.includes(q));
     }
 
     // 3. ORDENAMIENTO DE AGENDA
@@ -74,130 +84,119 @@ function ContractManager({ user }) {
         return dateB - dateA;
       });
     }
-
     return result;
   }, [contracts, searchTerm, viewFilter, sortBy]);
-
   const printContract = useCallback(async (contractData, template, compact = false) => {
     try {
       await runPrint(async job => {
         const ledger = await getPaymentsByContract(user.businessId, contractData.id, user.role === 'cajero' ? user.branchId : 'global');
-        const payments = contractData.paymentsMigrated || ledger.length > 0 ? ledger : (contractData.payments || []);
-        await withResolvedContractImages({ ...contractData, payments }, async resolved => {
+        const payments = contractData.paymentsMigrated || ledger.length > 0 ? ledger : contractData.payments || [];
+        await withResolvedContractImages({
+          ...contractData,
+          payments
+        }, async resolved => {
           const html = template(resolved, settings || {}, businessBranches);
           await job.print(html);
         });
-      }, { popup: true, compact });
+      }, {
+        popup: true,
+        compact
+      });
     } catch (error) {
       if (error.name !== 'AbortError') toast.error(error.message || 'No se pudo preparar la impresión.');
     }
   }, [settings, businessBranches, user.businessId, user.role, user.branchId, runPrint]);
-
   const handlePrintTicket = useCallback(contract => printContract(contract, generateContractReceiptHTML, true), [printContract]);
   const handlePrintProduction = useCallback(contract => printContract(contract, generateContractProductionHTML), [printContract]);
   const handlePrintTextOnly = useCallback(contract => printContract(contract, generateContractTextOnlyHTML), [printContract]);
-
   const handleFormSubmit = useCallback(async (contractData, _unusedImageFile, editId) => {
     const success = editId ? await updateContract(editId, contractData) : await createContract(contractData);
-    if (success) { setShowCreateModal(false); setContractToEdit(null); }
+    if (success) {
+      setShowCreateModal(false);
+      setContractToEdit(null);
+    }
   }, [createContract, updateContract]);
-
   const handleCancelSubmit = useCallback(async (docId, reason) => {
     const success = await cancelContract(docId, reason);
     if (success) setContractToCancel(null);
   }, [cancelContract]);
-
   const handleAddPayment = useCallback(async (docId, amount, method) => {
     const success = await addPayment(docId, amount, method);
     if (success) setContractToView(null); // Refresca cerrando modal
     return success;
   }, [addPayment]);
-
   if (isLoading) {
-    return (
-      <div className="fade-in max-container padding-bottom-lg" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-          <div className="spinner" style={{ margin: '0 auto 15px' }}></div>
+    return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6 flex justify-center items-center min-h-64">
+        <div className="text-center text-muted">
+          <div className="size-8 animate-spin rounded-full border-3 border-line border-t-primary motion-reduce:animate-none m-[0_auto_15px]"></div>
           <p>Cargando agenda de pedidos...</p>
         </div>
-      </div>
-    );
+      </div>;
   }
-
-  return (
-    <div className="fade-in max-container padding-bottom-lg">
-      <p role="status">Contratos Spark en sede de origen; cobros y devoluciones requieren caja propia abierta. Históricos en lectura, sin migración automática. Fotos comprimidas solo en este dispositivo/cuenta; no se sincronizan. Cancelación con devolución: solo dueño.</p>
-      <header className="module-header">
-        <h2 className="module-title">
-          <span className="module-title-icon">🎂</span>
-          <span className="module-title-text">Gestión de Pedidos</span>
-        </h2>
-        <button onClick={() => {
-            if (!activeBranchId || activeBranchId === 'global') return toast.error('Selecciona una sede física.');
-            setContractToEdit(null); setShowCreateModal(true);
-          }}
-          className="btn-primary btn-add-smart"
-          style={{ padding: '10px 20px', fontSize: '0.95rem' }}
-        >
+  return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6">
+      <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Contratos Spark en sede de origen; cobros y devoluciones requieren caja propia abierta. Históricos en lectura, sin migración automática. Fotos comprimidas solo en este dispositivo/cuenta; no se sincronizan. Cancelación con devolución: solo dueño.</p>
+      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
+          <span className="text-2xl">🎂</span>
+          <span className="break-words">Gestión de Pedidos</span>
+        </h1>
+        <Button onClick={() => {
+        if (!activeBranchId || activeBranchId === 'global') return toast.error('Selecciona una sede física.');
+        setContractToEdit(null);
+        setShowCreateModal(true);
+      }} className="shrink-0 py-2.5 px-5 text-base" type="button" variant="primary">
           ➕ Nuevo Pedido
-        </button>
-      </header>
+        </Button>
+      </PageHeader>
 
-      <div className="filter-bar-container" style={{ marginBottom: '20px', background: 'var(--bg-card)', padding: '15px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', display: 'flex', gap: '15px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div className="search-container" style={{ margin: 0, flex: 2, minWidth: '250px' }}>
-          <span className="search-icon">🔍</span>
-          <input type="text" className="search-input" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar por cliente, teléfono o ID..." style={{ fontSize: '0.95rem' }} />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '200px' }}>
-          <span style={{ fontWeight: 'bold', color: 'var(--text-muted)', fontSize: '0.85rem' }}>ORDENAR:</span>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ padding: '10px 15px', borderRadius: '8px', border: '1px solid var(--border)', background: 'white', fontWeight: 'bold', flex: 1, cursor: 'pointer' }}>
+      <div className="mb-5 bg-panel p-4 rounded-xl shadow-card flex gap-4 flex-wrap items-center">
+        <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por cliente, teléfono o ID..." />
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <span className="font-bold text-muted text-sm">ORDENAR:</span>
+          <Select value={sortBy} onChange={e => setSortBy(e.target.value)} className="py-2.5 px-4 rounded-xl border border-line bg-panel font-bold min-w-0 flex-1 cursor-pointer">
             <option value="urgencia">🚨 Más Próximos a Entregar</option>
             <option value="recientes">🆕 Recién Creados</option>
-          </select>
+          </Select>
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-        <div className="delivery-tabs" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-          <button className={`d-tab ${viewFilter === 'activos' ? 'active' : ''}`} onClick={() => setViewFilter('activos')} style={viewFilter === 'activos' ? {background: '#3b82f6', color: 'white'} : {}}>📦 Pedidos en Curso</button>
-          <button className={`d-tab ${viewFilter === 'deudas' ? 'active' : ''}`} onClick={() => setViewFilter('deudas')} style={viewFilter === 'deudas' ? {background: '#ef4444', color: 'white'} : {}}>⚠️ Cuentas por Cobrar</button>
-          <button className={`d-tab ${viewFilter === 'historial' ? 'active' : ''}`} onClick={() => setViewFilter('historial')} style={viewFilter === 'historial' ? {background: '#64748b', color: 'white'} : {}}>📜 Historial Cerrados</button>
+      <div className="flex justify-between items-center mb-5 flex-wrap gap-2.5">
+        <div className="flex w-full flex-wrap gap-1 rounded-xl p-1 sm:w-auto bg-subtle border border-line">
+          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'activos' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'activos' ? "bg-primary text-panel" : "")} onClick={() => setViewFilter('activos')} type="button" variant="secondary">📦 Pedidos en Curso</Button>
+          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'deudas' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'deudas' ? "bg-danger text-panel" : "")} onClick={() => setViewFilter('deudas')} type="button" variant="secondary">⚠️ Cuentas por Cobrar</Button>
+          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'historial' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'historial' ? "bg-muted text-panel" : "")} onClick={() => setViewFilter('historial')} type="button" variant="secondary">📜 Historial Cerrados</Button>
         </div>
-        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600, background: 'var(--bg-card)', padding: '6px 12px', borderRadius: '20px', border: '1px solid var(--border)' }}>
+        <span className="text-sm text-muted font-semibold bg-panel py-1.5 px-3 rounded-2xl border border-line">
           Mostrando {filteredContracts.length} pedidos cargados
         </span>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {filteredContracts.length === 0 ? (
-          <div className="card empty-state-dashed fade-in" style={{ padding: '40px', textAlign: 'center' }}>
-            <span style={{ fontSize: '3rem', opacity: 0.5, display: 'block', marginBottom: '10px' }}>📂</span>
-            <h4 style={{ margin: '0 0 5px 0', color: 'var(--text-main)' }}>No hay pedidos en esta vista</h4>
-          </div>
-        ) : (
-          filteredContracts.map(c => (
-            <ContractCard key={c.id} contract={c} onView={setContractToView} branches={businessBranches} onPrint={handlePrintTicket} onPrintProduction={handlePrintProduction} onPrintTextOnly={handlePrintTextOnly} />
-          ))
-        )}
+      <div className="flex flex-col">
+        {filteredContracts.length === 0 ? <EmptyState title={<>No hay pedidos en esta vista</>} /> : filteredContracts.map(c => <ContractCard key={c.id} contract={c} onView={setContractToView} branches={businessBranches} onPrint={handlePrintTicket} onPrintProduction={handlePrintProduction} onPrintTextOnly={handlePrintTextOnly} />)}
       </div>
 
-      {viewFilter === 'historial' && (
-        <div style={{ textAlign: 'center', marginTop: '20px' }}>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>La búsqueda incluye las páginas cargadas del historial.</p>
-          {(hasMoreHistory || isHistoryLoading) && <button type="button" className="btn-primary" disabled={isHistoryLoading} onClick={loadMoreHistory}>
-            {isHistoryLoading ? 'Cargando historial...' : (historyStarted ? 'Cargar más' : 'Cargar historial')}
-          </button>}
-        </div>
-      )}
-      {viewFilter !== 'historial' && activeLimitReached && <p style={{ color: 'var(--text-muted)' }}>
+      {viewFilter === 'historial' && <div className="text-center mt-5">
+          <p className="text-muted text-sm">La búsqueda incluye las páginas cargadas del historial.</p>
+          {(hasMoreHistory || isHistoryLoading) && <Button type="button" disabled={isHistoryLoading} onClick={loadMoreHistory} variant="primary">
+            {isHistoryLoading ? 'Cargando historial...' : historyStarted ? 'Cargar más' : 'Cargar historial'}
+          </Button>}
+        </div>}
+      {viewFilter !== 'historial' && activeLimitReached && <p className="text-muted">
         La agenda muestra los 100 pedidos activos con entrega más próxima. La búsqueda se aplica a esos pedidos.
       </p>}
 
-      {(showCreateModal || contractToEdit) && <ContractFormModal contractToEdit={contractToEdit} activeLocations={activeLocations} onClose={() => { setShowCreateModal(false); setContractToEdit(null); }} onSubmit={handleFormSubmit} isProcessing={isProcessing} />}
-      {contractToView && <ContractDetailsModal user={user} contract={contracts.find(c => c.id === contractToView.id) || contractToView} branches={businessBranches} settings={settings} onClose={() => setContractToView(null)} onAddPayment={handleAddPayment} onMarkDelivered={markDelivered} onEditRequest={(contract) => { setContractToView(null); setContractToEdit(contract); }} onCancelRequest={(contract) => { setContractToView(null); setContractToCancel(contract); }} isProcessing={isProcessing} />}
+      {(showCreateModal || contractToEdit) && <ContractFormModal contractToEdit={contractToEdit} activeLocations={activeLocations} onClose={() => {
+      setShowCreateModal(false);
+      setContractToEdit(null);
+    }} onSubmit={handleFormSubmit} isProcessing={isProcessing} />}
+      {contractToView && <ContractDetailsModal user={user} contract={contracts.find(c => c.id === contractToView.id) || contractToView} branches={businessBranches} settings={settings} onClose={() => setContractToView(null)} onAddPayment={handleAddPayment} onMarkDelivered={markDelivered} onEditRequest={contract => {
+      setContractToView(null);
+      setContractToEdit(contract);
+    }} onCancelRequest={contract => {
+      setContractToView(null);
+      setContractToCancel(contract);
+    }} isProcessing={isProcessing} />}
       {contractToCancel && <ContractCancelModal contract={contractToCancel} onClose={() => setContractToCancel(null)} onConfirm={handleCancelSubmit} isProcessing={isProcessing} />}
-    </div>
-  );
+    </div>;
 }
-
 export default ContractManager;

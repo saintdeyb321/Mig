@@ -23,7 +23,16 @@ function DialogSurface({ open = true, onOpenChange, onClose, title, description,
     <Primitive.Content aria-busy={busy || undefined}
       onEscapeKeyDown={event => { if (busy || !dismissible) event.preventDefault(); }}
       onInteractOutside={event => { if (busy || !dismissible) event.preventDefault(); }}
-      onCloseAutoFocus={event => { event.preventDefault(); requestAnimationFrame(() => { if (returnFocus.current?.isConnected) returnFocus.current.focus(); }); }}
+      onCloseAutoFocus={event => {
+        event.preventDefault();
+        requestAnimationFrame(() => {
+          const activeDialog = document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]');
+          const trigger = returnFocus.current;
+          if (activeDialog && !activeDialog.contains(trigger)) return;
+          if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+          else document.getElementById('main-content')?.focus({ preventScroll: true });
+        });
+      }}
       className={cn('pointer-events-auto fixed left-1/2 z-10 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-panel p-5 text-ink shadow-float outline-none sm:p-6',
         drawer ? 'bottom-0 max-h-[90dvh] w-full max-w-none rounded-b-none pb-[max(1.25rem,env(safe-area-inset-bottom))]' : 'top-1/2 -translate-y-1/2', className)}>
       <DialogHeader className="flex items-start justify-between gap-4">

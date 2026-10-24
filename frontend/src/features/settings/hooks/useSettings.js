@@ -29,7 +29,7 @@ export const useSettings = (user) => {
   };
 
   const saveCompanyData = async () => {
-    if (!user?.businessId) return;
+    if (!user?.businessId) return false;
 
     setIsSavingData(true);
     const loadId = toast.loading('Guardando datos de la empresa...');
@@ -38,9 +38,11 @@ export const useSettings = (user) => {
       await saveSettings(user.businessId, { companyData });
 
       toast.success('Datos de facturación actualizados', { id: loadId });
+      return true;
     } catch (error) {
       console.error("Error al guardar datos fiscales:", error);
       toast.error('Error al guardar la información.', { id: loadId });
+      return false;
     } finally {
       setIsSavingData(false);
     }

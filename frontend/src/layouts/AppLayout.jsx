@@ -18,6 +18,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
     ? businessBranches.find(branch => branch.id === user.branchId)?.name || 'Sede desconocida' : null, [user, businessBranches]);
   const canSelectBranch = isBusinessSession(user) && user?.role === 'dueño';
   return <div className="min-h-dvh min-w-0 bg-canvas text-ink">
+    <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-40 focus:rounded-xl focus:bg-panel focus:p-4 focus:text-primary focus:shadow-float">Ir al contenido</a>
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-white/5 bg-sidebar text-white lg:flex xl:w-64" aria-label="Navegación de escritorio">
       <div className="space-y-6 px-5 pb-5 pt-7">
         <div className="flex items-center gap-3"><img src={brand.logo} alt="" className="size-10 rounded-xl bg-white object-contain p-1" /><div><p className="text-xl font-bold tracking-tight">{brand.name}</p><p className="text-xs text-sidebar-muted">Tu negocio, en orden</p></div></div>
@@ -41,7 +42,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
         {canSelectBranch && <BranchSelector />}
         {assignedBranchName && <Badge><MapPin className="size-3" />{assignedBranchName}</Badge>}
       </header>
-      <main id="main-content" className="mx-auto min-w-0 max-w-[1680px] space-y-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:p-7 xl:p-9">{children}</main>
+      <main id="main-content" tabIndex={-1} className="mx-auto min-w-0 max-w-[1680px] space-y-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:p-7 xl:p-9">{children}</main>
     </div>
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-panel pb-[env(safe-area-inset-bottom)] lg:hidden"><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop={false} /></div>
   </div>;

@@ -1,89 +1,42 @@
+import { Input, Button, cn } from "../shared/ui";
 // src/modules/QRPaymentCard.jsx
 import React, { memo } from 'react';
-
-const QRPaymentCard = memo(({ 
-  qrImageBase64, 
-  isProcessing, 
-  handleImageChange, 
+const QRPaymentCard = memo(({
+  qrImageBase64,
+  isProcessing,
+  handleImageChange,
   onRemoveImage // 🚀 Nueva prop para limpiar la imagen desde el formulario
 }) => {
   return (
     // Le quitamos la clase "card" para que encaje perfecto dentro del modal de la sucursal, pero mantenemos tu diseño.
-    <div className="settings-card-yape" style={{ padding: '15px 0', marginTop: '15px' }}>
-      <h3 className="settings-section-title">Pagos Digitales (Opcional)</h3>
-      <p className="settings-section-desc">
+    <div className="border-t-4 border-t-accent py-4 px-0 mt-4">
+      <h3 className="text-lg font-semibold">Pagos Digitales (Opcional)</h3>
+      <p className="text-sm leading-relaxed text-muted">
         Sube la imagen del código QR de Yape/Plin para esta sede. El sistema la optimizará automáticamente.
       </p>
 
-      <div className="qr-upload-zone">
-        
-        <div className="qr-preview-box">
-          {qrImageBase64 ? (
-            <img src={qrImageBase64} alt="Vista previa QR" className="qr-image fade-in" />
-          ) : (
-            <span className="qr-placeholder">📲</span>
-          )}
+      <div className="grid justify-items-center gap-4 rounded-xl border border-dashed border-line bg-subtle p-4">
+
+        <div className="flex aspect-square w-full max-w-52 items-center justify-center overflow-hidden rounded-xl border border-line bg-panel p-2">
+          {qrImageBase64 ? <img src={qrImageBase64} alt="Vista previa QR" className="size-full object-contain animate-enter motion-reduce:animate-none" /> : <span className="text-4xl text-muted">📲</span>}
         </div>
 
-        <div className="qr-actions">
-          <input 
-            type="file" 
-            id="qr-upload" 
-            accept="image/*" 
-            onChange={handleImageChange} 
-            className="hidden-input" 
-            disabled={isProcessing}
-          />
-          
-          <div style={{ display: 'flex', gap: '10px', width: '100%', flexWrap: 'wrap' }}>
-            <label 
-              htmlFor="qr-upload" 
-              className="qr-label-btn" 
-              style={{ 
-                flex: '1 1 200px', 
-                textAlign: 'center', 
-                margin: 0, 
-                minHeight: '48px', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                padding: '0 15px'
-              }}
-            >
+        <div className="grid w-full gap-2">
+          <Input type="file" id="qr-upload" accept="image/*" onChange={handleImageChange} className="hidden" disabled={isProcessing} />
+
+          <div className="flex gap-2.5 w-full flex-wrap">
+            <label htmlFor="qr-upload" className="cursor-pointer rounded-xl border border-line bg-panel text-sm font-medium hover:bg-subtle flex-[1_1_200px] text-center m-0 min-h-12 flex items-center justify-center py-0 px-4">
               {qrImageBase64 ? '🔄 Cambiar imagen' : '📁 Seleccionar QR'}
             </label>
 
             {/* 🚀 Botón Eliminar: type="button" es vital para no enviar el formulario por accidente */}
-            {qrImageBase64 && (
-              <button 
-                type="button" 
-                onClick={onRemoveImage} 
-                disabled={isProcessing}
-                title="Eliminar QR permanentemente"
-                style={{ 
-                  flex: '1 1 200px', 
-                  background: 'var(--danger)', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '8px', 
-                  minHeight: '48px', 
-                  cursor: isProcessing ? 'not-allowed' : 'pointer', 
-                  fontSize: '1rem',
-                  fontWeight: '600',
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  gap: '8px'
-                }}
-              >
+            {qrImageBase64 && <Button type="button" onClick={onRemoveImage} disabled={isProcessing} title="Eliminar QR permanentemente" variant="secondary" className={cn("flex-[1_1_200px] bg-danger text-panel border-0 rounded-xl min-h-12 text-base font-semibold flex items-center justify-center gap-2", isProcessing ? "cursor-not-allowed" : "cursor-pointer")}>
                 🗑️ Eliminar Imagen
-              </button>
-            )}
+              </Button>}
           </div>
         </div>
       </div>
     </div>
   );
 });
-
 export default QRPaymentCard;

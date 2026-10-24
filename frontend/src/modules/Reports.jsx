@@ -1,88 +1,24 @@
+import { MetricCard, ChartColumn, TopProductItem } from "./reports/ReportParts.jsx";
+import { LoadingState, Button, PageHeader, Card, cn } from "../shared/ui";
 // src/modules/Reports.jsx
-import React, { useMemo, memo } from 'react';
+import { useMemo } from 'react';
 import { useReports } from '../features/reports/hooks/useReports';
-
 const TIME_FILTERS = {
   hoy: 'Hoy',
   semana: 'Esta Semana',
   mes: 'Este Mes',
   todo: 'Este Año'
 };
-
-const MEDALS_CONFIG = [
-  { medalClass: 'medal-gold', icon: '🥇', barClass: 'bar-gold' },
-  { medalClass: 'medal-silver', icon: '🥈', barClass: 'bar-silver' },
-  { medalClass: 'medal-bronze', icon: '🥉', barClass: 'bar-bronze' }
-];
-
-const formatMoney = (amount = 0) =>
-  Number(amount).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-
-const formatChartMoney = (amount = 0) =>
-  Math.round(Number(amount)).toLocaleString('en-US');
-
-const MetricCard = memo(({ title, value, subtext, emoji, borderColor, bgColor, valueColor }) => (
-  <div className={`metric-card ${borderColor}`}>
-    <div className={`metric-icon-box ${bgColor}`}>
-      <span className="metric-emoji">{emoji}</span>
-    </div>
-    <div className="metric-info">
-      <h4 className="metric-label">{title}</h4>
-      <p className={`metric-value ${valueColor || ''}`}>{value}</p>
-      {subtext && <span className="metric-subtext">{subtext}</span>}
-    </div>
-  </div>
-));
-
-const ChartColumn = memo(({ ventas, date, maxChartValue }) => {
-  const numVentas = Number(ventas) || 0;
-  const heightPercentage = Math.max((Math.abs(numVentas) / maxChartValue) * 100, 2);
-  const isZero = numVentas === 0;
-
-  return (
-    <div className="chart-col">
-      <span className={`chart-label-y ${isZero ? 'zero-value' : ''}`}>
-        <span className="money-symbol">S/ </span>
-        <span className="money-amount">{formatChartMoney(numVentas)}</span>
-      </span>
-      <div className="chart-bar-bg">
-        <div className="chart-bar-fill fade-in" style={{ height: `${heightPercentage}%`, ...(numVentas < 0 ? { background: 'var(--danger, #dc2626)' } : {}) }} />
-      </div>
-      <span className="chart-label-x">{date}</span>
-    </div>
-  );
+const formatMoney = (amount = 0) => Number(amount).toLocaleString('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
 });
-
-const TopProductItem = memo(({ name, qty, index, isLast, maxProductQty }) => {
-  const medal = index < 3
-      ? MEDALS_CONFIG[index]
-      : { medalClass: 'medal-default', icon: `${index + 1}`, barClass: 'bar-default' };
-
-  const numQty = Number(qty) || 0;
-  const percentage = maxProductQty > 0 ? Math.round((numQty / maxProductQty) * 100) : 0;
-
-  return (
-    <div className={`fade-in top-product-item ${isLast ? 'last-item' : ''}`}>
-      <div className="top-product-header">
-        <div className="top-product-name-col">
-          <div className={`medal-badge ${medal.medalClass}`}>{medal.icon}</div>
-          <span className="top-product-name">{name}</span>
-        </div>
-        <div className="top-product-qty">{numQty.toLocaleString('en-US')} u.</div>
-      </div>
-      <div className="progress-bg">
-        <div className={`progress-fill ${medal.barClass}`} style={{ width: `${percentage}%` }} />
-      </div>
-    </div>
-  );
-});
-
-export default function Reports({ user }) {
+export default function Reports({
+  user
+}) {
   const {
-    summary, contractCounts,
+    summary,
+    contractCounts,
     topProducts,
     chartData,
     isLoading,
@@ -98,119 +34,63 @@ export default function Reports({ user }) {
   const cash = summary.cashRevenue;
   const yape = summary.digitalRevenue;
   const totalSales = summary.posTicketCount;
-
   const maxChartValue = useMemo(() => {
     if (!Array.isArray(chartData) || chartData.length === 0) return 1;
     return Math.max(1, ...chartData.map(d => Math.abs(Number(d?.ventas) || 0)));
   }, [chartData]);
-
   if (isLoading) {
-    return (
-      <div className="module-loader fade-in">
-        <div className="spinner"></div>
-        <p className="loader-text">Generando Reportes...</p>
-      </div>
-    );
+    return <LoadingState>Generando Reportes...</LoadingState>;
   }
-
-  if (error) return <div className="card" role="alert">No se puede mostrar un reporte completo: {error} <button onClick={refreshReport}>Reintentar</button></div>;
-  return (
-    <div className="fade-in max-container padding-bottom-lg">
-      <p role="status">Movimientos confirmados; excluye pendientes locales. Lecturas paginadas: máximo 10000 movimientos y 500 contratos por negocio para compatibilidad histórica. Los cierres operativos conservan conciliación pendiente.</p>
+  if (error) return <Card role="alert" as="div">No se puede mostrar un reporte completo: {error} <Button onClick={refreshReport} type="button" variant="secondary">Reintentar</Button></Card>;
+  return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6">
+      <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Movimientos confirmados; excluye pendientes locales. Lecturas paginadas: máximo 10000 movimientos y 500 contratos por negocio para compatibilidad histórica. Los cierres operativos conservan conciliación pendiente.</p>
 
       <p>Pedidos creados en el período: {contractCounts.pending} pendientes · {contractCounts.delivered} entregados · {contractCounts.cancelled} cancelados · {contractCounts.withDebt} con saldo.</p>
-      <header className="module-header">
-        <h2 className="module-title">
-          <span className="module-title-icon">📊</span>
-          <span className="module-title-text">Dashboard Gerencial</span>
-        </h2>
-        <div className="time-filter-group">
-          {Object.entries(TIME_FILTERS).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setTimeFilter(key)}
-              className={`filter-btn ${timeFilter === key ? 'active' : ''}`}
-            >
+      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
+          <span className="text-2xl">📊</span>
+          <span className="break-words">Dashboard Gerencial</span>
+        </h1>
+        <div className="flex flex-wrap gap-1 rounded-xl border border-line bg-panel p-1">
+          {Object.entries(TIME_FILTERS).map(([key, label]) => <Button key={key} onClick={() => setTimeFilter(key)} className={cn(`text-xs sm:text-sm ${timeFilter === key ? "bg-primary-soft text-primary" : ''} `)} type="button" variant="secondary">
               {label}
-            </button>
-          ))}
+            </Button>)}
         </div>
-      </header>
+      </PageHeader>
 
-      <div className="metrics-grid">
-        <MetricCard
-          title="Ingresos Netos"
-          value={`S/ ${formatMoney(total)}`}
-          subtext={`POS: S/ ${formatMoney(summary.posRevenue)} · Pedidos: S/ ${formatMoney(summary.contractRevenue)}`}
-          emoji="💰"
-          borderColor="border-primary"
-          bgColor="bg-primary-light"
-        />
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard title="Ingresos Netos" value={`S/ ${formatMoney(total)}`} subtext={`POS: S/ ${formatMoney(summary.posRevenue)} · Pedidos: S/ ${formatMoney(summary.contractRevenue)}`} emoji="💰" borderColor="border-primary" bgColor="bg-primary-soft" />
 
-        <MetricCard
-          title="Tickets POS"
-          value={totalSales.toLocaleString('en-US')}
-          subtext={`Promedio POS: S/ ${formatMoney(summary.posAverageTicket)} · Anulados: ${summary.voidedTicketCount} · Pagos pedidos: ${summary.contractPaymentCount}`}
-          emoji="🧾"
-          borderColor="border-dark"
-          bgColor="bg-gray"
-        />
+        <MetricCard title="Tickets POS" value={totalSales.toLocaleString('en-US')} subtext={`Promedio POS: S/ ${formatMoney(summary.posAverageTicket)} · Anulados: ${summary.voidedTicketCount} · Pagos pedidos: ${summary.contractPaymentCount}`} emoji="🧾" borderColor="border-t-4 border-t-ink" bgColor="bg-subtle" />
 
         {/* 🚀 Ahora estos reflejan el Efectivo y Yape de la Sede Seleccionada (o el Global) */}
-        <MetricCard
-          title="Ingresos en Efectivo"
-          value={`S/ ${formatMoney(cash)}`}
-          emoji="💵"
-          borderColor="border-success"
-          bgColor="bg-success-light"
-          valueColor="text-success"
-        />
+        <MetricCard title="Ingresos en Efectivo" value={`S/ ${formatMoney(cash)}`} emoji="💵" borderColor="border-success" bgColor="bg-success-soft" valueColor="text-success" />
 
-        <MetricCard
-          title="Vía Yape / Plin"
-          value={`S/ ${formatMoney(yape)}`}
-          emoji="📲"
-          borderColor="border-purple"
-          bgColor="bg-purple-light"
-          valueColor="text-purple"
-        />
+        <MetricCard title="Vía Yape / Plin" value={`S/ ${formatMoney(yape)}`} emoji="📲" borderColor="border-t-4 border-t-accent" bgColor="bg-accent-soft" valueColor="text-accent" />
       </div>
 
-      <div className="dashboard-split">
-        <div className="card split-card">
-          <div className="split-card-header">
-            <h3 className="split-card-title">📈 Evolución de Ventas</h3>
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <Card className="min-w-0 overflow-hidden p-0 sm:p-0" as="div">
+          <div className="border-b border-line bg-subtle/50 p-4">
+            <h3 className="text-base font-semibold">📈 Evolución de Ventas</h3>
           </div>
-          <div className={`chart-container ${chartData.length > 10 ? 'chart-dense' : ''}`}>
-            {chartData.length === 0 ? (
-              <div className="empty-chart">No hay datos suficientes para graficar.</div>
-            ) : (
-              chartData.map((data, i) => (
-                <ChartColumn key={i} ventas={data?.ventas} date={data?.date} maxChartValue={maxChartValue} />
-              ))
-            )}
+          <div className={cn(`flex h-80 min-w-0 items-end gap-4 overflow-x-auto overscroll-x-contain p-5 pt-10 ${chartData.length > 10 ? "gap-3" : ''} `)}>
+            {chartData.length === 0 ? <div className="m-auto text-center text-sm text-muted">No hay datos suficientes para graficar.</div> : chartData.map((data, i) => <ChartColumn key={i} ventas={data?.ventas} date={data?.date} maxChartValue={maxChartValue} />)}
           </div>
-        </div>
+        </Card>
 
-        <div className="card split-card">
-          <div className="split-card-header">
-            <h3 className="split-card-title">🏆 Top 5 Productos</h3>
+        <Card className="min-w-0 overflow-hidden p-0 sm:p-0" as="div">
+          <div className="border-b border-line bg-subtle/50 p-4">
+            <h3 className="text-base font-semibold">🏆 Top 5 Productos</h3>
           </div>
-          {topProducts.length === 0 ? (
-            <div className="empty-top-products">
-              <span className="empty-icon-lg">🛒</span>
+          {topProducts.length === 0 ? <div className="grid min-h-48 place-content-center gap-3 p-5 text-center text-sm text-muted">
+              <span className="text-4xl text-muted">🛒</span>
               No hay datos en este periodo.
-            </div>
-          ) : (
-            <div className="top-products-list">
-              {topProducts.map((p, index) => (
-                <TopProductItem key={p.name} name={p?.name} qty={p?.qty} index={index} isLast={index === topProducts.length - 1} maxProductQty={maxProductQty} />
-              ))}
-            </div>
-          )}
-        </div>
+            </div> : <div className="px-4">
+              {topProducts.map((p, index) => <TopProductItem key={p.name} name={p?.name} qty={p?.qty} index={index} isLast={index === topProducts.length - 1} maxProductQty={maxProductQty} />)}
+            </div>}
+        </Card>
       </div>
 
-    </div>
-  );
+    </div>;
 }

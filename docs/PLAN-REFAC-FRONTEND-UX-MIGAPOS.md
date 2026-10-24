@@ -1,6 +1,6 @@
 # MigaPOS — Plan de modernización UX/UI: Tailwind CSS v4 + Radix UI
 
-**Estado:** EN IMPLEMENTACIÓN EN `refactor/ux-tailwind-v4` · aceptación manual pendiente
+**Estado:** IMPLEMENTADA EN CÓDIGO, PENDIENTE DE ACEPTACIÓN MANUAL · rama `refactor/ux-tailwind-v4`
 **Proyecto:** `saintdeyb321/Mig` · Firebase Spark · `migapos` / Hosting `migapos-peru`
 **Base conocida:** `main@41dd809100a20fd2edbe345c63660e8fe5f52d10` (comprobar HEAD antes de iniciar).
 **Objetivo:** sustituir progresivamente estilos CSS repetidos y componentes visuales improvisados por un design system coherente, accesible, responsive y mantenible, **sin alterar la lógica de negocio ni sus contratos**.
@@ -173,3 +173,20 @@ El prompt operativo completo está incluido en la respuesta de ChatGPT que acomp
 Checkpoint A: Tailwind v4 mediante plugin oficial Vite, tokens semánticos violeta/azul, primitivas compartidas, sidebar desktop y navegación móvil «Más» filtradas por la sesión; selector de sede y notificaciones reutilizables. Banner técnico global trasladado a Ajustes/Capacidades; aviso operativo POS fuera del grid (dos paneles estructurales). CSS legado temporalmente aislado en capa `legacy` durante la sustitución; retirada final en checkpoint C. Sin cambios de hooks, repositorios, dominio, Firebase, PWA, impresión, persistencia ni `.env`. Sin pruebas nuevas o capturas; revisión visual pendiente del propietario.
 
 Checkpoint B: POS dividido en catálogo, ticket, pagos y estados presentacionales; Drawer móvil y diálogos Radix para caja, catálogo, contactos, personal, sucursales, contratos, SuperAdmin, QR y términos. Los formularios permanecen montados durante el guardado y el cierre se bloquea mientras la operación está pendiente. Hooks y cálculos financieros conservados.
+
+Checkpoint C: historial, contratos, Agenda VIP, catálogo, categorías, reportes, personal, sucursales, ajustes, exportador local, SaaS Admin, login y pantallas especiales migrados a tokens y primitivas compartidas. Presentación separada para tickets históricos, métricas/gráficos, clientes SaaS, finanzas del formulario y visor de fotos. Se reutilizan búsquedas, campos asociados a sus etiquetas, estados vacíos y pies de diálogo. Las confirmaciones de contactos/invitaciones se inyectan como callback visual en los hooks existentes, sin cambiar las operaciones ni sus validaciones. Ajustes conserva el editor si el guardado falla mediante una señal de éxito del hook, sin alterar los datos enviados.
+
+| Fase UX | Estado de implementación |
+| --- | --- |
+| UX-TW-0 · dependencias, tokens y UI | Implementada (A) |
+| UX-TW-1 · layout y navegación por sesión | Implementada (A) |
+| UX-TW-2 · POS y Drawer móvil | Implementada (B) |
+| UX-TW-3 · diálogos y formularios | Implementada (B/C) |
+| UX-TW-4 · módulos restantes | Implementada (C) |
+| UX-TW-5 · retirada del CSS heredado | Implementada (C) |
+
+Retiradas las 21 hojas bajo `frontend/src/styles/` y `App.css` vacío, tras sustituir sus consumidores. No se conservan aliases CSS de componentes ni una capa `legacy`/`@apply`. CSS residual: `index.css` para base/foco/movimiento reducido y `shared/styles/theme.css` para tokens; estilos dinámicos de gráficos/estados y opciones del integrador de toasts. Plantillas y utilidades de impresión conservadas; comportamiento PWA, cifrado, IndexedDB y persistencia intactos.
+
+Dependencias fijadas: Tailwind/plugin Vite 4.3.3; Radix Dialog 1.3.1, AlertDialog 1.2.1, DropdownMenu 2.2.1; Lucide 1.61.0; clsx 2.1.1 y tailwind-merge 3.7.0. Auditoría del frontend: 0 avisos moderados/altos/críticos y 1 bajo preexistente (`serialize-javascript`, transitivo de build). Sin cambios de Rules, índices, configuración Firebase, `.env`, repositorios ni lógica financiera; se preservan dos productos, pendientes locales, anulación POS restringida y conciliación pendiente.
+
+Validación: lint, build/PWA y diff-check aprobados. El build mantiene el aviso de chunks mayores de 500 kB. Sin tests nuevos, fixtures, mocks, navegador ni capturas. Pendiente exclusivamente de aceptación visual/funcional del propietario en escritorio/móvil, teclado/zoom, caja/pagos, contratos, impresión, PWA y exportación. Sin deploy ni merge a `main`.

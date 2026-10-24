@@ -1,4 +1,4 @@
-import { Dialog } from "../shared/ui";
+import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Select, SearchField, Card, DialogFooter, cn, EmptyState } from "../shared/ui";
 // src/modules/ProductCatalog.jsx
 import React, { useCallback, memo } from 'react';
 import { useProducts } from '../features/catalog/hooks/useProducts';
@@ -26,33 +26,33 @@ const ProductCard = memo(({
   const isAgotado = currentStock <= 0;
   const isPoco = currentStock > 0 && currentStock <= 10;
   const isActivo = p.status === 'activo';
-  let cardClasses = `product-list-card fade-in ${isActivo ? '' : 'inactive'}`;
+  let cardClasses = `grid min-w-0 grid-cols-[3rem_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto] animate-enter motion-reduce:animate-none ${isActivo ? '' : "opacity-65"} `;
   if (isActivo) {
-    cardClasses += isAgotado ? ' active-out-of-stock' : ' active-stock';
+    cardClasses += isAgotado ? " border-l-4 border-l-danger" : " border-l-4 border-l-success";
   } else {
-    cardClasses += ' inactive-border';
+    cardClasses += " border-l-4 border-l-muted";
   }
-  const stockClass = 'badge-stock ' + (isAgotado ? 'agotado' : isPoco ? 'poco' : 'ok');
+  const stockClass = "rounded-md px-2 py-1 text-xs font-semibold " + (isAgotado ? "bg-danger-soft text-danger" : isPoco ? "bg-warning-soft text-warning" : "bg-subtle text-muted");
   const stockText = isAgotado ? 'AGOTADO' : isPoco ? `¡Solo ${currentStock}!` : `${currentStock} disp.`;
-  return <div className={cardClasses}>
-      <div className="product-image-box">
-        {p.imageUrl ? <img src={p.imageUrl} alt={p.name} loading="lazy" /> : <span className="product-image-placeholder">{p.name.charAt(0)}</span>}
+  return <Card className={cn(cardClasses)} as="div">
+      <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-primary-soft [&>img]:size-full [&>img]:object-cover sm:size-14">
+        {p.imageUrl ? <img src={p.imageUrl} alt={p.name} loading="lazy" /> : <span className="text-xl font-bold text-primary">{p.name.charAt(0)}</span>}
       </div>
 
-      <div className="product-info-col">
-        <h3 className={`product-title-text ${isAgotado ? 'out-of-stock' : ''}`}>{p.name}</h3>
-        <div className="product-badges-row">
-          <span className="badge-category">{p.category}</span>
-          <span className={stockClass}>📦 {stockText}</span>
-          {!isActivo && <span className="badge-inactive">INACTIVO</span>}
+      <div className="grid min-w-0 gap-1.5">
+        <h3 className={cn(`break-words font-semibold ${isAgotado ? "text-danger line-through" : ''} `)}>{p.name}</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-md bg-subtle px-2 py-1 text-xs font-medium text-muted">{p.category}</span>
+          <span className={cn(stockClass)}>📦 {stockText}</span>
+          {!isActivo && <span className="text-xs font-semibold text-danger">INACTIVO</span>}
         </div>
       </div>
 
-      <div className="product-action-col">
-        <span className="product-price-text">S/ {Number(p.price).toFixed(2)}</span>
-        <button onClick={() => openEditForm(p)} disabled={isLoading} className="btn-icon" title="Editar">✏️</button>
+      <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 sm:col-span-1 sm:border-0 sm:pt-0">
+        <span className="text-lg font-bold text-primary">S/ {Number(p.price).toFixed(2)}</span>
+        <Button onClick={() => openEditForm(p)} disabled={isLoading} className="size-11 shrink-0 p-2" title="Editar" type="button" variant="ghost" aria-label="Editar">✏️</Button>
       </div>
-    </div>;
+    </Card>;
 });
 function ProductCatalog({
   user
@@ -131,116 +131,98 @@ function ProductCatalog({
   }, [setImageUrl]);
   const currentEditingProduct = editing ? globalProducts.find(p => p.id === editing) : null;
   if (isLoading && !showFormModal) {
-    return <div className="module-loader fade-in">
-        <div className="spinner"></div>
-        <p className="loader-text">Cargando inventario...</p>
-      </div>;
+    return <LoadingState>Cargando inventario...</LoadingState>;
   }
-  return <div className="fade-in max-container padding-bottom-lg" style={{
-    maxWidth: '900px'
-  }}>
+  return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
 
-      <header className="module-header">
-        <h2 className="module-title">
-          <span className="module-title-icon">☕</span>
-          <span className="module-title-text">Productos</span>
-        </h2>
+      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
+          <span className="text-2xl">☕</span>
+          <span className="break-words">Productos</span>
+        </h1>
 
-        <button onClick={openAddForm} className="btn-primary btn-add-smart">
+        <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
           ➕ Nuevo Producto
-        </button>
-      </header>
+        </Button>
+      </PageHeader>
 
-      <div className="filter-bar-container">
-        <div className="search-container">
-          <span className="search-icon">🔍</span>
-          <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar producto..." className="search-input" />
-          {searchTerm && <button onClick={() => setSearchTerm('')} className="btn-clear-search">✖</button>}
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar producto..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
-        <label className="toggle-label">
-          <input type="checkbox" className="toggle-checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
+        <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted">
+          <Input type="checkbox" className="shrink-0" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Ver archivados
         </label>
       </div>
 
-      <h3 className="inventory-title">
+      <h3 className="text-sm font-semibold text-muted">
         Inventario {activeBranchId === 'global' ? 'Global' : 'de la Sede'} ({filteredProducts.length})
       </h3>
 
-      <div className="product-list-container">
-        {filteredProducts.length === 0 ? <div className="card fade-in empty-state">
-            <span className="empty-icon-lg">📋</span>
-            <p className="empty-text">
+      <div className="grid gap-3">
+        {filteredProducts.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `No se encontraron productos para "${searchTerm}"` : 'Aún no tienes productos.'}
-            </p>
-          </div> : filteredProducts.map(p => <ProductCard key={p.id} p={p} activeBranchId={activeBranchId} openEditForm={openEditForm} isLoading={isLoading} />)}
+            </>} /> : filteredProducts.map(p => <ProductCard key={p.id} p={p} activeBranchId={activeBranchId} openEditForm={openEditForm} isLoading={isLoading} />)}
       </div>
 
       {showFormModal && <Dialog title={<>
               {editing ? '✏️ Editar Producto' : '📦 Nuevo Producto'}
             </>} busy={isLoading} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
+            <form onSubmit={handleSave} className="grid gap-4">
 
-
-            <form onSubmit={handleSave} className="smart-form">
-
-              <div className="upload-zone">
-                <div className="upload-preview-box">
-                  {imageUrl ? <img src={imageUrl} alt="Preview" className="preview-img" /> : <span className="preview-placeholder">📷</span>}
+              <div className="flex flex-wrap items-center gap-4 rounded-xl border border-dashed border-line bg-subtle p-4">
+                <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-panel">
+                  {imageUrl ? <img src={imageUrl} alt="Preview" className="size-full object-cover" /> : <span className="text-3xl text-muted">📷</span>}
                 </div>
 
-                <div className="upload-actions-col">
-                  <label className="form-label">FOTO DEL PRODUCTO (Opcional)</label>
+                <FormField className="grid min-w-0 flex-1 gap-2" label={<>FOTO DEL PRODUCTO (Opcional)</>}>
 
-                  <input type="file" id="product-img" accept="image/*" onChange={handleImageUpload} disabled={isLoading} className="hidden-input" />
+                  <Input type="file" id="product-img" accept="image/*" onChange={handleImageUpload} disabled={isLoading} className="hidden" />
 
-                  <div className="upload-buttons-row">
-                    <label htmlFor="product-img" className="btn-upload-file">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label htmlFor="product-img" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium hover:bg-subtle">
                        {imageUrl ? '🔄 Cambiar' : '📁 Seleccionar archivo'}
                     </label>
 
-                    {imageUrl && <button type="button" onClick={() => setImageUrl('')} className="btn-remove-img" title="Eliminar foto">
+                    {imageUrl && <Button type="button" onClick={() => setImageUrl('')} title="Eliminar foto" variant="danger">
                         🗑️ Quitar
-                      </button>}
+                      </Button>}
                   </div>
-                </div>
+                </FormField>
               </div>
 
-              <div className="form-group">
-                <label className="form-label">NOMBRE</label>
-                <input autoFocus value={name} onChange={e => setName(e.target.value)} required disabled={isLoading} maxLength="100" pattern=".*\S+.*" />
-              </div>
+              <FormField label={<>NOMBRE</>}>
 
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">PRECIO (S/)</label>
-                  <input value={price} onChange={e => setPrice(e.target.value)} type="number" step="0.01" min="0" required disabled={isLoading} className="input-highlight" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">CATEGORÍA</label>
-                  <select value={category} onChange={e => setCategory(e.target.value)} required disabled={isLoading}>
+                <Input autoFocus value={name} onChange={e => setName(e.target.value)} required disabled={isLoading} maxLength="100" pattern=".*\S+.*" />
+              </FormField>
+
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <FormField label={<>PRECIO (S/)</>}>
+
+                  <Input value={price} onChange={e => setPrice(e.target.value)} type="number" step="0.01" min="0" required disabled={isLoading} className="font-bold text-primary" />
+                </FormField>
+                <FormField label={<>CATEGORÍA</>}>
+
+                  <Select value={category} onChange={e => setCategory(e.target.value)} required disabled={isLoading}>
                     <option value="" disabled>Selecciona...</option>
                     {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </select>
-                </div>
+                  </Select>
+                </FormField>
               </div>
 
-              <div className="stock-panel">
-                <label className="stock-panel-title">
+              <div className="space-y-4 rounded-xl border border-line bg-subtle p-4">
+                <label className="text-sm font-semibold text-primary">
                   <span>📦</span> DISTRIBUCIÓN DE INVENTARIO
                 </label>
 
-                {businessBranches.length === 0 ? <p className="stock-panel-empty">
+                {businessBranches.length === 0 ? <p className="text-sm text-danger">
                     ⚠️ No tienes sucursales creadas. Ve a Configuración para crearlas.
-                  </p> : <div style={{
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
+                  </p> : <div className="flex flex-col">
 
-                    <div className="stock-table-header">
-                      <span className="stock-col-title">SUCURSAL</span>
-                      <span className="stock-col-title stock-col-right">
+                    <div className="flex justify-between gap-3 border-b border-line pb-2">
+                      <span className="text-xs font-semibold text-muted">SUCURSAL</span>
+                      <span className="text-xs font-semibold text-muted w-24 shrink-0 text-center">
                         {editing ? 'AJUSTAR STOCK' : 'STOCK INICIAL'}
                       </span>
                     </div>
@@ -252,43 +234,33 @@ function ProductCatalog({
               const delta = isNaN(ajusteNumerico) ? 0 : Math.floor(ajusteNumerico);
               const stockFinal = Math.max(0, stockActual + delta);
               const historyText = currentEditingProduct?.lastStockHistory?.[branch.id];
-              return <div key={branch.id} className="stock-table-row">
+              return <div key={branch.id} className="flex items-center justify-between gap-3 border-b border-dashed border-line py-4 last:border-0">
 
-                          <div className="stock-branch-info">
-                            <span className="stock-branch-name">
+                          <div className="grid min-w-0 flex-1 gap-1">
+                            <span className="break-words text-sm font-semibold">
                               {branch.name.toUpperCase()}
                             </span>
-                            {editing && <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '2px'
-                  }}>
-                                <span className="stock-current-info" style={{
-                      display: 'block'
-                    }}>
-                                  En almacén: <span className="stock-current-number">{stockActual}</span> uds.
+                            {editing && <div className="flex flex-col gap-0.5">
+                                <span className="text-xs text-muted block">
+                                  En almacén: <span className="font-semibold text-ink">{stockActual}</span> uds.
                                 </span>
 
-                                {historyText && <span style={{
-                      fontSize: '0.8rem',
-                      color: '#10b981',
-                      fontWeight: '800'
-                    }}>
+                                {historyText && <span className="text-sm text-success font-bold">
                                     Último mov: {historyText}
                                   </span>}
                               </div>}
                           </div>
 
-                          <div className="stock-input-wrapper">
+                          <div className="relative w-24 shrink-0 pb-5">
 
-                            <input type="number" value={ajusteInput !== undefined ? ajusteInput : ''} onChange={e => {
+                            <Input type="number" value={ajusteInput !== undefined ? ajusteInput : ''} onChange={e => {
                     setBranchStocks(prev => ({
                       ...prev,
                       [branch.id]: e.target.value
                     }));
-                  }} placeholder={editing ? "Ej: 10, -5" : "0"} disabled={isLoading} className={`stock-adjust-input ${delta > 0 ? 'is-addition' : delta < 0 ? 'is-deduction' : ''}`} />
+                  }} placeholder={editing ? "Ej: 10, -5" : "0"} disabled={isLoading} className={cn(`text-center font-semibold ${delta > 0 ? "border-success" : delta < 0 ? "border-danger" : ''} `)} aria-label={editing ? "Ej: 10, -5" : "0"} />
 
-                            {editing && ajusteInput !== undefined && ajusteInput !== '' && !isNaN(ajusteNumerico) && delta !== 0 && <span className={`stock-preview-text ${delta > 0 ? 'text-addition' : 'text-deduction'}`}>
+                            {editing && ajusteInput !== undefined && ajusteInput !== '' && !isNaN(ajusteNumerico) && delta !== 0 && <span className={cn(`absolute inset-x-0 bottom-0 text-center text-xs font-medium ${delta > 0 ? "text-success" : "text-danger"} `)}>
                                 ➔ {stockFinal} uds.
                               </span>}
                           </div>
@@ -297,29 +269,29 @@ function ProductCatalog({
             })}
 
                   </div>}
-                {editing && <div className="stock-tip-box">
-                    <p className="stock-tip-text">
+                {editing && <div className="rounded-xl border border-primary/20 bg-primary-soft p-3">
+                    <p className="text-xs leading-relaxed text-primary">
                       <strong>Tip:</strong> Usa números positivos (ej: <b>10</b>) para agregar stock, o negativos (ej: <b>-5</b>) para retirarlo.
                     </p>
                   </div>}
               </div>
 
-              <div className="form-group">
-                <label className="form-label">ESTADO DEL PRODUCTO</label>
-                <select value={status} onChange={e => setStatus(e.target.value)} disabled={isLoading}>
+              <FormField label={<>ESTADO DEL PRODUCTO</>}>
+
+                <Select value={status} onChange={e => setStatus(e.target.value)} disabled={isLoading}>
                   <option value="activo">🟢 Activo y Visible</option>
                   <option value="inactivo">🔴 Inactivo (Oculto)</option>
-                </select>
-              </div>
+                </Select>
+              </FormField>
 
-              <div className="modal-actions-footer">
-                <button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} className="btn-cancel">
+              <DialogFooter>
+                <Button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} variant="secondary">
                   Cancelar
-                </button>
-                <button type="submit" className="btn-primary flex-1" disabled={isLoading || businessBranches.length === 0}>
+                </Button>
+                <Button type="submit" className="flex-1" disabled={isLoading || businessBranches.length === 0} variant="primary">
                   {isLoading ? 'Guardando...' : 'Guardar Producto'}
-                </button>
-              </div>
+                </Button>
+              </DialogFooter>
             </form>
 
           </Dialog>}

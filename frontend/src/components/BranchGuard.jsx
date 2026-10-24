@@ -1,12 +1,20 @@
+import { Button, Card } from "../shared/ui";
 // src/components/BranchGuard.jsx
 import React, { useMemo } from 'react';
 import { useCatalogData } from '../features/catalog/context/CatalogContext';
 import { useTenantData } from '../features/branches/context/TenantContext';
-
-export default function BranchGuard({ user, handleLogout, children }) {
-  const { businessBranches, isLoading: isTenantLoading } = useTenantData();
-
-  const { isLoading: isCatalogLoading } = useCatalogData();
+export default function BranchGuard({
+  user,
+  handleLogout,
+  children
+}) {
+  const {
+    businessBranches,
+    isLoading: isTenantLoading
+  } = useTenantData();
+  const {
+    isLoading: isCatalogLoading
+  } = useCatalogData();
 
   // Verificamos si el usuario es administrador
   const isAdmin = useMemo(() => {
@@ -29,41 +37,33 @@ export default function BranchGuard({ user, handleLogout, children }) {
     if (myBranch && myBranch.status?.toLowerCase() === 'inactivo') {
       return true;
     }
-
     return false;
   }, [isAdmin, myBranch]);
-
   if (isTenantLoading || isCatalogLoading) {
     return null;
   }
 
   // 🚨 LA BARRERA DE SUCURSAL INACTIVA
   if (isBlocked) {
-    return (
-      <div className="maintenance-screen fade-in">
-        <div className="maintenance-content">
-          <div className="maintenance-media-container" style={{ fontSize: '5rem', marginBottom: '10px' }}>
+    return <div className="flex min-h-dvh items-center justify-center bg-canvas p-4 animate-enter motion-reduce:animate-none">
+        <Card className="grid w-full max-w-lg gap-4 p-6 text-center" as="div">
+          <div className="flex justify-center text-4xl mb-2.5">
             🔒
           </div>
-          <h1 style={{ color: '#43278e', marginBottom: '15px' }}>
+          <h1 className="text-accent mb-4">
             Sucursal Inactiva
           </h1>
-          <p style={{ fontSize: '1.1rem', color: 'var(--text-main)', lineHeight: '1.5', marginBottom: '15px' }}>
+          <p className="text-lg text-ink leading-relaxed mb-4">
             La sucursal <strong>{myBranch?.name}</strong> a la que estás asignado ha sido desactivada por el administrador.
           </p>
-          <p style={{ fontSize: '0.95rem', color: 'var(--text-muted)', marginBottom: '30px' }}>
+          <p className="text-base text-muted mb-7.5">
             No puedes registrar ventas ni acceder al sistema en este momento.
           </p>
-          <button
-            onClick={handleLogout}
-            className="maintenance-btn"
-            style={{ background: 'var(--danger, #dc2626)', boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)' }}
-          >
+          <Button onClick={handleLogout} className="shadow-card" type="button" variant="danger">
             Cerrar Sesión
-          </button>
-        </div>
-      </div>
-    );
+          </Button>
+        </Card>
+      </div>;
   }
 
   // Si todo está bien, lo dejamos pasar al sistema

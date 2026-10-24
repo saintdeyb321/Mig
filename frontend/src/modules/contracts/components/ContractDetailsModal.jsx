@@ -1,4 +1,5 @@
-import { Dialog } from "../../../shared/ui";
+import { ContractPhotoViewer } from './ContractPhotoViewer';
+import { Dialog, ConfirmDialog, Button, cn, Input, Select, FormField } from "../../../shared/ui";
 import { toDateSafe } from '../../../core/dates/dateValues';
 // src/modules/contracts/components/ContractDetailsModal.jsx
 import React, { useState, useEffect, useMemo } from 'react';
@@ -34,6 +35,7 @@ const ContractDetailsModal = ({
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState('efectivo');
   const [selectedImageIndex, setSelectedImageIndex] = useState(null);
+  const [confirmDelivery, setConfirmDelivery] = useState(false);
   const imageReferences = useMemo(() => contractImageList(contract), [contract]);
   const {
     urls: allImages,
@@ -122,295 +124,187 @@ const ContractDetailsModal = ({
   };
   return <>
 
-
       <Dialog title={<>{isCancelled ? 'Pedido Anulado' : isDelivered ? 'Pedido Entregado' : 'Detalles del Pedido'}</>} busy={isProcessing} className="max-w-4xl" onClose={onClose}>
 
-          <div className={`cd-header ${isCancelled ? 'cd-header-void' : ''}`}>
-            <div className="cd-header-info">
-              <span className="cd-header-icon">{isCancelled ? '❌' : isDelivered ? '🔒' : '👁️'}</span>
-              <div className="cd-header-titles">
+          <div className={cn(`flex items-center gap-3 ${isCancelled ? "text-danger" : ''} `)}>
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="text-2xl">{isCancelled ? '❌' : isDelivered ? '🔒' : '👁️'}</span>
+              <div className="grid min-w-0 gap-1">
 
-                <span className="cd-id-badge">{contract.contractId}</span>
+                <span className="rounded-md bg-subtle px-2 py-1 font-mono text-xs text-muted">{contract.contractId}</span>
               </div>
             </div>
 
           </div>
 
-          {!isCancelled && <div className="cd-toolbar">
-              <div className="cd-toolbar-status">
+          {!isCancelled && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
                 <span>Estado Actual:</span>
-                <div className={`cd-status-badge cd-status-${contract.status}`} style={{
-            padding: '6px 12px',
-            borderRadius: '8px',
-            fontWeight: '800',
-            fontSize: '0.85rem'
-          }}>
+                <div className="inline-flex bg-primary-soft text-primary py-1.5 px-3 rounded-xl font-bold text-sm">
                   {getStatusDisplay(contract.status)}
                 </div>
               </div>
 
-              <div className="cd-toolbar-actions">
+              <div className="flex flex-wrap gap-2">
                 {/* Botón de Marcar Entregado (Restaurado) */}
-                {!isDelivered && !isCancelled && <button disabled={restricted || isProcessing} title="Entrega disponible solo para contratos Spark" onClick={markAsDelivered} className="btn-primary" style={{
-            padding: '6px 12px',
-            fontSize: '0.85rem',
-            marginRight: '8px'
-          }}>
+                {!isDelivered && !isCancelled && <Button disabled={restricted || isProcessing} title="Entrega disponible solo para contratos Spark" onClick={() => setConfirmDelivery(true)} className="py-1.5 px-3 text-sm mr-2" type="button" variant="primary">
                     📦 Marcar Entregado
-                  </button>}
+                  </Button>}
 
-                {!isDelivered && !isCancelled && <button disabled={restricted} title={restricted ? "Contrato histórico: solo lectura, sin migración automática" : "Editar datos permitidos"} onClick={() => onEditRequest(contract)} className="cd-btn cd-btn-edit">
+                {!isDelivered && !isCancelled && <Button disabled={restricted} title={restricted ? "Contrato histórico: solo lectura, sin migración automática" : "Editar datos permitidos"} onClick={() => onEditRequest(contract)} type="button" variant="secondary">
                     ✏️ Editar
-                  </button>}
+                  </Button>}
 
-                {!isCancelled && <button disabled={restricted || user.role !== 'dueño'} title="Cancelación Spark: solo dueño y contratos nuevos" onClick={() => onCancelRequest(contract)} className="cd-btn cd-btn-danger">
+                {!isCancelled && <Button disabled={restricted || user.role !== 'dueño'} title="Cancelación Spark: solo dueño y contratos nuevos" onClick={() => onCancelRequest(contract)} type="button" variant="danger">
                     🗑️ Anular
-                  </button>}
+                  </Button>}
               </div>
             </div>}
 
-          <div className="cd-body">
+          <div className="grid min-w-0 gap-4">
 
-            {isCancelled && <div className="cd-alert-void">
+            {isCancelled && <div className="rounded-xl border border-danger/20 bg-danger-soft p-4 text-sm text-danger">
                  ⚠️ Este pedido fue anulado. Las acciones de edición y cobro están deshabilitadas.
                </div>}
 
-            {!isCancelled && isDelivered && <div className="cd-alert-void" style={{
-          background: '#dcfce7',
-          color: '#15803d',
-          borderColor: '#86efac'
-        }}>
+            {!isCancelled && isDelivered && <div className="rounded-xl border p-4 text-sm bg-success-soft text-success border-success-soft">
                  🔒 Logística completada (Entregado). La edición está bloqueada, pero aún puedes registrar pagos si hay deuda.
                </div>}
 
-            <div className="cd-grid-2-1">
-              <div className="cd-card">
-                <h3 className="cd-card-title">Datos del Cliente</h3>
-                <div className="cd-info-section">
+            <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+              <div className="grid min-w-0 gap-4 rounded-xl border border-line bg-panel p-4">
+                <h3 className="border-b border-line pb-3 text-sm font-semibold">Datos del Cliente</h3>
+                <div className="grid gap-4">
 
-                  <div className="cd-data-group">
-                    <label>Cliente</label>
-                    <p className="cd-highlight" style={{
-                  textDecoration: isCancelled ? 'line-through' : 'none'
-                }}>
+                  <div className="grid min-w-0 gap-1.5 [&>label]:text-xs [&>label]:font-medium [&>label]:text-muted [&>small]:text-xs [&>small]:text-muted">
+                    <label className="text-sm leading-relaxed text-muted">Cliente</label>
+                    <p className={cn("break-words text-lg font-bold text-primary", isCancelled ? "line-through" : "no-underline")}>
                       {contract.clientName}
                     </p>
                   </div>
 
-                  <div className="cd-grid-2">
-                    <div className="cd-data-group">
-                      <label>Teléfono</label>
+                  <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                    <div className="grid min-w-0 gap-1.5 [&>label]:text-xs [&>label]:font-medium [&>label]:text-muted [&>small]:text-xs [&>small]:text-muted">
+                      <label className="text-sm leading-relaxed text-muted">Teléfono</label>
                       <p>{contract.clientPhone || '---'}</p>
                     </div>
-                    <div className="cd-data-group">
-                      <label>Atendido por</label>
+                    <div className="grid min-w-0 gap-1.5 [&>label]:text-xs [&>label]:font-medium [&>label]:text-muted [&>small]:text-xs [&>small]:text-muted">
+                      <label className="text-sm leading-relaxed text-muted">Atendido por</label>
                       <p>{contract.creatorName}</p>
                     </div>
                   </div>
 
-                  <div className="cd-data-box">
-                    <label>Entrega Programada</label>
-                    <p className="cd-date-text">{formatFirebaseDate(contract.deliveryDate, true)}</p>
+                  <div className="rounded-xl bg-subtle p-3 text-sm">
+                    <label className="text-sm leading-relaxed text-muted">Entrega Programada</label>
+                    <p className="font-semibold">{formatFirebaseDate(contract.deliveryDate, true)}</p>
                   </div>
 
                 </div>
               </div>
 
-              <div className="cd-card">
-                <h3 className="cd-card-title">Fotos de Referencia</h3>
-                <div className="cd-photo-section">
-                   {allImages.length > 0 ? <div style={{
-                display: 'grid',
-                gridTemplateColumns: allImages.length > 1 ? '1fr 1fr' : '1fr',
-                gap: '8px',
-                minHeight: '120px'
-              }}>
-                        {allImages.map((img, idx) => <img key={idx} src={img} alt={`Referencia ${idx + 1}`} onClick={() => setSelectedImageIndex(idx)} title="Haz clic para ampliar" style={{
-                  width: '100%',
-                  height: '100%',
-                  maxHeight: '180px',
-                  objectFit: 'cover',
-                  borderRadius: '8px',
-                  border: '1px solid #e2e8f0',
-                  cursor: 'zoom-in',
-                  transition: 'transform 0.2s ease'
-                }} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'} />)}
-                      </div> : <div className="cd-no-photo">
-                        <span style={{
-                  fontSize: '2rem'
-                }}>🎂</span>
+              <div className="grid min-w-0 gap-4 rounded-xl border border-line bg-panel p-4">
+                <h3 className="border-b border-line pb-3 text-sm font-semibold">Fotos de Referencia</h3>
+                <div className="min-w-0">
+                   {allImages.length > 0 ? <div className={cn("grid gap-2 min-h-30", allImages.length > 1 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1")}>
+                        {allImages.map((img, idx) => <button key={idx} type="button" className="min-w-0 overflow-hidden rounded-xl focus-visible:ring-2 focus-visible:ring-focus" onClick={() => setSelectedImageIndex(idx)} aria-label={`Ampliar fotografía ${idx + 1}`}><img src={img} alt={`Referencia ${idx + 1}`} title="Haz clic para ampliar" className="w-full h-full max-h-45 object-cover rounded-xl border border-line cursor-zoom-in motion-reduce:transition-none transition-colors hover:border-primary/40 hover:bg-primary-soft/40" /></button>)}
+                      </div> : <div className="grid min-h-28 place-content-center gap-2 rounded-xl bg-subtle text-center text-sm text-muted">
+                        <span className="text-3xl">🎂</span>
                         <p>Sin referencia</p>
                       </div>}
                 </div>
               </div>
             </div>
 
-            <div className="cd-card">
-              <h3 className="cd-card-title">Detalles de Preparación</h3>
-              <div className="cd-details-box">
+            <div className="grid min-w-0 gap-4 rounded-xl border border-line bg-panel p-4">
+              <h3 className="border-b border-line pb-3 text-sm font-semibold">Detalles de Preparación</h3>
+              <div className="whitespace-pre-wrap break-words rounded-xl bg-subtle p-4 text-sm leading-relaxed">
                 {contract.details}
               </div>
 
-              <div className="cd-grid-2 cd-logistics-row">
-                <div className="cd-data-group">
-                  <label>Tipo de Envío</label>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2 border-t border-line pt-4">
+                <div className="grid min-w-0 gap-1.5 [&>label]:text-xs [&>label]:font-medium [&>label]:text-muted [&>small]:text-xs [&>small]:text-muted">
+                  <label className="text-sm leading-relaxed text-muted">Tipo de Envío</label>
                   <p>
                     {contract.deliveryType === 'domicilio' ? '🛵 Delivery a Domicilio' : contract.deliveryType === 'taller' ? '🏭 Recoger en Taller' : '🏪 Recojo en Sede'}
                   </p>
                   {contract.deliveryAddress && <small>{contract.deliveryAddress}</small>}
                 </div>
-                <div className="cd-data-group cd-align-right">
-                  <label>Costo Delivery</label>
-                  <p className="cd-money-text">S/ {contract.deliveryCost.toFixed(2)}</p>
+                <div className="grid min-w-0 gap-1.5 [&>label]:text-xs [&>label]:font-medium [&>label]:text-muted [&>small]:text-xs [&>small]:text-muted sm:text-right">
+                  <label className="text-sm leading-relaxed text-muted">Costo Delivery</label>
+                  <p className="font-semibold">S/ {contract.deliveryCost.toFixed(2)}</p>
                 </div>
               </div>
             </div>
 
-            <div className="cd-card cd-finance-summary">
-              <div className="cd-finance-item">
-                <label>Total General</label>
-                <span className="cd-total-amount" style={{
-              textDecoration: isCancelled ? 'line-through' : 'none'
-            }}>
+            <div className="min-w-0 rounded-xl border border-line p-4 flex flex-wrap items-center justify-between gap-4 bg-primary-soft">
+              <div className="grid gap-1 text-sm [&>label]:text-muted">
+                <label className="text-sm leading-relaxed text-muted">Total General</label>
+                <span className={cn("text-2xl font-bold", isCancelled ? "line-through" : "no-underline")}>
                   S/ {contract.total.toFixed(2)}
                 </span>
               </div>
-              <div className="cd-finance-divider"></div>
-              <div className="cd-finance-item cd-align-right">
-                <label>Estado Financiero</label>
-                <span className={`cd-status-amount ${isCancelled ? 'cd-text-void' : isPaid ? 'cd-text-paid' : 'cd-text-debt'}`}>
+              <div className="hidden h-12 border-l border-line sm:block"></div>
+              <div className="grid gap-1 text-sm [&>label]:text-muted sm:text-right">
+                <label className="text-sm leading-relaxed text-muted">Estado Financiero</label>
+                <span className={cn(`font-semibold ${isCancelled ? "text-danger" : isPaid ? "text-success" : "text-warning"} `)}>
                   {isCancelled ? 'ANULADO' : isPaid ? '✅ PAGADO' : `Deuda: S/ ${contract.balance.toFixed(2)}`}
                 </span>
               </div>
             </div>
 
             {/* TARJETA 5: ACCIÓN DE COBRO (SIEMPRE VISIBLE SI HAY DEUDA) */}
-            {!isPaid && !isCancelled && <div className="cd-card cd-payment-action" style={{
-          border: isDelivered ? '2px solid #ef4444' : '1px solid #fde68a'
-        }}>
-                <div className="cd-payment-header">
+            {!isPaid && !isCancelled && <div className={cn("grid min-w-0 gap-4 rounded-xl border border-line bg-panel p-4 bg-warning-soft/40", isDelivered ? "border-2 border-danger" : "border border-warning-soft")}>
+                <div className="flex items-start gap-3">
                   <span>💰</span>
                   <div>
-                    <h3 style={{
-                color: isDelivered ? '#ef4444' : '#b45309',
-                margin: '0 0 4px 0'
-              }}>
+                    <h3 className={cn("m-[0_0_4px_0]", isDelivered ? "text-danger" : "text-warning")}>
                       Registrar Cuota / Abono
                     </h3>
-                    <p style={{
-                color: isDelivered ? '#dc2626' : '#d97706',
-                fontWeight: isDelivered ? 'bold' : 'normal',
-                margin: 0,
-                fontSize: '0.85rem'
-              }}>
+                    <p className={cn("m-0 text-sm", isDelivered ? "text-danger" : "text-warning", isDelivered ? "font-bold" : "font-normal")}>
                       {isDelivered ? '⚠️ ¡ATENCIÓN! El pedido ya se entregó pero el cliente mantiene esta deuda.' : 'Abona una cuota o cancela la deuda para pasarlo a "Listo para entrega".'}
                     </p>
                   </div>
                 </div>
 
-                <div className="cd-payment-controls" style={{
-            display: 'flex',
-            gap: '15px',
-            alignItems: 'flex-end',
-            marginTop: '15px'
-          }}>
-                  <div className="cd-data-group" style={{
-              flex: 1
-            }}>
-                    <label style={{
-                display: 'block',
-                fontSize: '0.75rem',
-                fontWeight: 'bold',
-                color: '#b45309',
-                marginBottom: '4px'
-              }}>MONTO A ABONAR (S/)</label>
-                    <input type="number" min="0.1" max={contract.balance} step="0.50" value={payAmount} onChange={e => setPayAmount(e.target.value)} disabled={isProcessing || restricted} placeholder={`Max: ${contract.balance.toFixed(2)}`} style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #fcd34d',
-                borderRadius: '6px',
-                fontWeight: 'bold'
-              }} />
-                  </div>
-                  <div className="cd-data-group" style={{
-              flex: 1
-            }}>
-                    <label style={{
-                display: 'block',
-                fontSize: '0.75rem',
-                fontWeight: 'bold',
-                color: '#b45309',
-                marginBottom: '4px'
-              }}>MÉTODO DE PAGO</label>
-                    <select value={payMethod} onChange={e => setPayMethod(e.target.value)} disabled={isProcessing || restricted} style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #fcd34d',
-                borderRadius: '6px',
-                fontWeight: 'bold',
-                background: 'white'
-              }}>
+                <div className="mt-4 flex flex-col items-stretch gap-4 sm:flex-row sm:items-end">
+                  <FormField className="grid gap-1.5 [&>label]:text-xs [&>label]:font-medium [&>label]:text-muted [&>small]:text-xs [&>small]:text-muted min-w-0 flex-1" label={<>MONTO A ABONAR (S/)</>}>
+
+                    <Input type="number" min="0.1" max={contract.balance} step="0.50" value={payAmount} onChange={e => setPayAmount(e.target.value)} disabled={isProcessing || restricted} placeholder={`Max: ${contract.balance.toFixed(2)}`} className="w-full p-2.5 border border-warning-soft rounded-lg font-bold" />
+                  </FormField>
+                  <FormField className="grid gap-1.5 [&>label]:text-xs [&>label]:font-medium [&>label]:text-muted [&>small]:text-xs [&>small]:text-muted min-w-0 flex-1" label={<>MÉTODO DE PAGO</>}>
+
+                    <Select value={payMethod} onChange={e => setPayMethod(e.target.value)} disabled={isProcessing || restricted} className="w-full p-2.5 border border-warning-soft rounded-lg font-bold bg-panel">
                       <option value="efectivo">💵 Efectivo (A esta Caja)</option>
                       <option value="yape">📱 Yape/Plin</option>
-                    </select>
-                  </div>
-                  <button onClick={handlePaymentSubmit} disabled={isProcessing || restricted || !payAmount || Number(payAmount) <= 0} className="cd-btn-confirm-pay" style={{
-              padding: '10px 20px',
-              background: isDelivered ? '#ef4444' : '#f59e0b',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontWeight: 'bold',
-              cursor: 'pointer'
-            }}>
+                    </Select>
+                  </FormField>
+                  <Button onClick={handlePaymentSubmit} disabled={isProcessing || restricted || !payAmount || Number(payAmount) <= 0} type="button" variant={isDelivered ? "danger" : "primary"}>
                     Confirmar Abono
-                  </button>
+                  </Button>
                 </div>
               </div>}
 
             {/* TARJETA 6: Auditoría de Pagos */}
             {paymentResult.key !== paymentKey && <p>Cargando movimientos del pedido...</p>}
-            {paymentError && <p role="alert">{paymentError.message}</p>}
+            {paymentError && <p role="alert" className="rounded-xl border border-danger/20 bg-danger-soft p-3 text-sm text-danger">{paymentError.message}</p>}
             {imageReferences.length > 0 && <p>Fotos locales: solo este dispositivo/cuenta. Referencias antiguas conservadas.</p>}
             {imagesLoading && <p>Cargando imágenes de referencia...</p>}
-            {imagesError && <p role="alert">{imagesError.message}</p>}
-            {payments.length > 0 && <div className="cd-card">
-                 <h3 className="cd-card-title">Auditoría de Transacciones</h3>
+            {imagesError && <p role="alert" className="rounded-xl border border-danger/20 bg-danger-soft p-3 text-sm text-danger">{imagesError.message}</p>}
+            {payments.length > 0 && <div className="grid min-w-0 gap-4 rounded-xl border border-line bg-panel p-4">
+                 <h3 className="border-b border-line pb-3 text-sm font-semibold">Auditoría de Transacciones</h3>
 
-                 <div className="cd-audit-list">
-                   {payments.map((p, idx) => <div key={p.id || idx} className="cd-audit-item" style={{
-              borderLeft: p.amount < 0 ? '4px solid #ef4444' : '4px solid #10b981',
-              background: p.amount < 0 ? '#fef2f2' : '#f8fafc',
-              padding: '10px',
-              marginBottom: '8px',
-              borderRadius: '6px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
+                 <div className="grid gap-2">
+                   {payments.map((p, idx) => <div key={p.id || idx} className={cn("flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-subtle p-3 p-2.5 mb-2 rounded-lg flex justify-between items-center", p.amount < 0 ? "border-l-4 border-l-danger" : "border-l-4 border-l-success", p.amount < 0 ? "bg-danger-soft" : "bg-subtle")}>
 
-                       <div className="cd-audit-info">
-                         <strong style={{
-                  display: 'block',
-                  color: p.amount < 0 ? '#dc2626' : '#0f172a'
-                }}>
+                       <div className="min-w-0 text-sm">
+                         <strong className={cn("block", p.amount < 0 ? "text-danger" : "text-ink")}>
                            {p.type === 'refund' || p.type === 'reembolso' ? 'REEMBOLSO' : p.label || (p.type === 'advance' ? 'ADELANTO' : `CUOTA ${idx + 1}`)}
-                           <span style={{
-                    fontSize: '0.75rem',
-                    opacity: 0.7,
-                    marginLeft: '6px'
-                  }}>({p.method.replace('_taller', '')})</span>
+                           <span className="text-xs opacity-70 ml-1.5">({p.method.replace('_taller', '')})</span>
                          </strong>
-                         <small style={{
-                  color: '#64748b'
-                }}>{formatFirebaseDate(p.occurredAt ?? p.date, true)} | Cajero: {p.cashierName || 'Sist.'}</small>
+                         <small className="text-muted">{formatFirebaseDate(p.occurredAt ?? p.date, true)} | Cajero: {p.cashierName || 'Sist.'}</small>
                        </div>
 
-                       <div className={`cd-audit-amount ${p.amount < 0 ? 'cd-text-void' : 'cd-text-paid'}`} style={{
-                fontWeight: '900',
-                fontSize: '1.1rem',
-                color: p.amount < 0 ? '#dc2626' : '#10b981'
-              }}>
+                       <div className={cn("font-bold text-lg", `font-semibold ${p.amount < 0 ? "text-danger" : "text-success"} `, p.amount < 0 ? "text-danger" : "text-success")}>
                          {p.amount < 0 ? '-' : '+'} S/ {Math.abs(p.amount).toFixed(2)}
                        </div>
 
@@ -421,52 +315,7 @@ const ContractDetailsModal = ({
 
           </div>
         </Dialog>
-    {selectedImageIndex !== null && <Dialog title={"Fotografía de referencia"} busy={isProcessing} className="max-w-5xl" onClose={closeLightbox}>
-
-
-          {allImages.length > 1 && <button onClick={prevImage} style={{
-        position: 'absolute',
-        left: '20px',
-        background: 'rgba(255,255,255,0.1)',
-        border: 'none',
-        color: '#fff',
-        fontSize: '3rem',
-        width: '60px',
-        height: '60px',
-        borderRadius: '50%',
-        cursor: 'pointer',
-        zIndex: 2,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingBottom: '6px'
-      }}>‹</button>}
-
-          <img src={allImages[selectedImageIndex]} alt="Ampliación" onClick={e => e.stopPropagation()} style={{
-        maxWidth: '90%',
-        maxHeight: '90vh',
-        objectFit: 'contain',
-        borderRadius: '8px',
-        boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
-      }} />
-
-          {allImages.length > 1 && <button onClick={nextImage} style={{
-        position: 'absolute',
-        right: '20px',
-        background: 'rgba(255,255,255,0.1)',
-        border: 'none',
-        color: '#fff',
-        fontSize: '3rem',
-        width: '60px',
-        height: '60px',
-        borderRadius: '50%',
-        cursor: 'pointer',
-        zIndex: 2,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingBottom: '6px'
-      }}>›</button>}
-        </Dialog>}</>;
+    {confirmDelivery && <ConfirmDialog title="Confirmar entrega del pedido" description="Confirma que el pedido fue entregado. Los saldos y cobros se conservan según el flujo actual." busy={isProcessing} onClose={() => setConfirmDelivery(false)} onConfirm={markAsDelivered} confirmLabel="Marcar entregado" />}
+    {selectedImageIndex !== null && <ContractPhotoViewer images={allImages} index={selectedImageIndex} onClose={closeLightbox} onPrevious={prevImage} onNext={nextImage} busy={isProcessing} />}</>;
 };
 export default ContractDetailsModal;

@@ -1,4 +1,4 @@
-import { Dialog } from "../shared/ui";
+import { Dialog, Input, Button, cn } from "../shared/ui";
 import { brand } from '../config/brand';
 import React, { useState } from 'react';
 import { useAcceptTerms } from '../features/users/hooks/useAcceptTerms';
@@ -13,12 +13,12 @@ export default function TermsModal({
   } = useAcceptTerms(user, onAccepted);
   return <Dialog title={<>Términos y Condiciones de {brand.name}</>} busy={isAccepting} className="max-w-3xl" dismissible={false}>
 
-        <div className="terms-header">
+        <div className="text-xs text-muted">
 
           <p>Última actualización: Abril 2026 | Versión {brand.termsVersion}</p>
         </div>
 
-        <div className="terms-content">
+        <div className="space-y-4 text-sm leading-relaxed [&_h3]:pt-2 [&_h3]:font-semibold [&_h3]:text-ink">
           <p>Bienvenido a {brand.name}. Para utilizar nuestro sistema, debes leer y aceptar las siguientes condiciones de servicio:</p>
 
           <h3>1. Naturaleza y Alcance del Servicio</h3>
@@ -68,29 +68,15 @@ export default function TermsModal({
           </p>
         </div>
 
-        <div className="terms-footer">
-          <label className="terms-checkbox-wrapper" style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '12px',
-        textAlign: 'left',
-        cursor: 'pointer'
-      }}>
-            <input type="checkbox" checked={isChecked} onChange={e => setIsChecked(e.target.checked)} style={{
-          width: '20px',
-          height: '20px',
-          marginTop: '2px',
-          cursor: 'pointer'
-        }} />
+        <div className="grid gap-4 border-t border-line pt-4">
+          <label className="text-sm leading-relaxed text-muted flex items-start gap-3 text-left cursor-pointer">
+            <Input type="checkbox" checked={isChecked} onChange={e => setIsChecked(e.target.checked)} className="w-5 h-5 mt-0.5 cursor-pointer" />
             <span>He leído, entiendo y acepto expresamente las condiciones de servicio, la limitación de responsabilidad y el tratamiento de datos.</span>
           </label>
 
-          <button onClick={handleAccept} disabled={!isChecked || isAccepting} className="btn-primary btn-accept-terms" style={{
-        opacity: !isChecked || isAccepting ? 0.6 : 1,
-        cursor: !isChecked || isAccepting ? 'not-allowed' : 'pointer'
-      }}>
+          <Button onClick={handleAccept} disabled={!isChecked || isAccepting} className={cn("w-full", !isChecked || isAccepting ? "opacity-60" : "opacity-100", !isChecked || isAccepting ? "cursor-not-allowed" : "cursor-pointer")} type="button" variant="primary">
             {isAccepting ? 'Procesando...' : 'Aceptar y Continuar'}
-          </button>
+          </Button>
         </div>
 
       </Dialog>;

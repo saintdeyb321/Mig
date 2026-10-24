@@ -1,27 +1,5 @@
-@layer theme, base, legacy, components, utilities;
 @import 'tailwindcss';
 @import './shared/styles/theme.css';
-@import './styles/variables.css' layer(legacy);
-@import './styles/base.css' layer(legacy);
-@import './styles/components.css' layer(legacy);
-@import './styles/layout.css' layer(legacy);
-@import './styles/pos.css' layer(legacy);
-@import './styles/history.css' layer(legacy);
-@import './styles/settings.css' layer(legacy);
-@import './styles/reports.css' layer(legacy);
-@import './styles/users.css' layer(legacy);
-@import './styles/exportSales.css' layer(legacy);
-@import './styles/BottomNav.css' layer(legacy);
-@import './styles/products.css' layer(legacy);
-@import './styles/loaders.css' layer(legacy);
-@import './styles/maintenance.css' layer(legacy);
-@import './styles/auth.css' layer(legacy);
-@import './styles/notificationBell.css' layer(legacy);
-@import './styles/termsModal.css' layer(legacy);
-@import './styles/contracts.css' layer(legacy);
-@import './styles/contractsModals.css' layer(legacy);
-@import './styles/contractCancelModal.css' layer(legacy);
-@import './styles/contractFormModal.css' layer(legacy);
 
 @layer base {
   html { min-width: 320px; background: var(--color-canvas); }
