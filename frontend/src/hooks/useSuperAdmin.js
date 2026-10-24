@@ -54,7 +54,7 @@ export const useSuperAdmin = user => {
   }, [licenses, searchTerm]);
   return { licenses, isLoading, isProcessing, searchTerm, setSearchTerm, filteredLicenses, error, hasMore: !!cursor,
     refresh: () => fetchLicenses(), loadMore: () => !isLoading && fetchLicenses(cursor),
-    handleCreateClient: (businessName, ownerEmail, firstName, lastName, months, maxActiveBranches = 1) => operate('createTenant', { businessName, ownerEmail, firstName, lastName, months: Number(months), maxActiveBranches: Number(maxActiveBranches) }, 'Provisionando tenant…'),
+    handleCreateClient: (businessName, ownerEmail, firstName, lastName, months, maxActiveBranches = 1, maxRegisteredBranches = 5) => operate('createTenant', { businessName, ownerEmail, firstName, lastName, months: Number(months), maxActiveBranches: Number(maxActiveBranches), maxRegisteredBranches: Number(maxRegisteredBranches) }, 'Provisionando tenant…'),
     handleSetBranchQuota: data => operate('setTenantBranchQuota', data, 'Actualizando cupo…'),
     handleExtendLicense: (businessId, months) => operate('extendTenantLicense', { businessId, months: Number(months) }, 'Renovando licencia…'),
     handleToggleStatus: (businessId, status) => operate('setTenantLicenseStatus', { businessId, status: status === 'activa' ? 'inactiva' : 'activa' }, 'Actualizando licencia…'),

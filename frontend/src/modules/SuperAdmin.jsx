@@ -1,3 +1,4 @@
+import { DEFAULT_MAX_REGISTERED_BRANCHES, MAX_REGISTERED_BRANCHES } from '../features/branches/domain/branchPolicy';
 import FirestoreQueryError from '../components/FirestoreQueryError';
 import { BusinessDetailsDialog } from './admin/BusinessDetailsDialog';
 import { BranchQuotaModal } from './admin/BranchQuotaModal';
@@ -39,6 +40,7 @@ function SuperAdmin({
   const [lastName, setLastName] = useState('');
   const [months, setMonths] = useState(1);
   const [maxActiveBranches, setMaxActiveBranches] = useState(1), [quotaLicense, setQuotaLicense] = useState(null);
+  const [maxRegisteredBranches, setMaxRegisteredBranches] = useState(DEFAULT_MAX_REGISTERED_BRANCHES);
   const [extendMonths, setExtendMonths] = useState(1);
   if (user?.role !== 'superadmin') {
     return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6 text-center pt-12.5">
@@ -58,13 +60,13 @@ function SuperAdmin({
     </section>;
   const submitCreate = async e => {
     e.preventDefault();
-    const success = await handleCreateClient(businessName, ownerEmail, firstName, lastName, months, maxActiveBranches);
+    const success = await handleCreateClient(businessName, ownerEmail, firstName, lastName, months, maxActiveBranches, maxRegisteredBranches);
     if (success) {
       setBusinessName('');
       setOwnerEmail('');
       setFirstName('');
       setLastName('');
-      setMonths(1); setMaxActiveBranches(1);
+      setMonths(1); setMaxActiveBranches(1); setMaxRegisteredBranches(DEFAULT_MAX_REGISTERED_BRANCHES);
       setShowAddModal(false);
     }
   };
@@ -144,6 +146,7 @@ function SuperAdmin({
               </FormField>
 
               <FormField label="Máximo de sedes activas" hint="Política inicial: 1 sede activa; SuperAdmin puede fijar de 1 a 100. Las inactivas no consumen cupo."><Input type="number" min="1" max="100" step="1" value={maxActiveBranches} onChange={event => setMaxActiveBranches(event.target.value)} required disabled={isProcessing} /></FormField>
+              <FormField label="Máximo de sedes registradas (activas e inactivas)" hint="Política inicial: 5 registradas. Inactivar libera solo cupo activo; el historial conserva su plaza. Debe ser igual o mayor al cupo activo, hasta 200."><Input type="number" min={Number(maxActiveBranches) || 1} max={MAX_REGISTERED_BRANCHES} step="1" value={maxRegisteredBranches} onChange={event => setMaxRegisteredBranches(event.target.value)} required disabled={isProcessing} /></FormField>
               <DialogFooter>
                 <Button type="button" onClick={() => setShowAddModal(false)} disabled={isProcessing} variant="secondary">Cancelar</Button>
                 <Button type="submit" disabled={isProcessing} className="flex-1" variant="primary">{isProcessing ? 'Creando...' : 'Crear Inquilino'}</Button>

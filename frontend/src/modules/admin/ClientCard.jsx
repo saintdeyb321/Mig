@@ -69,7 +69,7 @@ export const ClientCard = memo(({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3 text-xs text-muted"><span>Sedes activas registradas: {license.branchQuotaVersion === 1 ? `${license.activeBranchIds?.length ?? '?'} / ${license.maxActiveBranches}` : 'cupo histórico sin regularizar'}</span><Button variant="secondary" size="sm" disabled={isProcessing} onClick={() => onQuota(license)}>Editar cupo</Button></div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3 text-xs text-muted"><span>Sedes activas: {license.branchQuotaVersion === 1 ? `${license.activeBranchIds?.length ?? '?'} / ${license.maxActiveBranches}` : 'cupo histórico sin regularizar'}. Registradas (incluye inactivas): {license.registeredBranchQuotaVersion === 1 ? `${license.registeredBranchIds?.length ?? '?'} / ${license.maxRegisteredBranches}` : 'inventario pendiente de revisión'}</span><Button variant="secondary" size="sm" disabled={isProcessing} onClick={() => onQuota(license)}>Editar cupo</Button></div>
       <div className="px-5 py-3"><Button variant="secondary" onClick={() => onDetails(license)} disabled={isProcessing} className="w-full">Ver detalles</Button></div>
       {/* Botonera de Tarjeta */}
       {license.tenantStatus !== 'active' && <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Estado histórico: {license.tenantStatus}. Mantenimiento privilegiado no disponible en Spark.</p>}

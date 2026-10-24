@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_ACTIVE_BRANCHES, validateBranchQuota } from '../../branches/domain/branchPolicy.js';
+import { DEFAULT_MAX_ACTIVE_BRANCHES, DEFAULT_MAX_REGISTERED_BRANCHES, validateBranchQuotas } from '../../branches/domain/branchPolicy.js';
 import * as firestore from 'firebase/firestore';
 
 const fail = (message, code = 'invalid-administration') => { throw Object.assign(new Error(message), { code }); };
@@ -59,8 +59,9 @@ export function createSparkAdministrationRepository(database, { currentUser, sdk
     const ownerEmail = text(raw.ownerEmail, 'Correo', 254).toLowerCase();
     if (!/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(ownerEmail)) fail('Correo de propietario inválido.');
     if (ownerEmail === user.email?.toLowerCase()) fail('Usa una cuenta de propietario distinta del SuperAdmin.');
+    const limits = validateBranchQuotas(raw.maxActiveBranches ?? DEFAULT_MAX_ACTIVE_BRANCHES, raw.maxRegisteredBranches ?? Math.max(DEFAULT_MAX_REGISTERED_BRANCHES, raw.maxActiveBranches ?? DEFAULT_MAX_ACTIVE_BRANCHES));
     const input = { operationId, actorId: user.uid, operation: 'createTenant', businessId, branchId, ownerEmail,
-      businessName: text(raw.businessName, 'Negocio'), firstName: text(raw.firstName, 'Nombres'), lastName: text(raw.lastName, 'Apellidos'), months: monthsValue(raw.months), maxActiveBranches: validateBranchQuota(raw.maxActiveBranches ?? DEFAULT_MAX_ACTIVE_BRANCHES) };
+      businessName: text(raw.businessName, 'Negocio'), firstName: text(raw.firstName, 'Nombres'), lastName: text(raw.lastName, 'Apellidos'), months: monthsValue(raw.months), ...limits };
     const opRef = doc(database, 'platform_operations', `${user.uid}_${operationId}`);
     const claimRef = doc(database, 'owner_email_claims', ownerEmail), inviteRef = doc(database, 'invites', ownerEmail);
     // Rules cannot query historical users by email. Existing profiles are checked here;
@@ -78,7 +79,7 @@ export function createSparkAdministrationRepository(database, { currentUser, sdk
       const createdAt = serverTimestamp(), expiry = Timestamp.fromMillis(addLicenseMonths(now(), input.months));
       tx.set(opRef, { ...input, expiry, createdAt });
       tx.set(doc(database, 'tenants', businessId), { businessId, businessName: input.businessName, ownerEmail, status: 'active', schemaVersion: 1, operationId, createdAt });
-      tx.set(doc(database, 'licenses', businessId), { businessId, businessName: input.businessName, status: 'activa', tenantStatus: 'active', expiry, maxActiveBranches: input.maxActiveBranches, activeBranchIds: [branchId], branchQuotaVersion: 1, operationId, createdAt });
+      tx.set(doc(database, 'licenses', businessId), { businessId, businessName: input.businessName, status: 'activa', tenantStatus: 'active', expiry, ...limits, activeBranchIds: [branchId], registeredBranchIds: [branchId], branchQuotaVersion: 1, registeredBranchQuotaVersion: 1, operationId, createdAt });
       tx.set(doc(database, 'branches', branchId), { businessId, name: 'Sede Principal', address: 'Dirección por definir', phone: '', status: 'activo', sparkCashVersion: 1, branchLifecycleVersion: 1, operationId, createdAt });
       tx.set(doc(database, 'settings', businessId), { businessId, operationId, companyData: { razonSocial: input.businessName, ruc: '', direccion: 'Dirección por definir', telefono: '' } });
       tx.set(inviteRef, { businessId, email: ownerEmail, firstName: input.firstName, lastName: input.lastName, role: 'dueño', branchId: 'global',
@@ -109,23 +110,27 @@ export function createSparkAdministrationRepository(database, { currentUser, sdk
   };
   const setTenantBranchQuota = async raw => {
     const user = actor(), businessId = tenantId(raw.businessId), operationId = identifier(raw.operationId);
-    const maxActiveBranches = validateBranchQuota(raw.maxActiveBranches);
+    const limits = validateBranchQuotas(raw.maxActiveBranches, raw.maxRegisteredBranches);
     const licenseRef = doc(database, 'licenses', businessId), opRef = doc(database, 'platform_operations', `${user.uid}_${operationId}`);
     return runTransaction(database, async tx => {
       const [prior, saved] = await Promise.all([tx.get(opRef), tx.get(licenseRef)]);
-      const expected = { actorId: user.uid, businessId, operationId, operation: 'setTenantBranchQuota', maxActiveBranches };
+      const expected = { actorId: user.uid, businessId, operationId, operation: 'setTenantBranchQuota', ...limits };
       if (prior.exists()) { replay(prior, expected); return { businessId }; }
       if (!saved.exists() || saved.data().businessId !== businessId) fail('Licencia inexistente.');
-      const regularization = saved.data().branchQuotaVersion !== 1;
-      if (regularization && raw.confirmHistoricalReview !== true) fail('Confirma el inventario actual de sedes para regularizar el negocio histórico.');
-      const activeBranchIds = regularization ? raw.activeBranchIds : saved.data().activeBranchIds;
-      if (!Array.isArray(activeBranchIds) || activeBranchIds.length < 1 || activeBranchIds.length > maxActiveBranches
-        || new Set(activeBranchIds).size !== activeBranchIds.length || activeBranchIds.some(id => typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(id))) fail('El cupo no puede ser menor que las sedes activas inventariadas.');
+      const existing = saved.data();
+      const regularization = existing.branchQuotaVersion !== 1 || existing.registeredBranchQuotaVersion !== 1;
+      if (regularization && raw.confirmHistoricalReview !== true) fail('Confirma el inventario completo de sedes registradas y activas para regularizar el negocio histórico.');
+      const activeBranchIds = existing.branchQuotaVersion === 1 ? existing.activeBranchIds : raw.activeBranchIds;
+      const registeredBranchIds = existing.registeredBranchQuotaVersion === 1 ? existing.registeredBranchIds : raw.registeredBranchIds;
+      const validIds = (ids, maximum) => Array.isArray(ids) && ids.length >= 1 && ids.length <= maximum
+        && new Set(ids).size === ids.length && ids.every(id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id));
+      if (!validIds(activeBranchIds, limits.maxActiveBranches) || !validIds(registeredBranchIds, limits.maxRegisteredBranches)
+        || !activeBranchIds.every(id => registeredBranchIds.includes(id))) fail('El cupo no puede ser menor que las sedes inventariadas; el inventario registrado debe incluir todas las activas.');
       if (currentUser()?.uid !== user.uid) fail('La sesión cambió.', 'unauthenticated');
       const createdAt = serverTimestamp();
-      tx.update(licenseRef, { maxActiveBranches, activeBranchIds, branchQuotaVersion: 1, quotaOperationId: operationId, branchQuotaUpdatedAt: createdAt });
-      tx.set(opRef, { ...expected, activeBranchIds, regularization, createdAt });
-      return { businessId, maxActiveBranches };
+      tx.update(licenseRef, { ...limits, activeBranchIds, registeredBranchIds, branchQuotaVersion: 1, registeredBranchQuotaVersion: 1, quotaOperationId: operationId, branchQuotaUpdatedAt: createdAt });
+      tx.set(opRef, { ...expected, activeBranchIds, registeredBranchIds, regularization, createdAt });
+      return { businessId, ...limits };
     });
   };
   return { administrationPage, createTenant, setTenantBranchQuota,

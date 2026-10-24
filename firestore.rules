@@ -259,7 +259,7 @@ service cloud.firestore {
     function validProvisionReceipt(id) {
       let d = request.resource.data;
       return superadmin() && d.operation == 'createTenant' && d.keys().hasOnly(['operationId', 'actorId', 'operation', 'businessId', 'branchId',
-          'ownerEmail', 'businessName', 'firstName', 'lastName', 'months', 'maxActiveBranches', 'expiry', 'createdAt'])
+          'ownerEmail', 'businessName', 'firstName', 'lastName', 'months', 'maxActiveBranches', 'maxRegisteredBranches', 'expiry', 'createdAt'])
         && d.actorId == request.auth.uid && id == request.auth.uid + '_' + d.operationId
         && d.operationId.matches('^[A-Za-z0-9_-]{16,100}$') && d.businessId == d.operationId
         && d.branchId == 'main_' + d.businessId && d.businessId != 'platform-admin'
@@ -270,7 +270,7 @@ service cloud.firestore {
         && d.ownerEmail.matches('^[^ /@]+@[^ /@]+[.][^ /@]+$') && d.ownerEmail == d.ownerEmail.lower()
         && d.ownerEmail != currentUser().email && d.ownerEmail != request.auth.token.get('email', '')
         && d.months is int && d.months >= 1 && d.months <= 120
-        && d.maxActiveBranches is int && d.maxActiveBranches >= 1 && d.maxActiveBranches <= 100
+        && validBranchLimits(d)
         && d.createdAt == request.time && d.expiry is timestamp && d.expiry > request.time
         && d.expiry <= request.time + duration.value(d.months * 32, 'd')
         && !exists(/databases/$(database)/documents/tenants/$(d.businessId))
@@ -293,8 +293,9 @@ service cloud.firestore {
       let op = provisioning(d);
       return newProvision(d) && id == op.businessId
         && d == { 'businessId': id, 'businessName': op.businessName, 'status': 'activa', 'tenantStatus': 'active',
-          'expiry': op.expiry, 'maxActiveBranches': op.maxActiveBranches, 'activeBranchIds': [op.branchId],
-          'branchQuotaVersion': 1, 'operationId': op.operationId, 'createdAt': request.time };
+          'expiry': op.expiry, 'maxActiveBranches': op.maxActiveBranches, 'maxRegisteredBranches': op.maxRegisteredBranches,
+          'activeBranchIds': [op.branchId], 'registeredBranchIds': [op.branchId],
+          'branchQuotaVersion': 1, 'registeredBranchQuotaVersion': 1, 'operationId': op.operationId, 'createdAt': request.time };
     }
     function provisionBranch(id) {
       let d = request.resource.data;
@@ -360,24 +361,36 @@ service cloud.firestore {
             && d.keys().hasOnly(['operationId', 'actorId', 'operation', 'businessId', 'newStatus', 'createdAt'])));
     }
 
-    function configuredQuota(license) {
-      return license.get('branchQuotaVersion', 0) == 1 && license.maxActiveBranches is int
-        && license.maxActiveBranches >= 1 && license.maxActiveBranches <= 100
-        && license.activeBranchIds is list && license.activeBranchIds.size() >= 1
-        && license.activeBranchIds.size() <= license.maxActiveBranches
-        && license.activeBranchIds.toSet().size() == license.activeBranchIds.size();
+    function validBranchLimits(data) {
+      return data.maxActiveBranches is int && data.maxActiveBranches >= 1 && data.maxActiveBranches <= 100
+        && data.maxRegisteredBranches is int && data.maxRegisteredBranches >= data.maxActiveBranches
+        && data.maxRegisteredBranches <= 200;
     }
-    // Only a SuperAdmin receipt may establish/change the commercial limit.
-    // Initial historical roster is an explicit administrative inventory attestation.
+    function configuredQuota(license) {
+      let active = license.activeBranchIds;
+      let registered = license.registeredBranchIds;
+      return license.get('branchQuotaVersion', 0) == 1 && license.get('registeredBranchQuotaVersion', 0) == 1
+        && validBranchLimits(license)
+        && active is list && active.size() >= 1 && active.size() <= license.maxActiveBranches
+        && active.toSet().size() == active.size()
+        && registered is list && registered.size() >= 1 && registered.size() <= license.maxRegisteredBranches
+        && registered.toSet().size() == registered.size() && registered.hasAll(active);
+    }
+    // Only SuperAdmin may set limits or attest a first historical inventory.
+    // Registered IDs are permanent: neither owners nor later quota edits release them.
     function quotaLicenseChange(id) {
       let d = request.resource.data;
       let op = getAfter(/databases/$(database)/documents/platform_operations/$(request.auth.uid + '_' + d.quotaOperationId)).data;
       return superadmin() && businessUnchanged() && id == d.businessId && configuredQuota(d)
-        && d.diff(resource.data).affectedKeys().hasOnly(['maxActiveBranches', 'activeBranchIds', 'branchQuotaVersion', 'quotaOperationId', 'branchQuotaUpdatedAt'])
+        && d.diff(resource.data).affectedKeys().hasOnly(['maxActiveBranches', 'maxRegisteredBranches', 'activeBranchIds', 'registeredBranchIds',
+          'branchQuotaVersion', 'registeredBranchQuotaVersion', 'quotaOperationId', 'branchQuotaUpdatedAt'])
         && (resource.data.get('branchQuotaVersion', 0) != 1 || d.activeBranchIds == resource.data.activeBranchIds)
+        && (resource.data.get('registeredBranchQuotaVersion', 0) != 1 || d.registeredBranchIds == resource.data.registeredBranchIds)
+        && op.regularization == (resource.data.get('branchQuotaVersion', 0) != 1 || resource.data.get('registeredBranchQuotaVersion', 0) != 1)
         && d.branchQuotaUpdatedAt == request.time && op.createdAt == request.time
         && op.operation == 'setTenantBranchQuota' && op.actorId == request.auth.uid && op.businessId == id
-        && op.maxActiveBranches == d.maxActiveBranches && op.activeBranchIds == d.activeBranchIds
+        && op.maxActiveBranches == d.maxActiveBranches && op.maxRegisteredBranches == d.maxRegisteredBranches
+        && op.activeBranchIds == d.activeBranchIds && op.registeredBranchIds == d.registeredBranchIds
         && !exists(/databases/$(database)/documents/platform_operations/$(request.auth.uid + '_' + d.quotaOperationId));
     }
     function quotaReceipt(id) {
@@ -385,49 +398,55 @@ service cloud.firestore {
       let license = getAfter(/databases/$(database)/documents/licenses/$(d.businessId)).data;
       return superadmin() && id == request.auth.uid + '_' + d.operationId && d.actorId == request.auth.uid
         && d.operationId.matches('^[A-Za-z0-9_-]{16,100}$') && d.operation == 'setTenantBranchQuota'
-        && d.keys().hasOnly(['actorId', 'businessId', 'operationId', 'operation', 'maxActiveBranches', 'activeBranchIds', 'regularization', 'createdAt'])
+        && d.keys().hasOnly(['actorId', 'businessId', 'operationId', 'operation', 'maxActiveBranches', 'maxRegisteredBranches',
+          'activeBranchIds', 'registeredBranchIds', 'regularization', 'createdAt'])
         && d.createdAt == request.time && d.regularization is bool && configuredQuota(license)
         && license.quotaOperationId == d.operationId && license.branchQuotaUpdatedAt == request.time
-        && license.maxActiveBranches == d.maxActiveBranches && license.activeBranchIds == d.activeBranchIds;
+        && license.maxActiveBranches == d.maxActiveBranches && license.maxRegisteredBranches == d.maxRegisteredBranches
+        && license.activeBranchIds == d.activeBranchIds && license.registeredBranchIds == d.registeredBranchIds;
     }
-    function branchSlotChange(id, data, wasActive) {
+    function branchInventoryChange(id, data, wasActive, creating) {
       let before = get(/databases/$(database)/documents/licenses/$(data.businessId)).data;
       let after = getAfter(/databases/$(database)/documents/licenses/$(data.businessId)).data;
       return configuredQuota(before) && configuredQuota(after)
         && after.branchQuotaBranchId == id && after.branchQuotaUpdatedAt == request.time
-        && (wasActive ? (before.activeBranchIds.hasAny([id]) && data.status == 'inactivo'
-            && after.activeBranchIds == before.activeBranchIds.removeAll([id]))
-          : (!before.activeBranchIds.hasAny([id]) && data.status == 'activo'
-            && after.activeBranchIds == before.activeBranchIds.concat([id])));
+        && (creating ? (!before.registeredBranchIds.hasAny([id])
+            && after.registeredBranchIds == before.registeredBranchIds.concat([id])
+            && (data.status == 'activo' ? after.activeBranchIds == before.activeBranchIds.concat([id])
+              : (data.status == 'inactivo' && after.activeBranchIds == before.activeBranchIds)))
+          : (before.registeredBranchIds.hasAny([id]) && after.registeredBranchIds == before.registeredBranchIds
+            && (wasActive ? (before.activeBranchIds.hasAny([id]) && data.status == 'inactivo'
+                && after.activeBranchIds == before.activeBranchIds.removeAll([id]))
+              : (!before.activeBranchIds.hasAny([id]) && data.status == 'activo'
+                && after.activeBranchIds == before.activeBranchIds.concat([id])))));
     }
     function branchQuotaChange(id) {
       let d = request.resource.data;
       let key = d.branchQuotaBranchId;
       let before = get(/databases/$(database)/documents/branches/$(key));
       let after = getAfter(/databases/$(database)/documents/branches/$(key));
-      return tenantManager() && id == currentBusiness() && configuredQuota(d)
-        && d.diff(resource.data).affectedKeys().hasOnly(['activeBranchIds', 'branchQuotaBranchId', 'branchQuotaUpdatedAt'])
+      return tenantManager() && id == currentBusiness()
+        && d.diff(resource.data).affectedKeys().hasOnly(['activeBranchIds', 'registeredBranchIds', 'branchQuotaBranchId', 'branchQuotaUpdatedAt'])
         && after != null && after.data.businessId == id
         && (before == null || before.data.businessId == id)
-        && branchSlotChange(key, after.data, before != null && before.data.get('status', null) == 'activo');
+        && branchInventoryChange(key, after.data, before != null && before.data.get('status', null) == 'activo', before == null);
     }
     function branchCreation(id) {
       let d = request.resource.data;
-      let license = get(/databases/$(database)/documents/licenses/$(d.businessId)).data;
-      return tenantCreator() && validNamedRecord() && configuredQuota(license)
+      return tenantCreator() && validNamedRecord()
         && d.sparkCashVersion == 1 && d.branchLifecycleVersion == 1
         && d.keys().hasOnly(['businessId', 'name', 'address', 'phone', 'status', 'yapeQrUrl', 'createdAt', 'updatedAt', 'sparkCashVersion', 'branchLifecycleVersion'])
-        && (d.status == 'activo' ? branchSlotChange(id, d, false) : (d.status == 'inactivo' && !license.activeBranchIds.hasAny([id])));
+        && branchInventoryChange(id, d, false, true);
     }
     function branchUpdate(id) {
       let d = request.resource.data;
       return tenantManager() && businessUnchanged() && validNamedRecord()
         && d.diff(resource.data).affectedKeys().hasOnly(['name', 'address', 'phone', 'status', 'yapeQrUrl', 'updatedAt'])
         && (d.status == resource.data.get('status', null) ||
-          (d.status == 'activo' ? branchSlotChange(id, d, false) :
+          (d.status == 'activo' ? branchInventoryChange(id, d, false, false) :
             (d.status == 'inactivo' && resource.data.get('branchLifecycleVersion', 0) == 1
               && !exists(/databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, id)))
-              && branchSlotChange(id, d, true))));
+              && branchInventoryChange(id, d, true, false))));
     }
 
     function cashLockId(businessId, branchId) {
@@ -701,7 +720,8 @@ service cloud.firestore {
     match /licenses/{licenseId} {
       allow read: if superadmin() || (activeUser() && licenseId == currentBusiness());
       allow create: if provisionLicense(licenseId);
-      allow update: if licenseChange(licenseId) || quotaLicenseChange(licenseId) || branchQuotaChange(licenseId);
+      // Dispatch by authority to avoid evaluating administrative receipts for owner reservations.
+      allow update: if superadmin() ? (licenseChange(licenseId) || quotaLicenseChange(licenseId)) : branchQuotaChange(licenseId);
       allow delete: if false;
     }
 
