@@ -55,7 +55,7 @@ async function archivePolicy(profile, commit) {
   const rules = await readFile(resolve(root, 'firestore.rules')), indexes = await readFile(resolve(root, 'firestore.indexes.json'));
   const archive = `.release/policy/${profile.projectId}/${commit}`;
   await mkdir(resolve(root, archive), { recursive: true });
-  const manifest = { commit, projectId: profile.projectId, database: '(default)', rulesHash: sha(rules), indexesHash: sha(indexes), policyHash: sha(Buffer.concat([rules, indexes])) };
+  const manifest = { source: 'repository-build', publicationVerified: false, commit, projectId: profile.projectId, database: '(default)', rulesHash: sha(rules), indexesHash: sha(indexes), policyHash: sha(Buffer.concat([rules, indexes])) };
   await writeFile(resolve(root, archive, 'firestore.rules'), rules);
   await writeFile(resolve(root, archive, 'firestore.indexes.json'), indexes);
   await writeFile(resolve(root, archive, 'manifest.json'), JSON.stringify(manifest, null, 2));
@@ -69,6 +69,24 @@ async function readPolicy(commit, profile) {
     || manifest.indexesHash !== sha(indexes) || manifest.policyHash !== sha(Buffer.concat([rules, indexes]))) throw new Error('Archivo de política alterado o de otro proyecto.');
   return { ...manifest, rules: `${archive}/firestore.rules` };
 }
+export function publishedRulesRecord(rules, { version, reviewer, confirmation }) {
+  if (confirmation !== 'migapos/(default)' || !version?.trim() || !reviewer?.trim()
+    || !/service\s+cloud\.firestore/.test(rules.toString('utf8'))) throw new Error('Requiere copia de Rules publicadas en Console, versión/fecha, revisor y --confirm-console "migapos/(default)".');
+  return { source: 'firebase-console-manual', publicationVerified: 'manual', projectId: 'migapos', database: '(default)',
+    publishedVersion: version.trim(), reviewedBy: reviewer.trim(), capturedAt: new Date().toISOString(), rulesHash: sha(rules), policyHash: sha(rules) };
+}
+async function readPublishedPolicy(id, profile) {
+  if (profile.projectId !== 'migapos' || !/^[a-f0-9]{64}$/.test(id || '')) throw new Error('Selecciona el SHA-256 de una copia publicada registrada; un commit Git no demuestra el estado de Firebase.');
+  const archive = `.release/published-policy/migapos/${id}`, manifest = await json(`${archive}/manifest.json`);
+  const rules = await readFile(resolve(root, archive, 'firestore.rules'));
+  if (manifest.source !== 'firebase-console-manual' || manifest.publicationVerified !== 'manual' || manifest.projectId !== profile.projectId
+    || manifest.database !== '(default)' || !manifest.publishedVersion || !manifest.reviewedBy || !manifest.capturedAt
+    || manifest.rulesHash !== id || manifest.policyHash !== id || sha(rules) !== id) throw new Error('Copia publicada alterada o sin procedencia/revisión manual declarada.');
+  return { ...manifest, rules: `${archive}/firestore.rules` };
+}
+export function assertIndexReview(profile, indexesHash, acknowledgement) {
+  if (acknowledgement !== `${profile.projectId}/(default)/${indexesHash}`) throw new Error('Falta revisión del conjunto de índices activo: conserva los existentes y reconoce MIGAPOS_REVIEWED_INDEXES con el hash actual.');
+}
 export function assertReleaseGuard({ profile, project, acknowledgement, receipt, fingerprint, commit, configHash, publicEnvHash, artifactHash, ci }) {
   if (profile.emulator || project !== profile.projectId) throw new Error('Proyecto de despliegue incorrecto o demo.');
   if (acknowledgement !== `${profile.projectId}/${profile.hostingSite}`) throw new Error('Falta confirmación explícita proyecto/site para release.');
@@ -80,7 +98,8 @@ export function assertReleaseGuard({ profile, project, acknowledgement, receipt,
 }
 export function assertPolicyRollback({ config, policy, receipt, acknowledgement, profile }) {
   const filename = `firebase.${profile.name}.rollback.generated.json`;
-  if (acknowledgement !== `${profile.projectId}/(default)/${policy.policyHash}` || receipt.policyHash !== policy.policyHash
+  if (policy.source !== 'firebase-console-manual' || policy.publicationVerified !== 'manual'
+    || acknowledgement !== `${profile.projectId}/(default)/${policy.policyHash}` || receipt.policyHash !== policy.policyHash
     || Object.keys(config).join() !== 'firestore' || config.firestore.database !== '(default)' || config.firestore.rules !== policy.rules
     || Object.keys(config.firestore).some(key => !['database', 'rules', 'predeploy'].includes(key))
     || JSON.stringify(config.firestore.predeploy) !== JSON.stringify([`node scripts/release.mjs guard-rollback --env ${profile.name} --config ${filename}`])) throw new Error('Rollback Rules requiere revisión y autorización exacta del hash; no incluye índices ni datos.');
@@ -95,7 +114,7 @@ export function releasePlan(profile, commit) {
   const tag = commit.slice(0, 12), project = profile.projectId, site = profile.hostingSite, filename = `firebase.${profile.name}.generated.json`;
   return [
     `npx --no-install firebase hosting:clone ${site}:live ${site}:rollback-${tag} --project ${project}`,
-    `npx --no-install firebase deploy --only firestore:rules,firestore:indexes --project ${project} --config ${filename}`,
+    `npx --no-install firebase deploy --only "firestore:rules,firestore:indexes" --project ${project} --config ${filename}`,
     `npx --no-install firebase deploy --only hosting --project ${project} --config ${filename}`,
     `npx --no-install firebase hosting:clone ${site}:rollback-${tag} ${site}:live --project ${project}`,
   ];
@@ -103,13 +122,13 @@ export function releasePlan(profile, commit) {
 async function run(args) {
   const [action, ...flags] = args;
   const option = name => { const index = flags.indexOf('--' + name); return index < 0 ? undefined : flags[index + 1]; };
-  if (!['check', 'build', 'prepare', 'plan', 'guard', 'attest', 'smoke', 'rollback-plan', 'guard-rollback'].includes(action)) throw new Error('Acción no admitida. Este script nunca ejecuta deploy, rollback, migraciones ni purgas.');
+  if (!['check', 'build', 'prepare', 'plan', 'guard', 'attest', 'smoke', 'record-published-rules', 'rollback-plan', 'guard-rollback'].includes(action)) throw new Error('Acción no admitida. Este script nunca ejecuta deploy, rollback, migraciones ni purgas.');
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS) throw new Error('Este procedimiento no admite cuentas de servicio.');
   const name = option('env') || process.env.MIGAPOS_RELEASE_ENV;
   if (!['production', 'emulator', 'staging'].includes(name)) throw new Error('Selecciona explícitamente --env production|emulator|staging.');
   if (action === 'plan') {
     console.log('Solo comandos para revisión manual (sin ejecución):\n' + releasePlan(environmentFor(name), git(['rev-parse', 'HEAD'])).join('\n'));
-    console.log('Requiere build, CI del mismo commit y MIGAPOS_ALLOW_RELEASE=migapos/migapos-peru. Guarda el SHA/hash de política publicado. Hosting rollback no revierte Rules, índices ni documentos. Índices: conservar cambios aditivos; no se prepara borrado automático. Rules: rollback-plan --snapshot SHA_ARCHIVADO, revisión y autorización separadas.'); return;
+    console.log('Requiere build/CI del mismo commit, MIGAPOS_ALLOW_RELEASE=migapos/migapos-peru y MIGAPOS_REVIEWED_INDEXES=migapos/(default)/SHA256_INDICES tras revisar el conjunto activo. Guardar Rules actualmente publicadas desde Console con record-published-rules antes de sustituirlas y seleccionar su SHA-256 en MIGAPOS_PREVIOUS_RULES. Los archivos de Git no prueban publicación. Hosting rollback no revierte Rules, índices ni documentos. Rules: rollback-plan --published-policy SHA256_COPIA_PUBLICADA, revisión y autorización separadas.'); return;
   }
   const env = { ...loadEnv(name, resolve(root, 'frontend'), 'VITE_'), ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith('VITE_'))) };
   const profile = validateWebEnvironment(env, name);
@@ -139,27 +158,42 @@ async function run(args) {
     assertReleaseGuard({ profile, project: process.env.GCLOUD_PROJECT, acknowledgement: process.env.MIGAPOS_ALLOW_RELEASE,
       receipt, fingerprint, commit, configHash: sha(await readFile(resolve(root, expected))), publicEnvHash, artifactHash: await buildFingerprint(), ci });
     if (rollback) {
-      const policy = await readPolicy(receipt.snapshot, profile), config = await json(expected);
+      const policy = await readPublishedPolicy(receipt.publishedPolicy, profile), config = await json(expected);
       assertPolicyRollback({ config, policy, receipt, acknowledgement: process.env.MIGAPOS_ALLOW_POLICY_ROLLBACK, profile });
     } else {
       assertSparkConfig(await json(expected), profile);
       const policy = await readPolicy(commit, profile);
       if (receipt.policyHash !== policy.policyHash || policy.rulesHash !== sha(await readFile(resolve(root, 'firestore.rules')))
         || policy.indexesHash !== sha(await readFile(resolve(root, 'firestore.indexes.json')))) throw new Error('Política archivada no coincide con el build/código aprobado.');
+      assertIndexReview(profile, policy.indexesHash, process.env.MIGAPOS_REVIEWED_INDEXES);
+      await readPublishedPolicy(process.env.MIGAPOS_PREVIOUS_RULES, profile);
     }
     if (git(['status', '--porcelain']).length) throw new Error('Release requiere un checkout limpio del commit aprobado.');
     const index = await readFile(resolve(root, 'frontend/dist/index.html'));
     if (receipt.indexHash !== sha(index)) throw new Error('Build reemplazado después de validar release.');
     console.log('Guardas de proyecto, código, CI y build aprobadas.'); return;
   }
+  if (action === 'record-published-rules') {
+    if (profile.name !== 'production') throw new Error('Registro de copia publicada solo para migapos/(default).');
+    const path = option('file');
+    if (!path || !/^\.release[\\/][^\r\n]+\.rules$/.test(path) || path.split(/[\\/]/).includes('..')) throw new Error('Copia las Rules publicadas a un archivo .rules dentro de .release; no se lee ningún archivo externo.');
+    const rules = await readFile(resolve(root, path));
+    const manifest = publishedRulesRecord(rules, { version: option('version'), reviewer: option('reviewer'), confirmation: option('confirm-console') });
+    const archive = `.release/published-policy/migapos/${manifest.rulesHash}`;
+    await mkdir(resolve(root, archive), { recursive: true });
+    await writeFile(resolve(root, archive, 'firestore.rules'), rules);
+    await writeFile(resolve(root, archive, 'manifest.json'), JSON.stringify(manifest, null, 2));
+    console.log(`Copia declarada desde Firebase Console: ${archive}. SHA-256: ${manifest.rulesHash}. Procedencia verificada MANUALMENTE por el operador; este comando no consultó Firebase ni prueba publicación automáticamente.`); return;
+  }
   if (action === 'rollback-plan') {
     if (profile.emulator || profile.projectId !== 'migapos') throw new Error('Rollback solo se prepara para migapos.');
-    const policy = await readPolicy(option('snapshot'), profile), filename = `firebase.${name}.rollback.generated.json`;
+    if (option('snapshot')) throw new Error('Un archivo Git no es snapshot de producción. Registra la copia publicada de Console y usa --published-policy SHA256.');
+    const policy = await readPublishedPolicy(option('published-policy'), profile), filename = `firebase.${name}.rollback.generated.json`;
     const config = { firestore: { database: '(default)', rules: policy.rules, predeploy: [`node scripts/release.mjs guard-rollback --env ${name} --config ${filename}`] } };
     const serialized = JSON.stringify(config, null, 2) + '\n';
     await writeFile(resolve(root, filename), serialized);
     await writeFile(resolve(root, `.release/${name}-rollback.json`), JSON.stringify({ environment: name, projectId: profile.projectId, site: profile.hostingSite,
-      fingerprint, commit, configHash: sha(serialized), publicEnvHash, artifactHash: await buildFingerprint(), indexHash: sha(await readFile(resolve(root, 'frontend/dist/index.html'))), snapshot: policy.commit, policyHash: policy.policyHash }, null, 2));
+      fingerprint, commit, configHash: sha(serialized), publicEnvHash, artifactHash: await buildFingerprint(), indexHash: sha(await readFile(resolve(root, 'frontend/dist/index.html'))), publishedPolicy: policy.rulesHash, policyHash: policy.policyHash }, null, 2));
     console.log(`Preparado, NO ejecutado. Revisar diff con ${policy.rules}. Requiere MIGAPOS_ALLOW_RELEASE=migapos/migapos-peru y MIGAPOS_ALLOW_POLICY_ROLLBACK=migapos/(default)/${policy.policyHash}`);
     console.log(`npx --no-install firebase deploy --only firestore:rules --project migapos --config ${filename}`); return;
   }

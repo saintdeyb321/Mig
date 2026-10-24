@@ -105,7 +105,17 @@ Rige `docs/PLAN-REFAC-SPARK-MIGAPOS.md`. Spark es obligatorio: proyecto `migapos
 
 **Archivos de publicación futura:** contenido completo de `frontend/dist/` (incluye `index.html`, assets, `manifest.webmanifest`, `sw.js`, Workbox e iconos), `firestore.rules`, `firestore.indexes.json`, usando exclusivamente `firebase.production.generated.json` generado desde el commit final. `.firebaserc` conserva el destino existente; `.release/*` son comprobantes/copias locales, no recursos a publicar. Nunca publicar config demo, `.env`, Functions, Storage, fuentes de tests ni datos de prueba. El build de validación del árbol sin commit no sustituye al build del commit limpio aprobado.
 
-**Procedimiento preparado, NO ejecutado contra Firebase (PowerShell, Node 22 y CLI instalada del lock):** después de revisar/commitear/subir y obtener CI aprobada del mismo commit, descargar su artefacto como `.release/ci-verification.json`; conservar la configuración pública real existente. No exportar variables demo de la sesión de pruebas a esta sesión.
+**Procedimiento vigente preparado, NO ejecutado contra Firebase (PowerShell/Windows):** usar Node 22, CLI instalada desde lockfile y cuenta humana del propietario; nunca cuenta de servicio. Estas instrucciones no autorizan publicación. Antes de sustituir Rules o índices, realizar y revisar las siguientes lecturas con autorización del propietario:
+
+1. Firebase Console → proyecto **migapos** → Firestore Database → base **(default)** → **Rules**. Seleccionar/verificar la versión **actualmente publicada** (no un borrador del editor); anotar identificador o fecha/hora de publicación y revisor. Copiar todo su texto a `.release/captured-firestore.rules` en UTF-8, contrastarlo otra vez con la versión publicada y conservarlo fuera del checkout. No pulsar Publicar. Esta captura de procedencia es **manual**: el script local no consulta Firebase ni puede certificar que el operador copió la versión correcta.
+2. Registrar esa copia local con el comando siguiente. Crea `.release/published-policy/migapos/SHA256/{firestore.rules,manifest.json}` con proyecto/base, versión declarada, revisor, fecha de captura y hash; `source: firebase-console-manual`, `publicationVerified: manual`. El SHA-256 detecta cambios posteriores del archivo, no demuestra su procedencia por sí solo.
+
+```powershell
+node scripts/release.mjs record-published-rules --env production --file .release/captured-firestore.rules --version "VERSION_O_FECHA_PUBLICADA" --reviewer "PROPIETARIO" --confirm-console "migapos/(default)"
+```
+
+3. Revisar los índices activos en Console (compuestos, ámbito de consulta, estado y exenciones de campo). Como alternativa de **solo lectura**, la CLI instalada admite `npx --no-install firebase firestore:indexes --project migapos --database "(default)" --json`; guardar y revisar su resultado antes de autorizar cambios. **Este comando no se ejecutó aquí.** Comparar el conjunto activo con `firestore.indexes.json`: conservar índices/exenciones existentes que sigan siendo necesarios, incluso si no los utiliza este refactor. Si falta alguno en el candidato, incorporarlo mediante revisión y nuevo commit/CI/build antes de publicar. Nunca confirmar eliminaciones inesperadas ni usar `--force`. El reconocimiento del hash siguiente es una declaración de revisión del propietario, no una consulta automática de producción.
+4. Revisar/commitear/subir el código final y obtener CI aprobada del **mismo commit limpio**. Descargar su artefacto como `.release/ci-verification.json`, conservar la configuración pública real existente y reconstruir. No heredar variables demo de las pruebas. En la sesión futura autorizada:
 
 ```powershell
 npm run release:check -- --env production
@@ -114,21 +124,25 @@ npm run check:build
 npm run release:plan -- --env production
 $env:MIGAPOS_RELEASE_ENV = 'production'
 $env:MIGAPOS_ALLOW_RELEASE = 'migapos/migapos-peru'
+$env:MIGAPOS_PREVIOUS_RULES = 'SHA256_COPIA_PUBLICADA_IMPRESO'
+$env:MIGAPOS_REVIEWED_INDEXES = 'migapos/(default)/' + (Get-FileHash .\firestore.indexes.json -Algorithm SHA256).Hash.ToLowerInvariant()
 ```
 
-Solo tras autorización posterior, ejecutar individualmente los comandos de publicación impresos por `release:plan` (sustituir `SHA12` por el prefijo del commit final):
+Las guardas exigen ambos registros/reconocimientos además de commit, CI y build coincidentes. **Los archivos `.release/policy/migapos/SHA_COMMIT/` son del repositorio/build (`source: repository-build`, `publicationVerified: false`), no snapshots de producción y no se aceptan como origen de rollback.** Un build de validación con cambios locales debe repetirse después del commit final limpio. No publicar archivos demo ni `.env`.
+
+Solo tras autorización posterior, ejecutar individualmente estos comandos (sustituir `SHA12` por el prefijo del commit final); el argumento `--only` con coma queda entre comillas para PowerShell:
 
 ```powershell
 npx --no-install firebase hosting:clone migapos-peru:live migapos-peru:rollback-SHA12 --project migapos
-npx --no-install firebase deploy --only firestore:rules,firestore:indexes --project migapos --config firebase.production.generated.json
+npx --no-install firebase deploy --only "firestore:rules,firestore:indexes" --project migapos --config firebase.production.generated.json
 npx --no-install firebase deploy --only hosting --project migapos --config firebase.production.generated.json
 ```
 
-Esperar índices listos antes de aceptar consultas. No aceptar borrado de índices desconocidos: revisar diferencias y conservar los necesarios; la operación de índices no es un rollback de datos. Si falla una etapa, detener publicación y verificar el estado real antes de continuar. La autorización de este sprint no autoriza esos comandos.
+Esperar índices listos antes de aceptar consultas. Si falla una etapa, detener publicación y comprobar el estado real. Nada de lo anterior se ejecutó contra Firebase en esta corrección.
 
-**Rollback separado:** conservar el canal del Hosting anterior y su vigencia. Tras autorización específica, `npx --no-install firebase hosting:clone migapos-peru:rollback-SHA12 migapos-peru:live --project migapos` revierte únicamente Hosting; la PWA requiere aceptar actualización/recargar, sin borrar IndexedDB. No revierte Rules, índices ni documentos. Cada `release:build` guarda `.release/policy/migapos/SHA_COMPLETO/{firestore.rules,firestore.indexes.json,manifest.json}`: conservar fuera del checkout y registrar qué SHA/hash se publicó realmente. El primer release exige conocer la política anterior efectivamente publicada; un snapshot de repositorio no prueba ese estado. Si no hay esa copia verificada, no prometer rollback de Rules: revisar una corrección compatible hacia delante.
+**Rollback separado:** conservar el canal anterior y verificar su vigencia. Con autorización específica, `npx --no-install firebase hosting:clone migapos-peru:rollback-SHA12 migapos-peru:live --project migapos` revierte solo Hosting; aceptar la actualización/recargar la PWA sin borrar IndexedDB. No revierte permisos, índices ni documentos.
 
-Preparación local de reversión de Rules, **sin ejecutar despliegue**: `node scripts/release.mjs rollback-plan --env production --snapshot SHA_COMPLETO_ANTERIOR`. Verifica hashes y genera `firebase.production.rollback.generated.json` con solo Rules `(default)`, sin Hosting/índices/datos. Revisar la diferencia y los permisos antes de autorizar. La guarda exige CI/build actuales y, además del reconocimiento normal, `MIGAPOS_ALLOW_POLICY_ROLLBACK=migapos/(default)/HASH_POLITICA` exacto impreso. Solo entonces, en otro encargo autorizado: `npx --no-install firebase deploy --only firestore:rules --project migapos --config firebase.production.rollback.generated.json`. No hay restauración de documentos ni purga/borrado de índices preparado.
+Para Rules, usar exclusivamente la copia publicada registrada y revisada: `node scripts/release.mjs rollback-plan --env production --published-policy SHA256_COPIA_PUBLICADA`. Prepara localmente `firebase.production.rollback.generated.json` y su recibo con solo Rules `(default)`, sin índices/Hosting/datos. El antiguo `--snapshot SHA_COMMIT` queda rechazado. Revisar la diferencia, mantener CI/build actuales y reconocer además `MIGAPOS_ALLOW_POLICY_ROLLBACK=migapos/(default)/SHA256_COPIA_PUBLICADA`. Solo en otro encargo autorizado: `npx --no-install firebase deploy --only firestore:rules --project migapos --config firebase.production.rollback.generated.json`. Si la procedencia o vigencia de la copia no puede verificarse, **no hay rollback de Rules certificado disponible**; no sustituirla por un archivo Git. Revisar una corrección compatible. Sin restauración de documentos ni eliminación de índices. La copia real permanece pendiente del propietario; no se fabricó una captura de producción.
 
 **Aceptación manual REAL pendiente (solo después de publicación y autorización expresa):** estas operaciones **escribirán datos reales en `migapos`**, incluso usando nombres ficticios. No ejecutarlas con fixtures ni crearlas automáticamente; si ya hay un negocio de laboratorio, exportar primero su alcance autorizado.
 
@@ -144,6 +158,15 @@ Preparación local de reversión de Rules, **sin ejecutar despliegue**: `node sc
 10. Comparar dashboard/Excel con movimientos confirmados, cerrar caja con conciliación pendiente, descargar datos autorizados y un archivo separado cifrado de pendientes/fotos; verificar ambos localmente, sin restaurar. Probar que otra cuenta/dispositivo no obtiene las fotos.
 
 Registrar en estos planes cualquier error real con ruta/operación/código e índice solicitado; no ampliar permisos por conveniencia. El login real, aceptación de términos contra producción, publicación, índices listos y este recorrido permanecen pendientes.
+
+### Corrección final previa a publicación — base `011e06698907c4277921adf306017533b309b118`
+
+Sin nueva fase; SPARK-7 conserva **IMPLEMENTADA, PENDIENTE DE PUBLICACIÓN Y ACEPTACIÓN MANUAL**. Este encargo autoriza expresamente crear el commit de corrección y subirlo a `main`; no autoriza deploy ni operaciones reales de negocio.
+
+- CI real inspeccionada: [run 40045439332](https://github.com/saintdeyb321/Mig/actions/runs/40045439332), job `120725959049`: falló auditoría y quedaron omitidos tests/build. Se confirmó `npm ls body-parser fast-uri` en los tres árboles. Overrides por rama mayor: raíz `body-parser` **1.20.8 → 1.20.9**, **2.3.0 → 2.4.0**, `fast-uri` **3.1.8 → 3.1.9**; Functions históricas solo `body-parser` **2.3.0 → 2.4.0**. `qs` pasa a **6.16.1**, mínimo requerido por body-parser 2.4. Frontend ya tenía fast-uri 3.1.9, sin cambios de dependencias allí. Lockfiles raíz/Functions reproducidos con `npm ci`, sin scripts de instalación; no `audit fix --force`, excepciones ni omisión de auditoría. Functions conserva su código histórico y no entra al runtime ni config Spark. Fuentes de las correcciones: [body-parser](https://github.com/advisories/GHSA-27r3-jxmh-p828), [fast-uri esquema](https://github.com/advisories/GHSA-w74x-v6f9-j3xg), [fast-uri host](https://github.com/advisories/GHSA-wjr9-j795-jxcr).
+- Exportador: se reprodujo y corrigió un manifiesto que declaraba `partial: false` con colecciones inaccesibles/incompletas aunque se recalculase el checksum global. El dry-run ahora rechaza esa inconsistencia y JSON `null`; no escribe ni corrige datos originales. Se prueba página inicial accesible seguida de fallo, límites/cifrado/checksums/descarga separada y aborto durante lecturas por cambio de cuenta/negocio. El flujo existente de cancelación pasó las nuevas comprobaciones sin modificar su implementación ni IndexedDB/fotos.
+- Release: `migapos` / `migapos-peru` / `(default)` conservados; sin Functions/Storage/URLs de emulador en configuración publicada. Se exige revisión explícita del conjunto activo de índices y copia manual identificada de Rules publicadas antes de sustituirlos. Git/build y captura Console tienen procedencia y rutas separadas; rollback desde solo un commit Git rechazado. Procedimiento PowerShell vigente arriba; ninguna consulta de producción, deploy ni rollback ejecutados aquí. Reglas/índices e invariantes financieros intactos.
+- Validación local: `npm run audit:security` aprobado (raíz 0, Functions 0; frontend conserva 1 aviso **bajo**, GHSA-m5mm-p8h7-m29v, visible y no bloqueante según política vigente). Checks de release, lint/build/PWA/diff-check y pruebas focalizadas de exportador, parser/URI y guardas; no suites históricas masivas ni cambios de `.env`. CI remota del nuevo commit se comprobará después del push; los resultados locales no acreditan CI ni login real. Persiste aviso conocido de chunks grandes.
 
 ### SPARK-0 — implementación y límites
 

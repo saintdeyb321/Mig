@@ -8,6 +8,7 @@ import {encrypt,decrypt} from '/src/crypto.js';
 import {auth} from '/src/core/firebase/client.js';
 import {readLocalBackup} from '/src/features/backups/infrastructure/localBackup.js';
 import {verifyBackupFile} from '/src/features/backups/domain/backupFile.js';
+import {useLocalBackup} from '/src/features/backups/hooks/useLocalBackup.js';
 const checks=[], check=(value,name)=>{if(!value)throw Error(name);checks.push(name);};
 const waitFor=async predicate=>{const until=Date.now()+10000;while(!predicate()){if(Date.now()>until)throw Error('UI timeout');await new Promise(r=>setTimeout(r,30));}};
 const label=text=>[...document.querySelectorAll('label')].find(row=>row.textContent.includes(text))?.querySelector('input');
@@ -33,9 +34,9 @@ try {
   label('Autorizo estas lecturas').click();label('mis pendientes').click();label('mis fotos').click();
   document.querySelectorAll('input[type=password]').forEach(input=>setInput(input,'fixture-password-123'));
   await waitFor(()=>!download().disabled);
-  let filename,textPromise;
+  let filename,textPromise,downloads=0;
   const click=HTMLAnchorElement.prototype.click;
-  HTMLAnchorElement.prototype.click=function(){filename=this.download;textPromise=fetch(this.href).then(r=>r.text());return click.call(this);};
+  HTMLAnchorElement.prototype.click=function(){downloads++;filename=this.download;textPromise=fetch(this.href).then(r=>r.text());return click.call(this);};
   download().click();await waitFor(()=>document.body.textContent.includes('Descarga solicitada:'));
   const text=await textPromise;
   check(filename.endsWith('.encrypted.json')&&!text.includes('own-sale'),'Real download uses encrypted JSON');
@@ -54,7 +55,29 @@ try {
   try{await readLocalBackup(db,{uid,businessId,decrypt,pending:true,assertActive:()=>{if(auth.currentUser.uid!==uid)throw Error('identity-changed');}});}catch{cancelled=true;}
   check(cancelled,'Identity changes abort local export');
   check((await db.settings.get(`contract-image:${uid}:${reference}`)).main.size===blob.size,'Photo blobs are preserved');
-  root.unmount();result={ok:true,checks,filename};
+  root.unmount();
+  const probeRoot=createRoot(document.getElementById('root'));
+  function Probe({business}) {
+    globalThis.__backupProbe=useLocalBackup({uid,businessId:business,role:'dueño'},business);
+    globalThis.__probeBusiness=business;return null;
+  }
+  auth.currentUser={uid};globalThis.__pendingRemote=[];
+  probeRoot.render(React.createElement(Probe,{business:businessId}));
+  await waitFor(()=>globalThis.__backupProbe);
+  const options={consent:true,password:'fixture-password-123',maxRecords:100};
+  const accountOperation=globalThis.__backupProbe.exportBackup(options);
+  await waitFor(()=>globalThis.__pendingRemote.length===1);
+  auth.currentUser={uid:'other'};
+  globalThis.__pendingRemote.shift().resolve({sections:[],warnings:[]});await accountOperation;
+  check(downloads===1,'Account change during a remote read prevents stale download');
+  auth.currentUser={uid};
+  const businessOperation=globalThis.__backupProbe.exportBackup(options);
+  await waitFor(()=>globalThis.__pendingRemote.length===1);
+  probeRoot.render(React.createElement(Probe,{business:'new-business'}));
+  await waitFor(()=>globalThis.__probeBusiness==='new-business');
+  globalThis.__pendingRemote.shift().resolve({sections:[],warnings:[]});await businessOperation;
+  check(downloads===1,'Business change during a remote read cancels the old scope without downloading');
+  probeRoot.unmount();result={ok:true,checks,filename};
 }catch(error){result={ok:false,checks,error:error.stack};}
 await fetch('/__phase4-report',{method:'POST',body:JSON.stringify(result)});
 </script>

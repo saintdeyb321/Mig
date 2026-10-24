@@ -62,15 +62,17 @@ export async function encodeBackup(backup, password = '') {
 export async function verifyBackupFile(text, password = '', businessId) {
   if (typeof text !== 'string' || encoder.encode(text).length > MAX_BACKUP_BYTES * 1.5) throw new Error('Archivo demasiado grande o inválido.');
   let backup = JSON.parse(text);
-  if (backup.format === 'migapos-encrypted-backup') {
+  if (backup?.format === 'migapos-encrypted-backup') {
     if (backup.version !== BACKUP_VERSION || backup.algorithm !== 'AES-256-GCM' || backup.kdf !== 'PBKDF2-SHA256' || backup.iterations !== 310000) throw new Error('Formato de cifrado no admitido.');
     const salt = unbase64(backup.salt), iv = unbase64(backup.iv);
     if (salt.length !== 16 || iv.length !== 12 || password.length > 1024) throw new Error('Parámetros de cifrado inválidos.');
     try { backup = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await derive(password, salt, backup.iterations), unbase64(backup.ciphertext)))); }
     catch { throw new Error('Contraseña incorrecta o archivo cifrado alterado.'); }
   }
-  if (backup.manifest?.format !== 'migapos-local-backup' || backup.manifest.schemaVersion !== BACKUP_VERSION
+  if (backup?.manifest?.format !== 'migapos-local-backup' || backup.manifest.schemaVersion !== BACKUP_VERSION
     || !Array.isArray(backup.sections) || !Array.isArray(backup.manifest.sections) || backup.sections.length > 30) throw new Error('Manifiesto de backup no admitido.');
+  if (backup.manifest.sections.some(section => !section || !['complete', 'limited', 'not-read', 'incomplete', 'inaccessible'].includes(section.status))
+    || backup.manifest.partial !== backup.manifest.sections.some(section => section.status !== 'complete')) throw new Error('Manifiesto inconsistente: una exportación limitada o inaccesible debe indicarse como parcial.');
   if (businessId && backup.manifest.businessId !== businessId) throw new Error('El archivo pertenece a otro negocio.');
   const { integrity, ...payload } = backup;
   if (integrity !== await sha256(canonicalJSON(payload))) throw new Error('Checksum global incorrecto.');

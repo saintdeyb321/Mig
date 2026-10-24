@@ -3,7 +3,7 @@ import { it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { makeBackup, encodeBackup, verifyBackupFile, sanitizeBackup, canonicalJSON, sha256 } from '../frontend/src/features/backups/domain/backupFile.js';
-import { releaseConfig, assertSparkConfig, assertReleaseGuard, assertPolicyRollback, releasePlan, sourceFileHash } from '../scripts/release.mjs';
+import { releaseConfig, assertSparkConfig, assertReleaseGuard, assertPolicyRollback, assertIndexReview, publishedRulesRecord, releasePlan, sourceFileHash } from '../scripts/release.mjs';
 import { environmentFor } from '../frontend/src/config/environments.js';
 import { createBackupRepository } from '../frontend/src/features/backups/infrastructure/backupRepository.js';
 import { firebaseErrorMessage } from '../frontend/src/core/errors/firebaseErrors.js';
@@ -35,6 +35,31 @@ it('encrypts with a fresh salt/IV and authenticates passphrase and ciphertext; n
   await assert.rejects(verifyBackupFile(JSON.stringify(changed), passphrase), /alterado/);
   await assert.rejects(encodeBackup(backup, 'short'), /12 a 1024/);
 });
+it('rejects a partial export labelled complete even when its global checksum was recomputed', async () => {
+  const backup = await sample(); backup.manifest.partial = false;
+  const {integrity, ...payload} = backup;
+  backup.integrity = await sha256(canonicalJSON(payload));
+  await assert.rejects(verifyBackupFile(JSON.stringify(backup)), /debe indicarse como parcial/);
+  await assert.rejects(verifyBackupFile('null'), /Manifiesto/);
+  assert.ok(integrity);
+});
+it('preserves an accessible first page and labels it incomplete when a later page fails', async () => {
+  let pages = 0;
+  const sdk = {doc:(_db,name,id)=>({name,id}),getDocFromServer:async ref=>ref.name==='users'?{data:()=>({role:'dueño',businessId:'tenant-a'})}:{exists:()=>false},
+    collection:(_db,name)=>({name}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),documentId:()=>({}),startAfter:()=>({}),limit:()=>({}),
+    getDocsFromServer:async ref=>{
+      if(ref.name!=='products') return {size:0,docs:[]};
+      if(pages++) throw Object.assign(Error('connection-lost'),{code:'unavailable'});
+      const docs=Array.from({length:200},(_,i)=>({id:String(i),data:()=>({businessId:'tenant-a',name:'Product'})}));
+      return {size:docs.length,docs};
+    }};
+  const read=createBackupRepository({}, {sdk,currentUser:()=>({uid:'owner'})});
+  const exported=await read({businessId:'tenant-a',actorId:'owner',maxRecords:500});
+  const products=exported.sections.find(section=>section.name==='products');
+  assert.equal(products.records.length,200);assert.equal(products.status,'incomplete');
+  const backup=await makeBackup({...exported,businessId:'tenant-a',actorId:'owner',startedAt:new Date().toISOString()});
+  assert.equal((await verifyBackupFile(await encodeBackup(backup))).manifest.partial,true);
+});
 it('redacts nested credentials, arbitrary auth tokens, JWT and private keys but preserves financial identifiers', () => {
   const redactions = [], row = sanitizeBackup({ idempotencyKey: 'sale-key', requestHash: 'hash', nested: { authToken: 'private', api_key: 'private', password: 'private', cryptoKey: 'private', credentials: {} }, jwt: 'eyJabc.def.ghi', pem: '-----BEGIN PRIVATE KEY-----\nvalue', total: 12 }, redactions);
   assert.deepEqual(row.nested, {}); assert.equal(row.total, 12); assert.equal(row.idempotencyKey, 'sale-key');
@@ -51,20 +76,32 @@ it('generates production-only Spark resources and refuses additional resources, 
   }
   const plan = releasePlan(profile, 'a'.repeat(40));
   assert.equal(plan.length, 4); assert.ok(plan.every(line => line.includes('--project migapos')));
-  assert.match(plan[1], /--only firestore:rules,firestore:indexes/); assert.match(plan[2], /--only hosting /);
+  assert.match(plan[1], /--only "firestore:rules,firestore:indexes"/); assert.match(plan[2], /--only hosting /);
   const fixture = { profile, project:'migapos', acknowledgement:'migapos/migapos-peru', commit:'sha', fingerprint:'source', configHash:'config', publicEnvHash:'env', artifactHash:'dist',
     receipt:{environment:'production', projectId:'migapos', site:'migapos-peru', commit:'sha', fingerprint:'source', configHash:'config', publicEnvHash:'env', artifactHash:'dist'},
     ci:{commit:'sha', fingerprint:'source', result:'passed', run:'https://github.com/saintdeyb321/Mig/actions/runs/123'} };
   assert.doesNotThrow(() => assertReleaseGuard(fixture));
   for (const change of [{acknowledgement:''}, {project:'other'}, {artifactHash:'changed'}, {fingerprint:'dirty'}, {ci:null}, {profile:environmentFor('emulator')}]) assert.throws(() => assertReleaseGuard({...fixture,...change}));
   const rollback = {profile, config:{firestore:{database:'(default)',rules:'.release/policy/migapos/previous/firestore.rules',predeploy:['node scripts/release.mjs guard-rollback --env production --config firebase.production.rollback.generated.json']}},
-    policy:{rules:'.release/policy/migapos/previous/firestore.rules',policyHash:'verified-hash'},receipt:{policyHash:'verified-hash'},acknowledgement:'migapos/(default)/verified-hash'};
+    policy:{source:'firebase-console-manual',publicationVerified:'manual',rules:'.release/published-policy/migapos/previous/firestore.rules',policyHash:'verified-hash'},receipt:{policyHash:'verified-hash'},acknowledgement:'migapos/(default)/verified-hash'};
+  rollback.config.firestore.rules=rollback.policy.rules;
   assert.doesNotThrow(()=>assertPolicyRollback(rollback));
-  for (const mutate of [r=>r.acknowledgement='',r=>r.config.firestore.indexes='firestore.indexes.json',r=>r.config.hosting={},r=>r.config.firestore.rules='firestore.rules',r=>r.config.firestore.predeploy=[]]) {
+  for (const mutate of [r=>r.policy.source='repository-build',r=>r.policy.publicationVerified=false,r=>r.acknowledgement='',r=>r.config.firestore.indexes='firestore.indexes.json',r=>r.config.hosting={},r=>r.config.firestore.rules='firestore.rules',r=>r.config.firestore.predeploy=[]]) {
     const altered=structuredClone(rollback);mutate(altered);assert.throws(()=>assertPolicyRollback(altered));
   }
   const refused = spawnSync(process.execPath, ['scripts/release.mjs', 'guard', '--env', 'production'], {env:{...process.env, GOOGLE_APPLICATION_CREDENTIALS:'never-open.json'}, encoding:'utf8', windowsHide:true});
   assert.notEqual(refused.status, 0); assert.match(refused.stderr, /no admite cuentas de servicio/);
+});
+it('records only operator-declared published Rules and requires exact active-index review before release', () => {
+  const rules=Buffer.from("rules_version = '2'; service cloud.firestore { match /databases/{db}/documents { match /{all=**} { allow read, write: if false; } } }");
+  const record=publishedRulesRecord(rules,{version:'synthetic-test-only',reviewer:'test-fixture',confirmation:'migapos/(default)'});
+  assert.equal(record.source,'firebase-console-manual');assert.equal(record.publicationVerified,'manual');
+  assert.equal(record.projectId,'migapos');assert.equal(record.database,'(default)');assert.equal(record.rulesHash.length,64);
+  assert.throws(()=>publishedRulesRecord(rules,{version:'git-sha',reviewer:'',confirmation:'migapos/(default)'}));
+  assert.throws(()=>publishedRulesRecord(rules,{version:'fixture',reviewer:'fixture',confirmation:'other/(default)'}));
+  const profile=environmentFor('production');
+  assert.doesNotThrow(()=>assertIndexReview(profile,'index-hash','migapos/(default)/index-hash'));
+  for(const ack of ['', 'migapos/(default)/old-hash','other/(default)/index-hash']) assert.throws(()=>assertIndexReview(profile,'index-hash',ack));
 });
 it('matches CI source receipts across Windows/Linux line endings while retaining binary changes', () => {
   assert.equal(sourceFileHash(Buffer.from('á\r\ncode\r\n')),sourceFileHash(Buffer.from('á\ncode\n')));

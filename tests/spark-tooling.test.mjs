@@ -3,6 +3,8 @@ import { it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { gzipSync } from 'node:zlib';
 import { releaseConfig } from '../scripts/release.mjs';
 import { environmentFor, hostingHeaders } from '../frontend/src/config/environments.js';
 
@@ -24,6 +26,25 @@ it('keeps patched PubSub and gaxios CommonJS APIs compatible with the Node 22 CL
   const { Gaxios } = require('gaxios');
   const client = new Gaxios({ adapter: async config => ({ status: 200, statusText: 'OK', headers: {}, config, data: { local: true } }) });
   assert.equal((await client.request({ url: 'http://127.0.0.1/local-adapter-only' })).data.local, true);
+});
+
+it('keeps both body-parser major APIs compatible with compressed JSON and rejects ambiguous fast-uri inputs', async () => {
+  const modern = createRequire(new URL('../node_modules/@modelcontextprotocol/sdk/package.json', import.meta.url));
+  for (const parser of [require('body-parser'), modern('body-parser')]) {
+    const middleware = parser.json();
+    const server = createServer((request, response) => middleware(request, response, error => {
+      response.writeHead(error ? 400 : 200, {'Content-Type':'application/json'});
+      response.end(JSON.stringify(error ? {error:true} : request.body));
+    }));
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const response = await fetch(`http://127.0.0.1:${server.address().port}/`, {method:'POST',headers:{'Content-Type':'application/json','Content-Encoding':'gzip'},body:gzipSync('{"fixture":true}')});
+      assert.equal(response.status,200); assert.deepEqual(await response.json(),{fixture:true});
+    } finally { await new Promise(resolve => server.close(resolve)); }
+  }
+  const uri = require('fast-uri');
+  assert.notEqual(uri.parse('%6Aavascript:alert(1)').scheme,'javascript');
+  assert.ok(uri.parse('http://a@b@evil.example/').error);
 });
 
 it('refuses production targets and service accounts before starting any Spark test', () => {
