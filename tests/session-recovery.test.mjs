@@ -106,3 +106,27 @@ it('retries a failed shared listener after reconnection or navigation without re
   fail(new Error('permission-denied')); leave(); const leaveAgain = listener.subscribe(() => {}); assert.equal(starts,3);
   leaveAgain(); resources.close(); resources.retryErrors(); assert.equal(starts,3);
 });
+
+
+it('waits neutrally through initial cache and invitation discovery, then verifies activation from server', async () => {
+  let next, timeout, activations = 0;
+  const states = [], user = { uid: 'new-owner', email: 'owner@example.test', emailVerified: true, providerData: [{ providerId: 'google.com' }] };
+  const session = createProfileSession({ user, subscribe: (_, onData) => { next = onData; return () => {}; },
+    schedule: callback => { timeout = callback; return 1; }, cancel: () => {},
+    readInvite: async () => ({ ...owner, email: user.email, firstName: 'Titular' }),
+    acceptInvite: async () => { activations++; next(null, cached); },
+    readProfile: async () => ({ data: owner, metadata: server }), withinShift: () => true, onState: state => states.push(state) });
+  next(null, cached); assert.equal(states.at(-1).status, 'loading');
+  timeout(); assert.equal(states.at(-1).status, 'offline-unverified');
+  next(null, server); assert.equal(states.at(-1).status, 'loading'); await Promise.resolve();
+  assert.equal(states.at(-1).status, 'needs-invite'); assert.equal(states.at(-1).invitation.businessId, 'tenant');
+  await session.accept(); assert.equal(activations, 1); assert.equal(states.at(-1).status, 'ready');
+  assert.ok(!states.some(state => state.status === 'profile-not-found-confirmed')); session.close();
+});
+it('retains personnel only inside the same session after index failure and blocks confirmation', () => {
+  const resources = createSessionResources(); let deliver, fail;
+  const listener = resources.watch('personnel', (next, error) => { deliver = next; fail = error; return () => {}; }, [], { preserveOnError: true });
+  const off = listener.subscribe(() => {}); deliver([owner], server); fail({ code: 'failed-precondition', message: 'missing index' });
+  assert.equal(listener.get().data.length, 1); assert.equal(listener.get().isStale, true); assert.equal(listener.get().error.code, 'failed-precondition');
+  off(); resources.close(); const other = createSessionResources(); assert.deepEqual(other.watch('personnel', () => () => {}).get().data, []); other.close();
+});

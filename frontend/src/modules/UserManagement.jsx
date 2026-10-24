@@ -1,6 +1,7 @@
+import { firebaseErrorMessage } from '../core/errors/firebaseErrors';
 import { UsersRound } from 'lucide-react';
 import { useConfirmDialog } from '../shared/ui/useConfirmDialog';
-import { Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
+import { Alert, LoadingState, Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
 import React, { memo } from 'react';
 import { useUserManagement } from '../features/users/hooks/useUserManagement';
 const UserCard = memo(({
@@ -76,7 +77,7 @@ function UserManagement({
     confirmation
   } = useConfirmDialog();
   const {
-    isLoading,
+    isLoading, isGlobalLoading, error, isStale, retry, canManage,
     searchTerm,
     setSearchTerm,
     showFormModal,
@@ -129,10 +130,12 @@ function UserManagement({
   return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
       {confirmation}
 
-      <PageHeader title="Personal" icon={UsersRound} eyebrow="Tu equipo" description="Administra los accesos y las sedes asignadas." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
+      <PageHeader title="Personal" icon={UsersRound} eyebrow="Tu equipo" description="Administra los accesos y las sedes asignadas." actions={<><Button onClick={openAddForm} className="shrink-0" disabled={!canManage || isLoading} type="button" variant="primary">
           ➕ Nuevo Empleado
         </Button></>} />
 
+      {error && <Alert variant="danger" title="No se pudo confirmar Personal">{firebaseErrorMessage(error)} <Button onClick={retry} variant="secondary" size="sm">Reintentar lectura</Button></Alert>}
+      {isStale && sortedUsers.length > 0 && <Alert variant="warning">Datos de esta sesión pendientes de confirmar. La edición está bloqueada hasta verificar los permisos.</Alert>}
       <div className="flex flex-wrap items-center gap-3">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre o correo..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
@@ -147,7 +150,7 @@ function UserManagement({
       </h3>
 
       <div className="grid gap-3">
-        {sortedUsers.length === 0 ? <EmptyState title="Sin registros" description={<>{searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'No hay otros usuarios registrados.'}</>} /> : sortedUsers.map(u => <UserCard key={u.id} u={u} user={user} branches={branches} isLoading={isLoading} openEditForm={openEditForm} toggleStatus={toggleStatus} cancelInvite={cancelInvite} />)}
+        {isGlobalLoading && !error && sortedUsers.length === 0 ? <LoadingState>Verificando Personal…</LoadingState> : sortedUsers.length === 0 && error ? null : sortedUsers.length === 0 ? <EmptyState title="Sin registros" description={<>{searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'No hay otros usuarios registrados.'}</>} /> : sortedUsers.map(u => <UserCard key={u.id} u={u} user={user} branches={branches} isLoading={isLoading || !canManage} openEditForm={openEditForm} toggleStatus={toggleStatus} cancelInvite={cancelInvite} />)}
       </div>
 
       {/* MODAL FORMULARIO */}

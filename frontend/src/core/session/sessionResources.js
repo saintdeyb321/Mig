@@ -16,7 +16,7 @@ export function createSessionResources({ idleMs = 120000, maxListeners = 8, now 
     }
     return cells.get(key);
   };
-  const watch = (key, start, initial = []) => {
+  const watch = (key, start, initial = [], { preserveOnError = false } = {}) => {
     if (listeners.has(key)) return listeners.get(key).api;
     const state = cell(`snapshot:${key}`, { data: initial, isLoading: true, error: null, isStale: true, updatedAt: null });
     let stop = null, timer, generation = 0, consumers = 0;
@@ -25,7 +25,7 @@ export function createSessionResources({ idleMs = 120000, maxListeners = 8, now 
       if (stop || !active) return;
       const revision = ++generation;
       metrics.starts++;
-      const fail = error => { if (active && revision === generation) state.set({ data: initial, isLoading: false, error, isStale: true, updatedAt: null }); };
+      const fail = error => { if (active && revision === generation) state.set(previous => ({ data: preserveOnError ? previous.data : initial, isLoading: false, error, isStale: true, updatedAt: previous.updatedAt })); };
       try {
         stop = start((data, metadata) => {
           if (!active || revision !== generation) return;

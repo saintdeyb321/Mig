@@ -4,15 +4,20 @@ import { mapDocuments } from '../../../core/firebase/documents';
 import { brand } from '../../../config/brand';
 import { acceptInvitation } from './acceptInvitation.js';
 
-export const subscribeUsers = (businessId, role, onData, onError) => onSnapshot(
-  query(collection(db, 'users'), where('businessId', '==', businessId),
-    ...(role === 'superadmin' ? [] : [where('role', '!=', 'superadmin')])),
-  snapshot => onData(mapDocuments(snapshot)), onError,
+// Tenant equality is sufficient under owner Rules; avoid the unnecessary role inequality
+// (which excludes historical documents without role and requires an extra index).
+export const subscribeUsers = (businessId, _role, onData, onError) => onSnapshot(
+  query(collection(db, 'users'), where('businessId', '==', businessId)), { includeMetadataChanges: true },
+  snapshot => onData(mapDocuments(snapshot), snapshot.metadata), onError,
 );
 export const subscribeInvites = (businessId, onData, onError) => onSnapshot(
-  query(collection(db, 'invites'), where('businessId', '==', businessId)),
-  snapshot => onData(mapDocuments(snapshot).map(invite => ({ ...invite, isInvite: true }))), onError,
+  query(collection(db, 'invites'), where('businessId', '==', businessId)), { includeMetadataChanges: true },
+  snapshot => onData(mapDocuments(snapshot).map(invite => ({ ...invite, isInvite: true })), snapshot.metadata), onError,
 );
+export const getProfileFromServer = async uid => {
+  const snapshot = await getDocFromServer(doc(db, 'users', uid));
+  return { data: snapshot.exists() ? snapshot.data() : null, metadata: snapshot.metadata };
+};
 export const updateUser = (uid, data) => updateDoc(doc(db, 'users', uid), data);
 export const createInvite = (email, data) => setDoc(doc(db, 'invites', email), data);
 export const deleteInvite = email => deleteDoc(doc(db, 'invites', email));

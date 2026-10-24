@@ -1,3 +1,4 @@
+import InvitationOnboarding from './components/InvitationOnboarding';
 import { LoadingState } from "./shared/ui";
 import { brand } from './config/brand';
 // src/App.jsx
@@ -52,7 +53,7 @@ function App() {
   const [requestedTab, setTab] = useState('pos');
   const {
     user,
-    authLoading, authIssue, retryAuth, acceptProfileInvitation,
+    authLoading, authIssue, invitation, retryAuth, acceptProfileInvitation,
     handleLogout
   } = useAuthManager();
   const tab = getSessionTab(user, requestedTab);
@@ -110,6 +111,7 @@ function App() {
   if (authLoading) {
     return <LoadingState>Iniciando {brand.name}...</LoadingState>;
   }
+  if (authIssue === 'needs-invite') return <InvitationOnboarding invitation={invitation} onActivate={acceptProfileInvitation} onLogout={handleLogout} />;
   if (authIssue) return <RestrictedAccess licenseState={authIssue} onRetry={retryAuth} onLogout={handleLogout} onAcceptInvitation={authIssue === 'needs-invite' ? acceptProfileInvitation : undefined} />;
   return <>
       <ReloadPrompt user={user} />

@@ -7,9 +7,9 @@ export function useSessionState(key, initial) {
   const cell = resources.cell(`view:${key}`, initial);
   return [useSyncExternalStore(cell.subscribe, cell.get), cell.set, cell];
 }
-export function useSharedSubscription(key, start, initial) {
+export function useSharedSubscription(key, start, initial, options) {
   const resources = useSessionResources();
-  const resource = resources.watch(key, start, initial);
+  const resource = resources.watch(key, start, initial, options);
   const snapshot = useSyncExternalStore(resource.subscribe, resource.get);
   return { ...snapshot, retry: resource.refresh };
 }

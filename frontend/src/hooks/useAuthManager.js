@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../core/firebase/client';
-import { acceptInvitedProfile, getInviteFromServer, subscribeProfile } from '../features/users/infrastructure/userRepository';
+import { acceptInvitedProfile, getInviteFromServer, getProfileFromServer, subscribeProfile } from '../features/users/infrastructure/userRepository';
 import { createProfileSession } from '../core/session/profileSession.js';
 import { isWithinShift } from '../core/auth/shiftAccess';
 
@@ -19,7 +19,7 @@ export const useAuthManager = () => {
       stop();
       if (!firebaseUser) { status.current = 'anonymous'; setState({ uid: null, status: 'anonymous', profile: null }); return; }
       session.current = createProfileSession({ user: firebaseUser, subscribe: subscribeProfile,
-        readInvite: getInviteFromServer, acceptInvite: acceptInvitedProfile,
+        readInvite: getInviteFromServer, acceptInvite: acceptInvitedProfile, readProfile: getProfileFromServer,
         withinShift: userData => isWithinShift(userData), onState: next => {
           if (active && auth.currentUser?.uid === next.uid) { status.current = next.status; setState(next); }
         } });
@@ -35,6 +35,6 @@ export const useAuthManager = () => {
     user: matches && state.status === 'ready' ? state.profile : null,
     authLoading: !matches || state.status === 'loading',
     authIssue: matches && !['ready', 'anonymous', 'loading'].includes(state.status) ? state.status : null,
-    retryAuth, handleLogout, acceptProfileInvitation,
+    invitation: matches ? state.invitation : null, retryAuth, handleLogout, acceptProfileInvitation,
   };
 };

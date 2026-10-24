@@ -13,11 +13,12 @@ export function useLicenseAccess(user) {
   useEffect(() => {
     if (user?.role === 'superadmin' || !user?.businessId) return;
     let active = true;
+    let confirmationExpired = false;
     const records = { license: {}, tenant: {}, businessId: user.businessId };
     const publish = () => {
       if (!active) return;
       const expiry = toDateSafe(records.license.data?.expiry);
-      setState({ key: requestKey, licenseState: licenseAccess(records),
+      setState({ key: requestKey, licenseState: !confirmationExpired && ['loading', 'offline-unverified'].includes(licenseAccess(records)) ? 'loading' : licenseAccess(records) === 'loading' && confirmationExpired ? 'offline-unverified' : licenseAccess(records),
         expirationDateStr: expiry?.toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' }) ?? '',
         tenantPresence: records.tenant.received ? records.tenant.data ? 'present' : 'absent' : 'unverified',
       });
@@ -26,11 +27,12 @@ export function useLicenseAccess(user) {
       if (!active) return;
       records[name] = { received: true, data, metadata }; publish();
     }, error => { if (active) { records[name] = { received: true, error }; publish(); } });
+    const confirmation = setTimeout(() => { confirmationExpired = true; publish(); }, 10000);
     const stopLicense = listen('license', subscribeLicense), stopTenant = listen('tenant', subscribeTenant);
     const timer = setInterval(publish, 10000);
     const reconnect = () => { if (licenseAccess(records) !== 'active') retry(); };
     window.addEventListener('online', reconnect);
-    return () => { active = false; stopLicense(); stopTenant(); clearInterval(timer); window.removeEventListener('online', reconnect); };
+    return () => { active = false; stopLicense(); stopTenant(); clearTimeout(confirmation); clearInterval(timer); window.removeEventListener('online', reconnect); };
   }, [requestKey, user?.role, user?.businessId, retry]);
   if (user?.role === 'superadmin') return { licenseState: 'active', expirationDateStr: '', retry };
   if (!user?.businessId) return { licenseState: 'configuration-error', expirationDateStr: '', retry };

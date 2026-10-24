@@ -9,7 +9,8 @@ import toast from 'react-hot-toast';
 const confirmInBrowser = message => window.confirm(message);
 
 export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => {
-  const { users: globalUsers, invites: globalInvites, isLoading: isGlobalLoading } = useUsersData(user);
+  const { users: globalUsers, invites: globalInvites, isLoading: isGlobalLoading, error, isStale, retry } = useUsersData(user);
+  const canManage = !isGlobalLoading && !error && !isStale;
   const { businessBranches } = useTenantData();
 
   const [isLoading, setIsLoading] = useState(false);
@@ -36,7 +37,6 @@ export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => 
   }, [globalUsers, globalInvites]);
 
   const filteredUsers = useMemo(() => {
-    if (isGlobalLoading) return [];
     const term = searchTerm.toLowerCase();
 
     return allUsers.filter(u => {
@@ -51,9 +51,10 @@ export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => 
       if (!showInactive && isInactive) return false;
       return matchesSearch;
     });
-  }, [allUsers, searchTerm, showInactive, isGlobalLoading, user?.role]);
+  }, [allUsers, searchTerm, showInactive, user?.role]);
 
   const openAddForm = useCallback(() => {
+    if (!canManage) return toast.error('Espera a verificar Personal con el servidor.');
     setFirstName('');
     setLastName('');
     setEmailPrefix('');
@@ -63,9 +64,10 @@ export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => 
     setBranchId('');
     setEditing(null);
     setShowFormModal(true);
-  }, []);
+  }, [canManage]);
 
   const openEditForm = useCallback((u) => {
+    if (!canManage) return toast.error('Espera a verificar Personal con el servidor.');
     if (u.isInvite) {
       return toast.error('No puedes editar una invitación pendiente. Cáncelala y crea una nueva.');
     }
@@ -81,9 +83,10 @@ export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => 
     setBranchId(u.branchId || '');
     setEditing(u.id);
     setShowFormModal(true);
-  }, [user?.role]);
+  }, [user?.role, canManage]);
 
   const cancelInvite = useCallback(async (inviteEmail) => {
+    if (!canManage) return toast.error('Personal sin confirmar; reintenta la lectura.');
     if (!await confirm('¿Estás seguro de cancelar esta invitación? El usuario no podrá registrarse.')) return;
     setIsLoading(true);
     const toastId = toast.loading('Cancelando invitación...');
@@ -96,10 +99,11 @@ export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => 
     } finally {
       setIsLoading(false);
     }
-  }, [confirm]);
+  }, [confirm, canManage]);
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (!canManage) return toast.error('Personal sin confirmar; reintenta la lectura.');
 
     if (!firstName || !lastName || !emailPrefix || !user?.businessId) {
       return toast.error('Completa todos los campos');
@@ -168,6 +172,7 @@ export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => 
   };
 
   const toggleStatus = async (userId, currentStatus) => {
+    if (!canManage) return toast.error('Personal sin confirmar; reintenta la lectura.');
     const targetUser = (globalUsers || []).find(u => u.id === userId);
     if (targetUser?.role === 'superadmin' && user?.role !== 'superadmin') {
       return toast.error('Acceso denegado: No puedes bloquear esta cuenta.');
@@ -184,7 +189,7 @@ export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => 
   };
 
   return {
-    isLoading, isGlobalLoading, filteredUsers, searchTerm, setSearchTerm,
+    isLoading, isGlobalLoading, error, isStale, retry, canManage, filteredUsers, searchTerm, setSearchTerm,
     showFormModal, setShowFormModal, showInactive, setShowInactive,
     firstName, setFirstName, lastName, setLastName, emailPrefix, setEmailPrefix,
     role, setRole, shiftStart, setShiftStart, shiftEnd, setShiftEnd,
