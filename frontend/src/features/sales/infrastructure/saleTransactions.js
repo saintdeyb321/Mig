@@ -1,5 +1,4 @@
 import { db, auth } from '../../../core/firebase/client';
-import { callBackend } from '../../../core/firebase/callable.js';
 import { createSparkSalesRepository } from './sparkSalesRepository.js';
 import { requireCapability } from '../../../config/runtimeCapabilities.js';
 const sparkSales = createSparkSalesRepository(db, { currentUser: () => auth.currentUser });
@@ -72,8 +71,8 @@ export async function verifyPendingSaleTransaction(sale, user) {
   return receipt;
 }
 
-export async function voidSaleTransaction(sale) {
+export async function voidSaleTransaction() {
   if (!navigator.onLine) throw new Error('Debes tener conexión a internet para anular una venta.');
   requireCapability('saleVoid', 'Anulación: la compensación de stock y el reembolso aún no tienen un protocolo validado');
-  return callBackend('voidSale', { saleId: sale.id, reason: sale.voidReason || 'Sin justificación registrada' });
+  throw new Error('Anulación POS no habilitada: faltan repositorio y Rules de compensación verificados. El ticket original se conserva.');
 }

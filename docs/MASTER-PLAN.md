@@ -1443,3 +1443,14 @@ Base b74092ff03f4f81340171167ca45b2d406f5e50d, rama fix/mvp-operacion-rendimient
 | E | Pendiente de ejecución. |
 
 Avisos build: chunks JS >500 kB, sin fallo. No se declara MVP comercial cerrado.
+
+
+### Plan 04 B — bloqueo financiero explícito
+
+Parche UX: el diálogo espera el resultado remoto, preserva motivo y formulario si falla y permite cancelar aunque la capacidad esté bloqueada. Se retiró la ruta voidSale vía Functions. saleVoid sigue false; no se implementó ni se afirma un protocolo nativo verificado.
+
+Bloqueo de lanzamiento: firestore.rules sale()/debitAt() valida y suma exactamente dos líneas. payments sólo acepta sourceType=contract; sales no permite update/delete y no existe una compensación POS autorizada. No es una cuota de Spark. Quitar el límite desde React o registrar un refund genérico permite falsificar importes/restauración y no es una solución.
+
+Protocolo mínimo pendiente: compensación inmutable por ID de venta, referencias a comprobante y sesión de devolución activa, motivo/actor/confirmación real, importes y métodos derivados del recibo por Rules, restores vinculados con getAfter y versiones de stock, sin modificar original; Rules de lectura por tenant/sede, ausencia previa y doble/retry/concurrencia; ledger negativo neteado una vez en historial/Excel/caja. Debe demostrar su presupuesto de accesos de Rules antes de habilitarse. Para tickets comerciales de muchas líneas hace falta una prueba de agregación/stock por todas las líneas (o reservas por etapas recuperables con una sola confirmación final); extender el array del cliente no la proporciona. No se ha probado imposibilidad de Spark ni se ha demostrado ese protocolo. B queda PENDIENTE y el MVP comercial NO-GO.
+
+Validación B: 16/16 pruebas financieras reales en Firestore Emulator local demo-migapos; 44/44 pruebas Spark/reportes; lint aprobado. Estas pruebas conservan los bloqueos y no certifican una compensación nueva. B sigue PENDIENTE comercial.

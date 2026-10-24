@@ -40,11 +40,11 @@ export const useSalesHistory = (user) => {
   };
   const anularVentaConfirmada = async (venta, voidReason) => {
     if (user?.role !== 'dueño' && user?.role !== 'superadmin' && user?.role !== 'cajero') {
-      return toast.error('Acceso denegado: No tienes permisos para anular ventas.');
+      toast.error('Acceso denegado: No tienes permisos para anular ventas.'); return false;
     }
 
     if (venta.voided === true) {
-      return toast.error('Esta venta ya fue anulada anteriormente.');
+      toast.error('Esta venta ya fue anulada anteriormente.'); return false;
     }
 
     setIsProcessing(true);
@@ -54,6 +54,7 @@ export const useSalesHistory = (user) => {
       await voidSaleTransaction({ id: venta.id, voidReason });
 
       toast.success('Venta anulada correctamente', { id: toastId });
+      return true;
 
     } catch (error) {
       console.error('Error al anular:', error);
@@ -62,6 +63,7 @@ export const useSalesHistory = (user) => {
       } else {
         toast.error(error.message || 'Error de permisos o base de datos', { id: toastId });
       }
+      return false;
     } finally {
       setIsProcessing(false);
     }

@@ -54,13 +54,14 @@ function SalesHistory({
               Estás a punto de anular una venta de <strong>S/ {Number(saleToCancel.total).toFixed(2)}</strong>. El dinero se restará de la caja y se devolverá el stock.
             </p>
 
-            <form onSubmit={e => {
+            <form onSubmit={async e => {
         e.preventDefault();
         if (voidReason.trim().length < 5) {
           toast.error("Por favor, explica detalladamente el motivo.");
           return;
         }
-        anularVentaConfirmada(saleToCancel, voidReason);
+        const confirmed = await anularVentaConfirmada(saleToCancel, voidReason);
+        if (!confirmed) return;
         setSaleToCancel(null);
         setVoidReason('');
       }}>
@@ -76,7 +77,7 @@ function SalesHistory({
                 <Button type="button" className="min-w-0 flex-1 p-3 rounded-xl border-2 border-line bg-transparent text-ink font-bold cursor-pointer" onClick={() => {
             setSaleToCancel(null);
             setVoidReason('');
-          }} disabled={isProcessing || !runtimeCapabilities.saleVoid} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado" variant="secondary">
+          }} disabled={isProcessing} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado" variant="secondary">
                   Cancelar
                 </Button>
                 <Button type="submit" className="min-w-0 flex-1 p-3 border-0 rounded-xl font-bold cursor-pointer" disabled={isProcessing || !runtimeCapabilities.saleVoid} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado" variant="danger" aria-label="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado">
