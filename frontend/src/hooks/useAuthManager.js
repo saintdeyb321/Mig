@@ -1,132 +1,40 @@
-// src/hooks/useAuthManager.js
-import { useState, useEffect } from 'react';
-import { auth } from '../core/firebase/client';
-import { getUser, acceptInvitedProfile, subscribeProfile } from '../features/users/infrastructure/userRepository';
-import { isPermissionDenied } from '../core/errors/firebaseErrors';
-import { createSubscriptionScope } from '../shared/utils/subscriptionScope';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import toast from 'react-hot-toast';
+import { auth } from '../core/firebase/client';
+import { acceptInvitedProfile, getInviteFromServer, subscribeProfile } from '../features/users/infrastructure/userRepository';
+import { createProfileSession } from '../core/session/profileSession.js';
 import { isWithinShift } from '../core/auth/shiftAccess';
+
 export const useAuthManager = () => {
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-
-  const handleSecurityExit = async (message) => {
-    toast.error(message, { id: 'auth-security-error', duration: 6000 });
-    await signOut(auth);
-    setUser(null);
-    setAuthLoading(false);
-  };
-
-  const handleLogout = async () => {
-    await signOut(auth);
-    setUser(null);
-  };
-  // Suscripción de autenticación y perfil.
+  const [state, setState] = useState({ uid: null, status: 'loading', profile: null });
+  const [attempt, setAttempt] = useState(0);
+  const session = useRef(null);
+  const status = useRef('loading');
+  const retryAuth = useCallback(() => setAttempt(value => value + 1), []);
   useEffect(() => {
-    let unsubscribeProfile = null;
-    const authScope = createSubscriptionScope();
-    const retryTimers = new Set();
-
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      const generation = authScope.next();
-      const isCurrent = () => authScope.isCurrent(generation);
-      unsubscribeProfile?.();
-      retryTimers.forEach(clearTimeout);
-      retryTimers.clear();
-      setUser(null);
-      if (!firebaseUser) {
-        setAuthLoading(false);
-        return;
-      }
-
-      setAuthLoading(true);
-
-      try {
-        const profile = await getUser(firebaseUser.uid);
-        if (!isCurrent()) return;
-
-        // Si no existe, crear desde invitación
-        if (!profile) {
-          await acceptInvitedProfile(firebaseUser);
-          if (!isCurrent()) return;
-        }
-        let profileRevision = 0;
-        const subscribeToProfile = (retryCount = 0) => {
-          if (!isCurrent()) return;
-          if (unsubscribeProfile) unsubscribeProfile();
-
-          unsubscribeProfile = subscribeProfile(firebaseUser.uid, async (userData) => {
-            const revision = ++profileRevision;
-            if (!isCurrent()) return;
-            try {
-              if (!userData) {
-                handleSecurityExit('Tu cuenta ha sido eliminada.');
-                return;
-              }
-
-
-              if (!userData.role || (!userData.businessId && userData.role !== 'superadmin')) return; // Faltan datos críticos
-
-              if (userData.status === 'inactivo') {
-                handleSecurityExit('Cuenta suspendida. Contacta al administrador.');
-                return;
-              }
-
-              // Comprobación de horario UI; Firestore Rules conserva la autorización real.
-              if (!isWithinShift(userData)) {
-                handleSecurityExit(`Fuera de horario. Turno: ${userData.shiftStart} a ${userData.shiftEnd}`);
-                return;
-              }
-
-              // Usuario válido, actualizamos estado y quitamos loader
-              if (!isCurrent() || revision !== profileRevision) return;
-              setUser({ ...userData, uid: firebaseUser.uid, email: firebaseUser.email ?? userData.email });
-              setAuthLoading(false);
-
-            } catch (innerError) {
-              if (!isCurrent() || revision !== profileRevision) return;
-              console.error('Error en snapshot:', innerError);
-              handleSecurityExit('Error al cargar perfil.');
-            }
-          },
-          (error) => {
-            if (!isCurrent()) return;
-            if (isPermissionDenied(error)) {
-              console.warn(`⏳ Permiso denegado por delay de Firebase (Intento ${retryCount + 1}). Reintentando...`);
-              if (retryCount < 3) {
-                // Si falla, esperamos medio segundo y volvemos a intentar conectarnos
-                const timer = setTimeout(() => {
-                  retryTimers.delete(timer);
-                  subscribeToProfile(retryCount + 1);
-                }, 500);
-                retryTimers.add(timer);
-              } else {
-                handleSecurityExit('Problemas de permisos con el servidor. Por favor, recarga la página.');
-              }
-            } else {
-              console.error('Error de conexión en el perfil:', error);
-              handleSecurityExit('Se perdió la conexión con tu perfil.');
-            }
-          });
-        };
-
-        // Iniciamos la suscripción la primera vez
-        subscribeToProfile();
-
-      } catch (error) {
-        if (!isCurrent()) return;
-        console.error('Error al configurar Auth:', error);
-        handleSecurityExit(error.message || 'Error al iniciar sesión.');
-      }
+    let active = true;
+    const stop = () => { session.current?.close(); session.current = null; };
+    const unsubscribe = onAuthStateChanged(auth, firebaseUser => {
+      stop();
+      if (!active) return;
+      if (!firebaseUser) { status.current = 'anonymous'; setState({ uid: null, status: 'anonymous', profile: null }); return; }
+      session.current = createProfileSession({ user: firebaseUser, subscribe: subscribeProfile,
+        readInvite: getInviteFromServer, acceptInvite: acceptInvitedProfile,
+        withinShift: userData => isWithinShift(userData), onState: next => {
+          if (active && auth.currentUser?.uid === next.uid) { status.current = next.status; setState(next); }
+        } });
     });
-
-    return () => {
-      authScope.close();
-      retryTimers.forEach(clearTimeout);
-      unsubscribeAuth();
-      if (unsubscribeProfile) unsubscribeProfile();
-    };
-  }, []);
-  return { user, authLoading, handleLogout };
+    const reconnect = () => { if (!['ready', 'anonymous'].includes(status.current)) retryAuth(); };
+    window.addEventListener('online', reconnect);
+    return () => { active = false; stop(); unsubscribe(); window.removeEventListener('online', reconnect); };
+  }, [attempt, retryAuth]);
+  const handleLogout = useCallback(() => signOut(auth), []);
+  const acceptProfileInvitation = useCallback(() => session.current?.accept(), []);
+  const matches = state.uid === (auth.currentUser?.uid ?? null);
+  return {
+    user: matches && state.status === 'ready' ? state.profile : null,
+    authLoading: !matches || state.status === 'loading',
+    authIssue: matches && !['ready', 'anonymous', 'loading'].includes(state.status) ? state.status : null,
+    retryAuth, handleLogout, acceptProfileInvitation,
+  };
 };

@@ -20,6 +20,7 @@ import ReloadPrompt from './components/ReloadPrompt';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import BranchGuard from './components/BranchGuard';
 import TermsModal from './components/TermsModal';
+import RestrictedAccess from './components/RestrictedAccess';
 
 import Auth from './modules/Auth';
 
@@ -50,7 +51,7 @@ function SessionGuards({ user, handleLogout, children }) {
 
 function App() {
   const [requestedTab, setTab] = useState('pos');
-  const { user, authLoading, handleLogout } = useAuthManager();
+  const { user, authLoading, authIssue, retryAuth, handleLogout, acceptProfileInvitation } = useAuthManager();
   const tab = getSessionTab(user, requestedTab);
 
   const { isMaintenance, maintenanceMsg } = useMaintenance();
@@ -103,6 +104,9 @@ function App() {
       </div>
     );
   }
+
+  if (authIssue) return <RestrictedAccess licenseState={authIssue} onRetry={retryAuth}
+    onLogout={handleLogout} onAcceptInvitation={authIssue === 'needs-invite' ? acceptProfileInvitation : undefined} />;
 
   return (
     <>

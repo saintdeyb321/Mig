@@ -31,14 +31,14 @@ function BusinessTenantProvider({ user, children }) {
         scope.guard(onData)(cached);
       }
     }).catch(error => console.warn('Error leyendo settings locales:', error));
-    const unsubscribe = subscribeSettings(businessId, data => {
+    const unsubscribe = subscribeSettings(businessId, scope.guard(data => {
       receivedSnapshot = true;
       scope.guard(onData)(data);
       const write = data
         ? offlineDB.settings.put({ ...data, id: businessId, businessId })
         : offlineDB.settings.delete(businessId);
       write.catch(error => console.warn('Error guardando settings locales:', error));
-    }, scope.guard(onError));
+    }), scope.guard(onError));
     return () => { scope.close(); unsubscribe(); };
   }, [businessId]);
   const settings = useScopedSubscription(identityKey, watchSettings, null);

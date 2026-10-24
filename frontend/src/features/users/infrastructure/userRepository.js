@@ -1,4 +1,4 @@
-import { collection, query, where, onSnapshot, doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../core/firebase/client';
 import { mapDocuments } from '../../../core/firebase/documents';
 import { brand } from '../../../config/brand';
@@ -25,9 +25,14 @@ export const getInvite = async email => {
   return snapshot.exists() ? snapshot.data() : null;
 };
 export const createInvitedProfile = (uid, data) => setDoc(doc(db, 'users', uid), data);
+export const getInviteFromServer = async email => {
+  const snapshot = await getDocFromServer(doc(db, 'invites', email));
+  return snapshot.exists() ? snapshot.data() : null;
+};
 export const acceptInvitedProfile = user => acceptInvitation(db, user);
 export const subscribeProfile = (uid, onData, onError) => onSnapshot(
-  doc(db, 'users', uid), snapshot => onData(snapshot.exists() ? snapshot.data() : null), onError,
+  doc(db, 'users', uid), { includeMetadataChanges: true },
+  snapshot => onData(snapshot.exists() ? snapshot.data() : null, snapshot.metadata), onError,
 );
 export const acceptTerms = uid => updateUser(uid, {
   hasAcceptedTerms: true, termsAcceptedAt: serverTimestamp(), termsVersion: brand.termsVersion,

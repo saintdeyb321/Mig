@@ -3,8 +3,8 @@ import { reportDiagnostic } from '../core/errors/diagnostics.js';
 import { useLicenseAccess } from '../features/licenses/hooks/useLicenseAccess';
 import RestrictedAccess from './RestrictedAccess';
 
-export default function LicenseGuard({ user, children }) {
-  const { licenseState, expirationDateStr } = useLicenseAccess(user);
+export default function LicenseGuard({ user, handleLogout, children }) {
+  const { licenseState, expirationDateStr, retry } = useLicenseAccess(user);
   useEffect(() => {
     if (!['active', 'loading'].includes(licenseState)) reportDiagnostic('license', { code: 'tenant-restricted' }, 'restricted');
   }, [licenseState]);
@@ -24,6 +24,8 @@ export default function LicenseGuard({ user, children }) {
       licenseState={licenseState}
       expirationDateStr={expirationDateStr}
       user={user}
+      onRetry={retry}
+      onLogout={handleLogout}
     />
   );
 }

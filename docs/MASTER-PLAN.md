@@ -1321,3 +1321,12 @@ Principios finales:
 - producto sin personalización fija;
 - despliegues reproducibles;
 - arquitectura preparada para crecer.
+
+
+## Recuperación Spark · `fix/spark-reliability` · P0
+
+Base `41dd809`; comparación con `da777d2`: los cuatro archivos de autenticación/licencia/repositorios eran idénticos entre ramas. Causas confirmadas: ausencia local tratada como eliminación de cuenta, licencia ausente interpretada como negocio borrado, y callbacks tardíos de settings todavía capaces de escribir caché tras cerrar la sesión.
+
+P0 implementada: metadatos de servidor/caché y escrituras pendientes; estados separados de perfil, invitación, licencia, tenant, permisos, conexión, suspensión y horario; reintento sin cerrar la sesión Google por errores transitorios. Lectura de invitación confirmada en servidor y aceptación explícita, sin recreación automática. Licencia y tenant se observan por identidad; tenant histórico ausente se trata conforme a `tenantEnabled` actual, sin inventar documentos ni permisos. Callbacks de sesión cerrada quedan inertes, incluida la actualización de settings locales.
+
+Verificación focalizada: 4 casos de recuperación/aislamiento aprobados; lint, build/PWA y diff-check. No se consultaron ni modificaron perfiles, licencias, tenants o Rules de Firebase real; el diagnóstico de los datos/reglas efectivamente publicados y la aceptación con cuentas reales permanecen pendientes del propietario. No hubo deploy ni cambios de roles.
