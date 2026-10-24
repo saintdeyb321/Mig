@@ -11,7 +11,7 @@ export function subscribeRecentSales(businessId, branchId, onData, onError) {
     if (!snapshot.metadata.fromCache) rows.set(field, snapshot.docs.filter(document => !document.metadata.hasPendingWrites && !snapshot.metadata.fromCache)
       .map(document => ({ ...document.data(), id: document.id, isOffline: false }))
       .filter(row => field === 'confirmedAt' ? row.status === 'confirmed' : row.confirmedAt == null));
-    onData([...new Map([...rows.values()].flat().map(row => [row.id, { ...row, createdAt: row.confirmedAt ?? row.createdAt }])).values()], { fromCache: metadata.size < 2 || [...metadata.values()].some(source => source.fromCache || source.hasPendingWrites) });
+    onData([...new Map([...rows.values()].flat().map(row => [row.id, { ...row, createdAt: row.confirmedAt ?? row.createdAt }])).values()], { observedDocumentCount: snapshot.size, fromCache: metadata.size < 2 || [...metadata.values()].some(source => source.fromCache || source.hasPendingWrites) });
   }, onError));
   return () => stops.forEach(stop => stop());
 }

@@ -45,7 +45,7 @@ const ContactCard = memo(({ c, openEditForm, handleDelete, isLoading }) => {
 
 function AgendaManager({ user }) {
   const {
-    isLoading, searchTerm, setSearchTerm, showFormModal, setShowFormModal,
+    isLoading, error, retry, isStale, searchTerm, setSearchTerm, showFormModal, setShowFormModal,
     name, setName, phone, setPhone, editing,
     filteredContacts, openAddForm, openEditForm, handleSave, handleDelete
   } = useAgenda(user);
@@ -62,6 +62,8 @@ function AgendaManager({ user }) {
   return (
     <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '900px' }}>
 
+      {error && <p role="alert">No se pudo leer la agenda; no se confirma que esté vacía. <button onClick={retry}>Reintentar lectura</button></p>}
+      {isStale && <p role="status">Contactos en caché; pendiente de validar con el servidor.</p>}
       <header className="module-header">
         <h2 className="module-title">
           <span className="module-title-icon">📖</span>

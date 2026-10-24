@@ -10,7 +10,7 @@ import { voidSaleTransaction, verifyPendingSaleTransaction } from '../infrastruc
 export const useSalesHistory = (user) => {
   const { activeBranchId } = useTenantData();
   const [pendingOnly, setPendingOnly] = useSessionState(`sales:pending:${activeBranchId}`, false);
-  const { sales: globalSales, isLoading: isGlobalLoading, error, isStale, updatedAt } = useRecentSales(user, { pendingOnly });
+  const { sales: globalSales, isLoading: isGlobalLoading, error, isStale, updatedAt, retry } = useRecentSales(user, { pendingOnly });
   const { businessBranches } = useTenantData();
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -74,5 +74,5 @@ export const useSalesHistory = (user) => {
     catch (error) { toast.error(error.message || 'Sigue pendiente para revisión.'); }
     finally { setIsProcessing(false); }
   };
-  return { isStale, updatedAt, pendingOnly, setPendingOnly, sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, verificarPendiente, businessBranches };
+  return { isStale, updatedAt, retry, pendingOnly, setPendingOnly, sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, verificarPendiente, businessBranches };
 };

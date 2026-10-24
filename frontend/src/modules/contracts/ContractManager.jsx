@@ -22,7 +22,7 @@ function ContractManager({ user }) {
   const [viewFilter, setViewFilter] = useSessionState(`contracts:filter:${activeBranchId}`, 'activos');
 
   const {
-    contracts, isLoading, isProcessing, isStale, updatedAt, historyUpdatedAt,
+    contracts, isLoading, isProcessing, isStale, updatedAt, historyUpdatedAt, error, retry,
     createContract, updateContract, cancelContract, addPayment, markDelivered,
     isHistoryLoading, historyStarted, hasMoreHistory, loadMoreHistory, activeLimitReached,
   } = useContracts(user, { historyEnabled: viewFilter === 'historial' });
@@ -130,6 +130,7 @@ function ContractManager({ user }) {
     <div className="fade-in max-container padding-bottom-lg">
       <p role="status">Contratos Spark en sede de origen; cobros y devoluciones requieren caja propia abierta. Históricos en lectura, sin migración automática. Fotos comprimidas solo en este dispositivo/cuenta; no se sincronizan. Cancelación con devolución: solo dueño.</p>
       <p role="status">{isStale ? 'Agenda en caché, pendiente de servidor.' : `Agenda recibida: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`} Los importes mostrados no autorizan cobros; cada operación se valida en transacción.{historyUpdatedAt > 0 && ` Historial leído: ${new Date(historyUpdatedAt).toLocaleTimeString('es-PE')}.`}</p>
+      {error && <p role="alert">No se pudo leer la agenda; no se confirma que esté vacía. <button onClick={retry}>Reintentar lectura</button></p>}
       <header className="module-header">
         <h2 className="module-title">
           <span className="module-title-icon">🎂</span>

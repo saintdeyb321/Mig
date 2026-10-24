@@ -1,3 +1,4 @@
+import { useSessionState } from '../../../core/session/sessionResourceHooks.js';
 import { useCustomers } from './useCustomers';
 import { saveCustomer, deleteCustomer } from '../infrastructure/customerRepository';
 import { timestampNow } from '../../../core/firebase/timestamps';
@@ -5,10 +6,10 @@ import { useState, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
 export const useAgenda = (user) => {
-  const { customers: globalAgenda, isLoading: isGlobalLoading } = useCustomers();
+  const { customers: globalAgenda, isLoading: isGlobalLoading, error, retry, isStale } = useCustomers();
 
   const [isLoading, setIsLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useSessionState('agenda:search', '');
   const [showFormModal, setShowFormModal] = useState(false);
 
   const [name, setName] = useState('');
@@ -81,6 +82,7 @@ export const useAgenda = (user) => {
   };
 
   return {
+    error, retry, isStale,
     contacts: globalAgenda || [],
     isLoading, isFetching: isGlobalLoading,
     searchTerm, setSearchTerm, showFormModal, setShowFormModal,

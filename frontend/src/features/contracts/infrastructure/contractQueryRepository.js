@@ -12,7 +12,7 @@ export function createContractQueryRepository(database, { sdk = firestoreSDK } =
     subscribeActiveContracts: (businessId, onData, onError, { branchId = 'global' } = {}) => onSnapshot(
       query(collection(database, 'contracts'), where('businessId', '==', businessId),
         ...(branchId && branchId !== 'global' ? [where('branchId', '==', branchId)] : []), where('status', 'in', ACTIVE_CONTRACT_STATUSES), orderBy('deliveryDate', 'asc'),
-        orderBy(documentId(), 'asc'), limit(ACTIVE_CONTRACT_LIMIT)), { includeMetadataChanges: true }, snapshot => onData(mapDocuments(snapshot), snapshot.metadata), onError),
+        orderBy(documentId(), 'asc'), limit(ACTIVE_CONTRACT_LIMIT)), { includeMetadataChanges: true }, snapshot => onData(mapDocuments(snapshot), { ...snapshot.metadata, observedDocumentCount: snapshot.size }), onError),
     getContractHistoryPage: async (businessId, cursor = null, { branchId = 'global' } = {}) => {
       const snapshot = await getDocsFromServer(query(collection(database, 'contracts'), where('businessId', '==', businessId),
         ...(branchId && branchId !== 'global' ? [where('branchId', '==', branchId)] : []), ...(branchId && branchId !== 'global' ? [where('branchId', '==', branchId)] : []), where('status', 'in', CLOSED_CONTRACT_STATUSES), orderBy('createdAt', 'desc'), orderBy(documentId(), 'desc'),

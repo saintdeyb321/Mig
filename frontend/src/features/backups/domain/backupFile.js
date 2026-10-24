@@ -31,15 +31,15 @@ export function sanitizeBackup(value, redacted = [], path = '') {
   }
   return Object.fromEntries(entries);
 }
-export async function makeBackup({ businessId, actorId, sections, startedAt, warnings = [] }) {
+export async function makeBackup({ businessId, actorId, sections, startedAt, warnings = [], purpose = 'data-export' }) {
   const manifests = [];
   for (const section of sections) manifests.push({ name: section.name, count: section.records.length, status: section.status,
     warning: section.warning ?? null, sha256: await sha256(canonicalJSON(section.records)) });
-  const manifest = { format: 'migapos-local-backup', schemaVersion: BACKUP_VERSION, businessId, actorId, startedAt,
+  const manifest = { format: 'migapos-local-backup', schemaVersion: BACKUP_VERSION, purpose, businessId, actorId, startedAt,
     finishedAt: new Date().toISOString(), sections: manifests, warnings: [...warnings,
       'Exportación del alcance autorizado; no es una copia integral de Firebase ni un snapshot atómico.',
       'SHA-256 detecta corrupción; no certifica importes, procedencia ni conciliación financiera.',
-      'No incluye subcolecciones ni colecciones no declaradas. Pendientes y fotos se descargan por separado desde este dispositivo.',
+      'No enumera subcolecciones desconocidas ni colecciones no declaradas; solo incluye rutas conocidas explícitamente leídas. Pendientes y fotos se descargan por separado desde este dispositivo.',
       'No incluye Authentication, secretos, objetos Storage ni fotografías de otros dispositivos/cuentas.'],
     partial: manifests.some(section => section.status !== 'complete') };
   const payload = { manifest, sections: sections.map(section => ({ name: section.name, records: section.records })) };
@@ -71,6 +71,7 @@ export async function verifyBackupFile(text, password = '', businessId) {
   }
   if (backup?.manifest?.format !== 'migapos-local-backup' || backup.manifest.schemaVersion !== BACKUP_VERSION
     || !Array.isArray(backup.sections) || !Array.isArray(backup.manifest.sections) || backup.sections.length > 30) throw new Error('Manifiesto de backup no admitido.');
+  if (backup.manifest.purpose != null && !['data-export', 'inventory', 'local-device'].includes(backup.manifest.purpose)) throw new Error('Propósito de archivo no admitido.');
   if (backup.manifest.sections.some(section => !section || !['complete', 'limited', 'not-read', 'incomplete', 'inaccessible'].includes(section.status))
     || backup.manifest.partial !== backup.manifest.sections.some(section => section.status !== 'complete')) throw new Error('Manifiesto inconsistente: una exportación limitada o inaccesible debe indicarse como parcial.');
   if (businessId && backup.manifest.businessId !== businessId) throw new Error('El archivo pertenece a otro negocio.');

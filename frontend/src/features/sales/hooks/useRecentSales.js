@@ -15,11 +15,11 @@ export function useRecentSales(user, { pendingOnly = false } = {}) {
     let remote = [];
     let pending = [];
     let metadata = { fromCache: !pendingOnly };
-    const publish = scope.guard(() => onData(mergeRecentSales(pending, pendingOnly ? [] : remote), metadata));
-    const stopRemote = pendingOnly ? () => {} : subscribeRecentSales(businessId, branchId, (sales, source) => { remote = sales; metadata = source; publish(); }, scope.guard(onError));
+    const publish = scope.guard((observedDocumentCount = 0) => onData(mergeRecentSales(pending, pendingOnly ? [] : remote), { ...metadata, observedDocumentCount }));
+    const stopRemote = pendingOnly ? () => {} : subscribeRecentSales(businessId, branchId, (sales, source) => { remote = sales; metadata = source; publish(source.observedDocumentCount); }, scope.guard(onError));
     const stopPending = subscribePendingSales(user, branchId, sales => { pending = sales; publish(); }, scope.guard(onError));
     return () => { scope.close(); stopRemote(); stopPending(); };
   }, [businessId, branchId, user, pendingOnly]);
   const result = useSharedSubscription(`sales:${identityKey}:${branchId}:${pendingOnly}`, subscribe);
-  return { sales: result.data, isLoading: result.isLoading, error: result.error, isStale: result.isStale, updatedAt: result.updatedAt };
+  return { sales: result.data, isLoading: result.isLoading, error: result.error, retry: result.retry, isStale: result.isStale, updatedAt: result.updatedAt };
 }

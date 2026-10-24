@@ -45,7 +45,7 @@ it('rejects a partial export labelled complete even when its global checksum was
 });
 it('preserves an accessible first page and labels it incomplete when a later page fails', async () => {
   let pages = 0;
-  const sdk = {doc:(_db,name,id)=>({name,id}),getDocFromServer:async ref=>ref.name==='users'?{data:()=>({role:'dueño',businessId:'tenant-a'})}:{exists:()=>false},
+  const sdk = {doc:(_db,name,id)=>({name,id}),getDocFromServer:async ref=>ref.name==='users'?{data:()=>({role:'superadmin',businessId:'platform-admin'})}:{exists:()=>false},
     collection:(_db,name)=>({name}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),documentId:()=>({}),startAfter:()=>({}),limit:()=>({}),
     getDocsFromServer:async ref=>{
       if(ref.name!=='products') return {size:0,docs:[]};
@@ -53,7 +53,7 @@ it('preserves an accessible first page and labels it incomplete when a later pag
       const docs=Array.from({length:200},(_,i)=>({id:String(i),data:()=>({businessId:'tenant-a',name:'Product'})}));
       return {size:docs.length,docs};
     }};
-  const read=createBackupRepository({}, {sdk,currentUser:()=>({uid:'owner'})});
+  const read=createBackupRepository({}, {sdk,currentUser:()=>({uid:'owner'}),withAccess:async(_scope,work)=>work()});
   const exported=await read({businessId:'tenant-a',actorId:'owner',maxRecords:500});
   const products=exported.sections.find(section=>section.name==='products');
   assert.equal(products.records.length,200);assert.equal(products.status,'incomplete');
@@ -119,14 +119,26 @@ it('covers notification and confirmed sale/contract range indexes without wideni
 it('stops reads after byte quota exhaustion and aborts instead of exporting a foreign record or stale identity', async () => {
   let calls = 0, uid = 'owner', oversized = true;
   const sdk = {doc:(_db,name,id) => ({name,id}), getDocFromServer: async ref => {
-    calls++; return ref.name === 'users' ? {data:() => ({role:'dueño',businessId:'tenant-a'})} : {id:ref.id, exists:() => true, data:() => ({businessId:'tenant-a', big:oversized ? 'x'.repeat(17*1024*1024) : ''})};
+    calls++; return ref.name === 'users' ? {data:() => ({role:'superadmin',businessId:'platform-admin'})} : {id:ref.id, exists:() => true, data:() => ({businessId:'tenant-a', big:oversized ? 'x'.repeat(17*1024*1024) : ''})};
   }, collection:()=>({}), query:()=>({}), where:()=>({}), orderBy:()=>({}), documentId:()=>({}), startAfter:()=>({}), limit:()=>({}),
   getDocsFromServer: async () => {calls++; return {size:1, docs:[{id:'foreign',data:()=>({businessId:'tenant-b'})}]};}};
-  const read = createBackupRepository({}, {sdk,currentUser:()=>({uid})});
+  const read = createBackupRepository({}, {sdk,currentUser:()=>({uid}),withAccess:async(_scope,work)=>work()});
   const result = await read({businessId:'tenant-a',actorId:'owner',maxRecords:100});
   assert.equal(calls,2); assert.equal(result.sections[0].status,'limited'); assert.equal(result.sections[1].status,'not-read');
   oversized = false; calls = 0;
   await assert.rejects(read({businessId:'tenant-a',actorId:'owner',maxRecords:100}), /fuera del negocio/);
   uid = 'another'; calls = 0;
   await assert.rejects(read({businessId:'tenant-a',actorId:'owner'}), /identidad/); assert.equal(calls,0);
+});
+
+it('inventories known routes and references without treating reference targets as owned or complete', async () => {
+  const { inventorySections } = await import('../frontend/src/features/backups/domain/tenantInventory.js');
+  const sections = inventorySections([{ name:'sales', status:'complete', records:[{ $path:'sales/a',businessId:'tenant-a',userId:'cashier',branchId:'branch',items:[{id:'product'}],extra:{$type:'reference',path:'customers/unknown-owner'} }] },
+    {name:'unverified_subcollections',records:[],status:'not-read'}], 'tenant-a');
+  assert.deepEqual(sections[0].records[0].references, ['branches/branch','customers/unknown-owner','products/product','users/cashier']);
+  assert.equal(sections[0].records[0].referenceAuthority,'unverified-targets-never-followed-or-deleted');
+  const backup = await makeBackup({businessId:'tenant-a',actorId:'admin',startedAt:new Date().toISOString(),sections,purpose:'inventory'});
+  const verified = await verifyBackupFile(await encodeBackup(backup));
+  assert.equal(verified.manifest.partial,true); assert.equal(verified.manifest.purpose,'inventory');
+  assert.throws(()=>inventorySections([{name:'sales',records:[{businessId:'foreign'}]}],'tenant-a'),/fuera del negocio/);
 });

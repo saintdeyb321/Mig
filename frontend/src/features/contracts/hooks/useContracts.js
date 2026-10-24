@@ -38,7 +38,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     toast.error(firebaseErrorMessage(error), { id: 'agenda-err' });
     onError(error);
   }, { branchId: activeBranchId }), [businessId, activeBranchId]);
-  const { data: activeContracts, isLoading, isStale, updatedAt } = useSharedSubscription(`contracts:active:${activeBranchId}`, watchContracts);
+  const { data: activeContracts, isLoading, isStale, updatedAt, error, retry } = useSharedSubscription(`contracts:active:${activeBranchId}`, watchContracts);
   const [currentHistory, setHistory, historyCell] = useSessionState(`contracts:history:${activeBranchId}`, () => emptyHistory(identityKey));
   const contracts = useMemo(() => mergeContractPages(currentHistory.contracts, activeContracts), [currentHistory.contracts, activeContracts]);
 
@@ -70,7 +70,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     if (!history.loading && history.loadedAt && Date.now() - history.loadedAt > 120000) {
       setHistory({ ...emptyHistory(identityKey), revision: history.revision + 1 });
     }
-  }, [historyCell, identityKey, setHistory]);
+  }, [historyCell, identityKey, setHistory, historyEnabled]);
 
   useEffect(() => {
     if (historyEnabled && !currentHistory.started) void loadMoreHistory();
@@ -201,7 +201,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
   return { contracts, activeContracts, historyContracts: currentHistory.contracts, isLoading, isProcessing,
     isHistoryLoading: currentHistory.loading, historyStarted: currentHistory.started,
     hasMoreHistory: currentHistory.hasMore, loadMoreHistory,
-    isStale, updatedAt, historyUpdatedAt: currentHistory.loadedAt,
+    isStale, updatedAt, error, retry, historyUpdatedAt: currentHistory.loadedAt,
     activeLimitReached: activeContracts.length === ACTIVE_CONTRACT_LIMIT,
     createContract, updateContract, cancelContract, addPayment, markDelivered };
 };

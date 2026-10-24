@@ -45,6 +45,18 @@ service cloud.firestore {
       return activeUser() && currentRole() == 'superadmin';
     }
 
+    // Explicit platform data access: one tenant, read-only, ten minutes of server time.
+    function platformDataScope(businessId) {
+      let access = get(/databases/$(database)/documents/platform_data_access/$(request.auth.uid));
+      return superadmin() && access != null && access.data.businessId != 'platform-admin'
+        && access.data.actorId == request.auth.uid && access.data.businessId == businessId
+        && access.data.purpose in ['export', 'inventory'] && access.data.createdAt is timestamp
+        && access.data.createdAt <= request.time && request.time < access.data.createdAt + duration.value(10, 'm');
+    }
+    function platformDataReader() {
+      return superadmin() && platformDataScope(resource.data.businessId);
+    }
+
     function hasTenant(data) {
       return data.get('businessId', null) is string && data.businessId.size() > 0;
     }
@@ -219,7 +231,7 @@ service cloud.firestore {
     }
 
     function permittedFinancialResource() {
-      return superadmin() || (sameTenantResource() && branchAccess(resource.data.get('branchId', null)));
+      return superadmin() ? platformDataReader() : (sameTenantResource() && branchAccess(resource.data.get('branchId', null)));
     }
 
     function protectedFinancialAlert(data, alertId) {
@@ -619,7 +631,7 @@ service cloud.firestore {
     }
 
     match /branches/{branchId} {
-      allow read: if tenantReader();
+      allow read: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if (tenantCreator() && validNamedRecord()
         && request.resource.data.sparkCashVersion == 1
         && request.resource.data.keys().hasOnly(['businessId', 'name', 'address', 'phone', 'status', 'yapeQrUrl', 'createdAt', 'updatedAt', 'sparkCashVersion'])) || provisionBranch(branchId);
@@ -630,7 +642,7 @@ service cloud.firestore {
     }
 
     match /categories/{categoryId} {
-      allow read: if tenantReader();
+      allow read: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if tenantCreator() && validNamedRecord() && request.resource.data.keys().hasOnly(['businessId', 'name', 'status']);
       allow update: if tenantManager() && businessUnchanged() && validNamedRecord()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'status']);
@@ -638,7 +650,7 @@ service cloud.firestore {
     }
 
     match /products/{productId} {
-      allow read: if tenantReader();
+      allow read: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if tenantCreator() && validProduct() && validStock(request.resource.data.stock)
         && request.resource.data.keys().hasOnly(['businessId', 'name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'createdAt', 'updatedAt']);
       allow update: if debit(productId) || (businessUnchanged() && tenantManager() && validProduct()
@@ -670,8 +682,8 @@ service cloud.firestore {
     }
     match /contracts/{contractId} {
       // Cleanup can confirm an absent new contract; existing documents remain tenant scoped.
-      allow get: if activeUser() && (resource == null || tenantReader());
-      allow list: if tenantReader();
+      allow get: if activeUser() && (resource == null || tenantReader() || platformDataReader());
+      allow list: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if createSparkContract(contractId);
       allow update: if updateSparkContract(contractId);
       allow delete: if false;
@@ -685,7 +697,7 @@ service cloud.firestore {
     }
 
     match /customers/{customerId} {
-      allow read: if tenantReader();
+      allow read: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if tenantCreator() && validNamedRecord()
         && request.resource.data.phone is string && request.resource.data.phone.size() <= 50
         && request.resource.data.keys().hasOnly(['businessId', 'name', 'phone', 'createdAt', 'updatedAt']);
@@ -762,7 +774,7 @@ service cloud.firestore {
           : source.createdAt == request.time && !exists(/databases/$(database)/documents/payments/$(n.sourceId)));
     }
     match /notifications/{notificationId} {
-      allow read: if activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid && tenantEnabled(currentBusiness());
+      allow read: if (activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid && tenantEnabled(currentBusiness())) || platformDataReader();
       allow update: if activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid
         && tenantEnabled(currentBusiness())
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
@@ -781,9 +793,24 @@ service cloud.firestore {
       allow create: if provisionTenant(businessId);
       allow update, delete: if false;
     }
-    match /platform_jobs/{jobId}/{document=**} {
-      allow read: if superadmin();
+    match /platform_data_access/{actorId} {
+      allow read, delete: if superadmin() && actorId == request.auth.uid;
+      allow create, update: if superadmin() && actorId == request.auth.uid
+        && request.resource.data.keys().hasOnly(['actorId', 'businessId', 'purpose', 'accessId', 'createdAt'])
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.businessId is string && request.resource.data.businessId.size() > 0
+        && request.resource.data.businessId.size() <= 128 && request.resource.data.businessId != 'platform-admin'
+        && request.resource.data.purpose in ['export', 'inventory']
+        && request.resource.data.accessId.matches('^[A-Za-z0-9_-]{16,100}$')
+        && request.resource.data.createdAt == request.time;
+    }
+    match /platform_jobs/{jobId} {
+      allow read: if platformDataReader();
       allow write: if false;
+      match /{document=**} {
+        allow read: if superadmin() && platformDataScope(get(/databases/$(database)/documents/platform_jobs/$(jobId)).data.businessId);
+        allow write: if false;
+      }
     }
     match /platform_operations/{id} {
       allow read: if superadmin();

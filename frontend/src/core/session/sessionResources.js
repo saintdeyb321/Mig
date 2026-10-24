@@ -30,15 +30,17 @@ export function createSessionResources({ idleMs = 120000, maxListeners = 8, now 
         stop = start((data, metadata) => {
           if (!active || revision !== generation) return;
           const isStale = metadata?.fromCache === true || metadata?.hasPendingWrites === true;
-          metrics[isStale ? 'cacheRows' : 'serverRows'] += Array.isArray(data) ? data.length : 0;
+          metrics[isStale ? 'cacheRows' : 'serverRows'] += metadata?.observedDocumentCount ?? (Array.isArray(data) ? data.length : 0);
           state.set({ data, isLoading: false, error: null, isStale, updatedAt: now() });
         }, fail);
       } catch (error) { fail(error); }
     };
     const entry = { idle: () => consumers === 0, halt, api: {
       get: state.get,
+      refresh() { halt(); state.set(previous => ({ ...previous, error: null, isLoading: true })); if (consumers) begin(); },
       subscribe(notify) {
         consumers++; cancel(timer);
+        if (state.get().error) halt();
         if (stop) metrics.reused++;
         const off = state.subscribe(notify); begin();
         return () => { off(); consumers--; if (!consumers) timer = schedule(halt, idleMs); };
@@ -69,6 +71,7 @@ export function createSessionResources({ idleMs = 120000, maxListeners = 8, now 
       return entry.promise;
     },
     invalidate(prefix) { for (const key of reads.keys()) if (key.startsWith(prefix)) reads.delete(key); },
+    retryErrors() { for (const entry of listeners.values()) if (!entry.idle() && entry.api.get().error) entry.api.refresh(); },
     get active() { return active; },
     diagnostics: () => ({ ...metrics }),
     close,

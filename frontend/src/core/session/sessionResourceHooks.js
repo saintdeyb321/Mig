@@ -10,7 +10,8 @@ export function useSessionState(key, initial) {
 export function useSharedSubscription(key, start, initial) {
   const resources = useSessionResources();
   const resource = resources.watch(key, start, initial);
-  return useSyncExternalStore(resource.subscribe, resource.get);
+  const snapshot = useSyncExternalStore(resource.subscribe, resource.get);
+  return { ...snapshot, retry: resource.refresh };
 }
 
 export function useSessionScroll(key, ready) {
@@ -19,6 +20,8 @@ export function useSessionScroll(key, ready) {
   useEffect(() => {
     if (!ready) return;
     const frame = requestAnimationFrame(() => window.scrollTo(0, position.get()));
-    return () => { cancelAnimationFrame(frame); position.set(window.scrollY); };
+    const save = () => position.set(window.scrollY);
+    window.addEventListener('scroll', save, { passive: true });
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('scroll', save); };
   }, [position, ready]);
 }

@@ -15,8 +15,8 @@ export const useAuthManager = () => {
     let active = true;
     const stop = () => { session.current?.close(); session.current = null; };
     const unsubscribe = onAuthStateChanged(auth, firebaseUser => {
-      stop();
       if (!active) return;
+      stop();
       if (!firebaseUser) { status.current = 'anonymous'; setState({ uid: null, status: 'anonymous', profile: null }); return; }
       session.current = createProfileSession({ user: firebaseUser, subscribe: subscribeProfile,
         readInvite: getInviteFromServer, acceptInvite: acceptInvitedProfile,

@@ -97,3 +97,12 @@ it('StrictMode lease replay preserves the active session, but a real unmount clo
   const resources = createSessionResources(); const first = resources.lease(); first(); const second = resources.lease();
   await Promise.resolve(); assert.equal(resources.active, true); second(); await Promise.resolve(); assert.equal(resources.active, false);
 });
+
+it('retries a failed shared listener after reconnection or navigation without reviving another identity', () => {
+  const resources = createSessionResources(); let starts = 0, fail, deliver;
+  const listener = resources.watch('contracts', (next, error) => { starts++; deliver = next; fail = error; return () => {}; });
+  const leave = listener.subscribe(() => {}); fail(new Error('offline')); assert.equal(listener.get().data.length, 0);
+  resources.retryErrors(); assert.equal(starts,2); deliver([{id:'fresh'}], {fromCache:false}); assert.equal(listener.get().error,null);
+  fail(new Error('permission-denied')); leave(); const leaveAgain = listener.subscribe(() => {}); assert.equal(starts,3);
+  leaveAgain(); resources.close(); resources.retryErrors(); assert.equal(starts,3);
+});

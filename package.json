@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "npm run test:spark && npm run test:spark:rules",
-    "test:spark": "node --test --test-concurrency=1 tests/spark-mode.test.mjs tests/spark-tooling.test.mjs tests/ui-security.test.mjs tests/spark-startup.browser.test.mjs tests/spark-local.browser.test.mjs tests/backups.test.mjs tests/backups.browser.test.mjs",
+    "test:spark": "node --test --test-concurrency=1 tests/session-recovery.test.mjs tests/spark-mode.test.mjs tests/spark-tooling.test.mjs tests/ui-security.test.mjs tests/spark-startup.browser.test.mjs tests/spark-local.browser.test.mjs tests/backups.test.mjs tests/backups.browser.test.mjs",
     "test:spark:rules": "firebase emulators:exec --only firestore --project demo-migapos \"node scripts/spark-emulator-guard.mjs && node --test --test-concurrency=1 tests/spark.rules.test.mjs tests/spark-financial.rules.test.mjs tests/backups.rules.test.mjs\"",
     "test:legacy": "npm run test:release && npm run test:architecture && npm run test:sales && npm run test:functions && npm run test:reports && npm run test:ui && npm run test:legacy:rules",
     "test:reports": "node --test tests/reports.test.mjs",
