@@ -1,3 +1,4 @@
+import { operationalBranches } from '../../branches/domain/branchPolicy';
 import { useTenantData } from '../../branches/context/TenantContext';
 import { useUsersData } from './useUsersData';
 import { updateUser, createInvite, deleteInvite } from '../infrastructure/userRepository';
@@ -11,7 +12,8 @@ const confirmInBrowser = message => window.confirm(message);
 export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => {
   const { users: globalUsers, invites: globalInvites, isLoading: isGlobalLoading, error, isStale, retry } = useUsersData(user);
   const canManage = !isGlobalLoading && !error && !isStale;
-  const { businessBranches } = useTenantData();
+  const { businessBranches: allBranches } = useTenantData();
+  const businessBranches = useMemo(() => operationalBranches(allBranches), [allBranches]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -108,7 +110,7 @@ export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => 
     if (!firstName || !lastName || !emailPrefix || !user?.businessId) {
       return toast.error('Completa todos los campos');
     }
-    if (role === 'cajero' && !branchId) {
+    if (role === 'cajero' && !businessBranches.some(branch => branch.id === branchId)) {
       return toast.error('Debes asignar una sede válida al cajero');
     }
     if (emailPrefix.includes('@')) {

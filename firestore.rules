@@ -97,7 +97,8 @@ service cloud.firestore {
     function branchBelongsTo(businessId, branchId) {
       return branchId is string && branchId.size() > 0 && branchId != 'global'
         && exists(/databases/$(database)/documents/branches/$(branchId))
-        && get(/databases/$(database)/documents/branches/$(branchId)).data.businessId == businessId;
+        && get(/databases/$(database)/documents/branches/$(branchId)).data.businessId == businessId
+        && get(/databases/$(database)/documents/branches/$(branchId)).data.get('status', null) == 'activo';
     }
 
     function verifiedEmail() {
@@ -203,8 +204,10 @@ service cloud.firestore {
     }
 
     function stockValue(stock, key, businessId) {
+      let branch = get(/databases/$(database)/documents/branches/$(key));
       return stock[key] is int && stock[key] >= 0 && stock[key] <= 1000000000
-        && get(/databases/$(database)/documents/branches/$(key)).data.businessId == businessId;
+        && ((resource != null && resource.data.stock.get(key, -1) == stock[key])
+          || (branch != null && branch.data.businessId == businessId && branch.data.get('status', null) == 'activo'));
     }
     function stockSlot(stock, keys, index, businessId) {
       return keys.size() <= index || stockValue(stock, keys[index], businessId);
@@ -256,7 +259,7 @@ service cloud.firestore {
     function validProvisionReceipt(id) {
       let d = request.resource.data;
       return superadmin() && d.operation == 'createTenant' && d.keys().hasOnly(['operationId', 'actorId', 'operation', 'businessId', 'branchId',
-          'ownerEmail', 'businessName', 'firstName', 'lastName', 'months', 'expiry', 'createdAt'])
+          'ownerEmail', 'businessName', 'firstName', 'lastName', 'months', 'maxActiveBranches', 'expiry', 'createdAt'])
         && d.actorId == request.auth.uid && id == request.auth.uid + '_' + d.operationId
         && d.operationId.matches('^[A-Za-z0-9_-]{16,100}$') && d.businessId == d.operationId
         && d.branchId == 'main_' + d.businessId && d.businessId != 'platform-admin'
@@ -267,6 +270,7 @@ service cloud.firestore {
         && d.ownerEmail.matches('^[^ /@]+@[^ /@]+[.][^ /@]+$') && d.ownerEmail == d.ownerEmail.lower()
         && d.ownerEmail != currentUser().email && d.ownerEmail != request.auth.token.get('email', '')
         && d.months is int && d.months >= 1 && d.months <= 120
+        && d.maxActiveBranches is int && d.maxActiveBranches >= 1 && d.maxActiveBranches <= 100
         && d.createdAt == request.time && d.expiry is timestamp && d.expiry > request.time
         && d.expiry <= request.time + duration.value(d.months * 32, 'd')
         && !exists(/databases/$(database)/documents/tenants/$(d.businessId))
@@ -289,14 +293,15 @@ service cloud.firestore {
       let op = provisioning(d);
       return newProvision(d) && id == op.businessId
         && d == { 'businessId': id, 'businessName': op.businessName, 'status': 'activa', 'tenantStatus': 'active',
-          'expiry': op.expiry, 'operationId': op.operationId, 'createdAt': request.time };
+          'expiry': op.expiry, 'maxActiveBranches': op.maxActiveBranches, 'activeBranchIds': [op.branchId],
+          'branchQuotaVersion': 1, 'operationId': op.operationId, 'createdAt': request.time };
     }
     function provisionBranch(id) {
       let d = request.resource.data;
       let op = provisioning(d);
       return newProvision(d) && id == op.branchId
         && d == { 'businessId': op.businessId, 'name': 'Sede Principal', 'address': 'Dirección por definir',
-          'phone': '', 'status': 'activo', 'sparkCashVersion': 1, 'operationId': op.operationId, 'createdAt': request.time };
+          'phone': '', 'status': 'activo', 'sparkCashVersion': 1, 'branchLifecycleVersion': 1, 'operationId': op.operationId, 'createdAt': request.time };
     }
     function provisionSettings(id) {
       let d = request.resource.data;
@@ -355,6 +360,76 @@ service cloud.firestore {
             && d.keys().hasOnly(['operationId', 'actorId', 'operation', 'businessId', 'newStatus', 'createdAt'])));
     }
 
+    function configuredQuota(license) {
+      return license.get('branchQuotaVersion', 0) == 1 && license.maxActiveBranches is int
+        && license.maxActiveBranches >= 1 && license.maxActiveBranches <= 100
+        && license.activeBranchIds is list && license.activeBranchIds.size() >= 1
+        && license.activeBranchIds.size() <= license.maxActiveBranches
+        && license.activeBranchIds.toSet().size() == license.activeBranchIds.size();
+    }
+    // Only a SuperAdmin receipt may establish/change the commercial limit.
+    // Initial historical roster is an explicit administrative inventory attestation.
+    function quotaLicenseChange(id) {
+      let d = request.resource.data;
+      let op = getAfter(/databases/$(database)/documents/platform_operations/$(request.auth.uid + '_' + d.quotaOperationId)).data;
+      return superadmin() && businessUnchanged() && id == d.businessId && configuredQuota(d)
+        && d.diff(resource.data).affectedKeys().hasOnly(['maxActiveBranches', 'activeBranchIds', 'branchQuotaVersion', 'quotaOperationId', 'branchQuotaUpdatedAt'])
+        && (resource.data.get('branchQuotaVersion', 0) != 1 || d.activeBranchIds == resource.data.activeBranchIds)
+        && d.branchQuotaUpdatedAt == request.time && op.createdAt == request.time
+        && op.operation == 'setTenantBranchQuota' && op.actorId == request.auth.uid && op.businessId == id
+        && op.maxActiveBranches == d.maxActiveBranches && op.activeBranchIds == d.activeBranchIds
+        && !exists(/databases/$(database)/documents/platform_operations/$(request.auth.uid + '_' + d.quotaOperationId));
+    }
+    function quotaReceipt(id) {
+      let d = request.resource.data;
+      let license = getAfter(/databases/$(database)/documents/licenses/$(d.businessId)).data;
+      return superadmin() && id == request.auth.uid + '_' + d.operationId && d.actorId == request.auth.uid
+        && d.operationId.matches('^[A-Za-z0-9_-]{16,100}$') && d.operation == 'setTenantBranchQuota'
+        && d.keys().hasOnly(['actorId', 'businessId', 'operationId', 'operation', 'maxActiveBranches', 'activeBranchIds', 'regularization', 'createdAt'])
+        && d.createdAt == request.time && d.regularization is bool && configuredQuota(license)
+        && license.quotaOperationId == d.operationId && license.branchQuotaUpdatedAt == request.time
+        && license.maxActiveBranches == d.maxActiveBranches && license.activeBranchIds == d.activeBranchIds;
+    }
+    function branchSlotChange(id, data, wasActive) {
+      let before = get(/databases/$(database)/documents/licenses/$(data.businessId)).data;
+      let after = getAfter(/databases/$(database)/documents/licenses/$(data.businessId)).data;
+      return configuredQuota(before) && configuredQuota(after)
+        && after.branchQuotaBranchId == id && after.branchQuotaUpdatedAt == request.time
+        && (wasActive ? (before.activeBranchIds.hasAny([id]) && data.status == 'inactivo'
+            && after.activeBranchIds == before.activeBranchIds.removeAll([id]))
+          : (!before.activeBranchIds.hasAny([id]) && data.status == 'activo'
+            && after.activeBranchIds == before.activeBranchIds.concat([id])));
+    }
+    function branchQuotaChange(id) {
+      let d = request.resource.data;
+      let key = d.branchQuotaBranchId;
+      let before = get(/databases/$(database)/documents/branches/$(key));
+      let after = getAfter(/databases/$(database)/documents/branches/$(key));
+      return tenantManager() && id == currentBusiness() && configuredQuota(d)
+        && d.diff(resource.data).affectedKeys().hasOnly(['activeBranchIds', 'branchQuotaBranchId', 'branchQuotaUpdatedAt'])
+        && after != null && after.data.businessId == id
+        && (before == null || before.data.businessId == id)
+        && branchSlotChange(key, after.data, before != null && before.data.get('status', null) == 'activo');
+    }
+    function branchCreation(id) {
+      let d = request.resource.data;
+      let license = get(/databases/$(database)/documents/licenses/$(d.businessId)).data;
+      return tenantCreator() && validNamedRecord() && configuredQuota(license)
+        && d.sparkCashVersion == 1 && d.branchLifecycleVersion == 1
+        && d.keys().hasOnly(['businessId', 'name', 'address', 'phone', 'status', 'yapeQrUrl', 'createdAt', 'updatedAt', 'sparkCashVersion', 'branchLifecycleVersion'])
+        && (d.status == 'activo' ? branchSlotChange(id, d, false) : (d.status == 'inactivo' && !license.activeBranchIds.hasAny([id])));
+    }
+    function branchUpdate(id) {
+      let d = request.resource.data;
+      return tenantManager() && businessUnchanged() && validNamedRecord()
+        && d.diff(resource.data).affectedKeys().hasOnly(['name', 'address', 'phone', 'status', 'yapeQrUrl', 'updatedAt'])
+        && (d.status == resource.data.get('status', null) ||
+          (d.status == 'activo' ? branchSlotChange(id, d, false) :
+            (d.status == 'inactivo' && resource.data.get('branchLifecycleVersion', 0) == 1
+              && !exists(/databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, id)))
+              && branchSlotChange(id, d, true))));
+    }
+
     function cashLockId(businessId, branchId) {
       return hashing.sha256('["' + businessId + '","' + branchId + '"]').toHexString().lower();
     }
@@ -375,7 +450,7 @@ service cloud.firestore {
       return activeUser() && profile.role in ['dueño', 'cajero'] && profile.businessId == businessId
         && businessId != 'platform-admin' && businessId.matches('^[A-Za-z0-9_-]{1,128}$')
         && branchId.matches('^[A-Za-z0-9_-]{1,128}$') && tenantEnabled(businessId)
-        && branch.businessId == businessId && branch.get('status', 'activo') == 'activo'
+        && branch.businessId == businessId && branch.get('status', null) == 'activo'
         && branch.get('sparkCashVersion', null) == 1 && withinCashShift(profile)
         && (profile.role == 'dueño' || profile.branchId == branchId);
     }
@@ -442,7 +517,7 @@ service cloud.firestore {
         && license.businessId == d.businessId && license.status == 'activa' && license.expiry > request.time
         && license.get('tenantStatus', 'active') == 'active' && license.get('maintenanceJobId', null) == null
         && (tenant == null || (tenant.data.status == 'active' && tenant.data.get('maintenanceJobId', null) == null))
-        && branch.businessId == d.businessId && branch.get('status', 'activo') == 'activo' && branch.sparkCashVersion == 1
+        && branch.businessId == d.businessId && branch.get('status', null) == 'activo' && branch.sparkCashVersion == 1
         && session.userId == d.userId && session.businessId == d.businessId && session.branchId == d.branchId
         && session.status == 'open' && session.runtime == 'spark' && session.openedAt <= request.time
         && lock.sessionId == d.sessionId && lock.userId == d.userId && lock.status == 'open';
@@ -626,17 +701,16 @@ service cloud.firestore {
     match /licenses/{licenseId} {
       allow read: if superadmin() || (activeUser() && licenseId == currentBusiness());
       allow create: if provisionLicense(licenseId);
-      allow update: if licenseChange(licenseId);
+      allow update: if licenseChange(licenseId) || quotaLicenseChange(licenseId) || branchQuotaChange(licenseId);
       allow delete: if false;
     }
 
     match /branches/{branchId} {
-      allow read: if superadmin() ? platformDataReader() : tenantReader();
-      allow create: if (tenantCreator() && validNamedRecord()
-        && request.resource.data.sparkCashVersion == 1
-        && request.resource.data.keys().hasOnly(['businessId', 'name', 'address', 'phone', 'status', 'yapeQrUrl', 'createdAt', 'updatedAt', 'sparkCashVersion'])) || provisionBranch(branchId);
-      allow update: if tenantManager() && businessUnchanged() && validNamedRecord()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'address', 'phone', 'status', 'yapeQrUrl', 'updatedAt']);
+      allow get: if (resource == null && owner() && tenantEnabled(currentBusiness()))
+        || (superadmin() ? platformDataReader() : tenantReader());
+      allow list: if superadmin() ? platformDataReader() : tenantReader();
+      allow create: if branchCreation(branchId) || provisionBranch(branchId);
+      allow update: if branchUpdate(branchId);
       // Inactivate instead: financial history may reference this branch forever.
       allow delete: if false;
     }
@@ -814,7 +888,7 @@ service cloud.firestore {
     }
     match /platform_operations/{id} {
       allow read: if superadmin();
-      allow create: if validProvisionReceipt(id) || licenseReceipt(id);
+      allow create: if validProvisionReceipt(id) || licenseReceipt(id) || quotaReceipt(id);
       allow update, delete: if false;
     }
     match /owner_email_claims/{email} {

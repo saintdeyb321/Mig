@@ -1,5 +1,5 @@
 import { Building2 } from 'lucide-react';
-import { Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, DialogFooter, SearchField, EmptyState } from "../shared/ui";
+import { Alert, Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, DialogFooter, SearchField, EmptyState } from "../shared/ui";
 // src/modules/BranchManager.jsx
 import React, { memo, useState } from 'react';
 import { useBranches } from '../features/branches/hooks/useBranches';
@@ -57,7 +57,7 @@ function BranchManager({
   isEmbedded = false
 }) {
   const {
-    branches,
+    branches, branchQuota,
     isLoading,
     isProcessing,
     showFormModal,
@@ -97,6 +97,7 @@ function BranchManager({
             ➕ Nueva Sede
           </Button></>} />}
 
+      <Alert variant={branchQuota?.branchQuotaVersion === 1 ? 'info' : 'warning'}>{branchQuota?.branchQuotaVersion === 1 ? `Sedes activas registradas: ${branchQuota.activeBranchIds.length} / ${branchQuota.maxActiveBranches}. Las inactivas no consumen cupo.` : 'Licencia histórica sin cupo: conserva sus operaciones; SuperAdmin debe inventariar y regularizar antes de crear o reactivar sedes.'}</Alert>
       <div className="flex flex-wrap gap-3 items-center mb-5">
 
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre..." onClear={() => setSearchTerm('')} />

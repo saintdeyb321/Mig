@@ -37,7 +37,7 @@ try {
   check(exportButton && !exportButton.disabled && !document.querySelector('[title^="Eliminación"]') && document.body.textContent.includes('jobs backend deshabilitados'), 'Local export is available and destructive backend jobs have no controls');
   createButton().click();
   await waitFor(createForm);
-  const values = ['MigaPOS Laboratorio UI', 'Dueña', 'Prueba', 'titular-test@gmail.com'];
+  const values = ['MigaPOS Laboratorio UI', 'Dueña', 'Prueba', 'titular-test@gmail.com', '1'];
   [...createForm().querySelectorAll('input')].forEach((input, index) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, values[index]);
     input.dispatchEvent(new Event('input', {bubbles:true}));
@@ -46,6 +46,7 @@ try {
   createForm().requestSubmit();
   await waitFor(() => globalThis.__sparkAdminCalls.length > 0);
   check(globalThis.__sparkAdminCalls[0].name === 'createTenant' && globalThis.__sparkAdminCalls[0].data.ownerEmail === values[3]
+    && globalThis.__sparkAdminCalls[0].data.maxActiveBranches === 1
     && typeof globalThis.__sparkAdminCalls[0].data.operationId === 'string', 'Create form sends the owner and stable operation ID to its migrated repository boundary');
   await waitFor(() => !createForm());
   navigation()[0].click();

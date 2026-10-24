@@ -16,7 +16,7 @@ export const ClientCard = memo(({
   isProcessing,
   setExtendModalInfo,
   handleToggleStatus,
-  handleExport
+  handleExport, onQuota
 }) => {
   const expiryDate = toDateSafe(license.expiry);
   const isExpired = !expiryDate || expiryDate < new Date();
@@ -69,6 +69,7 @@ export const ClientCard = memo(({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3 text-xs text-muted"><span>Sedes activas registradas: {license.branchQuotaVersion === 1 ? `${license.activeBranchIds?.length ?? '?'} / ${license.maxActiveBranches}` : 'cupo histórico sin regularizar'}</span><Button variant="secondary" size="sm" disabled={isProcessing} onClick={() => onQuota(license)}>Editar cupo</Button></div>
       {/* Botonera de Tarjeta */}
       {license.tenantStatus !== 'active' && <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Estado histórico: {license.tenantStatus}. Mantenimiento privilegiado no disponible en Spark.</p>}
       <div className="py-4 px-5 flex flex-wrap gap-2.5">

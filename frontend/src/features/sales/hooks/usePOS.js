@@ -1,3 +1,4 @@
+import { isBranchOperational } from '../../branches/domain/branchPolicy';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { saveSaleTransaction } from '../infrastructure/saleTransactions';
@@ -115,7 +116,7 @@ export const usePOS = (user, currentSession) => {
     }
 
     const currentBranch = businessBranches?.find(b => b.id === activeBranchId);
-    if (currentBranch && currentBranch.status?.toLowerCase() === 'inactivo') {
+    if (!isBranchOperational(currentBranch)) {
       toast.error('⛔ Venta bloqueada. Sucursal inactiva.', { id: VAL_TOAST_ID });
       return;
     }

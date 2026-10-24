@@ -1,3 +1,4 @@
+import { BranchQuotaModal } from './admin/BranchQuotaModal';
 import { ShieldCheck } from 'lucide-react';
 import { ClientCard } from "./admin/ClientCard.jsx";
 import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Select, Card, SearchField, DialogFooter, EmptyState, HelpDisclosure } from "../shared/ui";
@@ -16,7 +17,7 @@ function SuperAdmin({
     isProcessing,
     handleCreateClient,
     handleExtendLicense,
-    handleToggleStatus,
+    handleToggleStatus, handleSetBranchQuota,
     searchTerm,
     setSearchTerm,
     filteredLicenses,
@@ -34,6 +35,7 @@ function SuperAdmin({
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [months, setMonths] = useState(1);
+  const [maxActiveBranches, setMaxActiveBranches] = useState(1), [quotaLicense, setQuotaLicense] = useState(null);
   const [extendMonths, setExtendMonths] = useState(1);
   if (user?.role !== 'superadmin') {
     return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6 text-center pt-12.5">
@@ -53,13 +55,13 @@ function SuperAdmin({
     </section>;
   const submitCreate = async e => {
     e.preventDefault();
-    const success = await handleCreateClient(businessName, ownerEmail, firstName, lastName, months);
+    const success = await handleCreateClient(businessName, ownerEmail, firstName, lastName, months, maxActiveBranches);
     if (success) {
       setBusinessName('');
       setOwnerEmail('');
       setFirstName('');
       setLastName('');
-      setMonths(1);
+      setMonths(1); setMaxActiveBranches(1);
       setShowAddModal(false);
     }
   };
@@ -92,10 +94,11 @@ function SuperAdmin({
       {filteredLicenses.length === 0 ? <EmptyState title="Sin registros" description={<>
             {error ? 'No se pudo consultar la lista. Revisa el error y vuelve a intentarlo.' : searchTerm ? `No se encontraron clientes para "${searchTerm}"` : 'Aún no tienes clientes registrados.'}
           </>} /> : <div className="grid min-w-0 gap-4 xl:grid-cols-2 3xl:grid-cols-3">
-          {filteredLicenses.map(license => <ClientCard key={license.id} license={license} isProcessing={isProcessing} setExtendModalInfo={setExtendModalInfo} handleToggleStatus={handleToggleStatus} handleExport={setBackupBusinessId} />)}
+          {filteredLicenses.map(license => <ClientCard key={license.id} license={license} isProcessing={isProcessing} setExtendModalInfo={setExtendModalInfo} handleToggleStatus={handleToggleStatus} handleExport={setBackupBusinessId} onQuota={setQuotaLicense} />)}
         </div>}
       {hasMore && <Button disabled={isLoading} onClick={loadMore} type="button" variant="secondary">Cargar más clientes</Button>}
 
+      {quotaLicense && <BranchQuotaModal key={`${user.uid}:${quotaLicense.id}`} user={user} license={quotaLicense} onClose={() => setQuotaLicense(null)} onSave={handleSetBranchQuota} busy={isProcessing} />}
       {/* MODAL: NUEVO CLIENTE */}
       {showAddModal && <Dialog title={<>🏢 Alta de Nuevo Cliente</>} busy={isProcessing} className="max-w-lg" onClose={() => setShowAddModal(false)}>
 
@@ -136,6 +139,7 @@ function SuperAdmin({
                 </Select>
               </FormField>
 
+              <FormField label="Máximo de sedes activas" hint="Política inicial: 1 sede activa; SuperAdmin puede fijar de 1 a 100. Las inactivas no consumen cupo."><Input type="number" min="1" max="100" step="1" value={maxActiveBranches} onChange={event => setMaxActiveBranches(event.target.value)} required disabled={isProcessing} /></FormField>
               <DialogFooter>
                 <Button type="button" onClick={() => setShowAddModal(false)} disabled={isProcessing} variant="secondary">Cancelar</Button>
                 <Button type="submit" disabled={isProcessing} className="flex-1" variant="primary">{isProcessing ? 'Creando...' : 'Crear Inquilino'}</Button>

@@ -298,3 +298,16 @@ describe('SPARK-4 integrated financial Rules', () => {
   });
 
 });
+
+
+it('Plan03 rejects sales and new contracts on an inactive or unknown-status branch without touching receipts or stock', async () => {
+  const db = database(), contracts = createSparkContractsRepository(db, { sdk, currentUser: () => ({ uid }) });
+  for (const status of ['inactivo', 'unknown']) {
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'branches', branchId), { status }));
+    const sale = payload(`blocked-${status}`, 2);
+    await assertFails(commit(sale));
+    await assert.rejects(contracts.create({ contractId: '11111111-1111-4111-8111-111111111111', operationId: '22222222-2222-4222-8222-222222222222', branchId, total: 10, subtotal: 10, deliveryCost: 0, clientName: 'Prueba' }), /Sede inactiva/);
+    assert.equal((await inspect(`sales/${sale.saleId}`)).exists(), false);
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 10);
+  }
+});

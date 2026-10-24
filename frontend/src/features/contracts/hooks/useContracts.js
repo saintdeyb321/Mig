@@ -1,3 +1,4 @@
+import { isBranchOperational } from '../../branches/domain/branchPolicy';
 import { useCallback, useMemo, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useTenantData } from '../../branches/context/TenantContext';
@@ -14,7 +15,7 @@ import { firebaseErrorMessage } from '../../../core/errors/firebaseErrors.js';
 const emptyHistory = scopeKey => ({ scopeKey, contracts: [], cursor: null, hasMore: true, loading: false, started: false, loadedAt: 0, revision: 0 });
 
 export const useContracts = (user, { historyEnabled = false } = {}) => {
-  const { activeBranchId, identityKey } = useTenantData();
+  const { activeBranchId, identityKey, businessBranches } = useTenantData();
   const businessId = user?.businessId;
   const resources = useSessionResources();
   const [isProcessing, setIsProcessing] = useSessionState('contracts:busy', false);
@@ -99,12 +100,12 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
   }, [businessId, scope, resources, processing, setIsProcessing]);
 
   const physicalBranch = useCallback(() => {
-    if (!activeBranchId || activeBranchId === 'global') {
+    if (!activeBranchId || activeBranchId === 'global' || !businessBranches.some(branch => branch.id === activeBranchId && isBranchOperational(branch))) {
       toast.error('Selecciona una sede física para registrar cobros o pedidos.');
       return null;
     }
     return activeBranchId;
-  }, [activeBranchId]);
+  }, [activeBranchId, businessBranches]);
 
   const discardUploads = useCallback(async (command, contractId, error) => {
     if (['unavailable', 'internal', 'deadline-exceeded', 'unknown', 'cancelled', 'network-request-failed'].includes(error.code)) return;

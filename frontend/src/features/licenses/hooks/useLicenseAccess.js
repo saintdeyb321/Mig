@@ -19,7 +19,7 @@ export function useLicenseAccess(user) {
       if (!active) return;
       const expiry = toDateSafe(records.license.data?.expiry);
       setState({ key: requestKey, licenseState: !confirmationExpired && ['loading', 'offline-unverified'].includes(licenseAccess(records)) ? 'loading' : licenseAccess(records) === 'loading' && confirmationExpired ? 'offline-unverified' : licenseAccess(records),
-        expirationDateStr: expiry?.toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' }) ?? '',
+        licenseData: records.license.data, expirationDateStr: expiry?.toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' }) ?? '',
         tenantPresence: records.tenant.received ? records.tenant.data ? 'present' : 'absent' : 'unverified',
       });
     };

@@ -1,4 +1,6 @@
-import { useState, useCallback } from 'react';
+import { LicenseContext } from '../../licenses/context/LicenseContext';
+import { resolveOperationalBranch } from '../domain/branchPolicy';
+import { useState, useCallback, useContext } from 'react';
 import { TenantContext } from './TenantContext';
 import { subscribeBranches } from '../infrastructure/branchRepository';
 import { subscribeSettings } from '../../settings/infrastructure/settingsRepository';
@@ -16,12 +18,14 @@ export function TenantProvider({ user, children }) {
 function BusinessTenantProvider({ user, children }) {
   const identityKey = getIdentityKey(user);
   const businessId = user.businessId;
-  const [activeBranchId, setActiveBranchId] = useState(user.role === 'cajero' ? user.branchId : null);
-  const watchBranches = useCallback((onData, onError) => subscribeBranches(businessId, branches => {
-    onData(branches);
-    setActiveBranchId(previous => previous ?? (branches.length === 1 ? branches[0].id : 'global'));
-  }, onError), [businessId]);
+  const branchQuota = useContext(LicenseContext);
+  const [requestedBranchId, requestBranch] = useState(null);
+  const watchBranches = useCallback((onData, onError) => subscribeBranches(businessId, onData, onError), [businessId]);
   const branches = useScopedSubscription(identityKey, watchBranches);
+  const activeBranchId = resolveOperationalBranch(user, branches.data, requestedBranchId);
+  const setActiveBranchId = value => {
+    if (user.role === 'dueño' && resolveOperationalBranch(user, branches.data, value) === value) requestBranch(value);
+  };
 
   const watchSettings = useCallback((onData, onError) => {
     const scope = createSubscriptionScope();
@@ -45,7 +49,7 @@ function BusinessTenantProvider({ user, children }) {
 
   return <TenantContext.Provider value={{
     user, identityKey, businessBranches: branches.data,
-    activeBranchId, setActiveBranchId, settings: settings.data,
+    activeBranchId, setActiveBranchId, branchQuota, branchesError: branches.error, retryBranches: branches.retry, settings: settings.data,
     isLoading: branches.isLoading || settings.isLoading,
     error: branches.error || settings.error,
   }}>{children}</TenantContext.Provider>;

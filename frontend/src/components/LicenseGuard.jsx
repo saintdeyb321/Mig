@@ -1,3 +1,4 @@
+import { LicenseContext } from '../features/licenses/context/LicenseContext';
 import React, { useEffect } from 'react';
 import { reportDiagnostic } from '../core/errors/diagnostics.js';
 import { useLicenseAccess } from '../features/licenses/hooks/useLicenseAccess';
@@ -8,7 +9,7 @@ export default function LicenseGuard({
 }) {
   const {
     licenseState,
-    expirationDateStr, retry
+    expirationDateStr, retry, licenseData
   } = useLicenseAccess(user);
   useEffect(() => {
     if (!['active', 'loading'].includes(licenseState)) reportDiagnostic('license', {
@@ -20,6 +21,6 @@ export default function LicenseGuard({
         <div className="size-8 animate-spin rounded-full border-3 border-line border-t-primary motion-reduce:animate-none"></div>
       </div>;
   }
-  if (licenseState === 'active') return children;
+  if (licenseState === 'active') return <LicenseContext.Provider value={licenseData}>{children}</LicenseContext.Provider>;
   return <RestrictedAccess licenseState={licenseState} expirationDateStr={expirationDateStr} user={user} onRetry={retry} onLogout={handleLogout} />;
 }

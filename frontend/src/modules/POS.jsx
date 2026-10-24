@@ -1,3 +1,4 @@
+import { isBranchOperational } from '../features/branches/domain/branchPolicy';
 import { useState, useMemo } from 'react';
 import { LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
 import { checkoutBlockReason } from '../features/sales/domain/checkoutPolicy.js';
@@ -61,8 +62,8 @@ function POS({ user }) {
     if (activeBranchId === 'global') return { isReadOnly: true, reason: 'global' };
     if (businessBranches && activeBranchId) {
       const branch = businessBranches.find(b => b.id === activeBranchId);
-      if (branch && branch.status?.toLowerCase() === 'inactivo') {
-        return { isReadOnly: true, reason: 'inactive', name: branch.name };
+      if (!isBranchOperational(branch)) {
+        return { isReadOnly: true, reason: 'inactive', name: branch?.name || 'no verificada' };
       }
     }
     return { isReadOnly: false };

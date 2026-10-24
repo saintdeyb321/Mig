@@ -1,11 +1,12 @@
 import { useTenantData } from '../context/TenantContext';
 import { createBranch, updateBranch } from '../infrastructure/branchRepository';
 import { timestampNow } from '../../../core/firebase/timestamps';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 
 export const useBranches = (user) => {
-  const { businessBranches, isLoading: isGlobalLoading } = useTenantData();
+  const { businessBranches, branchQuota, isLoading: isGlobalLoading } = useTenantData();
+  const creatingId = useRef(null), saving = useRef(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Estados del formulario
@@ -23,6 +24,7 @@ export const useBranches = (user) => {
   }, [businessBranches]);
 
   const openAddForm = () => {
+    creatingId.current = crypto.randomUUID();
     setEditingBranch(null);
     setName('');
     setAddress('');
@@ -94,8 +96,10 @@ export const useBranches = (user) => {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (saving.current) return;
     if (!name.trim()) return toast.error('El nombre es obligatorio');
 
+    saving.current = true;
     setIsProcessing(true);
     const toastId = toast.loading(editingBranch ? 'Actualizando sucursal...' : 'Creando sucursal...');
 
@@ -116,20 +120,21 @@ export const useBranches = (user) => {
         toast.success('Sucursal actualizada', { id: toastId });
       } else {
         branchData.createdAt = timestampNow();
-        await createBranch(branchData);
+        await createBranch(branchData, creatingId.current);
         toast.success('Nueva sucursal creada', { id: toastId });
       }
       setShowFormModal(false);
     } catch (error) {
       console.error("Error guardando sucursal:", error);
-      toast.error('Hubo un error al guardar', { id: toastId });
+      toast.error(error.message || 'Hubo un error al guardar', { id: toastId });
     } finally {
+      saving.current = false;
       setIsProcessing(false);
     }
   };
 
   return {
-    branches,
+    branches, branchQuota,
     isLoading: isGlobalLoading,
     isProcessing,
     showFormModal, setShowFormModal,

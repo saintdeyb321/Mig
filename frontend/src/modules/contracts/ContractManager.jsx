@@ -1,3 +1,4 @@
+import { isBranchOperational } from '../../features/branches/domain/branchPolicy';
 import { CakeSlice } from 'lucide-react';
 import { Button, PageHeader, Select, cn, SearchField, EmptyState } from "../../shared/ui";
 // src/modules/contracts/ContractManager.jsx
@@ -51,7 +52,7 @@ function ContractManager({
   const [contractToEdit, setContractToEdit] = useState(null);
   const [contractToView, setContractToView] = useState(null);
   const [contractToCancel, setContractToCancel] = useState(null);
-  const activeLocations = useMemo(() => businessBranches?.filter(b => b.status === 'activo') || [], [businessBranches]);
+  const activeLocations = useMemo(() => businessBranches?.filter(isBranchOperational) || [], [businessBranches]);
   const filteredContracts = useMemo(() => {
     let result = [...contracts];
 

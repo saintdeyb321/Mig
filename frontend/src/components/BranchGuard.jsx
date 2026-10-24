@@ -1,4 +1,5 @@
-import { Button, Card } from "../shared/ui";
+import { isBranchOperational } from '../features/branches/domain/branchPolicy';
+import { Button, Card, LoadingState, ErrorState } from "../shared/ui";
 // src/components/BranchGuard.jsx
 import React, { useMemo } from 'react';
 import { useCatalogData } from '../features/catalog/context/CatalogContext';
@@ -9,7 +10,7 @@ export default function BranchGuard({
   children
 }) {
   const {
-    businessBranches,
+    businessBranches, branchesError, retryBranches,
     isLoading: isTenantLoading
   } = useTenantData();
   const {
@@ -34,14 +35,16 @@ export default function BranchGuard({
     if (isAdmin) return false;
 
     // Si encontramos su sucursal y está inactiva, lo bloqueamos
-    if (myBranch && myBranch.status?.toLowerCase() === 'inactivo') {
+    if (!isBranchOperational(myBranch)) {
       return true;
     }
     return false;
   }, [isAdmin, myBranch]);
   if (isTenantLoading || isCatalogLoading) {
-    return null;
+    return <LoadingState>Verificando sede y catálogo…</LoadingState>;
   }
+
+  if (branchesError) return <ErrorState title="No se pudo verificar la sede" error={branchesError} onRetry={retryBranches} />;
 
   // 🚨 LA BARRERA DE SUCURSAL INACTIVA
   if (isBlocked) {
@@ -54,7 +57,7 @@ export default function BranchGuard({
             Sucursal Inactiva
           </h1>
           <p className="text-lg text-ink leading-relaxed mb-4">
-            La sucursal <strong>{myBranch?.name}</strong> a la que estás asignado ha sido desactivada por el administrador.
+            La sucursal <strong>{myBranch?.name}</strong> a la que estás asignado no está disponible para operar. Revisa con el administrador su estado y los permisos.
           </p>
           <p className="text-base text-muted mb-7.5">
             No puedes registrar ventas ni acceder al sistema en este momento.

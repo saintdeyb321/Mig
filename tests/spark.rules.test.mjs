@@ -1,3 +1,5 @@
+import { createBranchWriter } from '../frontend/src/features/branches/infrastructure/branchWrites.js';
+import { isBranchOperational, resolveOperationalBranch } from '../frontend/src/features/branches/domain/branchPolicy.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { before, beforeEach, after, describe, it } from 'node:test';
@@ -35,12 +37,12 @@ const businessOwner = async () => {
 const rawBundle = (database, data, { omit, mutate = entries => entries } = {}) => {
   const businessId = data.operationId, branchId = `main_${businessId}`, time = serverTimestamp();
   const entries = {
-    [`platform_operations/admin_${businessId}`]: { ...data, actorId: 'admin', operation: 'createTenant', businessId, branchId, expiry: Timestamp.fromMillis(Date.now() + 30 * 86400000), createdAt: time },
+    [`platform_operations/admin_${businessId}`]: { ...data, maxActiveBranches: data.maxActiveBranches ?? 1, actorId: 'admin', operation: 'createTenant', businessId, branchId, expiry: Timestamp.fromMillis(Date.now() + 30 * 86400000), createdAt: time },
     [`tenants/${businessId}`]: { businessId, businessName: data.businessName, ownerEmail: data.ownerEmail, status: 'active', schemaVersion: 1, operationId: businessId, createdAt: time },
   };
   const op = entries[`platform_operations/admin_${businessId}`];
-  entries[`licenses/${businessId}`] = { businessId, businessName: data.businessName, status: 'activa', tenantStatus: 'active', expiry: op.expiry, operationId: businessId, createdAt: time };
-  entries[`branches/${branchId}`] = { businessId, name: 'Sede Principal', address: 'Dirección por definir', phone: '', status: 'activo', sparkCashVersion: 1, operationId: businessId, createdAt: time };
+  entries[`licenses/${businessId}`] = { businessId, businessName: data.businessName, status: 'activa', tenantStatus: 'active', expiry: op.expiry, maxActiveBranches: op.maxActiveBranches, activeBranchIds: [branchId], branchQuotaVersion: 1, operationId: businessId, createdAt: time };
+  entries[`branches/${branchId}`] = { businessId, name: 'Sede Principal', address: 'Dirección por definir', phone: '', status: 'activo', sparkCashVersion: 1, branchLifecycleVersion: 1, operationId: businessId, createdAt: time };
   entries[`settings/${businessId}`] = { businessId, operationId: businessId, companyData: { razonSocial: data.businessName, ruc: '', direccion: 'Dirección por definir', telefono: '' } };
   entries[`invites/${data.ownerEmail}`] = { businessId, email: data.ownerEmail, firstName: data.firstName, lastName: data.lastName, role: 'dueño', branchId: 'global', shiftStart: null, shiftEnd: null, status: 'activo', createdAt: time, operationId: businessId };
   entries[`owner_email_claims/${data.ownerEmail}`] = { businessId, email: data.ownerEmail, operationId: businessId, createdAt: time };
@@ -136,7 +138,8 @@ describe('SPARK-2 tenant operations and catalog invariants', () => {
     const { database, businessId, branchId } = await businessOwner();
     await setDoc(doc(database, 'categories', 'bread'), { businessId, name: 'Pan', status: 'activo' });
     await setDoc(doc(database, 'products', 'bread'), { businessId, name: 'Pan', price: 1.25, category: 'Pan', stock: { [branchId]: 20 }, status: 'activo' });
-    await setDoc(doc(database, 'branches', 'second'), { businessId, name: 'Segunda', address: '', phone: '', status: 'activo', sparkCashVersion: 1 });
+    await repository().setTenantBranchQuota({ businessId, operationId: input('more').operationId, maxActiveBranches: 2 });
+    await createBranchWriter(database, { sdk, currentUser: () => ({ uid: 'owner' }) })('second', { businessId, name: 'Segunda', address: '', phone: '', status: 'activo' }, { create: true });
     await setDoc(doc(database, 'customers', 'contact'), { businessId, name: 'Contacto', phone: '999000111' });
     await updateDoc(doc(database, 'settings', businessId), { companyData: { razonSocial: 'Laboratorio', ruc: '', direccion: '', telefono: '' } });
     const invite = { businessId, email: 'cashier@gmail.com', firstName: 'Caja', lastName: 'Prueba', role: 'cajero', branchId, shiftStart: null, shiftEnd: null, status: 'activo', createdAt: new Date().toISOString() };
@@ -163,9 +166,11 @@ describe('SPARK-2 tenant operations and catalog invariants', () => {
   });
   it('validates every initial stock entry, rejects bad prices/foreign branches, and supports the six-branch limit within Rules access budgets', async () => {
     const { database, businessId, branchId } = await businessOwner();
+    await repository().setTenantBranchQuota({ businessId, operationId: input('six').operationId, maxActiveBranches: 6 });
+    const save = createBranchWriter(database, { sdk, currentUser: () => ({ uid: 'owner' }) });
     const stock = { [branchId]: 5 };
     for (let index = 1; index < 6; index++) {
-      await setDoc(doc(database, 'branches', `stock-${index}`), { businessId, name: `Sede ${index}`, sparkCashVersion: 1 }); stock[`stock-${index}`] = index;
+      await save(`stock-${index}`, { businessId, name: `Sede ${index}`, status: 'activo' }, { create: true }); stock[`stock-${index}`] = index;
     }
     await setDoc(doc(database, 'products', 'six'), { businessId, name: 'Seis sedes', price: 0.29, stock });
     for (const [key, value] of [['negative', { stock: { [branchId]: -1 } }], ['fraction', { stock: { [branchId]: 1.5 } }], ['foreign', { stock: { foreign: 5 } }], ['price', { price: -1 }], ['precision', { price: 0.001 }], ['nan', { price: NaN }], ['infinite', { price: Infinity }], ['version', { posStockVersion: 0 }]]) {
@@ -261,5 +266,81 @@ describe('SPARK-3 online cash opening', () => {
     await seed({ [`active_cash_sessions/${lockId}`]: { businessId, branchId, userId: 'owner', sessionId: 'old', status: 'open' } });
     await assert.rejects(cashRepository(database).open({ businessId, branchId, sessionId: 'cash-historical-lock-123456789', openingAmount: 0 }), /candado histórico/);
     await assertFails(rawCash(database, businessId, branchId));
+  });
+});
+
+
+describe('Plan03 branch authority and quota concurrency', () => {
+  const ownerWithQuota = async maximum => {
+    const data = { ...input('quota'), maxActiveBranches: maximum };
+    const created = await repository().createTenant(data), user = googleUser();
+    const database = dbFor(user.uid, data.ownerEmail);
+    await acceptInvitation(database, googleUser(user.uid, data.ownerEmail), { sdk });
+    return { ...created, database, save: createBranchWriter(database, { sdk, currentUser: () => user }) };
+  };
+  const branchData = businessId => ({ businessId, name: 'Sede adicional', address: '', phone: '', status: 'activo' });
+  it('Plan03 serializes the last slot and rejects owner quota forgery or missing roster writes', async () => {
+    const { businessId, database, save } = await ownerWithQuota(2);
+    const results = await Promise.allSettled([save('second', branchData(businessId), { create: true }), save('third', branchData(businessId), { create: true })]);
+    assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+    assert.equal((await dump(`licenses/${businessId}`)).data().activeBranchIds.length, 2);
+    await assertFails(updateDoc(doc(database, 'licenses', businessId), { maxActiveBranches: 100 }));
+    await assertFails(setDoc(doc(database, 'branches', 'bypass'), { ...branchData(businessId), sparkCashVersion: 1, branchLifecycleVersion: 1 }));
+    await assertFails(updateDoc(doc(database, 'licenses', businessId), { activeBranchIds: ['invented'], branchQuotaBranchId: 'invented', branchQuotaUpdatedAt: serverTimestamp() }));
+  });
+  it('Plan03 protects concurrent reactivation and lets inactive branches release their slot', async () => {
+    const { businessId, database, save } = await ownerWithQuota(2);
+    for (const id of ['inactive1', 'inactive2']) await save(id, { ...branchData(businessId), status: 'inactivo' }, { create: true });
+    const results = await Promise.allSettled(['inactive1', 'inactive2'].map(id => save(id, branchData(businessId))));
+    assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+    const id = (await dump('branches/inactive1')).data().status === 'activo' ? 'inactive1' : 'inactive2';
+    await save(id, { ...branchData(businessId), status: 'inactivo' });
+    assert.equal((await dump(`licenses/${businessId}`)).data().activeBranchIds.length, 1);
+    assert.equal((await getDoc(doc(database, 'branches', id))).data().status, 'inactivo');
+  });
+  it('Plan03 blocks closing an active cash branch, even with direct batch writes', async () => {
+    const { businessId, database, save } = await ownerWithQuota(2);
+    await save('second', branchData(businessId), { create: true });
+    const lockId = await cashLockId(businessId, 'second');
+    await seed({ [`active_cash_sessions/${lockId}`]: { businessId, branchId: 'second', status: 'open', userId: 'owner' } });
+    await assert.rejects(save('second', { ...branchData(businessId), status: 'inactivo' }), /Cierra la caja/);
+    const batch = writeBatch(database);
+    const ids = (await dump(`licenses/${businessId}`)).data().activeBranchIds;
+    batch.update(doc(database, 'licenses', businessId), { activeBranchIds: ids.filter(id => id !== 'second'), branchQuotaBranchId: 'second', branchQuotaUpdatedAt: serverTimestamp() });
+    batch.update(doc(database, 'branches', 'second'), { status: 'inactivo' });
+    await assertFails(batch.commit());
+  });
+  it('Plan03 preserves inactive stock, forbids its adjustment and cashier assignment, and prevents last-branch closure', async () => {
+    const { businessId, branchId, database, save } = await ownerWithQuota(2);
+    await save('second', branchData(businessId), { create: true });
+    await setDoc(doc(database, 'products', 'stock'), { businessId, name: 'Pan', price: 1.25, stock: { [branchId]: 2, second: 7 } });
+    await save('second', { ...branchData(businessId), status: 'inactivo' });
+    await updateDoc(doc(database, 'products', 'stock'), { stock: { [branchId]: 3, second: 7 } });
+    await assertFails(updateDoc(doc(database, 'products', 'stock'), { stock: { [branchId]: 3, second: 8 } }));
+    await assertFails(setDoc(doc(database, 'invites', 'staff@gmail.com'), { businessId, email: 'staff@gmail.com', role: 'cajero', branchId: 'second' }));
+    await assert.rejects(save(branchId, { ...branchData(businessId), status: 'inactivo' }), /al menos una/);
+    assert.equal((await dump('products/stock')).data().stock.second, 7);
+  });
+  it('Plan03 keeps historical tenants operational and requires explicit SuperAdmin regularization', async () => {
+    const database = dbFor('legacy-owner');
+    await seed({ 'users/legacy-owner': { role: 'dueño', businessId: 'legacy', status: 'activo' },
+      'licenses/legacy': { businessId: 'legacy', status: 'activa', expiry: Timestamp.fromMillis(Date.now() + 86400000) },
+      'branches/legacy-main': { ...branchData('legacy'), sparkCashVersion: 1 } });
+    const save = createBranchWriter(database, { sdk, currentUser: () => ({ uid: 'legacy-owner' }) });
+    await save('legacy-main', { ...branchData('legacy'), name: 'Nombre actualizado' });
+    await assert.rejects(save('new', branchData('legacy'), { create: true }), /Regulariza/);
+    await assert.rejects(repository().setTenantBranchQuota({ businessId: 'legacy', operationId: input('reg').operationId, maxActiveBranches: 2, activeBranchIds: ['legacy-main'] }), /Confirma/);
+    const command = { businessId: 'legacy', operationId: input('reg').operationId, maxActiveBranches: 2, activeBranchIds: ['legacy-main'], confirmHistoricalReview: true };
+    await repository().setTenantBranchQuota(command); await repository().setTenantBranchQuota(command);
+    await save('new', branchData('legacy'), { create: true });
+    await assert.rejects(save('legacy-main', { ...branchData('legacy'), status: 'inactivo' }), /Sede histórica/);
+    await assert.rejects(repository().setTenantBranchQuota({ businessId: 'legacy', operationId: input('lower').operationId, maxActiveBranches: 1 }), /menor/);
+  });
+  it('Plan03 resolves only operational assignments and global read-only owner context', () => {
+    const rows = [{ id: 'a', status: 'activo' }, { id: 'b', status: 'inactivo' }, { id: 'unknown' }];
+    assert.equal(isBranchOperational(rows[2]), false);
+    assert.equal(resolveOperationalBranch({ role: 'dueño' }, rows, 'b'), 'a');
+    assert.equal(resolveOperationalBranch({ role: 'dueño' }, rows, 'global'), 'global');
+    assert.equal(resolveOperationalBranch({ role: 'cajero', branchId: 'b' }, rows, 'a'), null);
   });
 });
