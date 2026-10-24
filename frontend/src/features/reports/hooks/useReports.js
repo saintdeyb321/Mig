@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useTenantData } from '../../branches/context/TenantContext';
 import { reportPeriod, reportDay } from '../domain/reportPeriod.js';
 import { emptyMetrics } from '../domain/reportTotals.js';
-import { createReportCache, reportCacheKey, createReportResource, REPORT_TTL } from '../application/reportResource.js';
+import { createReportCache, reportCacheKey, createReportResource, invalidateReportScope, REPORT_TTL } from '../application/reportResource.js';
 
 import { useSessionResources, useSessionState } from '../../../core/session/sessionResourceHooks.js';
 import { sessionReportReads } from '../infrastructure/sessionReportReads.js';
@@ -28,13 +28,13 @@ export const useReports = user => {
       onState: setState });
     resource.current = current;
     const timer = setInterval(() => { setDay(reportDay(new Date())); }, REPORT_TTL);
-    const refresh = () => { setDay(reportDay(new Date())); void current.refresh(); };
-    window.addEventListener('focus', refresh); window.addEventListener('online', refresh);
-    return () => { current.close(); clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); };
+    const refresh = () => { setDay(reportDay(new Date())); if (document.visibilityState === 'visible') void current.refresh(); };
+    document.addEventListener('visibilitychange', refresh); window.addEventListener('online', refresh);
+    return () => { current.close(); clearInterval(timer); document.removeEventListener('visibilitychange', refresh); window.removeEventListener('online', refresh); };
   }, [key, user?.businessId, activeBranchId, period, timeFilter, cache, resources]);
   const current = state.key === key ? state : { isLoading: true, error: null };
   const model = current.model;
-  const refreshReport = useCallback(() => { resources.invalidate('report:'); cache.clear(); return resource.current?.refresh(true); }, [resources, cache]);
+  const refreshReport = useCallback(() => { invalidateReportScope(resources, user?.businessId, activeBranchId); cache.invalidate(key); return resource.current?.refresh(true); }, [resources, cache, user?.businessId, activeBranchId, key]);
   return { contractCounts: model?.contractCounts ?? { pending: 0, delivered: 0, cancelled: 0, withDebt: 0 }, summary: model?.summary ?? emptyMetrics(), topProducts: model?.topProducts ?? [], chartData: model?.chartData ?? [],
     hasData: Boolean(model), isRefreshing: current.isRefreshing === true, isLoading: current.isLoading, error: current.queryError ?? current.error, timeFilter, setTimeFilter, refreshReport, updatedAt: current.updatedAt,
     maxProductQty: Math.max(1, ...(model?.topProducts ?? []).map(row => row.qty)) };

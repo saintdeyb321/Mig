@@ -1,3 +1,4 @@
+import { invalidateReportScope } from '../../reports/application/reportResource.js';
 import { isBranchOperational } from '../../branches/domain/branchPolicy';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
@@ -189,7 +190,7 @@ export const usePOS = (user, currentSession) => {
       toast.dismiss(toastId);
       toast.success(result.isOffline ? 'Pendiente local: sin confirmar; revisa antes de volver a cobrar' : 'Venta confirmada por Firestore', { id: 'sale-success', icon: result.isOffline ? '🏠' : '✅' });
       isSuccess = true;
-      resources.invalidate('report:'); resources.clearValue('report:cache');
+      invalidateReportScope(resources, user.businessId, activeBranchId);
 
     } catch (err) {
       console.error(err);

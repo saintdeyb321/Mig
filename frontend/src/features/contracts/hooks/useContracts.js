@@ -1,3 +1,4 @@
+import { invalidateReportScope } from '../../reports/application/reportResource.js';
 import { isBranchOperational } from '../../branches/domain/branchPolicy';
 import { useCallback, useMemo, useEffect } from 'react';
 import toast from 'react-hot-toast';
@@ -84,8 +85,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     const toastId = toast.loading(label);
     try {
       const result = await work();
-      resources.invalidate('report:');
-      resources.clearValue('report:cache');
+      invalidateReportScope(resources, businessId, activeBranchId);
       if (!scope.active) { toast.dismiss(toastId); return false; }
       toast.success(typeof success === 'function' ? success(result) : success, { id: toastId });
       return true;
@@ -97,7 +97,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
       processing.current = false;
       if (resources.active) setIsProcessing(false);
     }
-  }, [businessId, scope, resources, processing, setIsProcessing]);
+  }, [businessId, activeBranchId, scope, resources, processing, setIsProcessing]);
 
   const physicalBranch = useCallback(() => {
     if (!activeBranchId || activeBranchId === 'global' || !businessBranches.some(branch => branch.id === activeBranchId && isBranchOperational(branch))) {

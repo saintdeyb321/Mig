@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { createRequire } from 'node:module';
 import { aggregateReport } from '../frontend/src/features/reports/domain/reportTotals.js';
 import { reportPeriod, reportDay } from '../frontend/src/features/reports/domain/reportPeriod.js';
-import { createReportCache, reportCacheKey, createReportResource } from '../frontend/src/features/reports/application/reportResource.js';
+import { createReportCache, reportCacheKey, createReportResource, invalidateReportScope } from '../frontend/src/features/reports/application/reportResource.js';
 import { processDailyStats, processSales, DETAIL_HEADERS } from '../frontend/src/utils/salesDataProcessor.js';
 import { buildContractLedgerReport } from '../frontend/src/features/reports/application/contractLedgerReport.js';
 import { buildSalesWorkbook } from '../frontend/src/features/reports/application/salesWorkbook.js';
@@ -203,7 +203,7 @@ describe('Phase 7 bounded data and lifecycle', () => {
       subscribeStats: onData => { snapshot = onData; return () => {}; }, onState: next => { state = next; } });
     await resource.ready; snapshot(stats); snapshot(stats); snapshot(stats);
     assert.equal(reads, 1); assert.equal(state.model.summary.netRevenue, 90);
-    now = 30001; await resource.refresh(); assert.equal(reads, 2);
+    now = 120001; await resource.refresh(); assert.equal(reads, 2);
     resource.close();
   });
   for (const filter of ['mes', 'todo']) it(`${filter} does not reload its historical ledger every 30s; focus/manual refresh deduplicates pending reads`, async () => {
@@ -265,4 +265,32 @@ describe('Plan04 cash export cursor limits', () => {
     assert.equal(result.length, count); assert.ok(reads <= 2 * (Math.floor(count / 2) + 1));
     if (count > 2) await assert.rejects(reader('openedAt', 'tenant-a', period.startDate, period.endDate, 'b1', { pageSize: 2, maxRows: 2 }), /no se exportó.*parcial/);
   });
+});
+
+it('Plan04 retains an expired report only as presentation while a single refresh is pending', async () => {
+  let now = 0, calls = 0, release, state;
+  const cache = createReportCache({ now: () => now });
+  const first = createReportResource({ ...scope, key: 'display', cache, now: () => now, readStats: async () => stats,
+    readPayments: async () => [], onState: next => { state = next; } });
+  await first.ready; first.close(); now = 120001;
+  const second = createReportResource({ ...scope, key: 'display', cache, now: () => now, readStats: async () => stats,
+    readPayments: () => { calls++; return new Promise(resolve => { release = resolve; }); }, onState: next => { state = next; } });
+  assert.ok(state.model); assert.equal(state.isLoading, false); assert.equal(state.isRefreshing, true);
+  const pending = second.refresh(); assert.equal(calls, 1);
+  release([]); await pending; assert.equal(state.isRefreshing, false); second.close();
+});
+it('Plan04 invalidates only the affected branch and its global summaries', async () => {
+  const { createSessionResources } = await import('../frontend/src/core/session/sessionResources.js');
+  const resources = createSessionResources();
+  const cache = resources.value('report:cache', createReportCache);
+  const key = branchId => reportCacheKey({ ...scope, identityKey: 'u1', branchId });
+  for (const branch of ['b1', 'b2', 'global']) {
+    cache.set(key(branch), { loadedAt: Date.now() });
+    await resources.read('report:sales:' + JSON.stringify([scope.businessId, branch, period.start, period.end]), async () => branch);
+  }
+  invalidateReportScope(resources, scope.businessId, 'b1');
+  assert.equal(cache.peek(key('b1')), null); assert.equal(cache.peek(key('global')), null); assert.ok(cache.peek(key('b2')));
+  let loads = 0;
+  const read = branch => resources.read('report:sales:' + JSON.stringify([scope.businessId, branch, period.start, period.end]), async () => { loads++; return branch; });
+  await read('b2'); assert.equal(loads, 0); await read('b1'); assert.equal(loads, 1); resources.close();
 });

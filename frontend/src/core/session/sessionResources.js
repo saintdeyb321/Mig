@@ -70,6 +70,7 @@ export function createSessionResources({ idleMs = 120000, maxListeners = 8, now 
       if (reads.size > 12) for (const [oldKey, old] of reads) { if (oldKey !== key && !old.pending) { reads.delete(oldKey); break; } }
       return entry.promise;
     },
+    invalidateWhere(matches) { for (const key of reads.keys()) if (matches(key)) reads.delete(key); },
     invalidate(prefix) { for (const key of reads.keys()) if (key.startsWith(prefix)) reads.delete(key); },
     retryErrors() { for (const entry of listeners.values()) if (!entry.idle() && entry.api.get().error) entry.api.refresh(); },
     get active() { return active; },

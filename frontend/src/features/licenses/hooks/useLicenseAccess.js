@@ -18,10 +18,11 @@ export function useLicenseAccess(user) {
     const publish = () => {
       if (!active) return;
       const expiry = toDateSafe(records.license.data?.expiry);
-      setState({ key: requestKey, licenseState: !confirmationExpired && ['loading', 'offline-unverified'].includes(licenseAccess(records)) ? 'loading' : licenseAccess(records) === 'loading' && confirmationExpired ? 'offline-unverified' : licenseAccess(records),
+      const next = { key: requestKey, licenseState: !confirmationExpired && ['loading', 'offline-unverified'].includes(licenseAccess(records)) ? 'loading' : licenseAccess(records) === 'loading' && confirmationExpired ? 'offline-unverified' : licenseAccess(records),
         licenseData: records.license.data, expirationDateStr: expiry?.toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' }) ?? '',
         tenantPresence: records.tenant.received ? records.tenant.data ? 'present' : 'absent' : 'unverified',
-      });
+      };
+      setState(previous => Object.keys(next).every(key => Object.is(next[key], previous[key])) ? previous : next);
     };
     const listen = (name, subscribe) => subscribe(user.businessId, (data, metadata) => {
       if (!active) return;
