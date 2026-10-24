@@ -1,17 +1,25 @@
+import { ContractFinanceFields } from "./ContractFinanceFields";
+import { Dialog, Input, FormField, Button, Select, Textarea, DialogFooter, SearchField } from "../../../shared/ui";
 // src/modules/contracts/components/ContractFormModal.jsx
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useCustomers } from '../../../features/customers/hooks/useCustomers';
 import { toDateSafe } from '../../../core/dates/dateValues';
 import { useContractImageUrls } from '../../../features/contracts/hooks/useContractImageUrls';
-
-const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit, isProcessing }) => {
+import { MAX_CONTRACT_IMAGES } from '../../../features/contracts/infrastructure/contractImages';
+const ContractFormModal = ({
+  contractToEdit,
+  activeLocations,
+  onClose,
+  onSubmit,
+  isProcessing
+}) => {
   const isEditing = !!contractToEdit;
-  const { customers: agenda } = useCustomers();
-
+  const {
+    customers: agenda
+  } = useCustomers();
   const [showAgendaModal, setShowAgendaModal] = useState(false);
   const [agendaSearch, setAgendaSearch] = useState('');
-
   const [formData, setFormData] = useState(() => {
     if (contractToEdit) {
       let formattedDate = '';
@@ -36,19 +44,31 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
       };
     }
     return {
-      clientName: '', clientPhone: '', deliveryDate: '', details: '',
-      deliveryType: 'domicilio', deliveryAddress: '', subtotal: '',
-      deliveryCost: '', advancePayment: '', paymentMethod: 'efectivo'
+      clientName: '',
+      clientPhone: '',
+      deliveryDate: '',
+      details: '',
+      deliveryType: 'domicilio',
+      deliveryAddress: '',
+      subtotal: '',
+      deliveryCost: '',
+      advancePayment: '',
+      paymentMethod: 'efectivo'
     };
   });
-
   const [images, setImages] = useState(() => {
     const initialImages = [];
     if (contractToEdit) {
       if (contractToEdit.referenceImages && contractToEdit.referenceImages.length > 0) {
-        contractToEdit.referenceImages.forEach(img => initialImages.push({ type: 'existing', value: img }));
+        contractToEdit.referenceImages.forEach(img => initialImages.push({
+          type: 'existing',
+          value: img
+        }));
       } else if (contractToEdit.referenceImage) {
-        initialImages.push({ type: 'existing', value: contractToEdit.referenceImage });
+        initialImages.push({
+          type: 'existing',
+          value: contractToEdit.referenceImage
+        });
       }
     }
     return initialImages;
@@ -56,34 +76,48 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
   const previewUrls = useRef(new Set());
   useEffect(() => {
     const created = previewUrls.current;
-    return () => { created.forEach(url => URL.revokeObjectURL(url)); created.clear(); };
+    return () => {
+      created.forEach(url => URL.revokeObjectURL(url));
+      created.clear();
+    };
   }, []);
   const imageReferences = useMemo(() => images.map(image => image.type === 'existing' ? image.value : image.url), [images]);
-  const { urls: displayedImages } = useContractImageUrls(imageReferences);
-
+  const {
+    urls: displayedImages
+  } = useContractImageUrls(imageReferences);
   const totals = useMemo(() => {
     const sub = Math.max(0, Number(formData.subtotal) || 0);
     const del = Math.max(0, Number(formData.deliveryCost) || 0);
     const total = sub + del;
-
     if (isEditing) {
       const paid = Number(contractToEdit.paidTotal ?? Math.max(0, Number(contractToEdit.total || 0) - Number(contractToEdit.balance || 0)));
-      return { total, balance: Math.max(0, total - paid), totalPaid: paid };
+      return {
+        total,
+        balance: Math.max(0, total - paid),
+        totalPaid: paid
+      };
     }
-
     const adv = Math.max(0, Number(formData.advancePayment) || 0);
-    return { total, balance: Math.max(0, total - adv), totalPaid: adv };
+    return {
+      total,
+      balance: Math.max(0, total - adv),
+      totalPaid: adv
+    };
   }, [formData.subtotal, formData.deliveryCost, formData.advancePayment, isEditing, contractToEdit]);
-
-  const handleChange = useCallback((e) => {
-    const { name, value } = e.target;
+  const handleChange = useCallback(e => {
+    const {
+      name,
+      value
+    } = e.target;
     setFormData(prev => ({
-      ...prev, [name]: value,
-      ...(name === 'deliveryType' && value !== 'domicilio' ? { deliveryAddress: '' } : {})
+      ...prev,
+      [name]: value,
+      ...(name === 'deliveryType' && value !== 'domicilio' ? {
+        deliveryAddress: ''
+      } : {})
     }));
   }, []);
-
-  const handleSelectContact = (contact) => {
+  const handleSelectContact = contact => {
     setFormData(prev => ({
       ...prev,
       clientName: contact.name,
@@ -91,40 +125,36 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     }));
     setShowAgendaModal(false);
     setAgendaSearch('');
-    toast.success(`Datos de ${contact.name} cargados.`, { icon: '📖' });
+    toast.success(`Datos de ${contact.name} cargados.`, {
+      icon: '📖'
+    });
   };
-
   const filteredAgenda = useMemo(() => {
     const lowerSearch = agendaSearch.toLowerCase();
-    return agenda.filter(c =>
-      c.name.toLowerCase().includes(lowerSearch) ||
-      (c.phone && c.phone.includes(lowerSearch))
-    );
+    return agenda.filter(c => c.name.toLowerCase().includes(lowerSearch) || c.phone && c.phone.includes(lowerSearch));
   }, [agenda, agendaSearch]);
-
-  const handleImageChange = (e) => {
+  const handleImageChange = e => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
-
-    if (images.length + files.length > 20) {
-      return toast.error("Máximo 20 imágenes de referencia por pedido.");
+    if (images.length + files.length > MAX_CONTRACT_IMAGES) {
+      return toast.error(`Máximo ${MAX_CONTRACT_IMAGES} imágenes de referencia por pedido.`);
     }
-    if (files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
-      || !/\.(jpe?g|png|webp)$/i.test(file.name) || file.size > 5 * 1024 * 1024)) {
+    if (files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || !/\.(jpe?g|png|webp)$/i.test(file.name) || file.size > 5 * 1024 * 1024)) {
       return toast.error('Usa imágenes JPEG, PNG o WebP de hasta 5 MB. Se comprimen y guardan solo en este dispositivo.');
     }
-
     const newImages = files.map(file => {
       const url = URL.createObjectURL(file);
       previewUrls.current.add(url);
-      return { type: 'new', file, url };
+      return {
+        type: 'new',
+        file,
+        url
+      };
     });
-
     setImages(prev => [...prev, ...newImages]);
     e.target.value = null;
   };
-
-  const handleRemoveImage = (indexToRemove) => {
+  const handleRemoveImage = indexToRemove => {
     const removed = images[indexToRemove];
     if (removed?.type === 'new') {
       URL.revokeObjectURL(removed.url);
@@ -132,8 +162,7 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     }
     setImages(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
-
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = e => {
     e.preventDefault();
     if (!isEditing && Number(formData.advancePayment) > totals.total) {
       return toast.error('La cuota inicial no puede ser mayor al Total');
@@ -144,10 +173,8 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
     if (formData.deliveryType === 'domicilio' && !formData.deliveryAddress.trim()) {
       return toast.error('Debes ingresar la dirección de entrega');
     }
-
     const existingImages = images.filter(img => img.type === 'existing').map(img => img.value);
     const newImageFiles = images.filter(img => img.type === 'new').map(img => img.file);
-
     const finalData = {
       ...formData,
       clientName: formData.clientName.trim(),
@@ -156,256 +183,134 @@ const ContractFormModal = ({ contractToEdit, activeLocations, onClose, onSubmit,
       subtotal: Number(formData.subtotal) || 0,
       deliveryCost: Number(formData.deliveryCost) || 0,
       ...(!isEditing && Number(formData.advancePayment) > 0 ? {
-        initialPayment: { amount: Number(formData.advancePayment), method: formData.paymentMethod },
+        initialPayment: {
+          amount: Number(formData.advancePayment),
+          method: formData.paymentMethod
+        }
       } : {}),
       newImages: newImageFiles,
       retainedImages: existingImages
     };
-
     onSubmit(finalData, null, isEditing ? contractToEdit.id : null);
   };
+  return <>
+      <Dialog title={<>{isEditing ? 'Editar Pedido' : 'Registro de Nuevo Pedido'}</>} busy={isProcessing} className="max-w-3xl" onClose={onClose}>
 
-  return (
-    <>
-      <div className="cfm-overlay fade-in">
-        <div className="cfm-modal-container">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">{isEditing ? '✏️' : '📝'}</span>
 
-          <div className="cfm-header">
-            <div className="cfm-title-group">
-              <span className="cfm-icon">{isEditing ? '✏️' : '📝'}</span>
-              <h2>{isEditing ? 'Editar Pedido' : 'Registro de Nuevo Pedido'}</h2>
             </div>
-            <button type="button" onClick={onClose} className="cfm-btn-close" disabled={isProcessing}>✖</button>
+
           </div>
 
-          <form onSubmit={handleFormSubmit} className="cfm-body">
-            <p role="status">Fotos JPEG/PNG/WebP hasta 5 MB de entrada, comprimidas a 256 KiB + miniatura de 64 KiB; solo en este dispositivo/cuenta. Guarda sin foto si no está disponible.</p>
+          <form onSubmit={handleFormSubmit} className="grid min-w-0 gap-5">
+            <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Fotos JPEG/PNG/WebP hasta 5 MB de entrada, comprimidas a 256 KiB + miniatura de 64 KiB; solo en este dispositivo/cuenta. Guarda sin foto si no está disponible.</p>
 
-            <div className="cfm-section">
-              <h4 className="cfm-section-title">1. Datos del Cliente</h4>
+            <div className="grid min-w-0 gap-4 rounded-xl border border-line p-4">
+              <h4 className="text-sm font-semibold">1. Datos del Cliente</h4>
 
-              <div className="cfm-grid-2">
-                <div className="cfm-input-group">
-                  <label>Nombre Completo <span className="req">*</span></label>
-                  <input name="clientName" autoFocus value={formData.clientName} onChange={handleChange} required disabled={isProcessing} placeholder="Ej: Juan Pérez" />
-                </div>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <FormField label={<>Nombre Completo <span className="text-danger">*</span></>}>
 
-                <div className="cfm-input-group">
-                  <label>Teléfono / WhatsApp</label>
-                  <input name="clientPhone" type="tel" value={formData.clientPhone} onChange={handleChange} disabled={isProcessing} placeholder="987 654 321" autoComplete="off" />
-                </div>
+                  <Input name="clientName" autoFocus value={formData.clientName} onChange={handleChange} required disabled={isProcessing} placeholder="Ej: Juan Pérez" />
+                </FormField>
+
+                <FormField label={<>Teléfono / WhatsApp</>}>
+
+                  <Input name="clientPhone" type="tel" value={formData.clientPhone} onChange={handleChange} disabled={isProcessing} placeholder="987 654 321" autoComplete="off" />
+                </FormField>
               </div>
 
-
-              {!isEditing && agenda.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '12px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowAgendaModal(true)}
-                    disabled={isProcessing}
-                    className="btn-agenda-inline"
-                    style={{ margin: 0 }} /* Reseteamos el margin porque el flex padre ya lo centra */
-                  >
+              {!isEditing && agenda.length > 0 && <div className="flex justify-center mt-3">
+                  <Button type="button" onClick={() => setShowAgendaModal(true)} disabled={isProcessing} className="m-0" variant="secondary">
                     📖 Buscar en Agenda
-                  </button>
-                </div>
-              )}
+                  </Button>
+                </div>}
             </div>
 
+            <div className="grid min-w-0 gap-4 rounded-xl border border-line p-4">
+              <h4 className="text-sm font-semibold">2. Logística de Entrega</h4>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <FormField label={<>Fecha y Hora <span className="text-danger">*</span></>}>
 
+                  <Input name="deliveryDate" type="datetime-local" value={formData.deliveryDate} onChange={handleChange} required disabled={isProcessing} />
+                </FormField>
+                <FormField label={<>Método de Entrega <span className="text-danger">*</span></>}>
 
-            <div className="cfm-section">
-              <h4 className="cfm-section-title">2. Logística de Entrega</h4>
-              <div className="cfm-grid-3">
-                <div className="cfm-input-group">
-                  <label>Fecha y Hora <span className="req">*</span></label>
-                  <input name="deliveryDate" type="datetime-local" value={formData.deliveryDate} onChange={handleChange} required disabled={isProcessing} />
-                </div>
-                <div className="cfm-input-group">
-                  <label>Método de Entrega <span className="req">*</span></label>
-                  <select name="deliveryType" value={formData.deliveryType} onChange={handleChange} disabled={isProcessing}>
+                  <Select name="deliveryType" value={formData.deliveryType} onChange={handleChange} disabled={isProcessing}>
                     <option value="domicilio">🛵 Delivery a Domicilio</option>
                     <optgroup label="🏪 Recoger en Local (Sedes)">
                       {activeLocations.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </optgroup>
-                  </select>
-                </div>
-                {formData.deliveryType === 'domicilio' && (
-                  <div className="cfm-input-group">
-                    <label>Dirección Exacta <span className="req">*</span></label>
-                    <input name="deliveryAddress" value={formData.deliveryAddress} onChange={handleChange} disabled={isProcessing} required placeholder="Av. Principal 123" />
-                  </div>
-                )}
+                  </Select>
+                </FormField>
+                {formData.deliveryType === 'domicilio' && <FormField label={<>Dirección Exacta <span className="text-danger">*</span></>}>
+
+                    <Input name="deliveryAddress" value={formData.deliveryAddress} onChange={handleChange} disabled={isProcessing} required placeholder="Av. Principal 123" />
+                  </FormField>}
               </div>
             </div>
 
-            <div className="cfm-section">
-              <h4 className="cfm-section-title">3. Detalles del Pedido</h4>
-              <div className="cfm-grid-product">
-                <div className="cfm-input-group cfm-text-details">
-                  <label>Descripción Exacta <span className="req">*</span></label>
-                  <textarea name="details" value={formData.details} onChange={handleChange} required disabled={isProcessing} placeholder="Ej: Torta de chocolate, 2 pisos, relleno de fresa..." />
-                </div>
+            <div className="grid min-w-0 gap-4 rounded-xl border border-line p-4">
+              <h4 className="text-sm font-semibold">3. Detalles del Pedido</h4>
+              <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                <FormField label={<>Descripción Exacta <span className="text-danger">*</span></>}>
 
-                <div className="cfm-input-group cfm-photos-gallery-group">
-                  <label>Fotos de Referencia (Max 4)</label>
-                  <div className="cfm-gallery-container">
-                    {images.map((_image, idx) => (
-                      <div key={idx} className="cfm-gallery-item">
-                        {displayedImages[idx] ? <img src={displayedImages[idx]} alt={`Ref ${idx}`} className="cfm-gallery-img" /> : <span>Cargando imagen...</span>}
-                        <button type="button" onClick={() => handleRemoveImage(idx)} disabled={isProcessing} className="cfm-btn-remove-img" title="Eliminar foto">✖</button>
-                      </div>
-                    ))}
-                    {images.length < 4 && (
-                      <div className="cfm-gallery-add" title="Subir foto">
-                        <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handleImageChange} disabled={isProcessing} className="cfm-gallery-input" />
-                        <span className="cfm-gallery-add-icon">➕</span>
-                      </div>
-                    )}
+                  <Textarea name="details" value={formData.details} onChange={handleChange} required disabled={isProcessing} placeholder="Ej: Torta de chocolate, 2 pisos, relleno de fresa..." />
+                </FormField>
+
+                <div className="grid min-w-0 gap-1.5">
+                  <p className="text-sm leading-relaxed text-muted">Fotos de referencia (máximo {MAX_CONTRACT_IMAGES}) · {images.length}/{MAX_CONTRACT_IMAGES}</p>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {images.map((_image, idx) => <div key={idx} className="relative aspect-square overflow-hidden rounded-xl border border-line bg-subtle">
+                        {displayedImages[idx] ? <img src={displayedImages[idx]} alt={`Ref ${idx}`} className="size-full object-cover" /> : <span>Cargando imagen...</span>}
+                        <Button type="button" onClick={() => handleRemoveImage(idx)} disabled={isProcessing} className="absolute right-1 top-1 z-10 size-8 min-h-8 rounded-full p-1" title="Eliminar foto" variant="danger" aria-label="Eliminar foto">✖</Button>
+                      </div>)}
+                    {images.length < MAX_CONTRACT_IMAGES && <div className="relative flex aspect-square items-center justify-center rounded-xl border border-dashed border-primary/40 bg-primary-soft focus-within:ring-2 focus-within:ring-focus" title="Subir foto">
+                        <Input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handleImageChange} disabled={isProcessing} className="absolute inset-0 size-full cursor-pointer opacity-0" aria-label="Seleccionar imagen de referencia" />
+                        <span className="pointer-events-none text-2xl text-primary">➕</span>
+                      </div>}
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="cfm-section cfm-section-finance">
-              <h4 className="cfm-section-title">
-                4. Finanzas y Cobro
-                {isEditing && <span className="cfm-edit-warning"> (Puedes ajustar los precios. Los abonos previos se mantienen)</span>}
-              </h4>
+            <ContractFinanceFields formData={formData} isProcessing={isProcessing} isEditing={isEditing} totals={totals} handleChange={handleChange} />
 
-              <div className="cfm-finance-grid">
-                <div className="cfm-cost-inputs">
-                  <div className="cfm-input-group">
-                    <label>Costo del Producto (S/) <span className="req">*</span></label>
-                    <input name="subtotal" type="number" min="0" step="0.50" value={formData.subtotal} onChange={handleChange} disabled={isProcessing} required placeholder="0.00" />
-                  </div>
-                  <div className="cfm-input-group">
-                    <label>Costo Delivery (S/)</label>
-                    <input name="deliveryCost" type="number" min="0" step="0.50" value={formData.deliveryCost} onChange={handleChange} disabled={isProcessing || formData.deliveryType !== 'domicilio'} placeholder="0.00" />
-                  </div>
-                </div>
-
-                <div className="cfm-total-display">
-                  <span>Total a Pagar</span>
-                  <strong>S/ {totals.total.toFixed(2)}</strong>
-                </div>
-
-                {!isEditing && (
-                  <div className="cfm-advance-inputs">
-                    <div className="cfm-input-group">
-                      <label>1ra Cuota (S/) <span style={{fontSize: '0.75rem', opacity: 0.7, fontWeight: 'normal'}}>(Opcional)</span></label>
-                      <input name="advancePayment" type="number" min="0" max={totals.total} step="0.50" value={formData.advancePayment} onChange={handleChange} disabled={isProcessing || totals.total === 0} placeholder="0.00" />
-                    </div>
-                    <div className="cfm-input-group">
-                      <label>Método de Pago</label>
-                      <select name="paymentMethod" value={formData.paymentMethod} onChange={handleChange} disabled={isProcessing || !formData.advancePayment || Number(formData.advancePayment) === 0}>
-                        <option value="efectivo">💵 Efectivo (A Caja)</option>
-                        <option value="yape">📱 Yape/Plin</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {isEditing ? (
-                <div className={`cfm-debt-summary ${totals.balance > 0 ? 'has-debt' : 'fully-paid'}`}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                    <span>Total Abonado hasta ahora:</span>
-                    <strong>S/ {totals.totalPaid.toFixed(2)}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: totals.balance > 0 ? '#b45309' : '#15803d' }}>
-                    <span>Nuevo saldo pendiente:</span>
-                    <strong>S/ {totals.balance.toFixed(2)}</strong>
-                  </div>
-                </div>
-              ) : (
-                totals.total > 0 && (
-                  <div className={`cfm-debt-summary ${totals.balance > 0 ? 'has-debt' : 'fully-paid'}`}>
-                    {totals.balance > 0
-                      ? `El cliente dejará un saldo pendiente de S/ ${totals.balance.toFixed(2)}`
-                      : 'El pedido quedará totalmente pagado ✅'}
-                  </div>
-                )
-              )}
-            </div>
-
-            <div className="cfm-footer">
-              <button type="button" onClick={onClose} disabled={isProcessing} className="cfm-btn-cancel">Cancelar</button>
-              <button type="submit" disabled={isProcessing} className="cfm-btn-submit">
-                {isProcessing ? 'Procesando...' : (isEditing ? 'Actualizar Pedido' : 'Guardar y Registrar Pedido')}
-              </button>
-            </div>
+            <DialogFooter>
+              <Button type="button" onClick={onClose} disabled={isProcessing} variant="secondary">Cancelar</Button>
+              <Button type="submit" disabled={isProcessing} variant="primary">
+                {isProcessing ? 'Procesando...' : isEditing ? 'Actualizar Pedido' : 'Guardar y Registrar Pedido'}
+              </Button>
+            </DialogFooter>
 
           </form>
-        </div>
-      </div>
+        </Dialog>
 
-      {showAgendaModal && (
-        <div className="modal-overlay fade-in" style={{ zIndex: 10000 }}>
-          <div className="card modal-content" style={{ maxWidth: '400px', padding: 0, overflow: 'hidden', borderRadius: '12px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
-
-            <div style={{ padding: '15px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      {showAgendaModal && <Dialog title={<>
                 📖 Seleccionar Cliente
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowAgendaModal(false)}
-                style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#64748b' }}
-              >
-                ✖
-              </button>
-            </div>
+              </>} busy={isProcessing} className="max-w-lg" onClose={() => setShowAgendaModal(false)}>
 
-            <div style={{ padding: '15px' }}>
-              <div style={{ position: 'relative', marginBottom: '15px' }}>
-                <span style={{ position: 'absolute', left: '10px', top: '10px', opacity: 0.5 }}>🔍</span>
-                <input
-                  type="text"
-                  placeholder="Buscar nombre o celular..."
-                  value={agendaSearch}
-                  onChange={e => setAgendaSearch(e.target.value)}
-                  style={{ width: '100%', padding: '10px 10px 10px 35px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.95rem' }}
-                  autoFocus
-                />
-              </div>
+            <div className="p-4">
+              <SearchField type="text" placeholder="Buscar nombre o celular..." value={agendaSearch} onChange={e => setAgendaSearch(e.target.value)} autoFocus />
 
-              <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '5px' }}>
-                {filteredAgenda.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '20px', color: '#64748b', fontSize: '0.9rem', background: '#f1f5f9', borderRadius: '8px' }}>
+              <div className="max-h-75 overflow-y-auto flex flex-col gap-2 pr-1">
+                {filteredAgenda.length === 0 ? <div className="text-center p-5 text-muted text-sm bg-subtle rounded-xl">
                     No se encontraron clientes.
-                  </div>
-                ) : (
-                  filteredAgenda.map(c => (
-                    <div
-                      key={c.id}
-                      onClick={() => handleSelectContact(c)}
-                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s ease', background: 'white' }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.background = '#eff6ff'; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.background = 'white'; }}
-                    >
+                  </div> : filteredAgenda.map(c => <div key={c.id} className="flex justify-between items-center p-3 border border-line rounded-xl cursor-pointer motion-reduce:transition-none bg-panel transition-colors hover:border-primary/40 hover:bg-primary-soft/40">
                       <div>
-                        <strong style={{ display: 'block', color: '#0f172a', fontSize: '0.95rem' }}>{c.name}</strong>
-                        <span style={{ fontSize: '0.8rem', color: '#64748b' }}>📱 {c.phone || 'Sin número'}</span>
+                        <strong className="block text-ink text-base">{c.name}</strong>
+                        <span className="text-sm text-muted">📱 {c.phone || 'Sin número'}</span>
                       </div>
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        style={{ padding: '6px 12px', fontSize: '0.8rem', background: '#10b981', border: 'none' }}
-                      >
+                      <Button type="button" onClick={() => handleSelectContact(c)} className="py-1.5 px-3 text-sm border-0" variant="success">
                         Elegir
-                      </button>
-                    </div>
-                  ))
-                )}
+                      </Button>
+                    </div>)}
               </div>
             </div>
 
-          </div>
-        </div>
-      )}
-    </>
-  );
+          </Dialog>}
+    </>;
 };
-
 export default ContractFormModal;

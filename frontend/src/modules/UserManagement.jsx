@@ -1,101 +1,121 @@
+import { useConfirmDialog } from '../shared/ui/useConfirmDialog';
+import { Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
 import React, { memo } from 'react';
 import { useUserManagement } from '../features/users/hooks/useUserManagement';
-const UserCard = memo(({ u, user, branches, isLoading, openEditForm, toggleStatus, cancelInvite }) => {
+const UserCard = memo(({
+  u,
+  user,
+  branches,
+  isLoading,
+  openEditForm,
+  toggleStatus,
+  cancelInvite
+}) => {
   const isInactive = u.status === 'inactivo';
   const isDueño = u.role === 'dueño';
   const isSuperAdmin = u.role === 'superadmin';
   const isInvite = u.isInvite;
+  const branchName = isDueño || isSuperAdmin ? '🌐 Acceso Global' : branches.find(b => b.id === u.branchId)?.name || (isInvite ? '⏳ Esperando registro...' : '⚠️ Sin sede asignada');
+  return <Card className={cn(`flex min-w-0 flex-wrap items-center justify-between gap-4       animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65" : ''} `, isInvite ? "border-l-warning" : "")} as="div">
 
-  const branchName = (isDueño || isSuperAdmin)
-    ? '🌐 Acceso Global'
-    : (branches.find(b => b.id === u.branchId)?.name || (isInvite ? '⏳ Esperando registro...' : '⚠️ Sin sede asignada'));
-
-  return (
-    <div className={`user-card fade-in ${isInactive ? 'inactive' : ''}`} style={isInvite ? { borderLeftColor: '#f59e0b' } : {}}>
-
-      <div className="user-card-content">
-        <div className={`user-avatar ${isDueño || isSuperAdmin ? 'avatar-admin' : 'avatar-staff'}`} style={isInvite ? { background: '#fef3c7', borderColor: '#fde68a' } : {}}>
-          {isInvite ? '✉️' : (isDueño || isSuperAdmin ? '👑' : '👨‍🍳')}
+      <div className="flex min-w-0 flex-[1_1_15rem] items-center gap-3">
+        <div className={cn(`flex size-12 shrink-0 items-center justify-center rounded-xl text-2xl ${isDueño || isSuperAdmin ? "bg-warning-soft" : "bg-subtle"} `, isInvite ? "bg-warning-soft border-warning-soft" : "")}>
+          {isInvite ? '✉️' : isDueño || isSuperAdmin ? '👑' : '👨‍🍳'}
         </div>
 
-        <div className="user-info">
-          <div className="user-name-row">
-            <span className={`user-name ${isInactive ? 'text-strikethrough text-muted' : 'text-main'}`}>
-              {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : (isInvite ? 'Invitación Pendiente' : 'Usuario')}
+        <div className="grid min-w-0 flex-1 gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn(`break-words font-semibold ${isInactive ? "line-through text-muted" : "text-ink"} `)}>
+              {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : isInvite ? 'Invitación Pendiente' : 'Usuario'}
             </span>
-            <span className={`user-badge ${isDueño || isSuperAdmin ? 'badge-admin' : 'badge-staff'}`} style={isInvite ? { background: '#fef3c7', color: '#92400e' } : {}}>
+            <Badge className={cn(` ${isDueño || isSuperAdmin ? "bg-warning-soft text-warning" : "bg-primary-soft text-primary"} `, isInvite ? "bg-warning-soft text-warning" : "")}>
               {isInvite ? 'Invitación' : u.role}
-            </span>
+            </Badge>
           </div>
 
-          <span className="employee-card-email" title={u.email}>
+          <span className="break-all text-xs text-muted" title={u.email}>
             {u.email}
           </span>
 
-          <div className="user-shift" style={{ marginTop: '5px', color: (isDueño || isSuperAdmin) ? 'var(--primary)' : 'var(--text-muted)', fontWeight: (isDueño || isSuperAdmin) ? '600' : 'normal' }}>
-            <span className="shift-icon">{(isDueño || isSuperAdmin) ? '🌍' : '🏢'}</span>
-            <span className="shift-text" style={{ color: 'inherit' }}>{branchName}</span>
+          <div className={cn("flex flex-wrap items-center gap-1 text-xs text-primary mt-1", isDueño || isSuperAdmin ? "text-primary" : "text-muted", isDueño || isSuperAdmin ? "font-semibold" : "font-normal")}>
+            <span className="text-sm">{isDueño || isSuperAdmin ? '🌍' : '🏢'}</span>
+            <span className="font-medium text-inherit">{branchName}</span>
           </div>
 
-          {!isInvite && u.role === 'cajero' && u.shiftStart && u.shiftEnd && (
-            <div className="user-shift">
-              <span className="shift-icon">🕒</span>
-              <span className="shift-text" style={{ color: 'var(--text-muted)' }}>Turno: {u.shiftStart} - {u.shiftEnd}</span>
-            </div>
-          )}
+          {!isInvite && u.role === 'cajero' && u.shiftStart && u.shiftEnd && <div className="flex flex-wrap items-center gap-1 text-xs text-primary">
+              <span className="text-sm">🕒</span>
+              <span className="font-medium text-muted">Turno: {u.shiftStart} - {u.shiftEnd}</span>
+            </div>}
         </div>
       </div>
 
-      <div className="user-actions">
-        {isInvite ? (
-          <button
-            onClick={() => cancelInvite(u.id)}
-            disabled={isLoading}
-            className="btn-user-action"
-            style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' }}
-          >
+      <div className="flex w-full flex-wrap items-center gap-2 border-t border-line pt-3 sm:w-auto sm:border-0 sm:pt-0">
+        {isInvite ? <Button onClick={() => cancelInvite(u.id)} disabled={isLoading} className="flex-1 sm:flex-none bg-danger-soft text-danger border border-danger-soft" type="button" variant="secondary">
             <span>❌</span> Cancelar invitación
-          </button>
-        ) : (
-          <>
-            <button
-              onClick={() => openEditForm(u)}
-              disabled={isLoading || isInactive}
-              className="btn-user-action btn-edit-user"
-            >
+          </Button> : <>
+            <Button onClick={() => openEditForm(u)} disabled={isLoading || isInactive} className="flex-1 sm:flex-none" type="button" variant="secondary">
               <span>✏️</span> Editar
-            </button>
+            </Button>
 
-            {u.email !== user.email && !isSuperAdmin && (
-              <button
-                onClick={() => toggleStatus(u.id, u.status || 'activo')}
-                disabled={isLoading}
-                className={`btn-user-action ${isInactive ? 'btn-toggle-on' : 'btn-toggle-off'}`}
-              >
+            {u.email !== user.email && !isSuperAdmin && <Button onClick={() => toggleStatus(u.id, u.status || 'activo')} disabled={isLoading} className="flex-1 sm:flex-none" type="button" variant={isInactive ? "success" : "danger"}>
                 <span>{isInactive ? '🔓' : '🔒'}</span> {isInactive ? 'Habilitar' : 'Deshabilitar'}
-              </button>
-            )}
-          </>
-        )}
+              </Button>}
+          </>}
       </div>
 
-    </div>
-  );
+    </Card>;
 });
 
 // Componente Principal
-function UserManagement({ user }) {
+function UserManagement({
+  user
+}) {
   const {
-    isLoading, searchTerm, setSearchTerm, showFormModal, setShowFormModal, showInactive, setShowInactive,
-    firstName, setFirstName, lastName, setLastName, emailPrefix, setEmailPrefix, role, setRole,
-    shiftStart, setShiftStart, shiftEnd, setShiftEnd, editing, filteredUsers,
-    branchId, setBranchId, branches,
-    openAddForm, openEditForm, handleSave, toggleStatus, cancelInvite
-  } = useUserManagement(user);
+    confirm,
+    confirmation
+  } = useConfirmDialog();
+  const {
+    isLoading,
+    searchTerm,
+    setSearchTerm,
+    showFormModal,
+    setShowFormModal,
+    showInactive,
+    setShowInactive,
+    firstName,
+    setFirstName,
+    lastName,
+    setLastName,
+    emailPrefix,
+    setEmailPrefix,
+    role,
+    setRole,
+    shiftStart,
+    setShiftStart,
+    shiftEnd,
+    setShiftEnd,
+    editing,
+    filteredUsers,
+    branchId,
+    setBranchId,
+    branches,
+    openAddForm,
+    openEditForm,
+    handleSave,
+    toggleStatus,
+    cancelInvite
+  } = useUserManagement(user, {
+    confirm
+  });
   const sortedUsers = [...filteredUsers].sort((a, b) => {
-    const roleRank = { 'dueño': 1, 'superadmin': 2, 'invite': 3, 'cajero': 4 };
-    const rankA = a.isInvite ? roleRank['invite'] : (roleRank[a.role] || 5);
-    const rankB = b.isInvite ? roleRank['invite'] : (roleRank[b.role] || 5);
+    const roleRank = {
+      'dueño': 1,
+      'superadmin': 2,
+      'invite': 3,
+      'cajero': 4
+    };
+    const rankA = a.isInvite ? roleRank['invite'] : roleRank[a.role] || 5;
+    const rankB = b.isInvite ? roleRank['invite'] : roleRank[b.role] || 5;
 
     // Si tienen diferente rol, se ordenan por rango
     if (rankA !== rankB) return rankA - rankB;
@@ -105,163 +125,106 @@ function UserManagement({ user }) {
     const nameB = (b.firstName || '').toLowerCase();
     return nameA.localeCompare(nameB);
   });
+  return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
+      {confirmation}
 
-  return (
-    <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '900px' }}>
-
-      <header className="module-header">
-        <h2 className="module-title">
-          <span className="module-title-icon">👥</span>
-          <span className="module-title-text">Personal</span>
-        </h2>
-        <button onClick={openAddForm} className="btn-primary btn-add-smart">
+      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
+          <span className="text-2xl">👥</span>
+          <span className="break-words">Personal</span>
+        </h1>
+        <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
           ➕ Nuevo Empleado
-        </button>
-      </header>
+        </Button>
+      </PageHeader>
 
-      <div className="filter-bar-container">
-        <div className="search-container">
-          <span className="search-icon">🔍</span>
-          <input
-            type="text"
-            className="search-input"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar por nombre o correo..."
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="btn-clear-search">✖</button>
-          )}
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre o correo..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
-        <label className="toggle-label" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-          <input
-            type="checkbox"
-            className="toggle-checkbox"
-            checked={showInactive}
-            onChange={(e) => setShowInactive(e.target.checked)}
-          />
+        <label className="min-h-11 rounded-xl border border-line bg-panel px-3 font-medium cursor-pointer flex items-center gap-2 text-sm text-muted">
+          <Input type="checkbox" className="shrink-0" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Mostrar bloqueados
         </label>
       </div>
 
-      <h3 className="inventory-title">
+      <h3 className="text-sm font-semibold text-muted">
         Personal ({sortedUsers.length})
       </h3>
 
-      <div className="user-list-container">
-        {sortedUsers.length === 0 ? (
-          <div className="card fade-in empty-state-dashed">
-            <span className="empty-icon-lg">👤</span>
-            <p className="empty-text-muted">{searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'No hay otros usuarios registrados.'}</p>
-          </div>
-        ) : (
-          sortedUsers.map(u => (
-            <UserCard
-              key={u.id}
-              u={u}
-              user={user}
-              branches={branches}
-              isLoading={isLoading}
-              openEditForm={openEditForm}
-              toggleStatus={toggleStatus}
-              cancelInvite={cancelInvite}
-            />
-          ))
-        )}
+      <div className="grid gap-3">
+        {sortedUsers.length === 0 ? <EmptyState title="Sin registros" description={<>{searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'No hay otros usuarios registrados.'}</>} /> : sortedUsers.map(u => <UserCard key={u.id} u={u} user={user} branches={branches} isLoading={isLoading} openEditForm={openEditForm} toggleStatus={toggleStatus} cancelInvite={cancelInvite} />)}
       </div>
 
       {/* MODAL FORMULARIO */}
-      {showFormModal && (
-        <div className="modal-overlay fade-in">
-          <div className="card modal-content" style={{ maxWidth: '500px' }}>
-            <h3 className="modal-header-title">
+      {showFormModal && <Dialog title={<>
               {editing ? '✏️ Editar Perfil' : '➕ Nuevo Miembro'}
-            </h3>
+            </>} busy={isLoading} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
-            {!editing && (
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
+            {!editing && <p className="text-sm text-muted mb-5">
                 Se enviará una invitación. El empleado debe iniciar sesión con Google usando este correo.
-              </p>
-            )}
+              </p>}
 
-            <form onSubmit={handleSave} className="smart-form">
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">NOMBRES</label>
-                  <input autoFocus value={firstName} onChange={e => setFirstName(e.target.value)} required disabled={isLoading} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">APELLIDOS</label>
-                  <input value={lastName} onChange={e => setLastName(e.target.value)} required disabled={isLoading} />
-                </div>
+            <form onSubmit={handleSave} className="grid gap-4">
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <FormField label={<>NOMBRES</>}>
+
+                  <Input autoFocus value={firstName} onChange={e => setFirstName(e.target.value)} required disabled={isLoading} />
+                </FormField>
+                <FormField label={<>APELLIDOS</>}>
+
+                  <Input value={lastName} onChange={e => setLastName(e.target.value)} required disabled={isLoading} />
+                </FormField>
               </div>
 
-              <div className="form-group">
-                <label className="form-label">CUENTA DE GMAIL DEL EMPLEADO</label>
-                <div style={{ display: 'flex', alignItems: 'stretch' }}>
-                  <input type="text" value={emailPrefix} onChange={e => setEmailPrefix(e.target.value)} placeholder="ej: juan.perez" required disabled={isLoading || editing} style={{ background: editing ? 'var(--bg-app)' : 'white', flex: 1, borderTopRightRadius: '0', borderBottomRightRadius: '0', borderRight: 'none' }} />
-                  <div style={{ background: 'var(--bg-app)', color: 'var(--text-muted)', padding: '0 15px', display: 'flex', alignItems: 'center', fontWeight: '600', borderTopRightRadius: '8px', borderBottomRightRadius: '8px', border: '1px solid var(--border)' }}>
+              <div className="grid min-w-0 gap-1.5">
+                <label className="text-sm font-medium text-muted">CUENTA DE GMAIL DEL EMPLEADO</label>
+                <div className="flex items-stretch">
+                  <Input type="text" value={emailPrefix} onChange={e => setEmailPrefix(e.target.value)} placeholder="ej: juan.perez" required disabled={isLoading || editing} aria-label="ej: juan.perez" className={cn("min-w-0 flex-1 rounded-tr-none rounded-br-none border-r-0", editing ? "bg-subtle" : "bg-panel")} />
+                  <div className="bg-subtle text-muted py-0 px-4 flex items-center font-semibold rounded-tr-lg rounded-br-lg border border-line">
                     @gmail.com
                   </div>
                 </div>
               </div>
 
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">NIVEL DE ACCESO</label>
-                  <select value={role} onChange={e => setRole(e.target.value)} disabled={isLoading}>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <FormField label={<>NIVEL DE ACCESO</>}>
+
+                  <Select value={role} onChange={e => setRole(e.target.value)} disabled={isLoading}>
                     <option value="cajero">Cajero (Local)</option>
                     <option value="dueño">Administrador (Global)</option>
-                  </select>
-                </div>
+                  </Select>
+                </FormField>
 
-                {role === 'cajero' && (
-                  <div className="form-group fade-in">
-                    <label className="form-label" style={{ color: 'var(--primary)' }}>🏢 ASIGNAR A SEDE</label>
-                    <select
-                      value={branchId}
-                      onChange={e => setBranchId(e.target.value)}
-                      required
-                      disabled={isLoading}
-                      style={{ border: '2px solid var(--primary)' }}
-                    >
+                {role === 'cajero' && <FormField className="grid min-w-0 gap-1.5 animate-enter motion-reduce:animate-none" label={<>🏢 ASIGNAR A SEDE</>}>
+
+                    <Select value={branchId} onChange={e => setBranchId(e.target.value)} required disabled={isLoading} className="border-2 border-primary">
                       <option value="">-- Seleccionar Sede --</option>
-                      {branches.map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                      {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </Select>
+                  </FormField>}
               </div>
 
-              {role === 'cajero' && (
-                <div style={{ background: 'var(--bg-app)', padding: '15px', borderRadius: '8px', border: '1px dashed var(--border)' }}>
-                  <label className="form-label" style={{ color: 'var(--text-main)', marginBottom: '10px' }}>⏰ HORARIO DE TURNO</label>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">ENTRADA</label>
-                      <input type="time" value={shiftStart} onChange={e => setShiftStart(e.target.value)} required disabled={isLoading} className="input-highlight" />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">SALIDA</label>
-                      <input type="time" value={shiftEnd} onChange={e => setShiftEnd(e.target.value)} required disabled={isLoading} className="input-highlight" />
-                    </div>
-                  </div>
-                </div>
-              )}
+              {role === 'cajero' && <div className="bg-subtle p-4 rounded-xl border border-dashed border-line">
+                  <label className="text-sm font-medium text-ink mb-2.5">⏰ HORARIO DE TURNO</label>
+                  <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                    <FormField label={<>ENTRADA</>}>
 
-              <div className="modal-actions-footer">
-                <button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} className="btn-cancel">Cancelar</button>
-                <button type="submit" className="btn-primary flex-1" disabled={isLoading}>{isLoading ? 'Guardando...' : (editing ? 'Guardar Cambios' : 'Enviar Invitación')}</button>
-              </div>
+                      <Input type="time" value={shiftStart} onChange={e => setShiftStart(e.target.value)} required disabled={isLoading} className="font-bold text-primary" />
+                    </FormField>
+                    <FormField label={<>SALIDA</>}>
+
+                      <Input type="time" value={shiftEnd} onChange={e => setShiftEnd(e.target.value)} required disabled={isLoading} className="font-bold text-primary" />
+                    </FormField>
+                  </div>
+                </div>}
+
+              <DialogFooter>
+                <Button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} variant="secondary">Cancelar</Button>
+                <Button type="submit" className="flex-1" disabled={isLoading} variant="primary">{isLoading ? 'Guardando...' : editing ? 'Guardar Cambios' : 'Enviar Invitación'}</Button>
+              </DialogFooter>
             </form>
-          </div>
-        </div>
-      )}
+          </Dialog>}
 
-    </div>
-  );
+    </div>;
 }
-
 export default UserManagement;

@@ -1,153 +1,123 @@
+import { useConfirmDialog } from '../shared/ui/useConfirmDialog';
+import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Badge, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
 // src/modules/agenda/AgendaManager.jsx
 import React, { memo } from 'react';
 import { useAgenda } from '../features/customers/hooks/useAgenda';
-
-const ContactCard = memo(({ c, openEditForm, handleDelete, isLoading }) => {
-  return (
-    <div className="product-list-card fade-in" style={{ borderLeft: '5px solid #3b82f6' }}>
+const ContactCard = memo(({
+  c,
+  openEditForm,
+  handleDelete,
+  isLoading
+}) => {
+  return <Card className="grid min-w-0 grid-cols-[3rem_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto] animate-enter motion-reduce:animate-none border-l-4 border-l-primary" as="div">
 
       {/* 1. ICONO (Usamos la inicial del nombre) */}
-      <div className="product-image-box" style={{ background: '#eff6ff', color: '#3b82f6', fontWeight: 'bold' }}>
-        <span style={{ fontSize: '1.6rem' }}>{c.name.charAt(0).toUpperCase()}</span>
+      <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line [&>img]:size-full [&>img]:object-cover sm:size-14 bg-primary-soft text-primary font-bold">
+        <span className="text-2xl">{c.name.charAt(0).toUpperCase()}</span>
       </div>
 
       {/* 2. INFO (Nombre y Teléfono) */}
-      <div className="product-info-col">
-        <h3 className="product-title-text">{c.name}</h3>
-        <div className="product-badges-row">
-          <span className="badge-stock" style={{ background: '#f1f5f9', color: '#475569' }}>
+      <div className="grid min-w-0 gap-1.5">
+        <h3 className="break-words font-semibold">{c.name}</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className="bg-subtle text-muted">
             📱 {c.phone || 'Sin número'}
-          </span>
+          </Badge>
         </div>
       </div>
 
       {/* 3. ACCIÓN (Botón Editar y Eliminar) */}
-      <div className="product-action-col" style={{ flexDirection: 'row', gap: '5px' }}>
-        <button
-          onClick={() => openEditForm(c)}
-          disabled={isLoading}
-          className="btn-icon"
-          title="Editar"
-          style={{ background: 'var(--bg-app)', minHeight: '34px', minWidth: '34px' }}
-        >✏️</button>
-        <button
-          onClick={() => handleDelete(c.id)}
-          disabled={isLoading}
-          className="btn-icon"
-          title="Eliminar"
-          style={{ background: '#fee2e2', color: '#ef4444', minHeight: '34px', minWidth: '34px' }}
-        >🗑️</button>
+      <div className="col-span-2 flex flex-wrap items-center justify-between border-t border-line pt-3 sm:col-span-1 sm:border-0 sm:pt-0 flex-row gap-1">
+        <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-subtle min-h-8.5 min-w-8.5" title="Editar" type="button" variant="ghost" aria-label="Editar">✏️</Button>
+        <Button onClick={() => handleDelete(c.id)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-danger-soft text-danger min-h-8.5 min-w-8.5" title="Eliminar" type="button" variant="ghost" aria-label="Eliminar">🗑️</Button>
       </div>
 
-    </div>
-  );
+    </Card>;
 });
-
-function AgendaManager({ user }) {
+function AgendaManager({
+  user
+}) {
   const {
-    isLoading, error, retry, isStale, searchTerm, setSearchTerm, showFormModal, setShowFormModal,
-    name, setName, phone, setPhone, editing,
-    filteredContacts, openAddForm, openEditForm, handleSave, handleDelete
-  } = useAgenda(user);
-
-  if (isLoading && filteredContacts.length === 0) {
-    return (
-      <div className="module-loader fade-in">
-        <div className="spinner"></div>
-        <p className="loader-text">Abriendo Agenda...</p>
-      </div>
-    );
+    confirm,
+    confirmation
+  } = useConfirmDialog();
+  const {
+    isLoading, error, retry, isStale,
+    searchTerm,
+    setSearchTerm,
+    showFormModal,
+    setShowFormModal,
+    name,
+    setName,
+    phone,
+    setPhone,
+    editing,
+    filteredContacts,
+    openAddForm,
+    openEditForm,
+    handleSave,
+    handleDelete
+  } = useAgenda(user, {
+    confirm
+  });
+  if (isLoading && filteredContacts.length === 0 && !showFormModal) {
+    return <LoadingState>Abriendo Agenda...</LoadingState>;
   }
+  return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
+      {confirmation}
+      {error && <p role="alert" className="text-danger">No se pudo leer la agenda; no se confirma que esté vacía. <Button onClick={retry} variant="secondary">Reintentar lectura</Button></p>}
+      {isStale && <p role="status" className="text-sm text-muted">Contactos en caché; pendiente de validar con el servidor.</p>}
 
-  return (
-    <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '900px' }}>
-
-      {error && <p role="alert">No se pudo leer la agenda; no se confirma que esté vacía. <button onClick={retry}>Reintentar lectura</button></p>}
-      {isStale && <p role="status">Contactos en caché; pendiente de validar con el servidor.</p>}
-      <header className="module-header">
-        <h2 className="module-title">
-          <span className="module-title-icon">📖</span>
-          <span className="module-title-text">Agenda VIP</span>
-        </h2>
-        <button onClick={openAddForm} className="btn-primary btn-add-smart" style={{ background: '#3b82f6' }}>
+      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
+          <span className="text-2xl">📖</span>
+          <span className="break-words">Agenda VIP</span>
+        </h1>
+        <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
           ➕ Nuevo Contacto
-        </button>
-      </header>
+        </Button>
+      </PageHeader>
 
-      <div className="filter-bar-container">
-        <div className="search-container">
-          <span className="search-icon">🔍</span>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar contacto por nombre o celular..."
-            className="search-input"
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="btn-clear-search">✖</button>
-          )}
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar contacto por nombre o celular..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
       </div>
 
-      <h3 className="inventory-title">
+      <h3 className="text-sm font-semibold text-muted">
         Lista de Contactos Frecuentes ({filteredContacts.length})
       </h3>
 
-      <div className="product-list-container">
-        {filteredContacts.length === 0 ? (
-          <div className="card fade-in empty-state">
-            <span className="empty-icon-lg">👥</span>
-            <p className="empty-text">
+      <div className="grid gap-3">
+        {filteredContacts.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `Nadie coincide con "${searchTerm}"` : 'Aún no has registrado clientes VIP.'}
-            </p>
-          </div>
-        ) : (
-          filteredContacts.map(c => (
-            <ContactCard
-              key={c.id}
-              c={c}
-              openEditForm={openEditForm}
-              handleDelete={handleDelete}
-              isLoading={isLoading}
-            />
-          ))
-        )}
+            </>} /> : filteredContacts.map(c => <ContactCard key={c.id} c={c} openEditForm={openEditForm} handleDelete={handleDelete} isLoading={isLoading} />)}
       </div>
 
-      {showFormModal && (
-        <div className="modal-overlay fade-in">
-          <div className="card modal-content" style={{ maxWidth: '400px' }}>
-            <h3 className="modal-header-title">
+      {showFormModal && <Dialog title={<>
               {editing ? '✏️ Editar Contacto' : '➕ Nuevo Contacto'}
-            </h3>
+            </>} busy={isLoading} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
-            <form onSubmit={handleSave} className="smart-form">
-              <div className="form-group">
-                <label className="form-label">NOMBRE DEL CLIENTE</label>
-                <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Maria Lopez" required disabled={isLoading} />
-              </div>
+            <form onSubmit={handleSave} className="grid gap-4">
+              <FormField label={<>NOMBRE DEL CLIENTE</>}>
 
-              <div className="form-group">
-                <label className="form-label">TELÉFONO / WHATSAPP</label>
-                <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Ej: 987 654 321" required disabled={isLoading} />
-              </div>
+                <Input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Maria Lopez" required disabled={isLoading} />
+              </FormField>
 
-              <div className="modal-actions-footer">
-                <button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} className="btn-cancel">
+              <FormField label={<>TELÉFONO / WHATSAPP</>}>
+
+                <Input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Ej: 987 654 321" required disabled={isLoading} />
+              </FormField>
+
+              <DialogFooter>
+                <Button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} variant="secondary">
                   Cancelar
-                </button>
-                <button type="submit" className="btn-primary flex-1" disabled={isLoading} style={{ background: '#3b82f6' }}>
+                </Button>
+                <Button type="submit" className="flex-1" disabled={isLoading} variant="primary">
                   {isLoading ? 'Guardando...' : 'Guardar Contacto'}
-                </button>
-              </div>
+                </Button>
+              </DialogFooter>
             </form>
-          </div>
-        </div>
-      )}
+          </Dialog>}
 
-    </div>
-  );
+    </div>;
 }
-
 export default AgendaManager;

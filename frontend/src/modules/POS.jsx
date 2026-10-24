@@ -1,43 +1,16 @@
-// src/components/POS.jsx
+import { useState, useMemo } from 'react';
+import { LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
+import { checkoutBlockReason } from '../features/sales/domain/checkoutPolicy.js';
 import { getSafeStock } from '../features/sales/domain/cartStock';
-import React, { useState, useMemo, memo } from 'react';
 import { usePOS } from '../features/sales/hooks/usePOS';
 import { useTenantData } from '../features/branches/context/TenantContext';
 import { useCashRegister } from '../features/cash-register/hooks/useCashRegister';
-import { CashRegisterModals } from './CashRegisterModals';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
-import { checkoutBlockReason } from '../features/sales/domain/checkoutPolicy.js';
-
-const POSProductButton = memo(({ p, activeBranchId, globalDisabled, addToCart }) => {
-  const currentStock = getSafeStock(p, activeBranchId);
-  const isAgotado = currentStock <= 0;
-  const isDisabled = isAgotado || globalDisabled;
-
-  return (
-    <button
-      onClick={() => addToCart(p)}
-      disabled={isDisabled}
-      className="product-btn"
-      title={p.name}
-      style={{ opacity: isDisabled ? 0.6 : 1, cursor: isDisabled ? 'not-allowed' : 'pointer' }}
-    >
-      <div className="pos-product-img-wrapper">
-        {p.imageUrl ? (
-          <img src={p.imageUrl} alt={p.name} loading="lazy" />
-        ) : (
-          <span className="pos-product-placeholder">{p.name.charAt(0)}</span>
-        )}
-      </div>
-      <div className="pos-product-details">
-        <span className="pos-product-name">{p.name}</span>
-        <span className="pos-product-price">S/ {Number(p.price).toFixed(2)}</span>
-        <span className={`pos-product-stock-badge ${isAgotado ? 'stock-out' : 'stock-ok'}`}>
-          {isAgotado ? 'AGOTADO' : `📦 ${currentStock} disp.`}
-        </span>
-      </div>
-    </button>
-  );
-});
+import { CashRegisterModals } from './CashRegisterModals';
+import { Alert, Button, Dialog, Drawer, EmptyState, LoadingState, PageHeader } from '../shared/ui';
+import { ProductSearch, CategoryFilters, ProductCard } from './pos/CatalogParts';
+import { PaymentFields, PaymentSelector } from './pos/PaymentParts';
+import { CashStatus, SaleStatus, Ticket } from './pos/TicketParts';
 
 function POS({ user }) {
   const { businessBranches, activeBranchId } = useTenantData();
@@ -59,6 +32,7 @@ function POS({ user }) {
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
+
   const checkoutBlocked = checkoutBlockReason(cart);
 
   // Funciones exclusivas de interfaz para autocompletado
@@ -106,366 +80,49 @@ function POS({ user }) {
 
   const isGlobalDisabled = branchStatus.isReadOnly || (!currentSession && !branchStatus.isReadOnly) || currentSession?.needsForceClose;
 
-  if (isLoading || isLoadingSession) {
-    return (
-      <div className="module-loader fade-in">
-        <div className="spinner"></div>
-        <p className="loader-text">Preparando caja registradora...</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fade-in" style={{ minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
-
-      <header className="pos-header" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0, fontSize: '1.3rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          🛒 Punto de Venta
-        </h2>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-          {currentSession && !branchStatus.isReadOnly && (
-            <button
-              onClick={() => setShowCloseModal(true)}
-              title={currentSession.needsForceClose ? "Debes cerrar el turno del cajero anterior" : "Cerrar Turno"}
-              className="btn-close-register"
-              style={currentSession.needsForceClose ? { background: '#ef4444', color: 'white', border: 'none', fontWeight: 'bold' } : {}}
-            >
-              {currentSession.needsForceClose ? '⚠️ Forzar Cierre de caja' : '🔒 Cerrar caja'}
-            </button>
-          )}
-
-          <div className="user-badge" style={{
-            fontSize: '0.75rem',
-            background: branchStatus.isReadOnly || !currentSession ? '#ef4444' : (currentSession.needsForceClose ? '#f59e0b' : '#4ade80'),
-            color: 'white',
-            padding: '5px 12px',
-            whiteSpace: 'nowrap',
-            fontWeight: 'bold',
-            borderRadius: '20px'
-          }}>
-            {branchStatus.isReadOnly
-              ? 'Modo Lectura'
-              : !currentSession
-                ? 'Caja Cerrada'
-                : currentSession.needsForceClose
-                  ? 'Turno Pendiente'
-                  : 'Caja Abierta'}
-          </div>
+  if (isLoading || isLoadingSession) return <LoadingState>Preparando caja registradora…</LoadingState>;
+  const selectPayment = method => {
+    setPayment(method);
+    if(method==='mixto') { setSplitEfectivo('');setSplitYape(''); }
+    else setAmountPaid('');
+  };
+  const action = !currentSession&&!branchStatus.isReadOnly
+    ? <Button className="w-full" onClick={()=>setShowOpenModal(true)}><UnlockKeyhole />Abrir caja para vender</Button>
+    : currentSession?.needsForceClose
+      ? <Button variant="danger" className="w-full" onClick={()=>setShowCloseModal(true)} disabled={!currentSession.canForceClose}>{currentSession.canForceClose?'Cerrar turno anterior':'Requiere administrador'}</Button>
+      : <Button className="w-full" size="lg" onClick={handleCheckoutClick} loading={isProcessing} disabled={!!checkoutBlocked||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>{branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':'Cobrar'}</Button>;
+  const ticket = lastSale ? <SaleStatus sale={lastSale} onPrint={printReceipt} onNew={handleNuevaVenta} />
+    : <Ticket cart={cart} total={total} onQty={updateQty} onRemove={removeFromCart} isProcessing={isProcessing} action={action}>
+      <PaymentSelector payment={payment} onSelect={selectPayment} disabled={branchStatus.isReadOnly||isProcessing} />
+      <PaymentFields payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} disabled={branchStatus.isReadOnly||isProcessing} />
+    </Ticket>;
+  return <div className="min-w-0 space-y-5">
+    <PageHeader title="Punto de venta" description="Elige productos y prepara tu ticket." actions={<>
+      <CashStatus readOnly={branchStatus.isReadOnly} session={currentSession} />
+      {currentSession&&!branchStatus.isReadOnly&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={()=>setShowCloseModal(true)}><LockKeyhole />{currentSession.needsForceClose?'Forzar cierre de caja':'Cerrar caja'}</Button>}
+    </>} />
+    {branchStatus.isReadOnly&&<Alert variant="warning" title="Modo lectura">{branchStatus.reason==='global'?'Estás en la vista global. Selecciona una sucursal específica en el menú.':`La sucursal ${branchStatus.name} está inactiva.`}</Alert>}
+    {currentSession?.needsForceClose&&!branchStatus.isReadOnly&&<Alert variant="danger" title="Acción requerida">Hay un turno o reserva offline de otro usuario. {currentSession.canForceClose?'Verifica el conteo para cerrarlo como administrador.':'Solicita el cierre a un administrador.'}</Alert>}
+    <p role="status" className="text-xs leading-relaxed text-muted">Carrito multiproducto disponible. Cobro de más de dos líneas pendiente de protocolo financiero verificado; no se registran tickets parciales.</p>
+    {checkoutBlocked && <Alert variant="warning">{checkoutBlocked}</Alert>}
+    <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
+      <section aria-label="Catálogo de productos" className="min-w-0 space-y-4 pb-20 lg:pb-0">
+        <ProductSearch value={search} onChange={setSearch} />
+        <CategoryFilters categories={activeCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 3xl:grid-cols-5">
+          {displayedProducts.length?displayedProducts.map(product=><ProductCard key={product.id} product={product} stock={getSafeStock(product,activeBranchId)} disabled={isGlobalDisabled||isProcessing} onAdd={addToCart} />):<EmptyState title="No hay productos" description={search?`No se encontraron productos para “${search}”.`:'No hay productos registrados en esta selección.'} />}
         </div>
-      </header>
-
-      {branchStatus.isReadOnly && (
-        <div className="fade-in" style={{ background: '#fee2e2', border: '1px solid #ef4444', color: '#b91c1c', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '500' }}>
-          <span style={{ fontSize: '1.5rem' }}>⚠️</span>
-          <span>
-            <strong>Modo Lectura:</strong> {branchStatus.reason === 'global' ? 'Estás en la Vista Global. Selecciona una sucursal específica en el menú.' : `La sucursal ${branchStatus.name} está inactiva.`}
-          </span>
-        </div>
-      )}
-
-      {currentSession?.needsForceClose && !branchStatus.isReadOnly && (
-        <div className="fade-in" style={{ background: '#fef2f2', border: '1px solid #ef4444', color: '#b91c1c', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '500' }}>
-          <span style={{ fontSize: '1.5rem' }}>🚨</span>
-          <span>
-            <strong>Acción Requerida:</strong> Hay un turno o reserva offline de otro usuario. {currentSession.canForceClose ? 'Verifica el conteo para cerrarlo como administrador.' : 'Solicita el cierre a un administrador.'}
-          </span>
-        </div>
-      )}
-
-      <div className="pos-grid">
-          <section className="products-section">
-          <div className="filter-bar-container">
-            <div className="search-container">
-              <span style={{ fontSize: '1.2rem', opacity: 0.5 }}>🔍</span>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar pan, dulce o bebida..."
-                className="search-input"
-              />
-              {search && (
-                <button onClick={() => setSearch('')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', minHeight: 'auto', padding: 0 }}>✖</button>
-              )}
-            </div>
-          </div>
-
-          {activeCategories && activeCategories.length > 0 && (
-            <div className="category-scroll-wrapper fade-in">
-              <div className="category-scroll-container">
-                <button className={`cat-pill ${selectedCategory === 'todas' ? 'active' : ''}`} onClick={() => setSelectedCategory('todas')}>Todos</button>
-                {activeCategories.map(cat => (
-                  <button key={cat.id} className={`cat-pill ${selectedCategory === cat.name ? 'active' : ''}`} onClick={() => setSelectedCategory(cat.name)}>{cat.name}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="product-list">
-            {displayedProducts.length === 0 ? (
-              <div className="card fade-in empty-state" style={{ gridColumn: '1 / -1', margin: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <span className="empty-icon-lg">🔍</span>
-                <p className="empty-text">{search ? `No se encontraron productos para "${search}"` : 'No hay productos registrados.'}</p>
-              </div>
-            ) : (
-              displayedProducts.map(p => (
-                <POSProductButton
-                  key={p.id}
-                  p={p}
-                  activeBranchId={activeBranchId}
-                  globalDisabled={isGlobalDisabled}
-                  addToCart={addToCart}
-                />
-              ))
-            )}
-          </div>
-        </section>
-
-        <p role="status">Puedes preparar carritos con múltiples productos. El cobro de más de 2 líneas permanece bloqueado hasta verificar un protocolo financiero seguro; es una limitación de la implementación actual, no de Spark. Sincronización offline pausada; pendientes conservados para revisión en Historial.</p>
-        {checkoutBlocked && <p role="alert">{checkoutBlocked}</p>}
-        <div className={`cart-mobile-overlay ${isCartOpen ? 'open' : ''}`} onClick={() => setIsCartOpen(false)}></div>
-
-        <div id="cart-section" className={`cart-section ${isCartOpen ? 'open' : ''}`}>
-          {lastSale ? (
-            <div className="card fade-in" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: lastSale.isOffline ? '#fff7ed' : '#ecfdf5', border: lastSale.isOffline ? '2px solid #f59e0b' : '2px solid var(--success)', textAlign: 'center', padding: '2rem', position: 'relative' }}>
-              <div style={{ background: 'white', width: '70px', height: '70px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', marginBottom: '1rem', boxShadow: '0 4px 10px rgba(16, 185, 129, 0.2)' }}>{lastSale.isOffline ? '⏳' : '✅'}</div>
-              <h2 style={{ color: lastSale.isOffline ? '#b45309' : 'var(--success)', marginBottom: '0.5rem', fontSize: '1.5rem' }}>{lastSale.isOffline ? 'Pendiente local, sin confirmar' : '¡Venta confirmada!'}</h2>
-              <p style={{ color: 'var(--text-main)', marginBottom: '1.5rem', fontSize: '1.1rem' }}>
-                {lastSale.isOffline ? 'Importe pendiente:' : 'Total confirmado:'} <strong style={{ fontSize: '1.3rem' }}>S/ {lastSale.total.toFixed(2)}</strong>
-              </p>
-              <p>ID: {lastSale.saleId}</p>
-              {lastSale.payment === 'efectivo' && lastSale.change > 0 && (
-                <div style={{ background: 'var(--success)', color: 'white', padding: '10px', borderRadius: '8px', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '1.5rem', width: '100%' }}>
-                  {lastSale.isOffline ? 'Vuelto calculado (pendiente):' : 'Vuelto a entregar:'} S/ {lastSale.change.toFixed(2)}
-                </div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
-                <button onClick={() => printReceipt(lastSale)} style={{ padding: '12px', fontSize: '1rem', background: 'var(--text-main)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 'bold' }}>
-                  <span style={{ fontSize: '1.2rem' }}>🖨️</span> {lastSale.isOffline ? 'Imprimir pendiente (sin confirmar)' : 'Imprimir Ticket'}
-                </button>
-                <button onClick={handleNuevaVenta} style={{ padding: '12px', fontSize: '1rem', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 'bold' }}>
-                  <span style={{ fontSize: '1.2rem' }}>➕</span> Nueva Venta
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', borderTop: '5px solid var(--primary)', padding: '0', overflow: 'hidden' }}>
-              <div style={{ padding: '15px', borderBottom: '1px solid var(--border)', background: 'var(--bg-app)' }}>
-                <h3 style={{ fontSize: '1.1rem', margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    Ticket de Venta <span style={{ fontSize: '0.8rem', background: 'white', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>{cart.length} ítems</span>
-                  </span>
-                  <button className="close-cart-btn" onClick={() => setIsCartOpen(false)}>✕</button>
-                </h3>
-              </div>
-
-              <div className="cart-items" style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
-                {cart.length === 0 ? (
-                  <div style={{ height: '100%', minHeight: '150px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)' }}>
-                    <span style={{ fontSize: '2.5rem', marginBottom: '5px', opacity: 0.5 }}>🛒</span><p style={{ fontSize: '0.9rem' }}>El carrito está vacío</p>
-                  </div>
-                ) : (
-                  cart.map(p => (
-                    <div key={p.id} className="cart-item-row fade-in">
-                      <div className="cart-row-top">
-                        <span className="cart-item-name" title={p.name}>{p.name}</span>
-                        <div className="cart-row-top-right">
-                          <div className="cart-stepper">
-                            <button className="cart-stepper-btn" onClick={() => updateQty(p.id, p.qty - 1)} disabled={p.qty <= 1}>-</button>
-                            <span className="cart-stepper-value">{p.qty}</span>
-                            <button className="cart-stepper-btn" onClick={() => updateQty(p.id, p.qty + 1)}>+</button>
-                          </div>
-                          <span className="cart-item-subtotal">S/ {(p.price * p.qty).toFixed(2)}</span>
-                        </div>
-                      </div>
-                      <div className="cart-row-bottom">
-                        <span className="cart-item-unit-price">S/ {Number(p.price).toFixed(2)} c/u</span>
-                        <button className="btn-remove-text" onClick={() => removeFromCart(p.id)}>🗑️ Quitar</button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="cart-footer" style={{ padding: '15px', background: 'var(--card-bg)', borderTop: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '15px' }}>
-                  <span style={{ fontWeight: '800', color: 'var(--text-muted)', fontSize: '0.9rem' }}>TOTAL A COBRAR</span>
-                  <span style={{ fontSize: '1.8rem', fontWeight: '900', color: 'var(--primary)', lineHeight: '1' }}>S/ {total.toFixed(2)}</span>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
-                  <button
-                    onClick={() => { setPayment('efectivo'); setAmountPaid(''); }}
-                    disabled={branchStatus.isReadOnly}
-                    className={`payment-method-btn ${payment === 'efectivo' ? 'active-efectivo' : ''}`}
-                  >
-                    💵 Efectivo
-                  </button>
-                  <button
-                    onClick={() => { setPayment('yape'); setAmountPaid(''); }}
-                    disabled={branchStatus.isReadOnly}
-                    className={`payment-method-btn ${payment === 'yape' ? 'active-yape' : ''}`}
-                  >
-                    📲 Yape/Plin
-                  </button>
-                  <button
-                    onClick={() => { setPayment('mixto'); setSplitEfectivo(''); setSplitYape(''); }}
-                    disabled={branchStatus.isReadOnly}
-                    className={`payment-method-btn ${payment === 'mixto' ? 'active-mixto' : ''}`}
-                  >
-                    🔄 Mixto
-                  </button>
-                </div>
-
-                {payment === 'efectivo' && (
-                  <div className="payment-row fade-in">
-                    <div className="payment-input-group">
-                      <label className="payment-label">MONTO RECIBIDO (S/)</label>
-                      <input
-                        type="number"
-                        value={amountPaid}
-                        onChange={e => setAmountPaid(e.target.value)}
-                        placeholder="0.00"
-                        disabled={branchStatus.isReadOnly}
-                        style={{ fontWeight: 'bold', fontSize: '1.1rem', textAlign: 'left' }}
-                      />
-                    </div>
-                    {Number(amountPaid) >= total && total > 0 && (
-                      <div className="vuelto-box fade-in">
-                        <span className="vuelto-label">Vuelto</span>
-                        <span className="vuelto-amount">S/ {(Number(amountPaid) - total).toFixed(2)}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {payment === 'mixto' && (
-                  <div className="payment-row fade-in">
-                    <div className="payment-split-container">
-                      <div className="payment-input-group efectivo-group" style={{ flex: 1 }}>
-                        <label className="payment-label">EFECTIVO (S/)</label>
-                        <input
-                          type="number"
-                          value={splitEfectivo}
-                          onChange={e => handleSplitEfectivoChange(e.target.value)}
-                          placeholder="0.00"
-                          disabled={branchStatus.isReadOnly}
-                        />
-                      </div>
-                      <div className="payment-input-group yape-group" style={{ flex: 1 }}>
-                        <label className="payment-label">YAPE/PLIN (S/)</label>
-                        <input
-                          type="number"
-                          value={splitYape}
-                          onChange={e => handleSplitYapeChange(e.target.value)}
-                          placeholder="0.00"
-                          disabled={branchStatus.isReadOnly}
-                        />
-                      </div>
-                    </div>
-                    {(Number(splitEfectivo) + Number(splitYape)).toFixed(2) !== total.toFixed(2) && (splitEfectivo !== '' || splitYape !== '') && (
-                      <div className="split-validation-error">
-                        La suma debe ser exactamente S/ {total.toFixed(2)}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {!currentSession && !branchStatus.isReadOnly ? (
-                  <button
-                    onClick={() => setShowOpenModal(true)}
-                    className="btn-open-register-large"
-                  >
-                    🔓 ABRIR CAJA PARA VENDER
-                  </button>
-                ) : currentSession?.needsForceClose ? (
-                  <button
-                    className="btn-primary"
-                    onClick={() => setShowCloseModal(true)}
-                    disabled={!currentSession.canForceClose}
-                    style={{ width: '100%', padding: '15px', background: '#ef4444', color: 'white', borderRadius: '8px', fontWeight: '900', textTransform: 'uppercase', cursor: 'pointer', border: 'none' }}
-                  >
-                    {currentSession.canForceClose ? '🔒 CERRAR TURNO ANTERIOR' : '🔒 REQUIERE ADMINISTRADOR'}
-                  </button>
-                ) : (
-                  <button
-                    className="btn-primary"
-                    onClick={handleCheckoutClick}
-                    disabled={!!checkoutBlocked || !runtimeCapabilities.saleOnline || cart.length === 0 || !isPaymentValid || isProcessing || branchStatus.isReadOnly}
-                    style={{ width: '100%', padding: '15px', fontSize: '1.1rem', fontWeight: '900', textTransform: 'uppercase', borderRadius: '8px', cursor: (cart.length === 0 || !isPaymentValid || branchStatus.isReadOnly) ? 'not-allowed' : 'pointer', opacity: branchStatus.isReadOnly ? 0.5 : 1, border: 'none' }}
-                  >
-                    {branchStatus.isReadOnly ? '🔒 MODO LECTURA' : isProcessing ? 'Procesando...' : `COBRAR`}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {showQrModal && (
-        <div className="fade-in" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 10001, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center', padding: '30px', borderTop: '8px solid #9333ea' }}>
-            <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: 'var(--text-main)' }}>Escanea para pagar</h3>
-
-            <h1 style={{ color: '#9333ea', margin: '0 0 15px 0', fontSize: '2.5rem', fontWeight: '900' }}>
-              S/ {payment === 'mixto' ? Number(splitYape).toFixed(2) : total.toFixed(2)}
-            </h1>
-
-            <div style={{ width: '220px', height: '220px', margin: '0 auto 20px auto', background: 'white', borderRadius: '15px', padding: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {qrUrl ? <img src={qrUrl} alt="QR Yape" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '8px' }} /> : <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', padding: '10px' }}>⚠️ QR no configurado en Ajustes.</div>}
-            </div>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '20px' }}>Verifica en tu celular que el abono se haya realizado.</p>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setShowQrModal(false)} disabled={isProcessing} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '2px solid var(--border)', background: 'transparent', color: 'var(--text-main)', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={processSale} disabled={!!checkoutBlocked || !runtimeCapabilities.saleOnline || isProcessing} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: 'var(--success)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>{isProcessing ? 'Procesando...' : '✅ Validar Pago'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <CashRegisterModals
-        showOpenModal={showOpenModal}
-        setShowOpenModal={setShowOpenModal}
-        showCloseModal={showCloseModal}
-        setShowCloseModal={setShowCloseModal}
-        isLoadingSession={isLoadingSession}
-        openRegister={openRegister}
-        authorizeOffline={authorizeOffline}
-        calculateClose={calculateClose}
-        confirmClose={confirmClose}
-      />
-
-      {currentSession?.needsForceClose && !branchStatus.isReadOnly ? (
-        <button
-          className="mobile-cart-float-btn warning"
-          onClick={() => setShowCloseModal(true)}
-          disabled={!currentSession.canForceClose}
-          style={{ background: '#ef4444' }}
-        >
-          <span>⚠️ Atención</span>
-          <span>CERRAR TURNO ANTERIOR</span>
-        </button>
-      ) : !currentSession && !branchStatus.isReadOnly ? (
-        <button
-          className="mobile-cart-float-btn warning"
-          onClick={() => setShowOpenModal(true)}
-        >
-          <span>💰 Caja Cerrada</span>
-          <span>ABRIR TURNO</span>
-        </button>
-      ) : (
-        cart.length > 0 && !branchStatus.isReadOnly && (
-          <button className={`mobile-cart-float-btn ${isCartOpen ? 'hidden' : ''}`} onClick={() => setIsCartOpen(true)}>
-            <span>🛒 Ver Carrito ({cart.length})</span>
-            <span>S/ {total.toFixed(2)}</span>
-          </button>
-        )
-      )}
-
+      </section>
+      <aside aria-label="Ticket" className="sticky top-6 hidden min-w-0 lg:block">{ticket}</aside>
     </div>
-  );
+    <Button className="fixed inset-x-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 justify-between shadow-float sm:inset-x-6 lg:hidden" onClick={()=>setIsCartOpen(true)}><span className="flex items-center gap-2"><ShoppingBag />Ver ticket ({cart.length})</span><span>S/ {total.toFixed(2)}</span></Button>
+    {isCartOpen&&<Drawer title="Tu ticket" description="Revisa los productos y el método de pago." onClose={()=>setIsCartOpen(false)} busy={isProcessing}>{ticket}</Drawer>}
+    {showQrModal&&<Dialog title="Escanea para pagar" description="Verifica en tu celular que el abono se haya realizado." onClose={()=>setShowQrModal(false)} busy={isProcessing} className="max-w-sm">
+      <p className="text-center text-3xl font-bold text-accent">S/ {payment==='mixto'?Number(splitYape).toFixed(2):total.toFixed(2)}</p>
+      <div className="mx-auto flex aspect-square w-full max-w-60 items-center justify-center rounded-2xl border border-line bg-panel p-3">{qrUrl?<img src={qrUrl} alt="QR Yape" className="size-full object-contain" />:<Alert variant="warning">QR no configurado en Ajustes.</Alert>}</div>
+      <div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={isProcessing} onClick={()=>setShowQrModal(false)}>Cancelar</Button><Button variant="success" onClick={processSale} loading={isProcessing} disabled={!!checkoutBlocked||!runtimeCapabilities.saleOnline||isProcessing}>{isProcessing?'Procesando…':'Validar pago'}</Button></div>
+    </Dialog>}
+    <CashRegisterModals showOpenModal={showOpenModal} setShowOpenModal={setShowOpenModal} showCloseModal={showCloseModal} setShowCloseModal={setShowCloseModal} isLoadingSession={isLoadingSession} openRegister={openRegister} authorizeOffline={authorizeOffline} calculateClose={calculateClose} confirmClose={confirmClose} />
+  </div>;
 }
-
 export default POS;

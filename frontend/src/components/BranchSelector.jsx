@@ -1,46 +1,18 @@
-// src/components/BranchSelector.jsx
-import React from 'react';
+import { MapPin } from 'lucide-react';
 import { useTenantData } from '../features/branches/context/TenantContext';
+import { Select, cn } from '../shared/ui';
 
-const BranchSelector = () => {
-  const { businessBranches, activeBranchId, setActiveBranchId } = useTenantData();
-
-  // Si no hay sucursales o solo hay una, ocultamos el selector para no estorbar
-  if (!businessBranches || businessBranches.length <= 1) {
-    return null;
-  }
-
-  const isGlobal = activeBranchId === 'global';
-  const boxClass = isGlobal ? 'global' : 'branch';
-
-  return (
-    <div className="branch-selector-wrapper fade-in">
-      <div className={`branch-selector-box ${boxClass}`} title="Gestión de Sucursales">
-        <span className="branch-selector-icon">🏢</span>
-        <span className="branch-selector-text">Sucursales</span>
-        <span className="branch-selector-arrow">▼</span>
-
-        <select
-          className="branch-select-input"
-          value={activeBranchId || ''}
-          onChange={(e) => setActiveBranchId(e.target.value)}
-          aria-label="Seleccionar sucursal"
-        >
-          <option value="global">🌍 Vista Global</option>
-
-
-          {businessBranches.map(b => {
-            const isInactive = b.status?.toLowerCase() === 'inactivo';
-            return (
-              <option key={b.id} value={b.id}>
-                {isInactive ? '🔴' : '🏢'} {b.name} {isInactive ? '(Inactiva)' : ''}
-              </option>
-            );
-          })}
-        </select>
-      </div>
-    </div>
-  );
-};
-
-export default BranchSelector;
+export function BranchSelectControl({ branches, value, onChange, dark }) {
+  if (!branches || branches.length<=1) return null;
+  return <label className={cn('grid gap-1.5 text-xs font-medium',dark?'text-sidebar-muted':'text-muted')}>
+    <span className="flex items-center gap-1.5"><MapPin className="size-3.5" />Sucursal activa</span>
+    <Select aria-label="Seleccionar sucursal" value={value||''} onChange={event=>onChange(event.target.value)} className={cn('min-h-10 py-2 text-xs',dark&&'border-white/15 bg-white/7 text-white [&>option]:bg-sidebar')}>
+      <option value="global">Vista global · solo lectura</option>
+      {branches.map(branch=><option key={branch.id} value={branch.id}>{branch.name}{branch.status?.toLowerCase()==='inactivo'?' (Inactiva)':''}</option>)}
+    </Select>
+  </label>;
+}
+export default function BranchSelector({ dark=false }) {
+  const {businessBranches,activeBranchId,setActiveBranchId}=useTenantData();
+  return <BranchSelectControl branches={businessBranches} value={activeBranchId} onChange={setActiveBranchId} dark={dark} />;
+}

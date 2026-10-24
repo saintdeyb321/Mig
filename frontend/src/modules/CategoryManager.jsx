@@ -1,176 +1,137 @@
+import { Dialog, cn, Button, LoadingState, PageHeader, Input, FormField, Select, Badge, SearchField, Card, DialogFooter, EmptyState } from "../shared/ui";
 // src/modules/CategoryManager.jsx
 import React, { memo } from 'react';
 import { useCategories } from '../features/catalog/hooks/useCategories';
 // Esta tarjeta solo se redibujará si su nombre o estado cambian en Firebase.
 // Escribir en la barra de búsqueda ya NO afectará a las categorías que no coincidan.
-const CategoryCard = memo(({ c, openEditForm, isLoading }) => {
+const CategoryCard = memo(({
+  c,
+  openEditForm,
+  isLoading
+}) => {
   const isInactive = c.status === 'inactivo';
 
   // Reutilizamos el estilo de las tarjetas de productos
-  let cardClasses = `product-list-card fade-in ${isInactive ? 'inactive inactive-border' : ''}`;
-
-  return (
-    <div className={cardClasses} style={!isInactive ? { borderLeft: '5px solid var(--primary)' } : {}}>
+  let cardClasses = `grid min-w-0 grid-cols-[3rem_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto] animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65 border-l-4 border-l-muted" : ''} `;
+  return <Card className={cn(cardClasses, !isInactive ? "border-l-4 border-l-primary" : "")} as="div">
 
       {/* 1. ICONO */}
-      <div className="product-image-box" style={{ background: isInactive ? 'var(--bg-app)' : 'var(--primary-light)' }}>
-        <span style={{ fontSize: '1.6rem', opacity: isInactive ? 0.4 : 1 }}>🏷️</span>
+      <div className={cn("flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-primary-soft [&>img]:size-full [&>img]:object-cover sm:size-14", isInactive ? "bg-subtle" : "bg-primary-soft")}>
+        <span className={cn("text-2xl", isInactive ? "opacity-40" : "opacity-100")}>🏷️</span>
       </div>
 
       {/* 2. INFO (Nombre y Estado) */}
-      <div className="product-info-col">
-        <h3 className={`product-title-text ${isInactive ? 'out-of-stock' : ''}`}>
+      <div className="grid min-w-0 gap-1.5">
+        <h3 className={cn(`break-words font-semibold ${isInactive ? "text-danger line-through" : ''} `)}>
           {c.name}
         </h3>
-        <div className="product-badges-row">
-          <span className="badge-stock" style={{
-            background: isInactive ? '#fee2e2' : '#d1fae5',
-            color: isInactive ? 'var(--danger)' : 'var(--success)'
-          }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className={cn(isInactive ? "bg-danger-soft" : "bg-success-soft", isInactive ? "text-danger" : "text-success")}>
             {isInactive ? '🔴 INACTIVA' : '🟢 ACTIVA'}
-          </span>
+          </Badge>
         </div>
       </div>
 
       {/* 3. ACCIÓN (Botón Editar) */}
-      <div className="product-action-col">
-        <button
-          onClick={() => openEditForm(c)}
-          disabled={isLoading}
-          className="btn-icon"
-          title="Editar"
-          style={{ background: 'var(--bg-app)', minHeight: '34px', minWidth: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
+      <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 sm:col-span-1 sm:border-0 sm:pt-0">
+        <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-subtle min-h-8.5 min-w-8.5 flex items-center justify-center" title="Editar" type="button" variant="ghost" aria-label="Editar">
           ✏️
-        </button>
+        </Button>
       </div>
 
-    </div>
-  );
+    </Card>;
 });
 
 // Componente Principal
-function CategoryManager({ user }) {
+function CategoryManager({
+  user
+}) {
   const {
-    isLoading, searchTerm, setSearchTerm, showFormModal, setShowFormModal,
-    name, setName, status, setStatus, editing, showInactive, setShowInactive,
-    filteredCategories, openAddForm, openEditForm, handleSave
+    isLoading,
+    searchTerm,
+    setSearchTerm,
+    showFormModal,
+    setShowFormModal,
+    name,
+    setName,
+    status,
+    setStatus,
+    editing,
+    showInactive,
+    setShowInactive,
+    filteredCategories,
+    openAddForm,
+    openEditForm,
+    handleSave
   } = useCategories(user);
-  if (isLoading) {
-    return (
-      <div className="module-loader fade-in">
-        <div className="spinner"></div>
-        {/* Texto exclusivo para este módulo */}
-        <p className="loader-text">Organizando categorías...</p>
-      </div>
-    );
+  if (isLoading && !showFormModal) {
+    return <LoadingState>Organizando categorías...</LoadingState>;
   }
-
-  return (
-    <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '900px' }}>
+  return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
 
       {/* HEADER REFACTORIZADO */}
-      <header className="module-header">
-        <h2 className="module-title">
-          <span className="module-title-icon">📂</span>
-          <span className="module-title-text">Categorias</span>
-        </h2>
+      <PageHeader className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="flex min-w-0 items-center gap-3 text-xl font-bold tracking-tight sm:text-2xl">
+          <span className="text-2xl">📂</span>
+          <span className="break-words">Categorias</span>
+        </h1>
 
-        <button onClick={openAddForm} className="btn-primary btn-add-smart">
+        <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
           ➕ Nueva Categoria
-        </button>
-      </header>
+        </Button>
+      </PageHeader>
 
       {/* BARRA DE BÚSQUEDA Y TOGGLE */}
-      <div className="filter-bar-container">
-        <div className="search-container">
-          <span className="search-icon">🔍</span>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar categoría por nombre..."
-            className="search-input"
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="btn-clear-search">✖</button>
-          )}
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar categoría por nombre..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
-        <label className="toggle-label">
-          <input
-            type="checkbox"
-            className="toggle-checkbox"
-            checked={showInactive}
-            onChange={(e) => setShowInactive(e.target.checked)}
-          />
+        <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted">
+          <Input type="checkbox" className="shrink-0" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Ver archivados
         </label>
       </div>
 
-      <h3 className="inventory-title">
+      <h3 className="text-sm font-semibold text-muted">
         Lista de Categorías ({filteredCategories.length})
       </h3>
 
-
-      <div className="product-list-container">
-        {filteredCategories.length === 0 ? (
-          <div className="card fade-in empty-state">
-            <span className="empty-icon-lg">📁</span>
-            <p className="empty-text">
+      <div className="grid gap-3">
+        {filteredCategories.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'Aún no has registrado ninguna categoría.'}
-            </p>
-          </div>
-        ) : (
-          filteredCategories.map(c => (
-            /* 🚀 Invocamos la tarjeta blindada */
-            <CategoryCard
-              key={c.id}
-              c={c}
-              openEditForm={openEditForm}
-              isLoading={isLoading}
-            />
-          ))
-        )}
+            </>} /> : filteredCategories.map(c => (/* 🚀 Invocamos la tarjeta blindada */
+      <CategoryCard key={c.id} c={c} openEditForm={openEditForm} isLoading={isLoading} />))}
       </div>
 
       {/* MODAL FORMULARIO LIMPIO */}
-      {showFormModal && (
-        <div className="modal-overlay fade-in">
-          <div className="card modal-content" style={{ maxWidth: '400px' }}>
-            <h3 className="modal-header-title">
+      {showFormModal && <Dialog title={<>
               {editing ? '✏️ Editar Categoría' : '➕ Nueva Categoría'}
-            </h3>
+            </>} busy={isLoading} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
-            <form onSubmit={handleSave} className="smart-form">
-              <div className="form-group">
-                <label className="form-label">NOMBRE</label>
-                <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Panes, Postres..." required disabled={isLoading} />
-              </div>
+            <form onSubmit={handleSave} className="grid gap-4">
+              <FormField label={<>NOMBRE</>}>
 
-              <div className="form-group">
-                <label className="form-label">ESTADO</label>
-                <select value={status} onChange={e => setStatus(e.target.value)} disabled={isLoading}>
+                <Input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Panes, Postres..." required disabled={isLoading} />
+              </FormField>
+
+              <FormField label={<>ESTADO</>}>
+
+                <Select value={status} onChange={e => setStatus(e.target.value)} disabled={isLoading}>
                   <option value="activo">🟢 Activo</option>
                   <option value="inactivo">🔴 Inactivo</option>
-                </select>
-              </div>
+                </Select>
+              </FormField>
 
-              <div className="modal-actions-footer">
-                <button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} className="btn-cancel">
+              <DialogFooter>
+                <Button type="button" onClick={() => setShowFormModal(false)} disabled={isLoading} variant="secondary">
                   Cancelar
-                </button>
-                <button type="submit" className="btn-primary flex-1" disabled={isLoading}>
+                </Button>
+                <Button type="submit" className="flex-1" disabled={isLoading} variant="primary">
                   {isLoading ? 'Guardando...' : 'Guardar'}
-                </button>
-              </div>
+                </Button>
+              </DialogFooter>
             </form>
-          </div>
-        </div>
-      )}
+          </Dialog>}
 
-    </div>
-  );
+    </div>;
 }
-
 export default CategoryManager;

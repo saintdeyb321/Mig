@@ -6,7 +6,9 @@ import { isPermissionDenied } from '../../../core/errors/firebaseErrors';
 import { useState, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
-export const useUserManagement = (user) => {
+const confirmInBrowser = message => window.confirm(message);
+
+export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => {
   const { users: globalUsers, invites: globalInvites, isLoading: isGlobalLoading } = useUsersData(user);
   const { businessBranches } = useTenantData();
 
@@ -82,7 +84,7 @@ export const useUserManagement = (user) => {
   }, [user?.role]);
 
   const cancelInvite = useCallback(async (inviteEmail) => {
-    if (!window.confirm('¿Estás seguro de cancelar esta invitación? El usuario no podrá registrarse.')) return;
+    if (!await confirm('¿Estás seguro de cancelar esta invitación? El usuario no podrá registrarse.')) return;
     setIsLoading(true);
     const toastId = toast.loading('Cancelando invitación...');
     try {
@@ -94,7 +96,7 @@ export const useUserManagement = (user) => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [confirm]);
 
   const handleSave = async (e) => {
     e.preventDefault();

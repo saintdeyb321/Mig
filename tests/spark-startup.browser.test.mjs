@@ -18,7 +18,7 @@ it('opens the real SuperAdmin shell without tenant subscriptions, backend calls 
     [module('features/settings/infrastructure/settingsRepository.js')]: `export function subscribeSettings() {${forbidden}}`,
     [module('features/catalog/infrastructure/catalogRepository.js')]: `export function subscribeProducts() {${forbidden}} export function subscribeCategories() {${forbidden}}`,
     [module('features/notifications/infrastructure/notificationRepository.js')]: `export function subscribeUnreadNotifications() {${forbidden}} export function markNotificationRead() {${forbidden}} export function markAllNotificationsRead() {${forbidden}}`,
-    [module('features/licenses/infrastructure/licenseRepository.js')]: `export function subscribeLicense() {${forbidden}}`,
+    [module('features/licenses/infrastructure/licenseRepository.js')]: `export function subscribeLicense() {${forbidden}} export function subscribeTenant() {${forbidden}}`,
     [module('features/licenses/infrastructure/administrationRepository.js')]: `
       const expiry = {toDate:() => new Date(Date.now() + 86400000)};
       const rows = [{id:'fixture-tenant', businessName:'Negocio existente', status:'activa', tenantStatus:'active', expiry}];

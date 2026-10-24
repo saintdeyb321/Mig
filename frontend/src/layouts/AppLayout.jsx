@@ -1,122 +1,50 @@
+import { memo, useMemo } from 'react';
+import { LogOut, MapPin, UserRound } from 'lucide-react';
 import { brand } from '../config/brand';
-// src/layouts/AppLayout.jsx
-import React, { useMemo, memo } from 'react';
 import BottomNav from '../BottomNav';
 import NetworkBadge from '../components/NetworkBadge';
+import BranchSelector from '../components/BranchSelector';
 import { NotificationBell } from '../components/NotificationBell';
 import { useTenantData } from '../features/branches/context/TenantContext';
 import { useAlerts } from '../features/notifications/hooks/useAlerts';
 import { isBusinessSession } from '../core/session/context.js';
-import '../styles/layout.css';
+import { Badge, Button, IconButton } from '../shared/ui';
 
 const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
-
-  // Extraemos las sedes del contexto
   const { businessBranches = [] } = useTenantData() ?? {};
   const notifications = useAlerts(user);
-
-  const fullName = useMemo(() => {
-    if (!user) return 'Usuario del Sistema';
-    return (user.firstName && user.lastName)
-      ? `${user.firstName} ${user.lastName}`
-      : 'Usuario del Sistema';
-  }, [user]);
-
-  // Calculamos el nombre de la sede asignada al cajero
-  const assignedBranchName = useMemo(() => {
-    if (user?.role !== 'cajero' || !user?.branchId) return null;
-    const branch = businessBranches?.find(b => b.id === user.branchId);
-    return branch ? branch.name : 'Sede Desconocida';
-  }, [user, businessBranches]);
-
-  return (
-    <div className="app-layout">
-
-      {/* ============================== */}
-      {/* SIDEBAR (Solo Desktop)         */}
-      {/* ============================== */}
-      <aside className="app-sidebar">
-        <div className="brand-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
-            <h2
-              className="brand-title"
-              style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0, userSelect: 'none', fontSize: '1.4rem' }}
-            >
-              <span>{brand.symbol}</span> {brand.name}
-            </h2>
-            <NotificationBell {...notifications} isDesktop={true} />
-          </div>
-
-          <div className="user-info-sidebar">
-            <span className="user-icon">👤</span>
-            <div className="user-details" style={{ minWidth: 0 }}>
-              <p className="user-email" title={fullName}>
-                {fullName}
-              </p>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                <span className="user-badge" style={{ margin: 0 }}>{user?.role}</span>
-                <NetworkBadge />
-              </div>
-
-              {(user?.role === 'cajero' && assignedBranchName) && (
-                <div className="assigned-branch-desktop ">
-                  <span>📍</span> {assignedBranchName}
-                </div>
-              )}
-
-            </div>
-          </div>
+  const fullName = useMemo(() => user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : 'Usuario del sistema', [user]);
+  const assignedBranchName = useMemo(() => user?.role === 'cajero' && user?.branchId
+    ? businessBranches.find(branch => branch.id === user.branchId)?.name || 'Sede desconocida' : null, [user, businessBranches]);
+  const canSelectBranch = isBusinessSession(user) && user?.role === 'dueño';
+  return <div className="min-h-dvh min-w-0 bg-canvas text-ink">
+    <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-40 focus:rounded-xl focus:bg-panel focus:p-4 focus:text-primary focus:shadow-float">Ir al contenido</a>
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-white/5 bg-sidebar text-white lg:flex xl:w-64" aria-label="Navegación de escritorio">
+      <div className="space-y-6 px-5 pb-5 pt-7">
+        <div className="flex items-center gap-3"><img src={brand.logo} alt="" className="size-10 rounded-xl bg-white object-contain p-1" /><div><p className="text-xl font-bold tracking-tight">{brand.name}</p><p className="text-xs text-sidebar-muted">Tu negocio, en orden</p></div></div>
+        <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-3">
+          <span className="rounded-lg bg-white/10 p-2"><UserRound className="size-4" /></span>
+          <div className="min-w-0"><p className="truncate text-sm font-semibold" title={fullName}>{fullName}</p><p className="mt-0.5 text-xs capitalize text-sidebar-muted">{user?.role}</p></div>
         </div>
-
-
-        <BottomNav current={tab} setCurrent={setTab} user={user} assignedBranchName={assignedBranchName} isDesktop={true} />
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '15px' }}>
-          <button onClick={handleLogout} className="btn-logout-sidebar" style={{ width: '100%' }}>
-            🚪 Cerrar Sesión
-          </button>
-        </div>
-      </aside>
-
-      {/* ============================== */}
-      {/* ÁREA DE CONTENIDO PRINCIPAL    */}
-      {/* ============================== */}
-      <div className="app-main-content">
-
-        <header className="mobile-header">
-          <h2 className="mobile-brand" style={{ display: 'flex', alignItems: 'center', gap: '8px', userSelect: 'none' }}>
-            <span>{brand.symbol}</span> {brand.name}
-          </h2>
-
-          <div className="mobile-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <NotificationBell {...notifications} isDesktop={false} />
-            <NetworkBadge />
-            <span className="user-badge mobile-badge">{user?.role}</span>
-            <button onClick={handleLogout} className="mobile-logout-btn">
-              🚪 <span>Salir</span>
-            </button>
-          </div>
-        </header>
-
-        <main className="content-area">
-          {isBusinessSession(user) && <p role="status" className="card">
-            Spark: ventas online (máximo 2 productos), contratos nuevos y cierre operativo. Cola cifrada conservada; sincronización offline y anulación POS pausadas. Cierres pendientes de conciliación.
-          </p>}
-          {children}
-        </main>
+        {canSelectBranch && <BranchSelector dark />}
+        {assignedBranchName && <p className="flex items-center gap-2 text-xs text-sidebar-muted"><MapPin className="size-4 shrink-0" />{assignedBranchName}</p>}
       </div>
-
-      {/* ============================== */}
-      {/* BOTTOM NAV (Solo Celular)      */}
-      {/* ============================== */}
-
-      <nav className="app-bottom-nav">
-        <BottomNav current={tab} setCurrent={setTab} user={user} assignedBranchName={assignedBranchName} isDesktop={false} />
-      </nav>
-
+      <div className="min-h-0 flex-1 overflow-y-auto px-3"><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop /></div>
+      <div className="space-y-3 border-t border-white/10 p-4"><div className="flex items-center justify-between"><NetworkBadge /><NotificationBell {...notifications} isDesktop /></div>
+        <Button variant="ghost" className="w-full justify-start text-sidebar-muted hover:bg-white/10 hover:text-white" onClick={handleLogout}><LogOut />Cerrar sesión</Button>
+      </div>
+    </aside>
+    <div className="min-w-0 lg:pl-60 xl:pl-64">
+      <header className="sticky top-0 z-20 space-y-3 border-b border-line bg-panel/95 px-4 py-3 lg:hidden">
+        <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2"><img src={brand.logo} alt="" className="size-8 rounded-lg object-contain" /><span className="font-bold tracking-tight">{brand.name}</span></div>
+          <div className="flex shrink-0 items-center gap-1"><NetworkBadge /><NotificationBell {...notifications} /><IconButton label="Cerrar sesión" onClick={handleLogout}><LogOut /></IconButton></div>
+        </div>
+        {canSelectBranch && <BranchSelector />}
+        {assignedBranchName && <Badge><MapPin className="size-3" />{assignedBranchName}</Badge>}
+      </header>
+      <main id="main-content" tabIndex={-1} className="mx-auto min-w-0 max-w-[1680px] space-y-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:p-7 xl:p-9">{children}</main>
     </div>
-  );
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-panel pb-[env(safe-area-inset-bottom)] lg:hidden"><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop={false} /></div>
+  </div>;
 });
-
 export default AppLayout;

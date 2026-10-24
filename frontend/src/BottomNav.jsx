@@ -1,61 +1,33 @@
-// src/components/BottomNav.jsx
-import React, { useMemo, memo } from 'react';
-import BranchSelector from '../src/components/BranchSelector'; // Verifica tu ruta
-import { getSessionModules, isBusinessSession } from './core/session/context.js';
+import { memo, useMemo } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { ShoppingBag, CakeSlice, History, ContactRound, Package, Tags, ChartNoAxesCombined, UsersRound, Settings2, Building2, Ellipsis, Check } from 'lucide-react';
+import { getSessionModules } from './core/session/context.js';
+import { cn } from './shared/ui';
 
-// 🚀 OPTIMIZACIÓN 1: Sacamos el menú estático afuera. 
-// 🚀 NUEVO: Agregamos 'contracts' con icono de tortita/agenda
-const MENU_ITEMS = [
-  { id: 'pos', label: 'Venta Rápida', icon: '🛒', roles: ['dueño', 'cajero', 'superadmin'] },
-  { id: 'contracts', label: 'Contratos', icon: '🎂', roles: ['dueño', 'cajero', 'superadmin'] }, 
-  { id: 'history', label: 'Historial', icon: '📜', roles: ['dueño', 'cajero', 'superadmin'] },
-  // 🚀 NUEVO BOTÓN
-  { id: 'agenda', label: 'Agenda VIP', icon: '📖', roles: ['dueño', 'superadmin'] },
-  { id: 'products', label: 'Productos', icon: '📦', roles: ['dueño', 'superadmin'] },
-  { id: 'categories', label: 'Categorías', icon: '📂', roles: ['dueño', 'superadmin'] },
-  { id: 'reports', label: 'Reportes', icon: '📊', roles: ['dueño', 'superadmin'] },
-  { id: 'users', label: 'Personal', icon: '👥', roles: ['dueño', 'superadmin'] },
-  { id: 'settings', label: 'Ajustes', icon: '⚙️', roles: ['dueño', 'superadmin'] },
-  { id: 'superadmin', label: 'SaaS Admin', icon: '🚀', roles: ['superadmin'] },
+const items = [
+  {id:'pos',label:'Punto de venta',icon:ShoppingBag}, {id:'contracts',label:'Contratos',icon:CakeSlice},
+  {id:'history',label:'Historial',icon:History}, {id:'agenda',label:'Agenda VIP',icon:ContactRound},
+  {id:'products',label:'Productos',icon:Package}, {id:'categories',label:'Categorías',icon:Tags},
+  {id:'reports',label:'Reportes',icon:ChartNoAxesCombined}, {id:'users',label:'Personal',icon:UsersRound},
+  {id:'settings',label:'Ajustes',icon:Settings2}, {id:'superadmin',label:'SaaS Admin',icon:Building2},
 ];
-
-const BottomNav = memo(({ current, setCurrent, user, assignedBranchName, isDesktop }) => {
-  const role = String(user?.role || '').toLowerCase();
-
-  // Filtramos rápido usando memoización
-  const visibleItems = useMemo(() => {
-    const allowed = getSessionModules(user);
-    return MENU_ITEMS.filter(item => allowed.includes(item.id));
-  }, [user]);
-
-  return (
-    <nav className={isDesktop ? "sidebar-nav" : "app-bottom-nav"}>
-      
-      {isBusinessSession(user) && role === 'dueño' && <BranchSelector />}
-      
-      {visibleItems.map((item) => (
-        <button
-          key={item.id}
-          onClick={() => setCurrent(item.id)}
-          className={`nav-item ${current === item.id ? 'active' : ''}`}
-          title={item.label}
-        >
-          <span className="nav-icon">{item.icon}</span>
-          <span className="nav-label">{item.label}</span>
-        </button>
-      ))}
-
-      {/* ======================================================== */}
-      {/* 🚀 FIX CELULAR: Nombre de la sede (Llamando solo a la clase CSS) */}
-      {/* ======================================================== */}
-      {(!isDesktop && role === 'cajero' && assignedBranchName) && (
-        <div className="assigned-branch-mobile">
-          <span>📍</span> {assignedBranchName}
-        </div>
-      )}
-
-    </nav>
-  );
+const BottomNav = memo(({ current, setCurrent, user, isDesktop }) => {
+  const visible = useMemo(() => { const allowed=getSessionModules(user); return items.filter(item=>allowed.includes(item.id)); }, [user]);
+  const main = visible.filter(item=>['pos','contracts','history'].includes(item.id));
+  const primary = main.length ? main : visible.slice(0,3);
+  const secondary = visible.filter(item=>!primary.includes(item));
+  const renderItem = ({id,label,icon}) => { const Icon=icon; return <button key={id} type="button" aria-current={current===id?'page':undefined} onClick={()=>setCurrent(id)}
+    className={cn('flex min-h-12 min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-focus',
+      isDesktop ? current===id?'bg-white/12 text-white shadow-sm':'text-sidebar-muted hover:bg-white/7 hover:text-white' : 'flex-1 flex-col gap-1 rounded-none px-1 py-2 text-[11px]',
+      !isDesktop && (current===id?'text-primary':'text-muted'))} title={label}><Icon aria-hidden="true" className="size-5 shrink-0" /><span className="truncate">{label}</span></button>; };
+  return <nav aria-label={isDesktop?'Módulos':'Navegación principal'} className={isDesktop?'grid gap-1':'flex min-h-16 items-stretch justify-around px-2'}>
+    {(isDesktop?visible:primary).map(renderItem)}
+    {!isDesktop && secondary.length>0 && <DropdownMenu.Root><DropdownMenu.Trigger className={cn('flex min-h-16 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium outline-offset-[-4px]',secondary.some(item=>item.id===current)?'text-primary':'text-muted')}><Ellipsis className="size-5" />Más</DropdownMenu.Trigger>
+      <DropdownMenu.Portal><DropdownMenu.Content side="top" align="end" sideOffset={10} className="z-50 mb-1 w-60 max-w-[calc(100vw-1rem)] rounded-2xl border border-line bg-panel p-2 shadow-float">
+        <DropdownMenu.Label className="px-3 py-2 text-xs font-semibold text-muted">Más herramientas</DropdownMenu.Label>
+        {secondary.map(({id,label,icon})=>{ const Icon=icon; return <DropdownMenu.Item key={id} onSelect={()=>setCurrent(id)} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm text-ink outline-none data-[highlighted]:bg-primary-soft data-[highlighted]:text-primary"><Icon className="size-4" />{label}{current===id&&<Check className="ml-auto size-4" />}</DropdownMenu.Item>; })}
+      </DropdownMenu.Content></DropdownMenu.Portal>
+    </DropdownMenu.Root>}
+  </nav>;
 });
-
 export default BottomNav;

@@ -17,39 +17,43 @@ globalThis.__sparkAdminCalls = [];
 globalThis.__sparkPageCalls = 0;
 let result;
 const root = createRoot(document.getElementById('root'));
+const logo = () => document.querySelector('img[alt="Logo MigaPOS"]');
+const navigation = () => [...document.querySelectorAll('nav[aria-label="Módulos"] button, nav[aria-label="Navegación principal"] button')];
+const createButton = () => [...document.querySelectorAll('[aria-label="Administración de plataforma"] header button')].find(button => button.textContent.includes('Nuevo Cliente'));
+const createForm = () => document.querySelector('[role="dialog"] form');
 try {
   // Synthetic data in a fresh, isolated browser profile; the application never clears it.
   await offlineDB.settings.put({ id: 'spark-sentinel', value: 'keep-me' });
   root.render(React.createElement(App));
-  await waitFor(() => document.querySelector('.auth-logo')?.complete);
-  check(document.querySelector('.auth-logo').naturalWidth > 0, 'Login serves the local MigaPOS logo');
+  await waitFor(() => logo()?.complete);
+  check(logo().naturalWidth > 0, 'Login serves the local MigaPOS logo');
   globalThis.__setSparkUser({uid:'platform-user', role:'superadmin', businessId:'platform-admin', hasAcceptedTerms:true});
   await waitFor(() => document.querySelector('[aria-label="Administración de plataforma"]'));
   check(document.body.textContent.includes('Firebase Spark'), 'SuperAdmin opens directly in Spark platform context');
-  check([...document.querySelectorAll('.nav-item')].every(button => button.textContent.includes('SaaS Admin')), 'Desktop and mobile only show SaaS navigation');
-  check(document.querySelectorAll('.nav-item').length === 2 && !document.querySelector('.bell-button'), 'No business navigation or notification bell mounted');
-  check(!document.querySelector('.btn-add-smart').disabled && globalThis.__sparkPageCalls > 0, 'Migrated native administration is enabled');
+  check(navigation().every(button => button.textContent.includes('SaaS Admin')), 'Desktop and mobile only show SaaS navigation');
+  check(navigation().length === 2 && !document.querySelector('button[aria-label="Notificaciones"]'), 'No business navigation or notification bell mounted');
+  check(createButton() && !createButton().disabled && globalThis.__sparkPageCalls > 0, 'Migrated native administration is enabled');
   const exportButton = document.querySelector('[aria-label="Exportar datos autorizados"]');
   check(exportButton && !exportButton.disabled && !document.querySelector('[title^="Eliminación"]') && document.body.textContent.includes('jobs backend deshabilitados'), 'Local export is available and destructive backend jobs have no controls');
-  document.querySelector('.btn-add-smart').click();
-  await waitFor(() => document.querySelector('.smart-form'));
+  createButton().click();
+  await waitFor(createForm);
   const values = ['MigaPOS Laboratorio UI', 'Dueña', 'Prueba', 'titular-test@gmail.com'];
-  [...document.querySelectorAll('.smart-form input')].forEach((input, index) => {
+  [...createForm().querySelectorAll('input')].forEach((input, index) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, values[index]);
     input.dispatchEvent(new Event('input', {bubbles:true}));
   });
   await new Promise(resolve => setTimeout(resolve, 30));
-  document.querySelector('.smart-form').requestSubmit();
+  createForm().requestSubmit();
   await waitFor(() => globalThis.__sparkAdminCalls.length > 0);
   check(globalThis.__sparkAdminCalls[0].name === 'createTenant' && globalThis.__sparkAdminCalls[0].data.ownerEmail === values[3]
     && typeof globalThis.__sparkAdminCalls[0].data.operationId === 'string', 'Create form sends the owner and stable operation ID to its migrated repository boundary');
-  await waitFor(() => !document.querySelector('.smart-form'));
-  document.querySelector('.nav-item').click();
+  await waitFor(() => !createForm());
+  navigation()[0].click();
   globalThis.__setSparkUser({uid:'another-platform-user', role:'superadmin', businessId:'old-tenant', hasAcceptedTerms:true});
   await new Promise(resolve => setTimeout(resolve, 150));
   check(globalThis.__sparkForbidden.length === 0, 'Startup and platform account change invoke no business subscriptions or unmigrated backend adapters');
   globalThis.__setSparkUser(null);
-  await waitFor(() => document.querySelector('.auth-logo'));
+  await waitFor(logo);
   check((await offlineDB.settings.get('spark-sentinel')).value === 'keep-me', 'Logout retains persisted IndexedDB data');
   check(!document.body.textContent.includes('Sincronización completada'), 'No fictitious synchronization success');
   result = {ok:true, checks};
