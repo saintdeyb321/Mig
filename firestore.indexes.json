@@ -1,5 +1,7 @@
 {
   "indexes": [
+    {"collectionGroup":"contracts","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"deliveryDate","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},
+    {"collectionGroup":"contracts","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"createdAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}]},
     {"collectionGroup":"platform_jobs","queryScope":"COLLECTION","fields":[{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"leaseUntil","order":"ASCENDING"}]},
     {"collectionGroup":"invites","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"role","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},
     {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"closedAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},

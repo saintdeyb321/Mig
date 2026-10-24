@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { saveSaleTransaction } from '../infrastructure/saleTransactions';
+import { useSessionResources } from '../../../core/session/sessionResourceHooks.js';
 import { useCart } from './useCart';
 import { getSafeStock } from '../domain/cartStock';
 import { useCatalogData } from '../../catalog/context/CatalogContext';
@@ -10,6 +11,7 @@ import { usePrintJobs } from '../../../shared/printing/usePrintJobs';
 import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
 
 export const usePOS = (user, currentSession) => {
+  const resources = useSessionResources();
   const runPrint = usePrintJobs();
   const { products: catalogProducts, categories: catalogCategories } = useCatalogData();
   const { activeBranchId, businessBranches, settings: tenantSettings } = useTenantData();
@@ -184,6 +186,7 @@ export const usePOS = (user, currentSession) => {
       toast.dismiss(toastId);
       toast.success(result.isOffline ? 'Pendiente local: sin confirmar; revisa antes de volver a cobrar' : 'Venta confirmada por Firestore', { id: 'sale-success', icon: result.isOffline ? '🏠' : '✅' });
       isSuccess = true;
+      resources.invalidate('report:'); resources.clearValue('report:cache');
 
     } catch (err) {
       console.error(err);
@@ -205,7 +208,7 @@ export const usePOS = (user, currentSession) => {
       }
     }
   }, [user, cart, total, payment, amountPaid, splitEfectivo, splitYape, products,
-    clearCart, setCart, activeBranchId, catalogProducts, businessBranches, currentSession]);
+    clearCart, setCart, activeBranchId, catalogProducts, businessBranches, currentSession, resources]);
 
   const handleCheckoutClick = useCallback(() => {
     if (!runtimeCapabilities.saleOnline) { toast.error('Confirmación de ventas pendiente de SPARK-4.'); return; }

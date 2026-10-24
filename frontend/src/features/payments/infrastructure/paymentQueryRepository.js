@@ -1,3 +1,4 @@
+import { checkedRead } from '../../../core/firebase/readDiagnostics.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { mapDocuments } from '../../../core/firebase/documents.js';
 import { toDateSafe } from '../../../core/dates/dateValues.js';
@@ -13,15 +14,16 @@ function requiredId(value) {
 
 export function createPaymentRepository(database, { sdk = firestoreSDK } = {}) {
   const { collection, query, where, orderBy, documentId, limit, startAfter, getDocsFromServer: getDocs, Timestamp } = sdk;
-  async function readPayments(businessId, filters, branchId = 'global', { maxRows = 10000 } = {}) {
+  async function readPayments(businessId, filters, branchId = 'global', { maxRows = 10000, signal } = {}) {
     requiredId(businessId);
+    const readPage = checkedRead(getDocs, 'payments-period', signal);
     const constraints = [where('businessId', '==', businessId), ...filters,
       ...(branchId === 'global' ? [] : [where('branchId', '==', requiredId(branchId))]),
       orderBy('occurredAt', 'asc'), orderBy(documentId(), 'asc')];
     const rows = [];
     let cursor;
     while (true) {
-      const page = await getDocs(query(collection(database, 'payments'), ...constraints,
+      const page = await readPage(query(collection(database, 'payments'), ...constraints,
         ...(cursor ? [startAfter(cursor)] : []), limit(Math.min(PAYMENT_PAGE_SIZE, maxRows - rows.length + 1))));
       rows.push(...mapDocuments(page));
       if (rows.length > maxRows) throw new Error('Demasiados movimientos. Selecciona un período menor.');
@@ -43,12 +45,13 @@ export function createPaymentRepository(database, { sdk = firestoreSDK } = {}) {
       return readPayments(businessId, [where('occurredAt', '>=', Timestamp.fromDate(start)),
         where('occurredAt', '<=', Timestamp.fromDate(end))], branchId, options);
     },
-    getContractAuditDocuments: async (businessId, ids) => {
+    getContractAuditDocuments: async (businessId, ids, { signal } = {}) => {
       requiredId(businessId);
+      const readPage = checkedRead(getDocs, 'contracts-audit', signal);
       const unique = [...new Set(ids.map(requiredId))];
       const rows = [];
       for (let offset = 0; offset < unique.length; offset += 10) {
-        const page = await getDocs(query(collection(database, 'contracts'), where('businessId', '==', businessId),
+        const page = await readPage(query(collection(database, 'contracts'), where('businessId', '==', businessId),
           where(documentId(), 'in', unique.slice(offset, offset + 10)), limit(10)));
         rows.push(...mapDocuments(page));
       }

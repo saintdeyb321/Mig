@@ -65,3 +65,35 @@ it('keeps confirmed permissions distinct from connection errors and accepts an i
   fail({ code: 'permission-denied' }); assert.equal(states.at(-1).status, 'permission-denied');
   assert.equal(states.at(-1).profile, null); session.close();
 });
+
+
+// Focused lifecycle checks: no browser, account, Firebase writes or offline DB mutations.
+const { createSessionResources } = await import('../frontend/src/core/session/sessionResources.js');
+it('retains visited listeners/pages during navigation, deduplicates consumers and expires idle resources', () => {
+  const timers = new Map(); let sequence = 0, starts = 0, stops = 0, deliver;
+  const resources = createSessionResources({ schedule: fn => { timers.set(++sequence, fn); return sequence; }, cancel: id => timers.delete(id) });
+  const history = resources.cell('history', []); history.set([{ id: 'page-1' }]);
+  const listener = resources.watch('contracts', next => { starts++; deliver = next; return () => stops++; });
+  const leave = listener.subscribe(() => {}); deliver([{ id: 'one' }], { fromCache: false });
+  leave(); const revisit = resources.watch('contracts', () => { throw new Error('duplicate listener'); });
+  const leaveAgain = revisit.subscribe(() => {});
+  assert.equal(starts, 1); assert.equal(stops, 0); assert.equal(timers.size, 0);
+  assert.equal(revisit.get().data[0].id, 'one'); assert.equal(history.get()[0].id, 'page-1');
+  leaveAgain(); [...timers.values()][0](); assert.equal(stops, 1); assert.equal(revisit.get().isStale, true);
+  resources.close(); deliver([{ id: 'late' }]); assert.equal(revisit.get().data[0].id, 'one');
+  const other = createSessionResources(); assert.deepEqual(other.cell('history', []).get(), []); other.close();
+});
+it('deduplicates pending reads, invalidates results and cancels subsequent pages after logout', async () => {
+  const resources = createSessionResources(); let calls = 0, resolve;
+  const loader = () => { calls++; return new Promise(done => { resolve = done; }); };
+  const first = resources.read('report:one', loader), second = resources.read('report:one', loader);
+  await Promise.resolve(); assert.equal(calls, 1); assert.equal(first, second);
+  resolve([1]); await first; assert.deepEqual(await resources.read('report:one', loader), [1]);
+  resources.invalidate('report:'); const next = resources.read('report:one', async () => [2]); assert.deepEqual(await next, [2]);
+  resources.close(); assert.equal(resources.signal.aborted, true);
+  await assert.rejects(resources.read('report:new', loader), /sesión cambió/); assert.equal(calls, 1);
+});
+it('StrictMode lease replay preserves the active session, but a real unmount closes it', async () => {
+  const resources = createSessionResources(); const first = resources.lease(); first(); const second = resources.lease();
+  await Promise.resolve(); assert.equal(resources.active, true); second(); await Promise.resolve(); assert.equal(resources.active, false);
+});

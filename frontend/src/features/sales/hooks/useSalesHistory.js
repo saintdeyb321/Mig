@@ -2,13 +2,15 @@ import { useTenantData } from '../../branches/context/TenantContext';
 import { useRecentSales } from './useRecentSales';
 import { toDateSafe } from '../../../core/dates/dateValues';
 import { getFirebaseErrorCode } from '../../../core/errors/firebaseErrors';
+import { useSessionState } from '../../../core/session/sessionResourceHooks.js';
 import { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { voidSaleTransaction, verifyPendingSaleTransaction } from '../infrastructure/saleTransactions';
 
 export const useSalesHistory = (user) => {
-  const [pendingOnly, setPendingOnly] = useState(false);
-  const { sales: globalSales, isLoading: isGlobalLoading, error } = useRecentSales(user, { pendingOnly });
+  const { activeBranchId } = useTenantData();
+  const [pendingOnly, setPendingOnly] = useSessionState(`sales:pending:${activeBranchId}`, false);
+  const { sales: globalSales, isLoading: isGlobalLoading, error, isStale, updatedAt } = useRecentSales(user, { pendingOnly });
   const { businessBranches } = useTenantData();
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -72,5 +74,5 @@ export const useSalesHistory = (user) => {
     catch (error) { toast.error(error.message || 'Sigue pendiente para revisión.'); }
     finally { setIsProcessing(false); }
   };
-  return { pendingOnly, setPendingOnly, sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, verificarPendiente, businessBranches };
+  return { isStale, updatedAt, pendingOnly, setPendingOnly, sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, verificarPendiente, businessBranches };
 };

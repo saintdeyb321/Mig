@@ -1,5 +1,7 @@
 // src/modules/Reports.jsx
 import React, { useMemo, memo } from 'react';
+import { readDiagnostics } from '../core/firebase/readDiagnostics.js';
+import { useSessionResources } from '../core/session/sessionResourceHooks.js';
 import { useReports } from '../features/reports/hooks/useReports';
 
 const TIME_FILTERS = {
@@ -90,9 +92,10 @@ export default function Reports({ user }) {
     timeFilter,
     setTimeFilter,
     refreshReport,
-    maxProductQty
+    maxProductQty, updatedAt
   } = useReports(user);
 
+  const resources = useSessionResources();
   // 🚀 LIMPIO: Nos quedamos solo con las métricas estandarizadas
   const total = summary.netRevenue;
   const cash = summary.cashRevenue;
@@ -118,6 +121,8 @@ export default function Reports({ user }) {
     <div className="fade-in max-container padding-bottom-lg">
       <p role="status">Movimientos confirmados; excluye pendientes locales. Lecturas paginadas: máximo 10000 movimientos y 500 contratos por negocio para compatibilidad histórica. Los cierres operativos conservan conciliación pendiente.</p>
 
+      <p role="status">Lectura del reporte: {updatedAt ? new Date(updatedAt).toLocaleString('es-PE') : 'pendiente'}. Es un informe histórico, no un saldo en tiempo real. <button onClick={refreshReport}>Actualizar período</button></p>
+      {import.meta.env.DEV && <details><summary>Lecturas observadas en esta ejecución</summary><pre>{JSON.stringify({ queries: readDiagnostics(), navigation: resources.diagnostics() }, null, 2)}</pre><p>Documentos recibidos, no lecturas facturadas: no incluye accesos internos de Rules ni entradas de índices. Navegar dentro de dos minutos reutiliza listeners visitados; cerrar sesión los detiene.</p></details>}
       <p>Pedidos creados en el período: {contractCounts.pending} pendientes · {contractCounts.delivered} entregados · {contractCounts.cancelled} cancelados · {contractCounts.withDebt} con saldo.</p>
       <header className="module-header">
         <h2 className="module-title">

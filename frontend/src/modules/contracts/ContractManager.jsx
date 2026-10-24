@@ -13,22 +13,24 @@ import { generateContractReceiptHTML } from '../../utils/contractReceiptTemplate
 import { generateContractProductionHTML, generateContractTextOnlyHTML } from '../../utils/contractProductionTemplate';
 import { withResolvedContractImages } from '../../features/contracts/infrastructure/contractImages';
 import { getPaymentsByContract } from '../../features/payments/infrastructure/paymentRepository';
+import { useSessionState, useSessionScroll } from '../../core/session/sessionResourceHooks.js';
 import { usePrintJobs } from '../../shared/printing/usePrintJobs';
 
 function ContractManager({ user }) {
   const runPrint = usePrintJobs();
   const { activeBranchId, businessBranches, settings } = useTenantData();
-  const [viewFilter, setViewFilter] = useState('activos');
+  const [viewFilter, setViewFilter] = useSessionState(`contracts:filter:${activeBranchId}`, 'activos');
 
   const {
-    contracts, isLoading, isProcessing,
+    contracts, isLoading, isProcessing, isStale, updatedAt, historyUpdatedAt,
     createContract, updateContract, cancelContract, addPayment, markDelivered,
     isHistoryLoading, historyStarted, hasMoreHistory, loadMoreHistory, activeLimitReached,
   } = useContracts(user, { historyEnabled: viewFilter === 'historial' });
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState('urgencia'); // urgencia | recientes
+  const [searchTerm, setSearchTerm] = useSessionState(`contracts:search:${activeBranchId}`, '');
+  const [sortBy, setSortBy] = useSessionState(`contracts:sort:${activeBranchId}`, 'urgencia'); // urgencia | recientes
 
+  useSessionScroll(`contracts:${activeBranchId}`, !isLoading);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [contractToEdit, setContractToEdit] = useState(null);
   const [contractToView, setContractToView] = useState(null);
@@ -127,6 +129,7 @@ function ContractManager({ user }) {
   return (
     <div className="fade-in max-container padding-bottom-lg">
       <p role="status">Contratos Spark en sede de origen; cobros y devoluciones requieren caja propia abierta. Históricos en lectura, sin migración automática. Fotos comprimidas solo en este dispositivo/cuenta; no se sincronizan. Cancelación con devolución: solo dueño.</p>
+      <p role="status">{isStale ? 'Agenda en caché, pendiente de servidor.' : `Agenda recibida: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`} Los importes mostrados no autorizan cobros; cada operación se valida en transacción.{historyUpdatedAt > 0 && ` Historial leído: ${new Date(historyUpdatedAt).toLocaleTimeString('es-PE')}.`}</p>
       <header className="module-header">
         <h2 className="module-title">
           <span className="module-title-icon">🎂</span>

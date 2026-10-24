@@ -175,7 +175,7 @@ describe('Phase 7 bounded data and lifecycle', () => {
     let requests = 0, downloaded = 0;
     const options = (...args) => args;
     const sdk = { collection: options, where: options, orderBy: options, documentId: () => 'id', startAfter: options,
-      query: (...constraints) => constraints, limit: value => ({ limit: value }), getDocs: async constraints => {
+      Timestamp: { fromDate: value => value }, query: (...constraints) => constraints, limit: value => ({ limit: value }), getDocsFromServer: async constraints => {
         requests++; const n = constraints.find(value => value?.limit).limit; downloaded += n;
         const docs = Array.from({ length: n }, (_, index) => ({ id: String(index), data: () => ({ businessId: 'tenant-a' }) }));
         return { docs, size: docs.length };

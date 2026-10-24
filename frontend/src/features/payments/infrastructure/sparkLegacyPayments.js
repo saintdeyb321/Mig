@@ -1,3 +1,4 @@
+import { checkedRead } from '../../../core/firebase/readDiagnostics.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { planLegacyPayments } from '../../../../../functions/src/contracts/domain/legacyPaymentPlan.js';
 import { toMillisSafe } from '../../../core/dates/dateValues.js';
@@ -20,15 +21,17 @@ export async function legacyPaymentView(id, contract, sdk = firestoreSDK) {
 }
 export function createSparkLegacyPaymentReader(database, { sdk = firestoreSDK } = {}) {
   const { doc, getDocFromServer, collection, query, where, orderBy, documentId, startAfter, limit, getDocsFromServer } = sdk;
-  return async (businessId, input, { maxRows = 10000 } = {}) => {
+  return async (businessId, input, { maxRows = 10000, signal } = {}) => {
+    const readPage = checkedRead(getDocsFromServer, 'legacy-contracts', signal);
+    const readDoc = checkedRead(getDocFromServer, 'legacy-document', signal);
     let contracts = [];
     if (input.contractId) {
-      const saved = await getDocFromServer(doc(database, 'contracts', input.contractId));
+      const saved = await readDoc(doc(database, 'contracts', input.contractId));
       if (saved.exists()) contracts = [{ ...saved.data(), id: saved.id }];
     } else {
       let cursor;
       do {
-        const page = await getDocsFromServer(query(collection(database, 'contracts'), where('businessId', '==', businessId),
+        const page = await readPage(query(collection(database, 'contracts'), where('businessId', '==', businessId),
           orderBy(documentId()), ...(cursor ? [startAfter(cursor)] : []), limit(100)));
         contracts.push(...page.docs.map(row => ({ ...row.data(), id: row.id })));
         if (contracts.length > 500) throw new Error('La lectura histórica supera 500 contratos del negocio; requiere revisión/migración autorizada. No se emitió un reporte parcial.');
@@ -37,6 +40,7 @@ export function createSparkLegacyPaymentReader(database, { sdk = firestoreSDK } 
     }
     const rows = [], branches = new Map();
     for (const contract of contracts) {
+      signal?.throwIfAborted();
       if (contract.businessId !== businessId) throw new Error('Contrato fuera de tu negocio.');
       if (contract.payments === undefined) {
         if (contract.paymentsMigrated !== true && (contract.paidTotal > 0 || contract.total > contract.balance)) throw new Error('Contrato histórico con cobros sin libro verificable; requiere revisión antes de emitir el reporte.');
@@ -51,7 +55,7 @@ export function createSparkLegacyPaymentReader(database, { sdk = firestoreSDK } 
         const time = toMillisSafe(payment.occurredAt);
         if (input.startDate && time < +new Date(input.startDate) || input.endDate && time > +new Date(input.endDate)) continue;
         if (!branches.has(payment.branchId)) {
-          const branch = await getDocFromServer(doc(database, 'branches', payment.branchId));
+          const branch = await readDoc(doc(database, 'branches', payment.branchId));
           if (!branch.exists() || branch.data().businessId !== businessId) throw new Error('Pago histórico sin sede del negocio verificable; requiere revisión.');
           branches.set(payment.branchId, true);
         }

@@ -1,3 +1,5 @@
+import { useSessionScroll } from '../core/session/sessionResourceHooks.js';
+import { useTenantData } from '../features/branches/context/TenantContext';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 // src/modules/SalesHistory.jsx
 import React, { useState } from 'react';
@@ -5,7 +7,9 @@ import { useSalesHistory } from '../features/sales/hooks/useSalesHistory';
 import toast from 'react-hot-toast';
 
 function SalesHistory({ user }) {
-  const { pendingOnly, setPendingOnly, sales, error, isLoading, formatDate, anularVentaConfirmada, verificarPendiente, isProcessing, businessBranches } = useSalesHistory(user);
+  const { pendingOnly, setPendingOnly, sales, error, isStale, updatedAt, isLoading, formatDate, anularVentaConfirmada, verificarPendiente, isProcessing, businessBranches } = useSalesHistory(user);
+  const { activeBranchId } = useTenantData();
+  useSessionScroll(`sales:${activeBranchId}`, !isLoading);
   const [saleToCancel, setSaleToCancel] = useState(null);
   const [voidReason, setVoidReason] = useState('');
 
@@ -32,6 +36,7 @@ function SalesHistory({ user }) {
       </header>
 
       <p role="status">Pendientes locales: revisa ID, sede e importe con el libro remoto antes de volver a cobrar. Se conservan cifrados; sincronización offline deshabilitada. La anulación POS sigue restringida: falta validar la compensación de stock junto al reembolso y su sesión de caja.</p>
+      <p role="status">{isStale ? 'Historial pendiente de validar con el servidor; no confirma saldos actuales.' : `Lectura del historial: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`}</p>
       <label><input type="checkbox" checked={pendingOnly} onChange={event => setPendingOnly(event.target.checked)} /> Revisar únicamente pendientes locales (últimos 50, sin sincronizarlos)</label>
       {error && <p role="alert">No se pudo cargar el historial. Revisa la conexión y los permisos.</p>}
       {sales.length === 0 ? (

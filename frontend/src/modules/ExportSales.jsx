@@ -4,11 +4,12 @@ import { useExportSales } from "../features/reports/hooks/useExportSales"
 
 function ExportSales({ user }) {
   // 🚀 FIX: Ahora controlamos el RANGO DE TIEMPO, no el tipo de reporte.
-  const [timeFilter, setTimeFilter] = useState("mes")
+  const [timeFilter, setTimeFilter] = useState("hoy")
+  const [consent, setConsent] = useState(false)
   const { isExporting, exportData } = useExportSales(user)
 
   const handleExport = async () => {
-    if (isExporting) return
+    if (isExporting || !consent) return
     // Pasamos un string genérico 'all' (ya que el hook hace todo) y el filtro de tiempo
     await exportData("all", timeFilter)
   }
@@ -26,13 +27,15 @@ function ExportSales({ user }) {
         </p>
       </div>
 
+      <p>Diario/semanal: detalle bajo demanda. Mensual/anual también lee tickets individuales, aunque el archivo muestre resúmenes. Máximo 10000 movimientos y 500 contratos históricos; si se exceden no se genera un informe parcial. Las lecturas recientes se reutilizan durante su vigencia.</p>
+      <label><input type="checkbox" checked={consent} disabled={isExporting} onChange={event => setConsent(event.target.checked)} /> Acepto el consumo de lecturas Spark de este período.</label>
       <div className="export-controls">
         <div className="export-select-wrapper">
           {/* 🚀 Selector de Calendario Estricto */}
           <select
             className="export-select"
             value={timeFilter}
-            onChange={(e) => setTimeFilter(e.target.value)}
+            onChange={(e) => { setTimeFilter(e.target.value); setConsent(false) }}
             disabled={isExporting}
           >
             <option value="hoy">📅 Reporte Diario (Detallado por Ticket)</option>
@@ -45,7 +48,7 @@ function ExportSales({ user }) {
         <div className="export-button-wrapper">
           <button
             onClick={handleExport}
-            disabled={isExporting}
+            disabled={isExporting || !consent}
             className={`export-button ${isExporting ? "disabled" : ""}`}
           >
             {isExporting ? "⏳ Generando Excel..." : "📥 Descargar Excel"}

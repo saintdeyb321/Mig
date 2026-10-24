@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useCallback, useMemo, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useTenantData } from '../../branches/context/TenantContext';
 import {
@@ -8,18 +8,19 @@ import {
 import { prepareContractImages, cleanupContractImagePaths, cleanupRetiredContractImages, retryContractImageCleanup } from '../infrastructure/contractImages';
 import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
 import { commercialContractFields, contractCommandSignature, createContractCommandRegistry, mergeContractPages } from '../application/contractCommands';
-import { useScopedSubscription } from '../../../shared/hooks/useScopedSubscription';
+import { useSessionResources, useSessionState, useSharedSubscription } from '../../../core/session/sessionResourceHooks.js';
 import { firebaseErrorMessage } from '../../../core/errors/firebaseErrors.js';
 
-const emptyHistory = scopeKey => ({ scopeKey, contracts: [], cursor: null, hasMore: true, loading: false, started: false });
+const emptyHistory = scopeKey => ({ scopeKey, contracts: [], cursor: null, hasMore: true, loading: false, started: false, loadedAt: 0, revision: 0 });
 
 export const useContracts = (user, { historyEnabled = false } = {}) => {
   const { activeBranchId, identityKey } = useTenantData();
   const businessId = user?.businessId;
-  const [isProcessing, setIsProcessing] = useState(false);
-  const processing = useRef(false);
-  const historyRequest = useRef(null);
-  const commands = useMemo(() => ({ ...createContractCommandRegistry(), identityKey }), [identityKey]);
+  const resources = useSessionResources();
+  const [isProcessing, setIsProcessing] = useSessionState('contracts:busy', false);
+  const processing = resources.value('contracts:mutex', () => ({ current: false }));
+  const historyRequest = resources.value(`contracts:request:${activeBranchId}`, () => ({ current: null }));
+  const commands = resources.value('contracts:commands', createContractCommandRegistry);
   const scope = useMemo(() => ({ active: true, identityKey }), [identityKey]);
   useEffect(() => {
     if (!businessId || !runtimeCapabilities.cloudStorage) return;
@@ -36,33 +37,40 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
   const watchContracts = useCallback((onData, onError) => subscribeActiveContracts(businessId, onData, error => {
     toast.error(firebaseErrorMessage(error), { id: 'agenda-err' });
     onError(error);
-  }), [businessId]);
-  const { data: activeContracts, isLoading } = useScopedSubscription(businessId ? identityKey : null, watchContracts);
-  const [history, setHistory] = useState(() => emptyHistory(identityKey));
-  if (history.scopeKey !== identityKey) setHistory(emptyHistory(identityKey));
-  const currentHistory = history.scopeKey === identityKey ? history : emptyHistory(identityKey);
+  }, { branchId: activeBranchId }), [businessId, activeBranchId]);
+  const { data: activeContracts, isLoading, isStale, updatedAt } = useSharedSubscription(`contracts:active:${activeBranchId}`, watchContracts);
+  const [currentHistory, setHistory, historyCell] = useSessionState(`contracts:history:${activeBranchId}`, () => emptyHistory(identityKey));
   const contracts = useMemo(() => mergeContractPages(currentHistory.contracts, activeContracts), [currentHistory.contracts, activeContracts]);
 
   const loadMoreHistory = useCallback(async () => {
-    if (!businessId || !scope.active || !currentHistory.hasMore || historyRequest.current?.identityKey === identityKey) return;
-    const request = { identityKey };
+    const history = historyCell.get();
+    if (!businessId || !resources.active || !history.hasMore || historyRequest.current) return;
+    const request = { revision: history.revision };
     historyRequest.current = request;
-    setHistory(previous => previous.scopeKey === identityKey ? { ...previous, loading: true, started: true } : previous);
+    setHistory(previous => ({ ...previous, loading: true, started: true }));
     try {
-      const page = await getContractHistoryPage(businessId, currentHistory.cursor);
-      if (!scope.active || historyRequest.current !== request) return;
-      setHistory(previous => previous.scopeKey === identityKey ? {
+      const page = await getContractHistoryPage(businessId, history.cursor, { branchId: activeBranchId });
+      if (!resources.active || historyRequest.current !== request) return;
+      setHistory(previous => previous.revision === request.revision ? {
         ...previous, contracts: mergeContractPages(previous.contracts, page.contracts),
-        cursor: page.cursor, hasMore: page.hasMore, loading: false,
+        cursor: page.cursor, hasMore: page.hasMore, loading: false, loadedAt: Date.now(),
       } : previous);
     } catch (error) {
-      if (!scope.active || historyRequest.current !== request) return;
-      setHistory(previous => previous.scopeKey === identityKey ? { ...previous, loading: false } : previous);
+      if (!resources.active || historyRequest.current !== request) return;
+      setHistory(previous => ({ ...previous, loading: false }));
       toast.error(firebaseErrorMessage(error));
     } finally {
       if (historyRequest.current === request) historyRequest.current = null;
     }
-  }, [businessId, scope, identityKey, currentHistory.hasMore, currentHistory.cursor]);
+  }, [businessId, activeBranchId, resources, historyRequest, historyCell, setHistory]);
+
+  // Paged snapshots are display data. Expire them on re-entry, never use them to authorize payments.
+  useEffect(() => {
+    const history = historyCell.get();
+    if (!history.loading && history.loadedAt && Date.now() - history.loadedAt > 120000) {
+      setHistory({ ...emptyHistory(identityKey), revision: history.revision + 1 });
+    }
+  }, [historyCell, identityKey, setHistory]);
 
   useEffect(() => {
     if (historyEnabled && !currentHistory.started) void loadMoreHistory();
@@ -75,6 +83,8 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     const toastId = toast.loading(label);
     try {
       const result = await work();
+      resources.invalidate('report:');
+      resources.clearValue('report:cache');
       if (!scope.active) { toast.dismiss(toastId); return false; }
       toast.success(typeof success === 'function' ? success(result) : success, { id: toastId });
       return true;
@@ -84,9 +94,9 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
       return false;
     } finally {
       processing.current = false;
-      if (scope.active) setIsProcessing(false);
+      if (resources.active) setIsProcessing(false);
     }
-  }, [businessId, scope]);
+  }, [businessId, scope, resources, processing, setIsProcessing]);
 
   const physicalBranch = useCallback(() => {
     if (!activeBranchId || activeBranchId === 'global') {
@@ -160,10 +170,10 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
       const result = await cancelContractDocument({ contractId, reason, branchId, operationId: command.operationId });
       commands.complete(key, command);
       historyRequest.current = null;
-      setHistory(previous => previous.scopeKey === identityKey ? emptyHistory(identityKey) : previous);
+      setHistory(previous => previous.scopeKey === identityKey ? { ...emptyHistory(identityKey), revision: previous.revision + 1 } : previous);
       return result;
     }, 'Pedido anulado y reembolsos confirmados');
-  }, [physicalBranch, commands, runCommand, identityKey]);
+  }, [physicalBranch, commands, runCommand, identityKey, historyRequest, setHistory]);
 
   const addPayment = useCallback(async (contractId, amount, method) => {
     const branchId = physicalBranch();
@@ -175,22 +185,23 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
       commands.complete(key, command);
       if (result.contractStatus === 'entregado') {
         historyRequest.current = null;
-        setHistory(previous => previous.scopeKey === identityKey ? emptyHistory(identityKey) : previous);
+        setHistory(previous => previous.scopeKey === identityKey ? { ...emptyHistory(identityKey), revision: previous.revision + 1 } : previous);
       }
       return result;
     }, 'Abono confirmado');
-  }, [physicalBranch, commands, runCommand, identityKey]);
+  }, [physicalBranch, commands, runCommand, identityKey, historyRequest, setHistory]);
 
   const markDelivered = useCallback(contract => runCommand('Confirmando entrega...', async () => {
     const result = await markContractDelivered(contract.id);
     historyRequest.current = null;
-    setHistory(previous => previous.scopeKey === identityKey ? emptyHistory(identityKey) : previous);
+    setHistory(previous => previous.scopeKey === identityKey ? { ...emptyHistory(identityKey), revision: previous.revision + 1 } : previous);
     return result;
-  }, 'Entrega confirmada'), [runCommand, identityKey]);
+  }, 'Entrega confirmada'), [runCommand, identityKey, historyRequest, setHistory]);
 
   return { contracts, activeContracts, historyContracts: currentHistory.contracts, isLoading, isProcessing,
     isHistoryLoading: currentHistory.loading, historyStarted: currentHistory.started,
     hasMoreHistory: currentHistory.hasMore, loadMoreHistory,
+    isStale, updatedAt, historyUpdatedAt: currentHistory.loadedAt,
     activeLimitReached: activeContracts.length === ACTIVE_CONTRACT_LIMIT,
     createContract, updateContract, cancelContract, addPayment, markDelivered };
 };
