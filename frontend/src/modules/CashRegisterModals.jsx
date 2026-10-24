@@ -1,3 +1,4 @@
+import { Banknote, ClipboardCheck, WalletCards } from 'lucide-react';
 import React, { useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Alert, Button, Dialog, DialogFooter, FormField, Input, Textarea } from '../shared/ui';
@@ -75,23 +76,23 @@ export const CashRegisterModals = ({
   };
 
   return <>
-    {showOpenModal && !tempSummary && <Dialog title="Apertura de caja" onClose={() => setShowOpenModal(false)} busy={busy} description="Registra el efectivo inicial con confirmación de Firestore. Tickets online de hasta 2 productos; cierre operativo con conciliación pendiente.">
+    {showOpenModal && !tempSummary && <Dialog icon={WalletCards} title="Apertura de caja" onClose={() => setShowOpenModal(false)} busy={busy} description="Cuenta el fondo inicial antes de empezar tu turno.">
       <form onSubmit={submit(handleOpen)}>
         <fieldset disabled={busy} className="space-y-4">
-          <FormField label="Monto inicial (S/)"><Input type="number" step="0.10" required value={openingAmount} onChange={e => setOpeningAmount(e.target.value)} placeholder="0.00" autoFocus className="text-center text-2xl font-bold" /></FormField>
+          <FormField label="Monto inicial (S/)"><Input type="number" step="0.10" required value={openingAmount} onChange={e => setOpeningAmount(e.target.value)} placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" /></FormField>
           <DialogFooter><Button variant="secondary" onClick={() => setShowOpenModal(false)}>Cancelar</Button><Button type="submit" loading={busy}>Abrir caja</Button></DialogFooter>
         </fieldset>
       </form>
-      <Button variant="secondary" onClick={authorizeOffline} disabled={!runtimeCapabilities.offlineSync || busy || !navigator.onLine}>Autorizar apertura offline (15 min)</Button>
+      {runtimeCapabilities.offlineSync && <Button variant="secondary" onClick={authorizeOffline} disabled={busy || !navigator.onLine}>Autorizar apertura offline (15 min)</Button>}
     </Dialog>}
-    {showCloseModal && !tempSummary && <Dialog title="¿Cuánto dinero tienes en la caja?" onClose={() => setShowCloseModal(false)} busy={busy} description="Cierre operativo: el resumen es una estimación del navegador, sin conciliación certificada. Cuenta toda la plata que tienes físicamente (billetes y monedas) y escribe el total abajo.">
+    {showCloseModal && !tempSummary && <Dialog icon={Banknote} title="¿Cuánto dinero tienes en la caja?" onClose={() => setShowCloseModal(false)} busy={busy} description="Cierre operativo: el resumen es una estimación del navegador, sin conciliación certificada. Cuenta toda la plata que tienes físicamente (billetes y monedas) y escribe el total abajo.">
       <form onSubmit={submit(handleCalculate)}><fieldset disabled={busy} className="space-y-4">
-        <FormField label="Toda la plata que contaste (S/)"><Input type="number" step="0.10" required value={declaredAmount} onChange={e => setDeclaredAmount(e.target.value)} placeholder="0.00" autoFocus className="text-center text-2xl font-bold" /></FormField>
+        <FormField label="Toda la plata que contaste (S/)"><Input type="number" step="0.10" required value={declaredAmount} onChange={e => setDeclaredAmount(e.target.value)} placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" /></FormField>
         <DialogFooter><Button variant="secondary" onClick={() => setShowCloseModal(false)}>Aún no cerrar</Button><Button type="submit" loading={busy}>Siguiente</Button></DialogFooter>
       </fieldset></form>
     </Dialog>}
-    {tempSummary && <Dialog title="Confirmar cierre" onClose={() => setTempSummary(null)} busy={busy} description="Estimación del navegador. El cierre será operativo y quedará pendiente de conciliación; no certifica el libro completo.">
-      <dl className="space-y-3 rounded-xl border border-line bg-subtle p-4 text-sm">
+    {tempSummary && <Dialog icon={ClipboardCheck} title="Confirmar cierre" onClose={() => setTempSummary(null)} busy={busy} description="Estimación del navegador. El cierre será operativo y quedará pendiente de conciliación; no certifica el libro completo.">
+      <dl className="space-y-3 rounded-2xl border border-finance-line bg-success-soft p-5 text-sm">
         <div className="flex flex-wrap justify-between gap-2"><dt className="text-muted">Efectivo esperado (estimación)</dt><dd className="font-semibold">S/ {tempSummary.expectedAmount.toFixed(2)}</dd></div>
         <div className="flex flex-wrap justify-between gap-2"><dt>Dinero que dejaste</dt><dd className="font-bold text-primary">S/ {tempSummary.declaredAmount.toFixed(2)}</dd></div>
       </dl>

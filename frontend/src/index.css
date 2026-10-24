@@ -2,7 +2,7 @@
 @import './shared/styles/theme.css';
 
 @layer base {
-  html { min-width: 320px; background: var(--color-canvas); }
+  html { min-width: 0; background: var(--color-canvas); }
   body { margin: 0; font-family: var(--font-sans); color: var(--color-ink); line-height: 1.5; }
   #root { min-height: 100dvh; }
   button, input, textarea, select { font: inherit; }

@@ -29,6 +29,7 @@ function POS({ user }) {
 
   const [selectedCategory, setSelectedCategory] = useState('todas');
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [checkoutAttempted, setCheckoutAttempted] = useState(false);
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -75,6 +76,7 @@ function POS({ user }) {
 
   const handleNuevaVenta = () => {
     clearLastSale();
+    setCheckoutAttempted(false);
     setIsCartOpen(false);
   };
 
@@ -86,37 +88,41 @@ function POS({ user }) {
     if(method==='mixto') { setSplitEfectivo('');setSplitYape(''); }
     else setAmountPaid('');
   };
+  const requestCheckout = () => {
+    setCheckoutAttempted(true);
+    if (checkoutBlocked) return;
+    handleCheckoutClick();
+  };
   const action = !currentSession&&!branchStatus.isReadOnly
     ? <Button className="w-full" onClick={()=>setShowOpenModal(true)}><UnlockKeyhole />Abrir caja para vender</Button>
     : currentSession?.needsForceClose
       ? <Button variant="danger" className="w-full" onClick={()=>setShowCloseModal(true)} disabled={!currentSession.canForceClose}>{currentSession.canForceClose?'Cerrar turno anterior':'Requiere administrador'}</Button>
-      : <Button className="w-full" size="lg" onClick={handleCheckoutClick} loading={isProcessing} disabled={!!checkoutBlocked||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>{branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':'Cobrar'}</Button>;
+      : <Button className="w-full" size="lg" onClick={requestCheckout} loading={isProcessing} disabled={!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>{branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':'Cobrar'}</Button>;
   const ticket = lastSale ? <SaleStatus sale={lastSale} onPrint={printReceipt} onNew={handleNuevaVenta} />
-    : <Ticket cart={cart} total={total} onQty={updateQty} onRemove={removeFromCart} isProcessing={isProcessing} action={action}>
+    : <Ticket drawer={isCartOpen} cart={cart} total={total} onQty={updateQty} onRemove={removeFromCart} isProcessing={isProcessing} action={action}>
+      {checkoutAttempted && checkoutBlocked && <Alert variant="warning" title="No se puede confirmar este ticket">{checkoutBlocked} El carrito se conserva completo; no se ha registrado ningún cobro.</Alert>}
       <PaymentSelector payment={payment} onSelect={selectPayment} disabled={branchStatus.isReadOnly||isProcessing} />
       <PaymentFields payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} disabled={branchStatus.isReadOnly||isProcessing} />
     </Ticket>;
   return <div className="min-w-0 space-y-5">
-    <PageHeader title="Punto de venta" description="Elige productos y prepara tu ticket." actions={<>
+    <PageHeader title="Punto de venta" icon={ShoppingBag} eyebrow="Venta del día" description="Elige productos y prepara tu ticket." actions={<>
       <CashStatus readOnly={branchStatus.isReadOnly} session={currentSession} />
       {currentSession&&!branchStatus.isReadOnly&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={()=>setShowCloseModal(true)}><LockKeyhole />{currentSession.needsForceClose?'Forzar cierre de caja':'Cerrar caja'}</Button>}
     </>} />
     {branchStatus.isReadOnly&&<Alert variant="warning" title="Modo lectura">{branchStatus.reason==='global'?'Estás en la vista global. Selecciona una sucursal específica en el menú.':`La sucursal ${branchStatus.name} está inactiva.`}</Alert>}
     {currentSession?.needsForceClose&&!branchStatus.isReadOnly&&<Alert variant="danger" title="Acción requerida">Hay un turno o reserva offline de otro usuario. {currentSession.canForceClose?'Verifica el conteo para cerrarlo como administrador.':'Solicita el cierre a un administrador.'}</Alert>}
-    <p role="status" className="text-xs leading-relaxed text-muted">Carrito multiproducto disponible. Cobro de más de dos líneas pendiente de protocolo financiero verificado; no se registran tickets parciales.</p>
-    {checkoutBlocked && <Alert variant="warning">{checkoutBlocked}</Alert>}
-    <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
+    <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
       <section aria-label="Catálogo de productos" className="min-w-0 space-y-4 pb-20 lg:pb-0">
         <ProductSearch value={search} onChange={setSearch} />
         <CategoryFilters categories={activeCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 3xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {displayedProducts.length?displayedProducts.map(product=><ProductCard key={product.id} product={product} stock={getSafeStock(product,activeBranchId)} disabled={isGlobalDisabled||isProcessing} onAdd={addToCart} />):<EmptyState title="No hay productos" description={search?`No se encontraron productos para “${search}”.`:'No hay productos registrados en esta selección.'} />}
         </div>
       </section>
       <aside aria-label="Ticket" className="sticky top-6 hidden min-w-0 lg:block">{ticket}</aside>
     </div>
-    <Button className="fixed inset-x-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 justify-between shadow-float sm:inset-x-6 lg:hidden" onClick={()=>setIsCartOpen(true)}><span className="flex items-center gap-2"><ShoppingBag />Ver ticket ({cart.length})</span><span>S/ {total.toFixed(2)}</span></Button>
-    {isCartOpen&&<Drawer title="Tu ticket" description="Revisa los productos y el método de pago." onClose={()=>setIsCartOpen(false)} busy={isProcessing}>{ticket}</Drawer>}
+    <Button className="fixed inset-x-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 min-h-14 justify-between rounded-2xl border-white/20 shadow-float sm:inset-x-6 lg:hidden" onClick={()=>setIsCartOpen(true)}><span className="flex items-center gap-2"><ShoppingBag />Ver ticket ({cart.length})</span><span>S/ {total.toFixed(2)}</span></Button>
+    {isCartOpen&&<Drawer bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4" title="Tu ticket" description="Revisa los productos y el método de pago." icon={ShoppingBag} onClose={()=>setIsCartOpen(false)} busy={isProcessing}>{ticket}</Drawer>}
     {showQrModal&&<Dialog title="Escanea para pagar" description="Verifica en tu celular que el abono se haya realizado." onClose={()=>setShowQrModal(false)} busy={isProcessing} className="max-w-sm">
       <p className="text-center text-3xl font-bold text-accent">S/ {payment==='mixto'?Number(splitYape).toFixed(2):total.toFixed(2)}</p>
       <div className="mx-auto flex aspect-square w-full max-w-60 items-center justify-center rounded-2xl border border-line bg-panel p-3">{qrUrl?<img src={qrUrl} alt="QR Yape" className="size-full object-contain" />:<Alert variant="warning">QR no configurado en Ajustes.</Alert>}</div>

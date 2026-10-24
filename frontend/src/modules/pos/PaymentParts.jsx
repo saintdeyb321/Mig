@@ -5,7 +5,7 @@ const methods=[{id:'efectivo',label:'Efectivo',icon:Banknote},{id:'yape',label:'
 export function PaymentSelector({ payment, onSelect, disabled }) {
   return <div className="grid grid-cols-3 gap-2" aria-label="Método de pago">{methods.map(method=>{
     const Icon=method.icon;
-    return <Button key={method.id} variant={payment===method.id?'primary':'secondary'} onClick={()=>onSelect(method.id)} disabled={disabled} aria-pressed={payment===method.id} className="flex-col gap-1 px-1 py-2 text-[11px]"><Icon />{method.label}</Button>;
+    return <Button key={method.id} variant={payment===method.id?'primary':'secondary'} onClick={()=>onSelect(method.id)} disabled={disabled} aria-pressed={payment===method.id} className="min-h-16 flex-col gap-1.5 px-1 py-2 text-[11px]"><Icon />{method.label}</Button>;
   })}</div>;
 }
 export function PaymentFields({ payment, amountPaid, onAmountPaid, splitEfectivo, onSplitEfectivo, splitYape, onSplitYape, total, disabled }) {
