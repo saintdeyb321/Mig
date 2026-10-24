@@ -7,6 +7,7 @@ import { createReportCache, reportCacheKey, createReportResource } from '../fron
 import { processDailyStats, processSales, DETAIL_HEADERS } from '../frontend/src/utils/salesDataProcessor.js';
 import { buildContractLedgerReport } from '../frontend/src/features/reports/application/contractLedgerReport.js';
 import { buildSalesWorkbook } from '../frontend/src/features/reports/application/salesWorkbook.js';
+import { createCashPeriodReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
 import { createSalesPeriodReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
 import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
 import { createSheet } from '../frontend/src/utils/excelHelpers.js';
@@ -243,5 +244,25 @@ describe('Phase 7 bounded data and lifecycle', () => {
     await resource.ready; onError(Error('Stats unavailable')); assert.equal(state.model, null);
     await resource.refresh(true); assert.equal(reads, 2); assert.equal(state.model.summary.netRevenue, 90);
     resource.close();
+  });
+});
+
+describe('Plan04 cash export cursor limits', () => {
+  for (const count of [0, 1, 5]) it('reads ' + count + ' ISO/Timestamp sessions in small pages, once by ID', async () => {
+    let reads = 0;
+    const options = (...args) => args;
+    const sdk = { collection: options, where: options, orderBy: options, documentId: () => 'id', startAfter: row => ({ cursor: row }),
+      Timestamp: { fromDate: value => value }, query: (...constraints) => constraints, limit: n => ({ limit: n }),
+      getDocsFromServer: async constraints => {
+        reads++; const size = constraints.find(c => c?.limit).limit;
+        assert.ok(size > 0 && size <= 2);
+        const offset = constraints.find(c => c?.cursor)?.cursor.offset ?? 0;
+        const docs = Array.from({ length: Math.min(size, Math.max(0, count - offset)) }, (_, i) => ({ id: 's' + (offset + i), offset: offset + i + 1, data: () => ({ businessId: 'tenant-a' }) }));
+        return { docs, size: docs.length };
+      } };
+    const reader = createCashPeriodReader({}, { sdk });
+    const result = await reader('openedAt', 'tenant-a', period.startDate, period.endDate, 'b1', { pageSize: 2 });
+    assert.equal(result.length, count); assert.ok(reads <= 2 * (Math.floor(count / 2) + 1));
+    if (count > 2) await assert.rejects(reader('openedAt', 'tenant-a', period.startDate, period.endDate, 'b1', { pageSize: 2, maxRows: 2 }), /no se exportó.*parcial/);
   });
 });

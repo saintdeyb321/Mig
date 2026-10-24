@@ -1428,3 +1428,18 @@ Confirmado en CI 40123083810: el escenario de caja escribía status de sede dire
 Dos cupos independientes, exclusivos de SuperAdmin: maxActiveBranches (1–100) y maxRegisteredBranches (hasta 200, siempre >= activo). Política inicial visible: 1 activa y 5 registradas. registeredBranchIds + registeredBranchQuotaVersion:1 reservan permanentemente cada ID en la misma transacción que el documento de sede, incluso si nace inactiva; inactivar solo libera plaza activa. Rules comprueban getAfter, unicidad/capacidad, delta exacto por sede e inventarios ligados al receipt administrativo. No permiten liberar IDs, reutilizarlos ni elevar límites desde el dueño; se redujeron evaluaciones duplicadas para respetar el presupuesto de expresiones sin quitar restricciones.
 
 Históricos, incluidos los que solo tenían cupo activo, conservan operación financiera y edición de metadatos. Nuevas altas/cambios de estado requieren revisión administrativa explícita de todas las sedes activas/inactivas antes de declarar completo el inventario registrado; no hay migración automática ni cambios de datos reales. El caso reparado y otros 16 controles focalizados aprobaron en demo-migapos; lint, build/PWA y diff-check aprobaron (aviso previo de bundle >500 kB). No se añadieron pruebas de navegador; se adaptó únicamente el formulario del fixture existente al segundo límite. Publicación coordinada de Rules/cliente y aceptación manual siguen pendientes. Eliminación deshabilitada, sin deploy ni merge a main; SPARK-7 continúa IMPLEMENTADA, PENDIENTE DE PUBLICACIÓN Y ACEPTACIÓN MANUAL. Commit/push y CI se informan en la entrega con su SHA exacto.
+
+
+## Plan 04 — ejecución local (24/10/2026)
+
+Base b74092ff03f4f81340171167ca45b2d406f5e50d, rama fix/mvp-operacion-rendimiento. Sin Firebase real, .env ni despliegue.
+
+| Checkpoint | Estado |
+|---|---|
+| A | Implementado: cursores de cajas (páginas <=200, máximo global, ISO/Timestamp, sin Excel parcial); JSON técnico retirado; resultados conservados al actualizar. 35 tests de reportes aprobados, lint y build/PWA OK. |
+| B | En curso: compensaciones y multiproducto requieren prueba financiera; capacidades aún bloqueadas. |
+| C | Pendiente de ejecución. |
+| D | Pendiente de ejecución. |
+| E | Pendiente de ejecución. |
+
+Avisos build: chunks JS >500 kB, sin fallo. No se declara MVP comercial cerrado.

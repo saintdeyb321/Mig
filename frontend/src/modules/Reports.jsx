@@ -4,8 +4,8 @@ import { MetricCard, ChartColumn, TopProductItem } from "./reports/ReportParts.j
 import { LoadingState, Button, PageHeader, Card, cn, HelpDisclosure } from "../shared/ui";
 // src/modules/Reports.jsx
 import { useMemo } from 'react';
-import { readDiagnostics } from '../core/firebase/readDiagnostics.js';
-import { useSessionResources } from '../core/session/sessionResourceHooks.js';
+
+
 import { useReports } from '../features/reports/hooks/useReports';
 const TIME_FILTERS = {
   hoy: 'Hoy',
@@ -25,7 +25,7 @@ export default function Reports({
     contractCounts,
     topProducts,
     chartData,
-    isLoading,
+    isLoading, isRefreshing, hasData,
     error,
     timeFilter,
     setTimeFilter,
@@ -33,7 +33,7 @@ export default function Reports({
     maxProductQty, updatedAt
   } = useReports(user);
 
-  const resources = useSessionResources();
+
   // 🚀 LIMPIO: Nos quedamos solo con las métricas estandarizadas
   const total = summary.netRevenue;
   const cash = summary.cashRevenue;
@@ -46,7 +46,7 @@ export default function Reports({
   if (isLoading) {
     return <LoadingState>Generando Reportes...</LoadingState>;
   }
-  if (error) return <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />;
+  if (error && !hasData) return <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />;
   return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6">
 
 
@@ -56,8 +56,9 @@ export default function Reports({
             </Button>)}
         </div></>} />
 
+      {error && <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />}
+      {isRefreshing && <p role="status" className="text-sm text-muted">Actualizando el período… Los resultados anteriores siguen visibles.</p>}
       <p role="status" className="text-sm text-muted">Lectura del reporte: {updatedAt ? new Date(updatedAt).toLocaleString('es-PE') : 'pendiente'}. Informe histórico, no saldo en tiempo real. <Button onClick={refreshReport} variant="secondary">Actualizar período</Button></p>
-      {import.meta.env.DEV && <details><summary>Lecturas observadas</summary><pre className="overflow-auto text-xs">{JSON.stringify({ queries: readDiagnostics(), navigation: resources.diagnostics() }, null, 2)}</pre><p>Documentos recibidos, no facturación; no incluye accesos internos de Rules ni índices.</p></details>}
       <p>Pedidos creados en el período: {contractCounts.pending} pendientes · {contractCounts.delivered} entregados · {contractCounts.cancelled} cancelados · {contractCounts.withDebt} con saldo.</p>
 
       <HelpDisclosure title="Alcance de este informe">Movimientos confirmados; excluye pendientes locales. Lectura limitada a 10000 movimientos y 500 contratos por negocio. Los cierres operativos conservan conciliación pendiente.</HelpDisclosure>

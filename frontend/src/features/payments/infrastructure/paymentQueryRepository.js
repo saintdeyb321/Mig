@@ -16,6 +16,7 @@ export function createPaymentRepository(database, { sdk = firestoreSDK } = {}) {
   const { collection, query, where, orderBy, documentId, limit, startAfter, getDocsFromServer: getDocs, Timestamp } = sdk;
   async function readPayments(businessId, filters, branchId = 'global', { maxRows = 10000, signal } = {}) {
     requiredId(businessId);
+    if (!Number.isSafeInteger(maxRows) || maxRows < 1) throw new Error('Límite de movimientos inválido.');
     const readPage = checkedRead(getDocs, 'payments-period', signal);
     const constraints = [where('businessId', '==', businessId), ...filters,
       ...(branchId === 'global' ? [] : [where('branchId', '==', requiredId(branchId))]),
