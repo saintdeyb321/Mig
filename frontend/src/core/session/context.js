@@ -1,5 +1,5 @@
 const businessModules = Object.freeze({
-  dueño: ['pos', 'contracts', 'history', 'agenda', 'products', 'categories', 'reports', 'users', 'settings'],
+  dueño: ['pos', 'contracts', 'history', 'products', 'categories', 'reports', 'users', 'settings'],
   cajero: ['pos', 'contracts', 'history'],
 });
 

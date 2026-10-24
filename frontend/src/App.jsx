@@ -33,7 +33,6 @@ const UserManagement = React.lazy(() => import('./modules/UserManagement'));
 const Settings = React.lazy(() => import('./modules/Settings'));
 const SuperAdmin = React.lazy(() => import('./modules/SuperAdmin'));
 const ContractManager = React.lazy(() => import('./modules/contracts/ContractManager'));
-const AgendaManager = React.lazy(() => import('./modules/AgendaManager'));
 const ADMIN_ROLES = ['dueño'];
 const ALL_ROLES = ['dueño', 'cajero'];
 const NO_OP_FUNCTION = () => {};
@@ -164,9 +163,6 @@ function App() {
                       <UserManagement user={user} />
                     </UserRoleGate>}
 
-                  {tab === 'agenda' && <UserRoleGate user={user} allowedRoles={ADMIN_ROLES}>
-                      <AgendaManager user={user} />
-                    </UserRoleGate>}
                   {tab === 'settings' && <UserRoleGate user={user} allowedRoles={ADMIN_ROLES}>
                       <Settings user={user} />
                     </UserRoleGate>}

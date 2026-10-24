@@ -1,9 +1,8 @@
 import { ContractFinanceFields } from "./ContractFinanceFields";
-import { Dialog, Input, FormField, Button, Select, Textarea, DialogFooter, SearchField, SectionCard } from "../../../shared/ui";
-import { BookUser, CalendarClock, ImagePlus, NotebookPen, Save, UserRound } from 'lucide-react';
+import { Dialog, Input, FormField, Button, Select, Textarea, DialogFooter, SectionCard } from "../../../shared/ui";
+import { CalendarClock, ImagePlus, NotebookPen, Save, UserRound } from 'lucide-react';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { useCustomers } from '../../../features/customers/hooks/useCustomers';
 import { toDateSafe } from '../../../core/dates/dateValues';
 import { useContractImageUrls } from '../../../features/contracts/hooks/useContractImageUrls';
 import { MAX_CONTRACT_IMAGES } from '../../../features/contracts/infrastructure/contractImages';
@@ -16,11 +15,6 @@ const ContractFormModal = ({
   cashAction
 }) => {
   const isEditing = !!contractToEdit;
-  const {
-    customers: agenda
-  } = useCustomers();
-  const [showAgendaModal, setShowAgendaModal] = useState(false);
-  const [agendaSearch, setAgendaSearch] = useState('');
   const [formData, setFormData] = useState(() => {
     if (contractToEdit) {
       let formattedDate = '';
@@ -118,22 +112,6 @@ const ContractFormModal = ({
       } : {})
     }));
   }, []);
-  const handleSelectContact = contact => {
-    setFormData(prev => ({
-      ...prev,
-      clientName: contact.name,
-      clientPhone: contact.phone || ''
-    }));
-    setShowAgendaModal(false);
-    setAgendaSearch('');
-    toast.success(`Datos de ${contact.name} cargados.`, {
-      icon: '📖'
-    });
-  };
-  const filteredAgenda = useMemo(() => {
-    const lowerSearch = agendaSearch.toLowerCase();
-    return agenda.filter(c => c.name.toLowerCase().includes(lowerSearch) || c.phone && c.phone.includes(lowerSearch));
-  }, [agenda, agendaSearch]);
   const handleImageChange = e => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
@@ -207,10 +185,7 @@ const ContractFormModal = ({
                   <Input name="clientPhone" type="tel" value={formData.clientPhone} onChange={handleChange} disabled={isProcessing} placeholder="987 654 321" autoComplete="off" />
                 </FormField>
               </div>
-              {!isEditing && agenda.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-warning/40 bg-warning-soft p-3">
-                <div className="flex items-center gap-2 text-sm text-warning"><BookUser aria-hidden="true" className="size-5 shrink-0" /><span>¿Ya es cliente? Completa sus datos desde tu agenda.</span></div>
-                <Button onClick={() => setShowAgendaModal(true)} disabled={isProcessing} size="sm" variant="secondary" className="border-warning/30 bg-panel text-warning hover:border-warning/50 hover:bg-warning-soft">Buscar en agenda</Button>
-              </div>}
+
             </SectionCard>
 
             <SectionCard number="2" title="Logística de entrega" icon={CalendarClock}>
@@ -261,29 +236,6 @@ const ContractFormModal = ({
         </form>
       </Dialog>
 
-      {showAgendaModal && <Dialog title={<>
-                📖 Seleccionar Cliente
-              </>} busy={isProcessing} className="max-w-lg" onClose={() => setShowAgendaModal(false)}>
-
-            <div className="p-4">
-              <SearchField type="text" placeholder="Buscar nombre o celular..." value={agendaSearch} onChange={e => setAgendaSearch(e.target.value)} autoFocus />
-
-              <div className="max-h-75 overflow-y-auto flex flex-col gap-2 pr-1">
-                {filteredAgenda.length === 0 ? <div className="text-center p-5 text-muted text-sm bg-subtle rounded-xl">
-                    No se encontraron clientes.
-                  </div> : filteredAgenda.map(c => <div key={c.id} className="flex justify-between items-center p-3 border border-line rounded-xl cursor-pointer motion-reduce:transition-none bg-panel transition-colors hover:border-primary/40 hover:bg-primary-soft/40">
-                      <div>
-                        <strong className="block text-ink text-base">{c.name}</strong>
-                        <span className="text-sm text-muted">📱 {c.phone || 'Sin número'}</span>
-                      </div>
-                      <Button type="button" onClick={() => handleSelectContact(c)} className="py-1.5 px-3 text-sm border-0" variant="success">
-                        Elegir
-                      </Button>
-                    </div>)}
-              </div>
-            </div>
-
-          </Dialog>}
     </>;
 };
 export default ContractFormModal;

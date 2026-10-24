@@ -1437,10 +1437,10 @@ Base b74092ff03f4f81340171167ca45b2d406f5e50d, rama fix/mvp-operacion-rendimient
 | Checkpoint | Estado |
 |---|---|
 | A | Implementado: cursores de cajas (páginas <=200, máximo global, ISO/Timestamp, sin Excel parcial); JSON técnico retirado; resultados conservados al actualizar. 35 tests de reportes aprobados, lint y build/PWA OK. |
-| B | En curso: compensaciones y multiproducto requieren prueba financiera; capacidades aún bloqueadas. |
-| C | Pendiente de ejecución. |
-| D | Pendiente de ejecución. |
-| E | Pendiente de ejecución. |
+| B | PENDIENTE financiero: compensación POS y tickets >2 líneas todavía no implementados/certificados; capacidades bloqueadas. |
+| C | Implementado: TTL, single-flight, retención visual e invalidación por sede; 47/47 pruebas dirigidas. |
+| D | Implementado: duración 10 h de nuevas cajas en Rules, cierre tardío y caja compartida con Contratos; Emulator aprobado. |
+| E | Implementado: Agenda VIP retirada de UI y contratos, datos históricos conservados; aceptación visual manual pendiente. |
 
 Avisos build: chunks JS >500 kB, sin fallo. No se declara MVP comercial cerrado.
 
@@ -1460,3 +1460,6 @@ TTL día/semana 2 min; mes/año 15 min. Revalidación de visibilidad/online cond
 
 ### Plan 04 D — caja y Contratos
 Nuevas aperturas Spark guardan durationHours=10 y openedAt servidor. Rules exige diez horas y bloquea ventas/anticipos/abonos/reembolsos con request.time al vencer, sin permitir extender ni quitar la duración. Sesiones previas sin ese campo mantienen su política. Cierre tardío autorizado permanece disponible; no existe auto-cierre. Countdown es orientativo, nunca autoridad financiera. Caja, mutex e ID de apertura se comparten por UID/negocio/sede; lecturas se deduplican por 15 s y se invalidan al abrir/cerrar. Contratos reutiliza CashRegisterModals, muestra Abrir caja en cabecera y dentro del borrador, sin exigir caja a pedidos sin anticipo. Validación: 47/47 pruebas reales de Rules en Emulator, cero fallos/omisiones; lint y build/PWA aprobados. Falta aceptación manual móvil/foco del modal por el propietario. Requiere publicar Rules de forma expresamente autorizada antes del nuevo cliente (clientes antiguos no podrán crear sesiones nuevas sin durationHours).
+
+### Plan 04 E — Agenda y acabado UX
+Agenda VIP retirada de App, navegación desktop/móvil y módulos por rol; Contratos ya no importa useCustomers ni ejecuta su listener. Cliente/teléfono/dirección siguen manuales y editables; customers permanece en inventario, exportación y baja administrativa. Se conserva el código histórico desconectado: su eliminación fue rechazada por revisión automática; alternativa segura sin eliminación. Build no incluye chunks AgendaManager ni useCustomers. Footer compartido conserva Radix, foco y scroll, y agrega safe area móvil/objetivos táctiles mínimos. Resultado final focalizado: 82/82 pruebas JS (37 reportes, 10 sesión, 10 Spark, 25 seguridad UI), 47/47 Rules en Emulator; cero fallos y omisiones. Lint, build/PWA (39 entradas precache) y diff --check aprobados. Avisos existentes de bundles >500 kB (XLSX y principal). Pendiente aceptación visual por propietario, publicación autorizada de Rules y resolver B. NO-GO MVP comercial; tampoco se certifican offline financiero, baja en cascada ni conciliación definitiva. Sin deploy, merge, cambios .env, Firebase real o borrados de IndexedDB.

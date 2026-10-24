@@ -1,12 +1,12 @@
 import { memo, useMemo } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { ShoppingBag, CakeSlice, History, ContactRound, Package, Tags, ChartNoAxesCombined, UsersRound, Settings2, Building2, Ellipsis, Check } from 'lucide-react';
+import { ShoppingBag, CakeSlice, History, Package, Tags, ChartNoAxesCombined, UsersRound, Settings2, Building2, Ellipsis, Check } from 'lucide-react';
 import { getSessionModules } from './core/session/context.js';
 import { cn } from './shared/ui';
 
 const items = [
   {id:'pos',label:'Punto de venta',icon:ShoppingBag}, {id:'contracts',label:'Contratos',icon:CakeSlice},
-  {id:'history',label:'Historial',icon:History}, {id:'agenda',label:'Agenda VIP',icon:ContactRound},
+  {id:'history',label:'Historial',icon:History},
   {id:'products',label:'Productos',icon:Package}, {id:'categories',label:'Categorías',icon:Tags},
   {id:'reports',label:'Reportes',icon:ChartNoAxesCombined}, {id:'users',label:'Personal',icon:UsersRound},
   {id:'settings',label:'Ajustes',icon:Settings2}, {id:'superadmin',label:'SaaS Admin',icon:Building2},

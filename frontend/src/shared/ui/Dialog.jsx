@@ -10,7 +10,7 @@ export function DialogHeader({ children, className }) {
   return <div className={cn('border-b border-line pb-4', className)}>{children}</div>;
 }
 export function DialogFooter({ children, className }) {
-  return <div className={cn('sticky -bottom-5 z-10 -mx-5 -mb-5 mt-5 flex shrink-0 flex-col-reverse gap-2 border-t border-line bg-panel/95 px-5 py-4 backdrop-blur-sm sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6', className)}>{children}</div>;
+  return <div className={cn('sticky -bottom-5 z-10 -mx-5 -mb-5 mt-5 flex shrink-0 flex-col-reverse gap-2 pb-[max(1rem,env(safe-area-inset-bottom))] [&>button]:min-h-11 sm:[&>button]:min-w-28 border-t border-line bg-panel/95 px-5 py-4 backdrop-blur-sm sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6', className)}>{children}</div>;
 }
 function DialogSurface({ open = true, onOpenChange, onClose, title, description, children, busy = false, dismissible = true, className, bodyClassName, icon = PanelsTopLeft, drawer = false, alert = false }) {
   const Icon = icon;

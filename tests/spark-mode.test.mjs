@@ -105,3 +105,17 @@ it('prepares multi-product totals but refuses unverified checkout before startin
   const repository = createSparkSalesRepository({}, { currentUser: () => ({ uid: 'cashier' }), sdk: { runTransaction: () => { writes++; } } });
   await assert.rejects(repository.submit(sale), /no se divide el ticket/); assert.equal(writes, 0);
 });
+
+it('Plan04 removes Agenda VIP navigation and contract lookups while retaining historical customer administration', () => {
+  for (const role of ['dueño', 'cajero', 'superadmin']) {
+    const user = { uid: 'person', role, businessId: 'tenant' };
+    assert.equal(getSessionModules(user).includes('agenda'), false);
+    assert.notEqual(getSessionTab(user, 'agenda'), 'agenda');
+  }
+  const form = readFileSync('frontend/src/modules/contracts/components/ContractFormModal.jsx', 'utf8');
+  assert.doesNotMatch(form, /useCustomers|showAgendaModal|Buscar en agenda/);
+  for (const field of ['clientName', 'clientPhone', 'deliveryAddress']) assert.ok(form.includes('name="' + field + '"'));
+  for (const path of ['frontend/src/features/backups/infrastructure/backupRepository.js', 'frontend/src/features/backups/domain/cleanupPlan.js']) {
+    assert.match(readFileSync(path, 'utf8'), /'customers'/);
+  }
+});
