@@ -1,20 +1,30 @@
+import { Dialog } from "../shared/ui";
 // src/modules/CategoryManager.jsx
 import React, { memo } from 'react';
 import { useCategories } from '../features/catalog/hooks/useCategories';
 // Esta tarjeta solo se redibujará si su nombre o estado cambian en Firebase.
 // Escribir en la barra de búsqueda ya NO afectará a las categorías que no coincidan.
-const CategoryCard = memo(({ c, openEditForm, isLoading }) => {
+const CategoryCard = memo(({
+  c,
+  openEditForm,
+  isLoading
+}) => {
   const isInactive = c.status === 'inactivo';
 
   // Reutilizamos el estilo de las tarjetas de productos
   let cardClasses = `product-list-card fade-in ${isInactive ? 'inactive inactive-border' : ''}`;
-
-  return (
-    <div className={cardClasses} style={!isInactive ? { borderLeft: '5px solid var(--primary)' } : {}}>
+  return <div className={cardClasses} style={!isInactive ? {
+    borderLeft: '5px solid var(--primary)'
+  } : {}}>
 
       {/* 1. ICONO */}
-      <div className="product-image-box" style={{ background: isInactive ? 'var(--bg-app)' : 'var(--primary-light)' }}>
-        <span style={{ fontSize: '1.6rem', opacity: isInactive ? 0.4 : 1 }}>🏷️</span>
+      <div className="product-image-box" style={{
+      background: isInactive ? 'var(--bg-app)' : 'var(--primary-light)'
+    }}>
+        <span style={{
+        fontSize: '1.6rem',
+        opacity: isInactive ? 0.4 : 1
+      }}>🏷️</span>
       </div>
 
       {/* 2. INFO (Nombre y Estado) */}
@@ -24,9 +34,9 @@ const CategoryCard = memo(({ c, openEditForm, isLoading }) => {
         </h3>
         <div className="product-badges-row">
           <span className="badge-stock" style={{
-            background: isInactive ? '#fee2e2' : '#d1fae5',
-            color: isInactive ? 'var(--danger)' : 'var(--success)'
-          }}>
+          background: isInactive ? '#fee2e2' : '#d1fae5',
+          color: isInactive ? 'var(--danger)' : 'var(--success)'
+        }}>
             {isInactive ? '🔴 INACTIVA' : '🟢 ACTIVA'}
           </span>
         </div>
@@ -34,40 +44,53 @@ const CategoryCard = memo(({ c, openEditForm, isLoading }) => {
 
       {/* 3. ACCIÓN (Botón Editar) */}
       <div className="product-action-col">
-        <button
-          onClick={() => openEditForm(c)}
-          disabled={isLoading}
-          className="btn-icon"
-          title="Editar"
-          style={{ background: 'var(--bg-app)', minHeight: '34px', minWidth: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
+        <button onClick={() => openEditForm(c)} disabled={isLoading} className="btn-icon" title="Editar" style={{
+        background: 'var(--bg-app)',
+        minHeight: '34px',
+        minWidth: '34px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
           ✏️
         </button>
       </div>
 
-    </div>
-  );
+    </div>;
 });
 
 // Componente Principal
-function CategoryManager({ user }) {
+function CategoryManager({
+  user
+}) {
   const {
-    isLoading, searchTerm, setSearchTerm, showFormModal, setShowFormModal,
-    name, setName, status, setStatus, editing, showInactive, setShowInactive,
-    filteredCategories, openAddForm, openEditForm, handleSave
+    isLoading,
+    searchTerm,
+    setSearchTerm,
+    showFormModal,
+    setShowFormModal,
+    name,
+    setName,
+    status,
+    setStatus,
+    editing,
+    showInactive,
+    setShowInactive,
+    filteredCategories,
+    openAddForm,
+    openEditForm,
+    handleSave
   } = useCategories(user);
-  if (isLoading) {
-    return (
-      <div className="module-loader fade-in">
+  if (isLoading && !showFormModal) {
+    return <div className="module-loader fade-in">
         <div className="spinner"></div>
         {/* Texto exclusivo para este módulo */}
         <p className="loader-text">Organizando categorías...</p>
-      </div>
-    );
+      </div>;
   }
-
-  return (
-    <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '900px' }}>
+  return <div className="fade-in max-container padding-bottom-lg" style={{
+    maxWidth: '900px'
+  }}>
 
       {/* HEADER REFACTORIZADO */}
       <header className="module-header">
@@ -85,25 +108,12 @@ function CategoryManager({ user }) {
       <div className="filter-bar-container">
         <div className="search-container">
           <span className="search-icon">🔍</span>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar categoría por nombre..."
-            className="search-input"
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="btn-clear-search">✖</button>
-          )}
+          <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar categoría por nombre..." className="search-input" />
+          {searchTerm && <button onClick={() => setSearchTerm('')} className="btn-clear-search">✖</button>}
         </div>
 
         <label className="toggle-label">
-          <input
-            type="checkbox"
-            className="toggle-checkbox"
-            checked={showInactive}
-            onChange={(e) => setShowInactive(e.target.checked)}
-          />
+          <input type="checkbox" className="toggle-checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Ver archivados
         </label>
       </div>
@@ -114,33 +124,20 @@ function CategoryManager({ user }) {
 
 
       <div className="product-list-container">
-        {filteredCategories.length === 0 ? (
-          <div className="card fade-in empty-state">
+        {filteredCategories.length === 0 ? <div className="card fade-in empty-state">
             <span className="empty-icon-lg">📁</span>
             <p className="empty-text">
               {searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'Aún no has registrado ninguna categoría.'}
             </p>
-          </div>
-        ) : (
-          filteredCategories.map(c => (
-            /* 🚀 Invocamos la tarjeta blindada */
-            <CategoryCard
-              key={c.id}
-              c={c}
-              openEditForm={openEditForm}
-              isLoading={isLoading}
-            />
-          ))
-        )}
+          </div> : filteredCategories.map(c => (/* 🚀 Invocamos la tarjeta blindada */
+      <CategoryCard key={c.id} c={c} openEditForm={openEditForm} isLoading={isLoading} />))}
       </div>
 
       {/* MODAL FORMULARIO LIMPIO */}
-      {showFormModal && (
-        <div className="modal-overlay fade-in">
-          <div className="card modal-content" style={{ maxWidth: '400px' }}>
-            <h3 className="modal-header-title">
+      {showFormModal && <Dialog title={<>
               {editing ? '✏️ Editar Categoría' : '➕ Nueva Categoría'}
-            </h3>
+            </>} busy={isLoading} className="max-w-lg" onClose={() => setShowFormModal(false)}>
+
 
             <form onSubmit={handleSave} className="smart-form">
               <div className="form-group">
@@ -165,12 +162,8 @@ function CategoryManager({ user }) {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+          </Dialog>}
 
-    </div>
-  );
+    </div>;
 }
-
 export default CategoryManager;

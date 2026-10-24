@@ -171,3 +171,5 @@ El prompt operativo completo está incluido en la respuesta de ChatGPT que acomp
 ## Avance de implementación
 
 Checkpoint A: Tailwind v4 mediante plugin oficial Vite, tokens semánticos violeta/azul, primitivas compartidas, sidebar desktop y navegación móvil «Más» filtradas por la sesión; selector de sede y notificaciones reutilizables. Banner técnico global trasladado a Ajustes/Capacidades; aviso operativo POS fuera del grid (dos paneles estructurales). CSS legado temporalmente aislado en capa `legacy` durante la sustitución; retirada final en checkpoint C. Sin cambios de hooks, repositorios, dominio, Firebase, PWA, impresión, persistencia ni `.env`. Sin pruebas nuevas o capturas; revisión visual pendiente del propietario.
+
+Checkpoint B: POS dividido en catálogo, ticket, pagos y estados presentacionales; Drawer móvil y diálogos Radix para caja, catálogo, contactos, personal, sucursales, contratos, SuperAdmin, QR y términos. Los formularios permanecen montados durante el guardado y el cierre se bloquea mientras la operación está pendiente. Hooks y cálculos financieros conservados.

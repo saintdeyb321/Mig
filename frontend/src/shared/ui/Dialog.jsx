@@ -18,20 +18,22 @@ function DialogSurface({ open = true, onOpenChange, onClose, title, description,
   const Close = alert ? Primitive.Cancel : Primitive.Close;
   const change = next => { if (!busy && (next || dismissible)) { onOpenChange?.(next); if (!next) onClose?.(); } };
   return <Primitive.Root open={open} onOpenChange={change}><Primitive.Portal>
-    <Primitive.Overlay className="fixed inset-0 z-40 bg-ink/55 data-[state=open]:animate-enter motion-reduce:animate-none" />
+    <div className="pointer-events-none fixed inset-0 z-50 isolate">
+    <Primitive.Overlay className="pointer-events-auto absolute inset-0 bg-ink/55 data-[state=open]:animate-enter motion-reduce:animate-none" />
     <Primitive.Content aria-busy={busy || undefined}
       onEscapeKeyDown={event => { if (busy || !dismissible) event.preventDefault(); }}
       onInteractOutside={event => { if (busy || !dismissible) event.preventDefault(); }}
       onCloseAutoFocus={event => { event.preventDefault(); requestAnimationFrame(() => { if (returnFocus.current?.isConnected) returnFocus.current.focus(); }); }}
-      className={cn('fixed left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-panel p-5 text-ink shadow-float outline-none sm:p-6',
+      className={cn('pointer-events-auto fixed left-1/2 z-10 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-panel p-5 text-ink shadow-float outline-none sm:p-6',
         drawer ? 'bottom-0 max-h-[90dvh] w-full max-w-none rounded-b-none pb-[max(1.25rem,env(safe-area-inset-bottom))]' : 'top-1/2 -translate-y-1/2', className)}>
       <DialogHeader className="flex items-start justify-between gap-4">
         <div className="min-w-0"><Primitive.Title className="text-lg font-bold tracking-tight">{title}</Primitive.Title>
           <Primitive.Description className={cn('mt-1 text-sm leading-relaxed text-muted', !description && 'sr-only')}>{description || 'Revisa y completa los datos de esta operación.'}</Primitive.Description></div>
         {dismissible && <Close asChild><IconButton label="Cerrar diálogo" disabled={busy}><X /></IconButton></Close>}
       </DialogHeader>
-      {children}
+      <fieldset disabled={busy} className="contents">{children}</fieldset>
     </Primitive.Content>
+    </div>
   </Primitive.Portal></Primitive.Root>;
 }
 export function Dialog(props) { return <DialogSurface {...props} />; }
