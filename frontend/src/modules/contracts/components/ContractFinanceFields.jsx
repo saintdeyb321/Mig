@@ -1,4 +1,5 @@
-import { FormField, Input, Select, cn } from '../../../shared/ui';
+import { FormField, Input, Select, cn, SectionCard } from '../../../shared/ui';
+import { WalletCards } from 'lucide-react';
 export function ContractFinanceFields({
   formData,
   isProcessing,
@@ -6,12 +7,7 @@ export function ContractFinanceFields({
   totals,
   handleChange
 }) {
-  return <div className="grid min-w-0 gap-4 rounded-xl border border-line p-4 bg-subtle/50">
-              <h4 className="text-sm font-semibold">
-                4. Finanzas y Cobro
-                {isEditing && <span className="block text-xs font-normal text-muted"> (Puedes ajustar los precios. Los abonos previos se mantienen)</span>}
-              </h4>
-
+  return <SectionCard number="4" title="Finanzas y cobro" icon={WalletCards} tone="finance" description={isEditing ? 'Puedes ajustar los precios. Los abonos previos se mantienen.' : 'Define el total y registra una primera cuota si corresponde.'}>
               <div className="grid min-w-0 gap-4">
                 <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                   <FormField label={<>Costo del Producto (S/) <span className="text-danger">*</span></>}>
@@ -24,9 +20,9 @@ export function ContractFinanceFields({
                   </FormField>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-primary-soft p-4 text-sm text-primary [&>strong]:text-2xl">
-                  <span>Total a Pagar</span>
-                  <strong>S/ {totals.total.toFixed(2)}</strong>
+                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-success/40 bg-panel p-4 text-success shadow-sm shadow-success/10">
+                  <span className="text-xs font-bold uppercase tracking-widest">Total del pedido</span>
+                  <strong className="text-3xl font-extrabold tabular-nums sm:text-4xl">S/ {totals.total.toFixed(2)}</strong>
                 </div>
 
                 {!isEditing && <div className="grid min-w-0 gap-4 sm:grid-cols-2">
@@ -56,5 +52,5 @@ export function ContractFinanceFields({
                 </div> : totals.total > 0 && <div className={cn(`rounded-xl p-3 text-sm ${totals.balance > 0 ? "bg-warning-soft text-warning" : "bg-success-soft text-success"} `)}>
                     {totals.balance > 0 ? `El cliente dejará un saldo pendiente de S/ ${totals.balance.toFixed(2)}` : 'El pedido quedará totalmente pagado ✅'}
                   </div>}
-            </div>;
+            </SectionCard>;
 }

@@ -10,3 +10,4 @@ export { LoadingState, EmptyState, ErrorState } from './States';
 export { Dialog, ConfirmDialog, Drawer, DialogHeader, DialogFooter } from './Dialog';
 export { cn } from './cn';
 export { SearchField } from './SearchField';
+export { SectionCard } from './SectionCard';

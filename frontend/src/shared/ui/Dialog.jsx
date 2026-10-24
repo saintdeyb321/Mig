@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import * as AlertPrimitive from '@radix-ui/react-alert-dialog';
-import { X } from 'lucide-react';
+import { PanelsTopLeft, X } from 'lucide-react';
 import { cn } from './cn';
 import { Button } from './Button';
 import { IconButton } from './IconButton';
@@ -10,9 +10,10 @@ export function DialogHeader({ children, className }) {
   return <div className={cn('border-b border-line pb-4', className)}>{children}</div>;
 }
 export function DialogFooter({ children, className }) {
-  return <div className={cn('mt-5 flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:justify-end', className)}>{children}</div>;
+  return <div className={cn('sticky -bottom-5 z-10 -mx-5 -mb-5 mt-5 flex shrink-0 flex-col-reverse gap-2 border-t border-line bg-panel/95 px-5 py-4 backdrop-blur-sm sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6', className)}>{children}</div>;
 }
-function DialogSurface({ open = true, onOpenChange, onClose, title, description, children, busy = false, dismissible = true, className, drawer = false, alert = false }) {
+function DialogSurface({ open = true, onOpenChange, onClose, title, description, children, busy = false, dismissible = true, className, bodyClassName, icon = PanelsTopLeft, drawer = false, alert = false }) {
+  const Icon = icon;
   const returnFocus = useRef(document.activeElement);
   const Primitive = alert ? AlertPrimitive : DialogPrimitive;
   const Close = alert ? Primitive.Cancel : Primitive.Close;
@@ -33,14 +34,15 @@ function DialogSurface({ open = true, onOpenChange, onClose, title, description,
           else document.getElementById('main-content')?.focus({ preventScroll: true });
         });
       }}
-      className={cn('pointer-events-auto fixed left-1/2 z-10 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-panel p-5 text-ink shadow-float outline-none sm:p-6',
-        drawer ? 'bottom-0 max-h-[90dvh] w-full max-w-none rounded-b-none pb-[max(1.25rem,env(safe-area-inset-bottom))]' : 'top-1/2 -translate-y-1/2', className)}>
-      <DialogHeader className="flex items-start justify-between gap-4">
-        <div className="min-w-0"><Primitive.Title className="text-lg font-bold tracking-tight">{title}</Primitive.Title>
-          <Primitive.Description className={cn('mt-1 text-sm leading-relaxed text-muted', !description && 'sr-only')}>{description || 'Revisa y completa los datos de esta operación.'}</Primitive.Description></div>
-        {dismissible && <Close asChild><IconButton label="Cerrar diálogo" disabled={busy}><X /></IconButton></Close>}
+      className={cn('pointer-events-auto fixed left-1/2 z-10 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-white/20 bg-canvas text-ink shadow-float outline-none',
+        drawer ? 'bottom-0 max-h-[90dvh] w-full max-w-none rounded-b-none' : 'top-1/2 -translate-y-1/2', className)}>
+      <DialogHeader className="flex shrink-0 items-start justify-between gap-3 border-white/10 bg-linear-to-br from-brand-deep to-primary px-5 py-4 text-white sm:px-6 sm:py-5">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10"><Icon aria-hidden="true" className="size-5" /></span>
+        <div className="min-w-0 flex-1"><Primitive.Title className="text-lg font-extrabold tracking-tight">{title}</Primitive.Title>
+          <Primitive.Description className={cn('mt-1 text-xs leading-relaxed text-white/75', !description && 'sr-only')}>{description || 'Revisa y completa los datos de esta operación.'}</Primitive.Description></div>
+        {dismissible && <Close asChild><IconButton label="Cerrar diálogo" disabled={busy} className="-mr-1 -mt-1 text-white/80 hover:bg-white/10 hover:text-white"><X /></IconButton></Close>}
       </DialogHeader>
-      <fieldset disabled={busy} className="contents">{children}</fieldset>
+      <div className={cn("min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-5 sm:p-6", bodyClassName)}><fieldset disabled={busy} className="contents">{children}</fieldset></div>
     </Primitive.Content>
     </div>
   </Primitive.Portal></Primitive.Root>;

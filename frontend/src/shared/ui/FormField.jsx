@@ -15,7 +15,7 @@ export function FormField({ label, children, hint, error, className, htmlFor, re
       'aria-invalid': error ? true : child.props['aria-invalid'],
     }) : child);
   return <div className={cn('grid min-w-0 gap-1.5', className)}>
-    <label htmlFor={controlId} className="text-sm font-medium text-ink">{label}{required && <span aria-hidden="true" className="ml-1 text-danger">*</span>}</label>
+    <label htmlFor={controlId} className="text-sm font-semibold text-brand-deep">{label}{required && <span aria-hidden="true" className="ml-1 text-danger">*</span>}</label>
     {controls}
     {(hint || error) && <p id={id} role={error ? 'alert' : undefined} className={cn('text-xs leading-relaxed', error ? 'text-danger' : 'text-muted')}>{error || hint}</p>}
   </div>;

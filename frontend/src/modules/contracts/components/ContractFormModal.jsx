@@ -1,6 +1,6 @@
 import { ContractFinanceFields } from "./ContractFinanceFields";
-import { Dialog, Input, FormField, Button, Select, Textarea, DialogFooter, SearchField } from "../../../shared/ui";
-// src/modules/contracts/components/ContractFormModal.jsx
+import { Dialog, Input, FormField, Button, Select, Textarea, DialogFooter, SearchField, SectionCard } from "../../../shared/ui";
+import { BookUser, CalendarClock, ImagePlus, NotebookPen, Save, UserRound } from 'lucide-react';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useCustomers } from '../../../features/customers/hooks/useCustomers';
@@ -194,99 +194,70 @@ const ContractFormModal = ({
     onSubmit(finalData, null, isEditing ? contractToEdit.id : null);
   };
   return <>
-      <Dialog title={<>{isEditing ? 'Editar Pedido' : 'Registro de Nuevo Pedido'}</>} busy={isProcessing} className="max-w-3xl" onClose={onClose}>
-
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">{isEditing ? '✏️' : '📝'}</span>
-
-            </div>
-
-          </div>
-
-          <form onSubmit={handleFormSubmit} className="grid min-w-0 gap-5">
-            <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Fotos JPEG/PNG/WebP hasta 5 MB de entrada, comprimidas a 256 KiB + miniatura de 64 KiB; solo en este dispositivo/cuenta. Guarda sin foto si no está disponible.</p>
-
-            <div className="grid min-w-0 gap-4 rounded-xl border border-line p-4">
-              <h4 className="text-sm font-semibold">1. Datos del Cliente</h4>
-
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                <FormField label={<>Nombre Completo <span className="text-danger">*</span></>}>
-
+      <Dialog title={isEditing ? 'Editar Pedido' : 'Registro de Nuevo Pedido'} description="Cada detalle, listo para una entrega especial." icon={NotebookPen} busy={isProcessing} className="max-w-[850px]" bodyClassName="flex flex-col space-y-0 overflow-hidden p-0 sm:p-0" onClose={onClose}>
+        <form onSubmit={handleFormSubmit} className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
+            <SectionCard number="1" title="Datos del cliente" icon={UserRound}>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                <FormField label="Nombre completo" required>
                   <Input name="clientName" autoFocus value={formData.clientName} onChange={handleChange} required disabled={isProcessing} placeholder="Ej: Juan Pérez" />
                 </FormField>
-
-                <FormField label={<>Teléfono / WhatsApp</>}>
-
+                <FormField label="Teléfono / WhatsApp">
                   <Input name="clientPhone" type="tel" value={formData.clientPhone} onChange={handleChange} disabled={isProcessing} placeholder="987 654 321" autoComplete="off" />
                 </FormField>
               </div>
+              {!isEditing && agenda.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-warning/40 bg-warning-soft p-3">
+                <div className="flex items-center gap-2 text-sm text-warning"><BookUser aria-hidden="true" className="size-5 shrink-0" /><span>¿Ya es cliente? Completa sus datos desde tu agenda.</span></div>
+                <Button onClick={() => setShowAgendaModal(true)} disabled={isProcessing} size="sm" variant="secondary" className="border-warning/30 bg-panel text-warning hover:border-warning/50 hover:bg-warning-soft">Buscar en agenda</Button>
+              </div>}
+            </SectionCard>
 
-              {!isEditing && agenda.length > 0 && <div className="flex justify-center mt-3">
-                  <Button type="button" onClick={() => setShowAgendaModal(true)} disabled={isProcessing} className="m-0" variant="secondary">
-                    📖 Buscar en Agenda
-                  </Button>
-                </div>}
-            </div>
-
-            <div className="grid min-w-0 gap-4 rounded-xl border border-line p-4">
-              <h4 className="text-sm font-semibold">2. Logística de Entrega</h4>
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                <FormField label={<>Fecha y Hora <span className="text-danger">*</span></>}>
-
+            <SectionCard number="2" title="Logística de entrega" icon={CalendarClock}>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                <FormField label="Fecha y hora" required>
                   <Input name="deliveryDate" type="datetime-local" value={formData.deliveryDate} onChange={handleChange} required disabled={isProcessing} />
                 </FormField>
-                <FormField label={<>Método de Entrega <span className="text-danger">*</span></>}>
-
+                <FormField label="Método de entrega" required>
                   <Select name="deliveryType" value={formData.deliveryType} onChange={handleChange} disabled={isProcessing}>
-                    <option value="domicilio">🛵 Delivery a Domicilio</option>
-                    <optgroup label="🏪 Recoger en Local (Sedes)">
-                      {activeLocations.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                    </optgroup>
+                    <option value="domicilio">Delivery a domicilio</option>
+                    <optgroup label="Recoger en local (sedes)">{activeLocations.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
                   </Select>
                 </FormField>
-                {formData.deliveryType === 'domicilio' && <FormField label={<>Dirección Exacta <span className="text-danger">*</span></>}>
-
-                    <Input name="deliveryAddress" value={formData.deliveryAddress} onChange={handleChange} disabled={isProcessing} required placeholder="Av. Principal 123" />
-                  </FormField>}
+                {formData.deliveryType === 'domicilio' && <FormField label="Dirección exacta" required className="sm:col-span-2">
+                  <Input name="deliveryAddress" value={formData.deliveryAddress} onChange={handleChange} disabled={isProcessing} required placeholder="Av. Principal 123, referencia de llegada" />
+                </FormField>}
               </div>
-            </div>
+            </SectionCard>
 
-            <div className="grid min-w-0 gap-4 rounded-xl border border-line p-4">
-              <h4 className="text-sm font-semibold">3. Detalles del Pedido</h4>
-              <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-                <FormField label={<>Descripción Exacta <span className="text-danger">*</span></>}>
-
-                  <Textarea name="details" value={formData.details} onChange={handleChange} required disabled={isProcessing} placeholder="Ej: Torta de chocolate, 2 pisos, relleno de fresa..." />
+            <SectionCard number="3" title="Detalles del pedido" icon={NotebookPen}>
+              <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+                <FormField label="Descripción exacta" required>
+                  <Textarea name="details" value={formData.details} onChange={handleChange} required disabled={isProcessing} className="min-h-28" placeholder="Ej: Torta de chocolate, 2 pisos, relleno de fresa…" />
                 </FormField>
-
-                <div className="grid min-w-0 gap-1.5">
-                  <p className="text-sm leading-relaxed text-muted">Fotos de referencia (máximo {MAX_CONTRACT_IMAGES}) · {images.length}/{MAX_CONTRACT_IMAGES}</p>
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                    {images.map((_image, idx) => <div key={idx} className="relative aspect-square overflow-hidden rounded-xl border border-line bg-subtle">
-                        {displayedImages[idx] ? <img src={displayedImages[idx]} alt={`Ref ${idx}`} className="size-full object-cover" /> : <span>Cargando imagen...</span>}
-                        <Button type="button" onClick={() => handleRemoveImage(idx)} disabled={isProcessing} className="absolute right-1 top-1 z-10 size-8 min-h-8 rounded-full p-1" title="Eliminar foto" variant="danger" aria-label="Eliminar foto">✖</Button>
-                      </div>)}
-                    {images.length < MAX_CONTRACT_IMAGES && <div className="relative flex aspect-square items-center justify-center rounded-xl border border-dashed border-primary/40 bg-primary-soft focus-within:ring-2 focus-within:ring-focus" title="Subir foto">
-                        <Input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handleImageChange} disabled={isProcessing} className="absolute inset-0 size-full cursor-pointer opacity-0" aria-label="Seleccionar imagen de referencia" />
-                        <span className="pointer-events-none text-2xl text-primary">➕</span>
-                      </div>}
+                <div className="min-w-0 space-y-2">
+                  <p className="flex flex-wrap justify-between gap-1 text-sm font-semibold text-brand-deep"><span>Fotos de referencia</span><span className="text-xs font-medium text-muted">{images.length}/{MAX_CONTRACT_IMAGES}</span></p>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-3">
+                    {images.map((_image, idx) => <div key={idx} className="relative aspect-square overflow-hidden rounded-xl border border-line bg-subtle shadow-xs">
+                      {displayedImages[idx] ? <img src={displayedImages[idx]} alt={`Referencia ${idx + 1}`} className="size-full object-cover" /> : <span className="p-2 text-xs text-muted">Cargando…</span>}
+                      <Button onClick={() => handleRemoveImage(idx)} disabled={isProcessing} className="absolute right-0.5 top-0.5 z-10 size-9 min-h-9 rounded-full p-1" variant="danger" aria-label={`Quitar foto ${idx + 1}`}>×</Button>
+                    </div>)}
+                    {images.length < MAX_CONTRACT_IMAGES && <div className="relative flex aspect-square items-center justify-center rounded-xl border-2 border-dashed border-accent/35 bg-accent-soft text-accent transition-colors hover:border-accent focus-within:ring-2 focus-within:ring-focus">
+                      <Input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handleImageChange} disabled={isProcessing} className="absolute inset-0 size-full cursor-pointer opacity-0" aria-label="Añadir fotos de referencia" />
+                      <ImagePlus aria-hidden="true" className="pointer-events-none size-6" />
+                    </div>}
                   </div>
+                  <p className="text-xs leading-relaxed text-muted">Hasta {MAX_CONTRACT_IMAGES} fotos · JPEG, PNG o WebP · 5 MB por foto. Se guardan comprimidas solo en este dispositivo y cuenta.</p>
                 </div>
               </div>
-            </div>
-
+            </SectionCard>
             <ContractFinanceFields formData={formData} isProcessing={isProcessing} isEditing={isEditing} totals={totals} handleChange={handleChange} />
-
-            <DialogFooter>
-              <Button type="button" onClick={onClose} disabled={isProcessing} variant="secondary">Cancelar</Button>
-              <Button type="submit" disabled={isProcessing} variant="primary">
-                {isProcessing ? 'Procesando...' : isEditing ? 'Actualizar Pedido' : 'Guardar y Registrar Pedido'}
-              </Button>
-            </DialogFooter>
-
-          </form>
-        </Dialog>
+          </div>
+          <DialogFooter className="static m-0 gap-3 bg-panel px-4 py-4 sm:m-0 sm:px-6">
+            <Button onClick={onClose} disabled={isProcessing} variant="secondary">Cancelar</Button>
+            <Button type="submit" loading={isProcessing} className="sm:min-w-60"><Save aria-hidden="true" />{isProcessing ? 'Procesando…' : isEditing ? 'Actualizar Pedido' : 'Guardar y Registrar Pedido'}</Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
 
       {showAgendaModal && <Dialog title={<>
                 📖 Seleccionar Cliente
