@@ -12,11 +12,11 @@ export function ContractFinanceFields({
                 <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                   <FormField label={<>Costo del Producto (S/) <span className="text-danger">*</span></>}>
 
-                    <Input name="subtotal" type="number" min="0" step="0.50" value={formData.subtotal} onChange={handleChange} disabled={isProcessing} required placeholder="0.00" />
+                    <Input name="subtotal" type="number" min="0" step="0.01" value={formData.subtotal} onChange={handleChange} disabled={isProcessing} required placeholder="0.00" />
                   </FormField>
                   <FormField label={<>Costo Delivery (S/)</>}>
 
-                    <Input name="deliveryCost" type="number" min="0" step="0.50" value={formData.deliveryCost} onChange={handleChange} disabled={isProcessing || formData.deliveryType !== 'domicilio'} placeholder="0.00" />
+                    <Input name="deliveryCost" type="number" min="0" step="0.01" value={formData.deliveryCost} onChange={handleChange} disabled={isProcessing || formData.deliveryType !== 'domicilio'} placeholder="0.00" />
                   </FormField>
                 </div>
 
@@ -28,7 +28,7 @@ export function ContractFinanceFields({
                 {!isEditing && <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                     <FormField label={<>1ra Cuota (S/) <span className="text-xs opacity-70 font-normal">(Opcional)</span></>}>
 
-                      <Input name="advancePayment" type="number" min="0" max={totals.total} step="0.50" value={formData.advancePayment} onChange={handleChange} disabled={isProcessing || totals.total === 0} placeholder="0.00" />
+                      <Input name="advancePayment" type="number" min="0" max={totals.total} step="0.01" value={formData.advancePayment} onChange={handleChange} disabled={isProcessing || totals.total === 0} placeholder="0.00" />
                     </FormField>
                     <FormField label={<>Método de Pago</>}>
 
