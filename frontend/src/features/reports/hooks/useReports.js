@@ -36,6 +36,6 @@ export const useReports = user => {
   const model = current.model;
   const refreshReport = useCallback(() => { resources.invalidate('report:'); cache.clear(); return resource.current?.refresh(true); }, [resources, cache]);
   return { contractCounts: model?.contractCounts ?? { pending: 0, delivered: 0, cancelled: 0, withDebt: 0 }, summary: model?.summary ?? emptyMetrics(), topProducts: model?.topProducts ?? [], chartData: model?.chartData ?? [],
-    isLoading: current.isLoading, error: current.error, timeFilter, setTimeFilter, refreshReport, updatedAt: current.updatedAt,
+    isLoading: current.isLoading, error: current.queryError ?? current.error, timeFilter, setTimeFilter, refreshReport, updatedAt: current.updatedAt,
     maxProductQty: Math.max(1, ...(model?.topProducts ?? []).map(row => row.qty)) };
 };

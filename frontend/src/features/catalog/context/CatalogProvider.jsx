@@ -5,7 +5,7 @@ import { subscribeProducts, subscribeCategories } from '../infrastructure/catalo
 import { projectQueuedStock } from '../application/projectQueuedStock.js';
 import { subscribeStockQueue, retireStockProjections, readPendingSales } from '../../sales/infrastructure/pendingSalesCache';
 import { subscribeTenantCache } from '../../../core/cache/subscribeTenantCache';
-import { useScopedSubscription } from '../../../shared/hooks/useScopedSubscription';
+import { EMPTY_LIST, useScopedSubscription } from '../../../shared/hooks/useScopedSubscription';
 import offlineDB from '../../../offlineDB';
 
 export function CatalogProvider({ children }) {
@@ -46,10 +46,12 @@ export function CatalogProvider({ children }) {
     data => onData(data.sort((a, b) => a.name.localeCompare(b.name))), onError,
     categories => categories.sort((a, b) => a.name.localeCompare(b.name)),
   ), [businessId]);
-  const products = useScopedSubscription(identityKey, watchProducts);
-  const categories = useScopedSubscription(identityKey, watchCategories);
+  const products = useScopedSubscription(identityKey, watchProducts, EMPTY_LIST, { preserveOnError: true });
+  const categories = useScopedSubscription(identityKey, watchCategories, EMPTY_LIST, { preserveOnError: true });
+  const retry = () => { products.retry(); categories.retry(); };
   return <CatalogContext.Provider value={{
     products: products.data, categories: categories.data,
     isLoading: products.isLoading || categories.isLoading, error: products.error || categories.error,
+    isStale: products.isStale || categories.isStale, retry,
   }}>{children}</CatalogContext.Provider>;
 }

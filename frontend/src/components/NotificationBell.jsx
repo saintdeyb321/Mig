@@ -1,10 +1,11 @@
+import FirestoreQueryError from './FirestoreQueryError';
 import { useState } from 'react';
 import { Bell } from 'lucide-react';
 import { useTenantData } from '../features/branches/context/TenantContext';
 import { toDateSafe } from '../core/dates/dateValues';
-import { Alert, Badge, Button, Card, Dialog, EmptyState, IconButton } from '../shared/ui';
+import { Badge, Button, Card, Dialog, EmptyState, IconButton } from '../shared/ui';
 
-export function NotificationBell({ alerts, notificationError, isAdmin, canViewNotifications=false, markAsRead, markAllAsRead }) {
+export function NotificationBell({ user, alerts, notificationError, isAdmin, canViewNotifications=false, markAsRead, markAllAsRead }) {
   const {businessBranches=[]}=useTenantData()??{};
   const [isOpen,setIsOpen]=useState(false);
   if(!canViewNotifications&&!isAdmin) return null;
@@ -13,7 +14,7 @@ export function NotificationBell({ alerts, notificationError, isAdmin, canViewNo
       {(notificationError||alerts.length>0)&&<span className="pointer-events-none absolute right-0 top-0 flex min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">{notificationError?'!':alerts.length}</span>}
     </span>
     {isOpen&&<Dialog title="Notificaciones" description="Avisos de tus operaciones y de tu negocio." onClose={()=>setIsOpen(false)}>
-      {notificationError&&<Alert variant="danger">{notificationError}</Alert>}
+      <FirestoreQueryError error={notificationError} area="notifications-unread" user={user} />
       {!notificationError&&!alerts.length&&<EmptyState title="Todo al día" description="No tienes notificaciones pendientes." />}
       {alerts.length>0&&markAllAsRead&&<Button variant="secondary" size="sm" onClick={markAllAsRead}>Marcar todas como leídas</Button>}
       {alerts.map(notification=>{

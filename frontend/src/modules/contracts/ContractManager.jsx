@@ -1,3 +1,4 @@
+import FirestoreQueryError from '../../components/FirestoreQueryError';
 import { isBranchOperational } from '../../features/branches/domain/branchPolicy';
 import { CakeSlice } from 'lucide-react';
 import { Button, PageHeader, Select, cn, SearchField, EmptyState } from "../../shared/ui";
@@ -147,7 +148,7 @@ function ContractManager({
         </Button></>} />
 
       <p role="status" className="text-sm text-muted">{isStale ? 'Agenda en caché, pendiente de servidor.' : `Agenda recibida: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`}{historyUpdatedAt > 0 && ` Historial leído: ${new Date(historyUpdatedAt).toLocaleTimeString('es-PE')}.`}</p>
-      {error && <p role="alert" className="text-danger">No se pudo leer la agenda; no se confirma que esté vacía. <Button onClick={retry} variant="secondary">Reintentar lectura</Button></p>}
+      <FirestoreQueryError error={error} area="contracts-active" user={user} onRetry={retry} />
 
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-panel p-4 shadow-card">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por cliente, teléfono o ID..." />
@@ -172,7 +173,7 @@ function ContractManager({
       </div>
 
       <div className="grid gap-4">
-        {filteredContracts.length === 0 ? <EmptyState title={<>No hay pedidos en esta vista</>} /> : filteredContracts.map(c => <ContractCard key={c.id} contract={c} onView={setContractToView} branches={businessBranches} onPrint={handlePrintTicket} onPrintProduction={handlePrintProduction} onPrintTextOnly={handlePrintTextOnly} />)}
+        {filteredContracts.length === 0 && error ? null : filteredContracts.length === 0 ? <EmptyState title={<>No hay pedidos en esta vista</>} /> : filteredContracts.map(c => <ContractCard key={c.id} contract={c} onView={setContractToView} branches={businessBranches} onPrint={handlePrintTicket} onPrintProduction={handlePrintProduction} onPrintTextOnly={handlePrintTextOnly} />)}
       </div>
 
       {viewFilter === 'historial' && <div className="text-center mt-5">

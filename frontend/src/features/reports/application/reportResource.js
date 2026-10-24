@@ -30,7 +30,7 @@ export function createReportResource({ key, businessId, branchId, period, cache,
       onState({ key, model, isLoading: false, error: null, updatedAt: loadedAt });
     } catch (error) { fail(error); }
   };
-  const fail = error => { if (active) { reportDiagnostic('report', error); cache.invalidate(key); onState({ key, model: null, isLoading: false, error: error.message }); } };
+  const fail = error => { if (active) { reportDiagnostic('report', error); cache.invalidate(key); onState({ key, model: null, isLoading: false, error: error.message, queryError: error }); } };
   async function refresh(force = false) {
     if (!active) return;
     if (pending) return pending;

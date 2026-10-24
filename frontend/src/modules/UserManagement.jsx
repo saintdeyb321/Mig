@@ -1,4 +1,4 @@
-import { firebaseErrorMessage } from '../core/errors/firebaseErrors';
+import FirestoreQueryError from '../components/FirestoreQueryError';
 import { UsersRound } from 'lucide-react';
 import { useConfirmDialog } from '../shared/ui/useConfirmDialog';
 import { Alert, LoadingState, Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
@@ -134,7 +134,7 @@ function UserManagement({
           ➕ Nuevo Empleado
         </Button></>} />
 
-      {error && <Alert variant="danger" title="No se pudo confirmar Personal">{firebaseErrorMessage(error)} <Button onClick={retry} variant="secondary" size="sm">Reintentar lectura</Button></Alert>}
+      <FirestoreQueryError error={error} area="personnel" user={user} onRetry={retry} />
       {isStale && sortedUsers.length > 0 && <Alert variant="warning">Datos de esta sesión pendientes de confirmar. La edición está bloqueada hasta verificar los permisos.</Alert>}
       <div className="flex flex-wrap items-center gap-3">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre o correo..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />

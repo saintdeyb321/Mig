@@ -9,6 +9,7 @@ import { auth } from '../../../core/firebase/client';
 import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
 
 export const useCashRegister = (user, currentBranchId) => {
+  const [readError, setReadError] = useState(null);
   const [currentSession, setCurrentSession] = useState(null);
   const [isLoadingSession, setIsLoadingSession] = useState(true);
   const revision = useRef(0), processing = useRef(false);
@@ -16,6 +17,7 @@ export const useCashRegister = (user, currentBranchId) => {
   const canForce = ['dueño', 'superadmin'].includes(user?.role);
   const checkSession = useCallback(async () => {
     const token = ++revision.current;
+    setReadError(null);
     const active = () => token === revision.current && auth.currentUser?.uid === user?.uid;
     if (!user?.businessId || !currentBranchId || currentBranchId === 'global') {
       setCurrentSession(null); setIsLoadingSession(false); return;
@@ -43,7 +45,7 @@ export const useCashRegister = (user, currentBranchId) => {
         else setCurrentSession(null);
       }
     } catch (error) {
-      if (active()) { setCurrentSession(null); toast.error(error.message || 'No se pudo verificar la caja.'); }
+      if (active()) { setReadError(error); setCurrentSession(null); toast.error(error.message || 'No se pudo verificar la caja.'); }
     } finally { if (active()) setIsLoadingSession(false); }
   }, [user?.businessId, user?.uid, currentBranchId, canForce]);
   useEffect(() => {
@@ -139,5 +141,5 @@ export const useCashRegister = (user, currentBranchId) => {
     } catch (error) { toast.error(error.message || 'No se pudo cerrar la caja.', { id: toastId }); return false; }
     finally { processing.current = false; }
   };
-  return { currentSession, isLoadingSession, checkSession, authorizeOffline, openRegister, calculateClose, confirmClose };
+  return { currentSession, readError, isLoadingSession, checkSession, authorizeOffline, openRegister, calculateClose, confirmClose };
 };

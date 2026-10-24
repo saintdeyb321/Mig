@@ -1,3 +1,4 @@
+import FirestoreQueryError from '../../components/FirestoreQueryError';
 import { useEffect, useState } from 'react';
 import { Building2 } from 'lucide-react';
 import { readPlatformBusiness } from '../../features/licenses/infrastructure/platformBusinessRepository.js';
@@ -27,7 +28,7 @@ export function BranchQuotaModal({ user, license, onClose, onSave, busy }) {
   };
   return <Dialog title="Cupo de sucursales" icon={Building2} description={license.businessName} onClose={onClose} busy={busy}>
     <p className="text-xs text-muted">Lectura bajo demanda de sedes. Usa un permiso administrativo temporal (1–2 escrituras de control, 0 escrituras de negocio para leer).</p>
-    {error ? <Alert variant="danger">{error.message}<Button onClick={() => retry(value => value + 1)} variant="secondary">Reintentar</Button></Alert> : !result ? <LoadingState>Verificando sedes…</LoadingState> : <>
+    {error ? <FirestoreQueryError error={error} area="platform-detail" user={user} onRetry={() => retry(value => value + 1)} /> : !result ? <LoadingState>Verificando sedes…</LoadingState> : <>
       <p className="text-sm">Sedes activas observadas: <strong>{operationalBranches(result.branches).length}</strong>. Cupo actual: {license.maxActiveBranches ?? 'sin regularizar'}.</p>
       {result.warnings.map(warning => <Alert variant="warning" key={warning}>{warning}</Alert>)}
       {!canReview && <Alert variant="warning">El inventario es parcial, contiene estados desconocidos o no coincide con el registro de cupos. Revisa en Console antes de establecer el cupo.</Alert>}

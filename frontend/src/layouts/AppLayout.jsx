@@ -22,7 +22,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-white/5 bg-linear-to-b from-sidebar via-brand-deep to-sidebar text-white shadow-xl shadow-sidebar/10 lg:flex xl:w-64" aria-label="Navegación de escritorio">
       <div className="space-y-5 px-5 pb-5 pt-6">
         <div className="flex items-center gap-3"><img src={brand.logo} alt="" className="size-10 rounded-xl bg-white object-contain p-1" /><div><p className="text-xl font-bold tracking-tight">{brand.name}</p><p className="text-xs text-sidebar-muted">Tu negocio, en orden</p></div></div>
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2" aria-label="Conectividad y notificaciones"><NetworkBadge /><NotificationBell {...notifications} isDesktop /></div>
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2" aria-label="Conectividad y notificaciones"><NetworkBadge /><NotificationBell user={user} {...notifications} isDesktop /></div>
         <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/7 p-3 shadow-sm">
           <span className="rounded-lg bg-white/10 p-2"><UserRound className="size-4" /></span>
           <div className="min-w-0"><p className="truncate text-sm font-semibold" title={fullName}>{fullName}</p><p className="mt-0.5 text-xs capitalize text-sidebar-muted">{user?.role}</p></div>
@@ -38,7 +38,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
     <div className="min-w-0 lg:pl-60 xl:pl-64">
       <header className="sticky top-0 z-20 space-y-3 border-b border-line bg-panel/95 px-4 py-3 shadow-xs backdrop-blur-md lg:hidden">
         <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2"><img src={brand.logo} alt="" className="size-8 rounded-lg object-contain" /><span className="font-bold tracking-tight">{brand.name}</span></div>
-          <div className="flex shrink-0 items-center gap-1"><NetworkBadge /><NotificationBell {...notifications} /><IconButton label="Cerrar sesión" onClick={handleLogout}><LogOut /></IconButton></div>
+          <div className="flex shrink-0 items-center gap-1"><NetworkBadge /><NotificationBell user={user} {...notifications} /><IconButton label="Cerrar sesión" onClick={handleLogout}><LogOut /></IconButton></div>
         </div>
         {canSelectBranch && <BranchSelector />}
         {assignedBranchName && <Badge><MapPin className="size-3" />{assignedBranchName}</Badge>}

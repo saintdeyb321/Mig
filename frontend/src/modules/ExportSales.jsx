@@ -1,3 +1,4 @@
+import FirestoreQueryError from '../components/FirestoreQueryError';
 import { Select, Button, Card, Input, FormField } from "../shared/ui";
 // src/modules/ExportSales.jsx
 import React, { useState, memo } from "react";
@@ -9,7 +10,7 @@ function ExportSales({
   const [timeFilter, setTimeFilter] = useState("hoy");
   const [consent, setConsent] = useState(false);
   const {
-    isExporting,
+    isExporting, queryError,
     exportData
   } = useExportSales(user);
   const handleExport = async () => {
@@ -30,6 +31,7 @@ function ExportSales({
       </div>
 
       <p className="text-sm text-muted">Diario/semanal: detalle bajo demanda. Mes/año también consulta tickets individuales. Máximo 10000 movimientos y 500 contratos históricos; no se genera un informe parcial si se exceden.</p>
+      <FirestoreQueryError error={queryError} area="reports" user={user} />
       <label className="flex min-h-11 items-center gap-3 rounded-xl border border-finance-line bg-panel p-3 text-sm"><Input type="checkbox" checked={consent} disabled={isExporting} onChange={event => setConsent(event.target.checked)} /> Acepto el consumo de lecturas Spark de este período.</label>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <FormField label="Período de exportación" className="min-w-0 flex-1">

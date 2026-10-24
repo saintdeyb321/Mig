@@ -14,11 +14,13 @@ export const useExportSales = user => {
   const { businessBranches, activeBranchId, identityKey } = useTenantData();
   const scope = useMemo(() => ({ active: true, identityKey, branchId: activeBranchId }), [identityKey, activeBranchId]);
   useEffect(() => { scope.active = true; return () => { scope.active = false; }; }, [scope]);
+  const [failure, setFailure] = useState(null);
   const [state, setState] = useState(null);
   const processing = useRef(false), lastExport = useRef(0);
   const exportData = useCallback(async (_type, timeFilter = 'hoy') => {
     if (!user?.businessId || !activeBranchId || processing.current || !scope.active) return;
     if (Date.now() - lastExport.current < 5000) { toast.error('Espera unos segundos antes de exportar.'); return; }
+    setFailure(null);
     lastExport.current = Date.now(); processing.current = true; setState(scope);
     const toastId = toast.loading('Generando Excel financiero...');
     try {
@@ -44,8 +46,8 @@ export const useExportSales = user => {
       toast.success('Excel financiero descargado', { id: toastId });
     } catch (error) {
       reportDiagnostic('report', error);
-      if (scope.active) toast.error(error.message || 'No se pudo generar el Excel.', { id: toastId }); else toast.dismiss(toastId);
+      if (scope.active) { setFailure({ scope, error }); toast.error(error.message || 'No se pudo generar el Excel.', { id: toastId }); } else toast.dismiss(toastId);
     } finally { processing.current = false; setState(previous => previous === scope ? null : previous); }
   }, [user?.businessId, activeBranchId, scope, businessBranches, resources]);
-  return { isExporting: state === scope, exportData };
+  return { queryError: failure?.scope === scope ? failure.error : null, isExporting: state === scope, exportData };
 };

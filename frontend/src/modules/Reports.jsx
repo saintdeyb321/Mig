@@ -1,3 +1,4 @@
+import FirestoreQueryError from '../components/FirestoreQueryError';
 import { ChartNoAxesCombined } from 'lucide-react';
 import { MetricCard, ChartColumn, TopProductItem } from "./reports/ReportParts.jsx";
 import { LoadingState, Button, PageHeader, Card, cn, HelpDisclosure } from "../shared/ui";
@@ -45,7 +46,7 @@ export default function Reports({
   if (isLoading) {
     return <LoadingState>Generando Reportes...</LoadingState>;
   }
-  if (error) return <Card role="alert" as="div">No se puede mostrar un reporte completo: {error} <Button onClick={refreshReport} type="button" variant="secondary">Reintentar</Button></Card>;
+  if (error) return <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />;
   return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6">
 
 

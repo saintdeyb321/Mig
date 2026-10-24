@@ -22,7 +22,7 @@ export const useSuperAdmin = user => {
       if (version !== revision.current.value) return;
       setLicenses(previous => nextCursor ? [...new Map([...previous, ...page.rows].map(row => [row.id, row])).values()] : page.rows);
       setCursor(page.cursor); setError(null);
-    } catch (failure) { if (version === revision.current.value) setError(failure.message || 'No se pudo cargar la administración.'); }
+    } catch (failure) { if (version === revision.current.value) setError(failure); }
     finally { if (version === revision.current.value) setIsLoading(false); }
   }, [user?.role]);
   useEffect(() => {

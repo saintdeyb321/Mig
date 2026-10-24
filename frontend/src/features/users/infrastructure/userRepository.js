@@ -1,3 +1,4 @@
+import { withQueryContext } from '../../../core/firebase/queryErrors.js';
 import { collection, query, where, onSnapshot, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../core/firebase/client';
 import { mapDocuments } from '../../../core/firebase/documents';
@@ -8,11 +9,11 @@ import { acceptInvitation } from './acceptInvitation.js';
 // (which excludes historical documents without role and requires an extra index).
 export const subscribeUsers = (businessId, _role, onData, onError) => onSnapshot(
   query(collection(db, 'users'), where('businessId', '==', businessId)), { includeMetadataChanges: true },
-  snapshot => onData(mapDocuments(snapshot), snapshot.metadata), onError,
+  snapshot => onData(mapDocuments(snapshot), snapshot.metadata), error => onError(withQueryContext(error, 'personnel')),
 );
 export const subscribeInvites = (businessId, onData, onError) => onSnapshot(
   query(collection(db, 'invites'), where('businessId', '==', businessId)), { includeMetadataChanges: true },
-  snapshot => onData(mapDocuments(snapshot).map(invite => ({ ...invite, isInvite: true })), snapshot.metadata), onError,
+  snapshot => onData(mapDocuments(snapshot).map(invite => ({ ...invite, isInvite: true })), snapshot.metadata), error => onError(withQueryContext(error, 'personnel')),
 );
 export const getProfileFromServer = async uid => {
   const snapshot = await getDocFromServer(doc(db, 'users', uid));

@@ -1,3 +1,4 @@
+import FirestoreQueryError from '../components/FirestoreQueryError';
 import { BusinessDetailsDialog } from './admin/BusinessDetailsDialog';
 import { BranchQuotaModal } from './admin/BranchQuotaModal';
 import { ShieldCheck } from 'lucide-react';
@@ -85,7 +86,7 @@ function SuperAdmin({
           ➕ Nuevo Cliente
         </Button></>} />
       <HelpDisclosure title="Alcance de la administración">Firebase Spark. Exportación empresarial disponible solo en plataforma, bajo demanda y por negocio. Purga, restauración privilegiada y jobs backend deshabilitados. Las solicitudes de baja se coordinan externamente con el propietario.</HelpDisclosure>
-      {error && <p role="alert" className="rounded-xl border border-danger/20 bg-danger-soft p-3 text-sm text-danger">{error}</p>}
+      <FirestoreQueryError error={error} area="administration" user={user} onRetry={refresh} />
       <Button disabled={isLoading} onClick={refresh} type="button" variant="secondary">Actualizar clientes</Button>
       {backupBusinessId && <BackupPanel key={`${user.uid}:${backupBusinessId}`} user={user} businessId={backupBusinessId} onClose={() => setBackupBusinessId(null)} />}
 
@@ -93,7 +94,7 @@ function SuperAdmin({
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar entre clientes cargados por negocio, dueño, correo o ID..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
       </div>
 
-      {filteredLicenses.length === 0 ? <EmptyState title="Sin registros" description={<>
+      {filteredLicenses.length === 0 && error ? null : filteredLicenses.length === 0 ? <EmptyState title="Sin registros" description={<>
             {error ? 'No se pudo consultar la lista. Revisa el error y vuelve a intentarlo.' : searchTerm ? `No se encontraron clientes para "${searchTerm}"` : 'Aún no tienes clientes registrados.'}
           </>} /> : <div className="grid min-w-0 gap-4 xl:grid-cols-2 3xl:grid-cols-3">
           {filteredLicenses.map(license => <ClientCard key={license.id} license={license} isProcessing={isProcessing} setExtendModalInfo={setExtendModalInfo} handleToggleStatus={handleToggleStatus} handleExport={setBackupBusinessId} onQuota={setQuotaLicense} onDetails={setDetailLicense} />)}

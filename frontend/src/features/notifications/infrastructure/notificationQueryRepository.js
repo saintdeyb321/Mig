@@ -1,3 +1,5 @@
+import { checkedRead } from '../../../core/firebase/readDiagnostics.js';
+import { withQueryContext } from '../../../core/firebase/queryErrors.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { mapDocuments } from '../../../core/firebase/documents.js';
 
@@ -7,12 +9,12 @@ export function createNotificationRepository(database, { sdk = firestoreSDK } = 
   const unread = (businessId, userId) => [where('businessId', '==', businessId), where('userId', '==', userId), where('readAt', '==', null)];
   return {
     subscribeUnreadNotifications: (businessId, userId, onData, onError) => onSnapshot(query(collection(database, 'notifications'),
-      ...unread(businessId, userId), orderBy('createdAt', 'desc'), limit(NOTIFICATION_LIMIT)), snapshot => onData(mapDocuments(snapshot)), onError),
+      ...unread(businessId, userId), orderBy('createdAt', 'desc'), limit(NOTIFICATION_LIMIT)), snapshot => onData(mapDocuments(snapshot)), error => onError(withQueryContext(error, 'notifications-unread'))),
     markNotificationRead: id => updateDoc(doc(database, 'notifications', id), { readAt: serverTimestamp() }),
     markAllNotificationsRead: async (businessId, userId) => {
       const cutoff = Timestamp.now();
       while (true) {
-        const page = await getDocs(query(collection(database, 'notifications'), ...unread(businessId, userId),
+        const page = await checkedRead(getDocs, 'notifications-mark-all')(query(collection(database, 'notifications'), ...unread(businessId, userId),
           where('createdAt', '<=', cutoff), orderBy('createdAt', 'desc'), limit(100)));
         if (page.empty) return;
         const batch = writeBatch(database);

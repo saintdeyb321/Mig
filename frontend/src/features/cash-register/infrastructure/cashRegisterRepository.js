@@ -1,3 +1,4 @@
+import { checkedRead } from '../../../core/firebase/readDiagnostics.js';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db, auth } from '../../../core/firebase/client';
 import { mapDocuments } from '../../../core/firebase/documents';
@@ -40,7 +41,7 @@ export const findOpenSession = async (...args) => {
   const session = await readOpenSession(...args);
   return session ? sessionDTO(session) : null;
 };
-export const findLastClosedSession = async (businessId, branchId) => mapDocuments(await getDocs(query(collection(db, 'cash_sessions'),
+export const findLastClosedSession = async (businessId, branchId) => mapDocuments(await checkedRead(getDocs, 'cash-last-closed')(query(collection(db, 'cash_sessions'),
   where('businessId', '==', businessId), where('branchId', '==', branchId),
   where('status', 'in', ['closed', 'closed_with_discrepancy']), orderBy('closedAt', 'desc'), limit(1))))[0] ?? null;
 // This is called only by the explicit opening action; checking state never acquires a lock.

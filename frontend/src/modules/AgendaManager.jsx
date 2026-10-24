@@ -1,3 +1,4 @@
+import FirestoreQueryError from '../components/FirestoreQueryError';
 import { ContactRound } from 'lucide-react';
 import { useConfirmDialog } from '../shared/ui/useConfirmDialog';
 import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Badge, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
@@ -66,7 +67,7 @@ function AgendaManager({
   }
   return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
       {confirmation}
-      {error && <p role="alert" className="text-danger">No se pudo leer la agenda; no se confirma que esté vacía. <Button onClick={retry} variant="secondary">Reintentar lectura</Button></p>}
+      <FirestoreQueryError error={error} area="customers" user={user} onRetry={retry} />
       {isStale && <p role="status" className="text-sm text-muted">Contactos en caché; pendiente de validar con el servidor.</p>}
 
       <PageHeader title="Agenda VIP" icon={ContactRound} eyebrow="Relaciones con clientes" description="Tus contactos frecuentes, siempre a mano." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
@@ -82,7 +83,7 @@ function AgendaManager({
       </h3>
 
       <div className="grid gap-3 xl:grid-cols-2">
-        {filteredContacts.length === 0 ? <EmptyState title="Sin registros" description={<>
+        {filteredContacts.length === 0 && error ? null : filteredContacts.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `Nadie coincide con "${searchTerm}"` : 'Aún no has registrado clientes VIP.'}
             </>} /> : filteredContacts.map(c => <ContactCard key={c.id} c={c} openEditForm={openEditForm} handleDelete={handleDelete} isLoading={isLoading} />)}
       </div>

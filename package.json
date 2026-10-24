@@ -24,7 +24,9 @@
     "audit:security": "node scripts/audit-security.mjs",
     "check:build": "node scripts/check-build.mjs",
     "test:backups": "node --test --test-concurrency=1 tests/backups.test.mjs tests/backups.browser.test.mjs",
-    "test:backups:rules": "firebase emulators:exec --only firestore --project demo-migapos \"node scripts/spark-emulator-guard.mjs && node --test tests/backups.rules.test.mjs\""
+    "test:backups:rules": "firebase emulators:exec --only firestore --project demo-migapos \"node scripts/spark-emulator-guard.mjs && node --test tests/backups.rules.test.mjs\"",
+    "indexes:inventory": "node scripts/firestore-index-inventory.mjs",
+    "indexes:check": "node scripts/firestore-index-inventory.mjs --check"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.2",

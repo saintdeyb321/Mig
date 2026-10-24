@@ -1,3 +1,4 @@
+import FirestoreQueryError from '../components/FirestoreQueryError';
 import { History } from 'lucide-react';
 import { useSessionScroll } from '../core/session/sessionResourceHooks.js';
 import { useTenantData } from '../features/branches/context/TenantContext';
@@ -39,8 +40,8 @@ function SalesHistory({
       {sales.some(sale => sale.isOffline) && <Alert variant="warning" title="Hay pendientes locales">Comprueba ID, sede e importe con el libro remoto antes de volver a cobrar. Los pendientes se conservan cifrados y no se sincronizan automáticamente.</Alert>}
       <p role="status" className="text-sm text-muted">{isStale ? 'Historial pendiente de validar con el servidor; no confirma saldos actuales.' : `Lectura: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`}</p>
       <label className="inline-flex min-h-11 items-center gap-3 rounded-xl border border-line bg-panel px-4 py-3 text-sm text-muted"><Input type="checkbox" checked={pendingOnly} onChange={event => setPendingOnly(event.target.checked)} /> Revisar únicamente pendientes locales (últimos 50, sin sincronizarlos)</label>
-      {error && <p role="alert" className="rounded-xl border border-danger/20 bg-danger-soft p-3 text-sm text-danger">No se pudo cargar el historial. Revisa la conexión y los permisos. <Button onClick={retry} variant="secondary">Reintentar lectura</Button></p>}
-      {sales.length === 0 ? <EmptyState title="Sin registros" description={<>Aún no hay ventas registradas.</>} /> : <div className="grid min-w-0 gap-4 xl:grid-cols-2 3xl:grid-cols-3">
+      <FirestoreQueryError error={error} area="sales-recent" user={user} onRetry={retry} />
+      {sales.length === 0 && error ? null : sales.length === 0 ? <EmptyState title="Sin registros" description={<>Aún no hay ventas registradas.</>} /> : <div className="grid min-w-0 gap-4 xl:grid-cols-2 3xl:grid-cols-3">
           {sales.map(s => <SaleHistoryCard key={s.id} s={s} user={user} businessBranches={businessBranches} formatDate={formatDate} isProcessing={isProcessing} verificarPendiente={verificarPendiente} setSaleToCancel={setSaleToCancel} />)}
         </div>}
 

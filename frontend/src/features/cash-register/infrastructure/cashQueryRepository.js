@@ -1,9 +1,11 @@
+import { checkedRead } from '../../../core/firebase/readDiagnostics.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { mapDocuments } from '../../../core/firebase/documents.js';
 import { toDateSafe } from '../../../core/dates/dateValues.js';
 
 export function createCashPeriodReader(database, { sdk = firestoreSDK, project = value => value } = {}) {
-  const { getDocs, query, collection, where, limit, Timestamp } = sdk;
+  const { getDocs: readDocs, query, collection, where, limit, Timestamp } = sdk;
+  const getDocs = checkedRead(readDocs, 'cash-period');
   return async (field, businessId, startDate, endDate, branchId = 'global') => {
     // Historical ISO strings and server Timestamps are different Firestore query types.
     const start = toDateSafe(startDate), end = toDateSafe(endDate);
@@ -18,7 +20,8 @@ export function createCashPeriodReader(database, { sdk = firestoreSDK, project =
 }
 
 export function createCashStateReader(database, { sdk = firestoreSDK } = {}) {
-  const { getDocs, query, collection, where, limit } = sdk;
+  const { getDocs: readDocs, query, collection, where, limit } = sdk;
+  const getDocs = checkedRead(readDocs, 'cash-open');
   return async (businessId, branchId, userId = null) => {
     const open = await getDocs(query(collection(database, 'cash_sessions'), where('businessId', '==', businessId),
       where('branchId', '==', branchId), ...(userId ? [where('userId', '==', userId)] : []), where('status', '==', 'open'), limit(1)));

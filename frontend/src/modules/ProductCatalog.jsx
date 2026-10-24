@@ -1,3 +1,4 @@
+import FirestoreQueryError from '../components/FirestoreQueryError';
 import { Package } from 'lucide-react';
 import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Select, SearchField, Card, DialogFooter, cn, EmptyState } from "../shared/ui";
 // src/modules/ProductCatalog.jsx
@@ -62,7 +63,7 @@ function ProductCatalog({
     activeBranchId
   } = useTenantData();
   const {
-    products: globalProducts
+    products: globalProducts, error: catalogError, retry: retryCatalog
   } = useCatalogData();
   const {
     categories,
@@ -140,6 +141,7 @@ function ProductCatalog({
           ➕ Nuevo Producto
         </Button></>} />
 
+      <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
       <div className="flex flex-wrap items-center gap-3">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar producto..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
@@ -154,7 +156,7 @@ function ProductCatalog({
       </h3>
 
       <div className="grid gap-3 xl:grid-cols-2">
-        {filteredProducts.length === 0 ? <EmptyState title="Sin registros" description={<>
+        {filteredProducts.length === 0 && catalogError ? null : filteredProducts.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `No se encontraron productos para "${searchTerm}"` : 'Aún no tienes productos.'}
             </>} /> : filteredProducts.map(p => <ProductCard key={p.id} p={p} activeBranchId={activeBranchId} openEditForm={openEditForm} isLoading={isLoading} />)}
       </div>

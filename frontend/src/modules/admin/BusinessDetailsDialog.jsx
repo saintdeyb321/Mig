@@ -1,3 +1,4 @@
+import FirestoreQueryError from '../../components/FirestoreQueryError';
 import { useEffect, useState } from 'react';
 import { Building2, ClipboardList, Download, UsersRound } from 'lucide-react';
 import { readPlatformBusiness } from '../../features/licenses/infrastructure/platformBusinessRepository.js';
@@ -25,7 +26,7 @@ export function BusinessDetailsDialog({ user, license, onClose, onQuota }) {
   const currentLicense = result?.licenses ?? license;
   return <Dialog title="Detalle del negocio" description={license.businessName} icon={Building2} onClose={onClose} className="max-w-4xl">
     <Alert title="Lectura administrativa bajo demanda">Revisa un solo negocio. Permiso de lectura temporal: 1–2 escrituras de control, 0 escrituras de negocio. La muestra inicial no es un inventario exhaustivo.</Alert>
-    {error ? <Alert variant="danger">{error.message}<Button onClick={() => retry(value => value + 1)} variant="secondary">Reintentar detalle</Button></Alert> : !result ? <LoadingState>Consultando el negocio elegido…</LoadingState> : <>
+    {error ? <FirestoreQueryError error={error} area="platform-detail" user={user} onRetry={() => retry(value => value + 1)} /> : !result ? <LoadingState>Consultando el negocio elegido…</LoadingState> : <>
       <SectionCard title="Negocio y licencia" icon={Building2}><dl className="grid gap-4 text-sm sm:grid-cols-2">
         <div><dt className="text-xs text-muted">BusinessId canónico</dt><dd className="break-all font-mono">{license.id}</dd></div>
         <div><dt className="text-xs text-muted">Nombre</dt><dd>{result.tenants?.businessName ?? currentLicense.businessName ?? 'No documentado'}</dd></div>

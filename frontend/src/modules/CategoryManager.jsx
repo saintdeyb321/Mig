@@ -1,3 +1,5 @@
+import FirestoreQueryError from '../components/FirestoreQueryError';
+import { useCatalogData } from '../features/catalog/context/CatalogContext';
 import { Tags } from 'lucide-react';
 import { Dialog, cn, Button, LoadingState, PageHeader, Input, FormField, Select, Badge, SearchField, Card, DialogFooter, EmptyState } from "../shared/ui";
 // src/modules/CategoryManager.jsx
@@ -65,6 +67,7 @@ function CategoryManager({
     openEditForm,
     handleSave
   } = useCategories(user);
+  const { error: catalogError, retry: retryCatalog } = useCatalogData();
   if (isLoading && !showFormModal) {
     return <LoadingState>Organizando categorías...</LoadingState>;
   }
@@ -76,6 +79,7 @@ function CategoryManager({
         </Button></>} />
 
       {/* BARRA DE BÚSQUEDA Y TOGGLE */}
+      <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
       <div className="flex flex-wrap items-center gap-3">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar categoría por nombre..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
@@ -90,7 +94,7 @@ function CategoryManager({
       </h3>
 
       <div className="grid gap-3 xl:grid-cols-2">
-        {filteredCategories.length === 0 ? <EmptyState title="Sin registros" description={<>
+        {filteredCategories.length === 0 && catalogError ? null : filteredCategories.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'Aún no has registrado ninguna categoría.'}
             </>} /> : filteredCategories.map(c => (/* 🚀 Invocamos la tarjeta blindada */
       <CategoryCard key={c.id} c={c} openEditForm={openEditForm} isLoading={isLoading} />))}

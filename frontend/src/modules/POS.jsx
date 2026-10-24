@@ -1,3 +1,5 @@
+import FirestoreQueryError from '../components/FirestoreQueryError';
+import { useCatalogData } from '../features/catalog/context/CatalogContext';
 import { isBranchOperational } from '../features/branches/domain/branchPolicy';
 import { useState, useMemo } from 'react';
 import { LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
@@ -15,9 +17,10 @@ import { CashStatus, SaleStatus, Ticket } from './pos/TicketParts';
 
 function POS({ user }) {
   const { businessBranches, activeBranchId } = useTenantData();
+  const { error: catalogError, retry: retryCatalog } = useCatalogData();
 
   const {
-    currentSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
+    currentSession, readError, checkSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
   } = useCashRegister(user, activeBranchId);
 
   const {
@@ -94,7 +97,7 @@ function POS({ user }) {
     if (checkoutBlocked) return;
     handleCheckoutClick();
   };
-  const action = !currentSession&&!branchStatus.isReadOnly
+  const action = readError ? <Button variant="secondary" onClick={checkSession}>Reintentar lectura de caja</Button> : !currentSession&&!branchStatus.isReadOnly
     ? <Button className="w-full" onClick={()=>setShowOpenModal(true)}><UnlockKeyhole />Abrir caja para vender</Button>
     : currentSession?.needsForceClose
       ? <Button variant="danger" className="w-full" onClick={()=>setShowCloseModal(true)} disabled={!currentSession.canForceClose}>{currentSession.canForceClose?'Cerrar turno anterior':'Requiere administrador'}</Button>
@@ -106,6 +109,8 @@ function POS({ user }) {
       <PaymentFields payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} disabled={branchStatus.isReadOnly||isProcessing} />
     </Ticket>;
   return <div className="min-w-0 space-y-5">
+    <FirestoreQueryError error={readError} area="cash-open" user={user} onRetry={checkSession} />
+    <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
     <PageHeader title="Punto de venta" icon={ShoppingBag} eyebrow="Venta del día" description="Elige productos y prepara tu ticket." actions={<>
       <CashStatus readOnly={branchStatus.isReadOnly} session={currentSession} />
       {currentSession&&!branchStatus.isReadOnly&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={()=>setShowCloseModal(true)}><LockKeyhole />{currentSession.needsForceClose?'Forzar cierre de caja':'Cerrar caja'}</Button>}
@@ -117,7 +122,7 @@ function POS({ user }) {
         <ProductSearch value={search} onChange={setSearch} />
         <CategoryFilters categories={activeCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {displayedProducts.length?displayedProducts.map(product=><ProductCard key={product.id} product={product} stock={getSafeStock(product,activeBranchId)} disabled={isGlobalDisabled||isProcessing} onAdd={addToCart} />):<EmptyState title="No hay productos" description={search?`No se encontraron productos para “${search}”.`:'No hay productos registrados en esta selección.'} />}
+          {displayedProducts.length?displayedProducts.map(product=><ProductCard key={product.id} product={product} stock={getSafeStock(product,activeBranchId)} disabled={isGlobalDisabled||isProcessing} onAdd={addToCart} />):catalogError?null:<EmptyState title="No hay productos" description={search?`No se encontraron productos para “${search}”.`:'No hay productos registrados en esta selección.'} />}
         </div>
       </section>
       <aside aria-label="Ticket" className="sticky top-6 hidden min-w-0 lg:block">{ticket}</aside>

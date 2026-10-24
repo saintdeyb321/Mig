@@ -11,6 +11,7 @@ import { generateContractReceiptHTML } from '../frontend/src/utils/contractRecei
 import { generateContractProductionHTML, generateContractTextOnlyHTML } from '../frontend/src/utils/contractProductionTemplate.js';
 import { resolveImageSources, usingImageSources } from '../frontend/src/features/contracts/application/imageSources.js';
 import { hostingHeaders, environmentFor } from '../frontend/src/config/environments.js';
+import { queryErrorDiagnostic, realIndexCreationUrl, withQueryContext } from '../frontend/src/core/firebase/queryErrors.js';
 
 const attack = '<img src=x onerror="parent.__xss=1"><script>parent.__xss=1</script>\' &';
 const settings = { companyData: { razonSocial: attack, ruc: attack, direccion: attack, telefono: attack } };
@@ -22,6 +23,26 @@ const contract = { contractId: attack, clientName: attack, clientPhone: attack, 
   total: 10, balance: 5, payments: [{ date: '2026-10-23', method: attack, label: attack, amount: 5 }] };
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6F8kAAAAASUVORK5CYII=';
 const source = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
+
+it('Plan03 preserves query errors and only links an actual trusted SDK index URL', () => {
+  const url = 'https://console.firebase.google.com/v1/r/project/migapos/firestore/indexes?create_composite=isolated-test';
+  const original = Object.assign(new Error(`The query requires an index. Create it here: ${url}`), { code: 'firestore/failed-precondition' });
+  const error = withQueryContext(original, 'contracts-active');
+  const diagnostic = queryErrorDiagnostic(error, 'reports');
+  assert.equal(error.cause, original); assert.equal(diagnostic.technical, original.message);
+  assert.equal(diagnostic.area, 'contracts-active'); assert.equal(diagnostic.url, url);
+  assert.ok(diagnostic.shapes.some(shape => shape.collection === 'contracts' && shape.fields.some(([field]) => field === 'deliveryDate')));
+  assert.equal(queryErrorDiagnostic({ code: 'failed-precondition', message: 'The query requires an index.' }, 'personnel').url, null);
+  for (const invalid of [url.replace('/migapos/', '/other-project/'), url.replace('.com/', '.com.evil.test/'), url.replace('?create_composite=', '?other='), 'https://console.firebase.google.com@evil.test/project/migapos/indexes?create_composite=x']) assert.equal(realIndexCreationUrl(invalid), null);
+});
+it('Plan03 distinguishes permission, connection and unrelated preconditions from a missing index', () => {
+  for (const code of ['permission-denied', 'unauthenticated', 'unavailable']) {
+    const result = queryErrorDiagnostic({ code, message: 'index create_composite' }, 'personnel');
+    assert.equal(result.missingIndex, false); assert.equal(result.url, null);
+  }
+  const result = queryErrorDiagnostic({ code: 'failed-precondition', message: 'Contrato no migrado; no se confirma un saldo.' }, 'payments');
+  assert.equal(result.missingIndex, false); assert.match(result.message, /no se ha identificado/);
+});
 
 describe('Printable tenant data', () => {
   it('escapes HTML text, attributes and CRLF without losing literal content', () => {
@@ -197,6 +218,6 @@ describe('Hosting policy and conservative cleanup', () => {
     for (const path of ['frontend/src/firebase.js', 'frontend/src/utils/adminExcelStyles.js', 'frontend/src/utils/backupAdmin/adminDataProcessor.js', 'backend/src/index.js', 'shared/README.md']) assert.ok(!existsSync(path), path);
     const markdown = execFileSync('git', ['ls-files', '*.md'], { encoding: 'utf8' }).trim().split(/\r?\n/).filter(existsSync);
     assert.ok(markdown.includes('docs/MASTER-PLAN.md'));
-    assert.ok(markdown.every(path => ['docs/MASTER-PLAN.md', 'docs/PLAN-REFAC-SPARK-MIGAPOS.md', 'docs/PLAN-REFAC-FRONTEND-UX-MIGAPOS.md'].includes(path)));
+    assert.ok(markdown.every(path => ['docs/MASTER-PLAN.md', 'docs/PLAN-REFAC-SPARK-MIGAPOS.md', 'docs/PLAN-REFAC-FRONTEND-UX-MIGAPOS.md', 'docs/PLAN-03-CORRECCION-FLUJOS-OPERATIVOS-MIGAPOS.md', 'docs/INDICES-FIRESTORE-MIGAPOS.md'].includes(path)));
   });
 });

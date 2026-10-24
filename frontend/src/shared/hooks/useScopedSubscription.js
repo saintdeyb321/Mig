@@ -3,7 +3,7 @@ import { createSubscriptionScope } from '../utils/subscriptionScope';
 
 export const EMPTY_LIST = [];
 
-export function useScopedSubscription(scopeKey, subscribe, initialData = EMPTY_LIST) {
+export function useScopedSubscription(scopeKey, subscribe, initialData = EMPTY_LIST, { preserveOnError = false } = {}) {
   const [attempt, setAttempt] = useState(0);
   const retry = useCallback(() => setAttempt(value => value + 1), []);
   const [snapshot, setSnapshot] = useState(() => ({
@@ -26,10 +26,12 @@ export function useScopedSubscription(scopeKey, subscribe, initialData = EMPTY_L
         if (!isStale) done();
         setSnapshot({ scopeKey, data, isLoading: isStale && timer !== null, isStale, error: isStale && timer === null ? Object.assign(new Error('Lectura local pendiente de confirmar con el servidor.'), { code: 'unavailable' }) : null });
       }),
-      scope.guard(error => { done(); setSnapshot({ scopeKey, data: initialData, isLoading: false, isStale: true, error }); }),
+      scope.guard(error => { done(); setSnapshot(previous => ({ scopeKey,
+        data: preserveOnError && previous.scopeKey === scopeKey ? previous.data : initialData,
+        isLoading: false, isStale: true, error })); }),
     );
     return () => { scope.close(); done(); unsubscribe(); };
-  }, [scopeKey, subscribe, initialData, attempt]);
+  }, [scopeKey, subscribe, initialData, attempt, preserveOnError]);
 
   // Hide the old result during the render that precedes effect cleanup.
   return scopeKey && snapshot.scopeKey === scopeKey

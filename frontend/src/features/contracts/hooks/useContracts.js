@@ -48,7 +48,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     if (!businessId || !resources.active || !history.hasMore || historyRequest.current) return;
     const request = { revision: history.revision };
     historyRequest.current = request;
-    setHistory(previous => ({ ...previous, loading: true, started: true }));
+    setHistory(previous => ({ ...previous, loading: true, started: true, error: null }));
     try {
       const page = await getContractHistoryPage(businessId, history.cursor, { branchId: activeBranchId });
       if (!resources.active || historyRequest.current !== request) return;
@@ -58,7 +58,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
       } : previous);
     } catch (error) {
       if (!resources.active || historyRequest.current !== request) return;
-      setHistory(previous => ({ ...previous, loading: false }));
+      setHistory(previous => ({ ...previous, loading: false, error }));
       toast.error(firebaseErrorMessage(error));
     } finally {
       if (historyRequest.current === request) historyRequest.current = null;
@@ -202,7 +202,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
   return { contracts, activeContracts, historyContracts: currentHistory.contracts, isLoading, isProcessing,
     isHistoryLoading: currentHistory.loading, historyStarted: currentHistory.started,
     hasMoreHistory: currentHistory.hasMore, loadMoreHistory,
-    isStale, updatedAt, error, retry, historyUpdatedAt: currentHistory.loadedAt,
+    isStale, updatedAt, error: error || currentHistory.error, retry: () => { retry(); if (currentHistory.error) loadMoreHistory(); }, historyUpdatedAt: currentHistory.loadedAt,
     activeLimitReached: activeContracts.length === ACTIVE_CONTRACT_LIMIT,
     createContract, updateContract, cancelContract, addPayment, markDelivered };
 };
