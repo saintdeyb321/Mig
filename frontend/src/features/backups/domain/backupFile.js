@@ -59,7 +59,7 @@ export async function encodeBackup(backup, password = '') {
   return JSON.stringify({ format: 'migapos-encrypted-backup', version: BACKUP_VERSION, algorithm: 'AES-256-GCM',
     kdf: 'PBKDF2-SHA256', iterations, salt: base64(salt), iv: base64(iv), ciphertext: base64(encrypted) });
 }
-export async function verifyBackupFile(text, password = '', businessId) {
+export async function verifyBackupFile(text, password = '', businessId, { includeSections = false } = {}) {
   if (typeof text !== 'string' || encoder.encode(text).length > MAX_BACKUP_BYTES * 1.5) throw new Error('Archivo demasiado grande o inválido.');
   let backup = JSON.parse(text);
   if (backup?.format === 'migapos-encrypted-backup') {
@@ -85,5 +85,5 @@ export async function verifyBackupFile(text, password = '', businessId) {
     names.add(section.name);
   }
   if (names.size !== backup.manifest.sections.length) throw new Error('Faltan colecciones declaradas.');
-  return { manifest: backup.manifest, records: backup.sections.reduce((sum, section) => sum + section.records.length, 0), writes: 0 };
+  return { ...(includeSections ? { sections: backup.sections, integrity } : {}), manifest: backup.manifest, records: backup.sections.reduce((sum, section) => sum + section.records.length, 0), writes: 0 };
 }

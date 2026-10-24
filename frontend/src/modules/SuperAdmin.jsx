@@ -1,3 +1,4 @@
+import { BusinessDetailsDialog } from './admin/BusinessDetailsDialog';
 import { BranchQuotaModal } from './admin/BranchQuotaModal';
 import { ShieldCheck } from 'lucide-react';
 import { ClientCard } from "./admin/ClientCard.jsx";
@@ -27,6 +28,7 @@ function SuperAdmin({
     loadMore,
     refresh
   } = useSuperAdmin(user);
+  const [detailLicense, setDetailLicense] = useState(null);
   const [backupBusinessId, setBackupBusinessId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [extendModalInfo, setExtendModalInfo] = useState(null);
@@ -94,10 +96,11 @@ function SuperAdmin({
       {filteredLicenses.length === 0 ? <EmptyState title="Sin registros" description={<>
             {error ? 'No se pudo consultar la lista. Revisa el error y vuelve a intentarlo.' : searchTerm ? `No se encontraron clientes para "${searchTerm}"` : 'Aún no tienes clientes registrados.'}
           </>} /> : <div className="grid min-w-0 gap-4 xl:grid-cols-2 3xl:grid-cols-3">
-          {filteredLicenses.map(license => <ClientCard key={license.id} license={license} isProcessing={isProcessing} setExtendModalInfo={setExtendModalInfo} handleToggleStatus={handleToggleStatus} handleExport={setBackupBusinessId} onQuota={setQuotaLicense} />)}
+          {filteredLicenses.map(license => <ClientCard key={license.id} license={license} isProcessing={isProcessing} setExtendModalInfo={setExtendModalInfo} handleToggleStatus={handleToggleStatus} handleExport={setBackupBusinessId} onQuota={setQuotaLicense} onDetails={setDetailLicense} />)}
         </div>}
       {hasMore && <Button disabled={isLoading} onClick={loadMore} type="button" variant="secondary">Cargar más clientes</Button>}
 
+      {detailLicense && <BusinessDetailsDialog key={`${user.uid}:${detailLicense.id}`} user={user} license={detailLicense} onClose={() => setDetailLicense(null)} onQuota={value => { setDetailLicense(null); setQuotaLicense(value); }} />}
       {quotaLicense && <BranchQuotaModal key={`${user.uid}:${quotaLicense.id}`} user={user} license={quotaLicense} onClose={() => setQuotaLicense(null)} onSave={handleSetBranchQuota} busy={isProcessing} />}
       {/* MODAL: NUEVO CLIENTE */}
       {showAddModal && <Dialog title={<>🏢 Alta de Nuevo Cliente</>} busy={isProcessing} className="max-w-lg" onClose={() => setShowAddModal(false)}>

@@ -1,3 +1,4 @@
+import { prepareCleanupPlan, validCleanupPath } from '../frontend/src/features/backups/domain/cleanupPlan.js';
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -141,4 +142,18 @@ it('inventories known routes and references without treating reference targets a
   const verified = await verifyBackupFile(await encodeBackup(backup));
   assert.equal(verified.manifest.partial,true); assert.equal(verified.manifest.purpose,'inventory');
   assert.throws(()=>inventorySections([{name:'sales',records:[{businessId:'foreign'}]}],'tenant-a'),/fuera del negocio/);
+});
+
+
+it('Plan03 prepares only an encrypted local dry-run with scoped canonical paths and never executable deletion', async () => {
+  const backup = await makeBackup({ businessId: 'tenant-a', actorId: 'admin', startedAt: new Date().toISOString(), purpose: 'inventory',
+    sections: [{ name: 'products', status: 'complete', records: [{ path: 'products/p1', businessId: 'tenant-a', references: ['users/foreign-unverified'] }] },
+      { name: 'unverified_subcollections', status: 'not-read', records: [] }] });
+  const verified = await verifyBackupFile(await encodeBackup(backup, 'test-password-123'), 'test-password-123', 'tenant-a', { includeSections: true });
+  const plan = prepareCleanupPlan(verified, 'tenant-a');
+  assert.equal(plan.businessWrites, 0); assert.equal(plan.executable, false); assert.equal(plan.exhaustive, false);
+  assert.deepEqual(plan.paths, ['products/p1']); assert.deepEqual(plan.unverifiedReferences, ['users/foreign-unverified']);
+  assert.equal(plan.checkpoints[0].status, 'not-started');
+  for (const path of ['users/../foreign', 'licenses/foreign', 'unexpected/id', 'platform_jobs/x/unknown/y']) assert.equal(validCleanupPath(path, 'tenant-a'), false);
+  assert.throws(() => prepareCleanupPlan(verified, 'another'), /negocio/);
 });

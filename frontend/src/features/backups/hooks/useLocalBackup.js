@@ -1,3 +1,4 @@
+import { prepareCleanupPlan } from '../domain/cleanupPlan.js';
 import { useEffect, useRef, useState } from 'react';
 import { auth } from '../../../core/firebase/client.js';
 import offlineDB from '../../../offlineDB.js';
@@ -37,6 +38,24 @@ export function useLocalBackup(user, businessId) {
       await verifyBackupFile(text, options.password, businessId); assertActive();
       const filename = downloadBackup(text, businessId, !!options.password);
       return { filename, manifest: backup.manifest, businessWrites: 0, accessControlWrites: remote.accessControlWrites ?? 0 };
+    }),
+    prepareCleanupFile: (file, password) => run(async assertActive => {
+      if (user?.role !== 'superadmin' || !password || !file || file.size > 36 * 1024 * 1024) throw new Error('Inventario local y contraseña de cifrado requeridos para SuperAdmin.');
+      const verified = await verifyBackupFile(await file.text(), password, businessId, { includeSections: true }); assertActive();
+      const cleanupPlan = prepareCleanupPlan(verified, businessId);
+      const backup = await makeBackup({ businessId, actorId: user.uid, startedAt: new Date().toISOString(), purpose: 'inventory',
+        sections: [{ name: 'cleanup_dry_run', records: [cleanupPlan], status: 'not-read', warning: 'Plan local de revisión, sin autorización ni ejecución de eliminación.' }] });
+      const text = await encodeBackup(backup, password); assertActive();
+      const filename = downloadBackup(text, businessId, true);
+      return { filename, manifest: backup.manifest, cleanupPlan, businessWrites: 0, accessControlWrites: 0 };
+    }),
+    verifyCleanup: (file, password) => run(async (assertActive, signal) => {
+      if (user?.role !== 'superadmin' || !file || file.size > 36 * 1024 * 1024) throw new Error('Selecciona el plan dry-run cifrado de este negocio.');
+      const verified = await verifyBackupFile(await file.text(), password, businessId, { includeSections: true }); assertActive();
+      const plan = verified.sections.find(section => section.name === 'cleanup_dry_run')?.records?.[0];
+      const { verifyCleanupPaths } = await import('../infrastructure/cleanupVerification.js');
+      const verification = await verifyCleanupPaths(plan, { actorId: user.uid, businessId, signal }); assertActive();
+      return { manifest: verified.manifest, cleanupVerification: verification, accessControlWrites: verification.accessControlWrites, businessWrites: 0 };
     }),
     verifyFile: (file, password) => run(async assertActive => {
       if (!file || file.size > 36 * 1024 * 1024) throw new Error('Selecciona un archivo JSON de hasta 36 MiB.');
