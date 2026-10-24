@@ -1,0 +1,60 @@
+<!doctype html><meta charset="utf-8"><title>Local backup fixture</title><div id="root"></div>
+<script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import BackupPanel from '/src/features/backups/components/BackupPanel.jsx';
+import db from '/src/offlineDB.js';
+import {encrypt,decrypt} from '/src/crypto.js';
+import {auth} from '/src/core/firebase/client.js';
+import {readLocalBackup} from '/src/features/backups/infrastructure/localBackup.js';
+import {verifyBackupFile} from '/src/features/backups/domain/backupFile.js';
+const checks=[], check=(value,name)=>{if(!value)throw Error(name);checks.push(name);};
+const waitFor=async predicate=>{const until=Date.now()+10000;while(!predicate()){if(Date.now()>until)throw Error('UI timeout');await new Promise(r=>setTimeout(r,30));}};
+const label=text=>[...document.querySelectorAll('label')].find(row=>row.textContent.includes(text))?.querySelector('input');
+const setInput=(input,value)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));};
+let result;
+try {
+  const uid='backup-user',businessId='backup-tenant';auth.currentUser={uid};globalThis.__remoteReads=0;
+  const own={businessId,userId:uid,total:12},foreign={businessId:'foreign',userId:'other',total:500};
+  await db.sales.put({localId:'own-sale',businessId,userId:uid,status:'pending',data:await encrypt(JSON.stringify(own),uid)});
+  await db.sales.put({localId:'foreign-sale',businessId:'foreign',userId:'other',status:'pending',data:await encrypt(JSON.stringify(foreign),'other')});
+  await db.cash_sessions.add({localId:'own-cash',sync:false,data:await encrypt(JSON.stringify(own),uid)});
+  await db.cash_sessions.add({localId:'foreign-cash',sync:false,data:await encrypt(JSON.stringify(foreign),'other')});
+  const reference=`local-image:${businessId}:contract:image`;
+  const canvas=document.createElement('canvas');canvas.width=40;canvas.height=40;
+  const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg'));
+  await db.settings.put({id:`contract-image:${uid}:${reference}`,userId:uid,businessId,contractId:'contract',reference,main:blob,thumbnail:blob,deviceOnly:true});
+  await db.settings.put({id:'backup-sentinel',value:'preserve'});
+  const before=JSON.stringify({sales:await db.sales.toArray(),cash:await db.cash_sessions.toArray()});
+  const root=createRoot(document.getElementById('root'));root.render(React.createElement(BackupPanel,{user:{uid,businessId,role:'dueño'}}));
+  await waitFor(()=>document.querySelector('[aria-label="Backup local Spark"]'));
+  const download=()=>[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Descargar pendientes'));
+  check(globalThis.__remoteReads===0&&download().disabled,'Opening export has no remote reads and requires consent/password');
+  label('Autorizo estas lecturas').click();label('mis pendientes').click();label('mis fotos').click();
+  document.querySelectorAll('input[type=password]').forEach(input=>setInput(input,'fixture-password-123'));
+  await waitFor(()=>!download().disabled);
+  let filename,textPromise;
+  const click=HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click=function(){filename=this.download;textPromise=fetch(this.href).then(r=>r.text());return click.call(this);};
+  download().click();await waitFor(()=>document.body.textContent.includes('Descarga solicitada:'));
+  const text=await textPromise;
+  check(filename.endsWith('.encrypted.json')&&!text.includes('own-sale'),'Real download uses encrypted JSON');
+  check([...document.querySelectorAll('input[type=password]')].every(input=>input.value===''),'Passphrase cleared after export');
+  const verified=await verifyBackupFile(text,'fixture-password-123',businessId);
+  check(verified.records===3&&verified.writes===0&&verified.manifest.sections.length===3,'Only own pending sale/cash/photo are included, with manifest integrity');
+  check(JSON.stringify({sales:await db.sales.toArray(),cash:await db.cash_sessions.toArray()})===before&&(await db.settings.get('backup-sentinel')).value==='preserve','Read-only export preserves queue ciphertext and existing IndexedDB');
+  const transfer=new DataTransfer();transfer.items.add(new File([text],'backup.json',{type:'application/json'}));
+  const input=document.querySelector('input[type=file]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+  setInput(document.querySelector('input[type=password]'),'fixture-password-123');
+  await new Promise(r=>setTimeout(r,50));
+  [...document.querySelectorAll('button')].find(b=>b.textContent.includes('Verificar integridad')).click();
+  await waitFor(()=>document.body.textContent.includes('Integridad local verificada'));
+  check(document.body.textContent.includes('Escrituras: 0')&&globalThis.__remoteReads===0,'UI dry-run verifies file locally without Firebase writes or reads');
+  let cancelled=false;auth.currentUser={uid:'other'};
+  try{await readLocalBackup(db,{uid,businessId,decrypt,pending:true,assertActive:()=>{if(auth.currentUser.uid!==uid)throw Error('identity-changed');}});}catch{cancelled=true;}
+  check(cancelled,'Identity changes abort local export');
+  check((await db.settings.get(`contract-image:${uid}:${reference}`)).main.size===blob.size,'Photo blobs are preserved');
+  root.unmount();result={ok:true,checks,filename};
+}catch(error){result={ok:false,checks,error:error.stack};}
+await fetch('/__phase4-report',{method:'POST',body:JSON.stringify(result)});
+</script>

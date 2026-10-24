@@ -2,6 +2,7 @@ import { brand } from '../../../config/brand';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { acceptTerms } from '../infrastructure/userRepository';
+import { firebaseErrorMessage } from '../../../core/errors/firebaseErrors.js';
 
 export function useAcceptTerms(user, onAccepted) {
   const [isAccepting, setIsAccepting] = useState(false);
@@ -14,7 +15,7 @@ export function useAcceptTerms(user, onAccepted) {
       onAccepted?.();
     } catch (error) {
       console.error('Error al aceptar términos:', error);
-      toast.error('Hubo un problema. Intenta de nuevo.', { id: loadId });
+      toast.error(firebaseErrorMessage(error), { id: loadId });
       setIsAccepting(false);
     }
   };

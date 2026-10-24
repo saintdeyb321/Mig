@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "npm run test:spark && npm run test:spark:rules",
-    "test:spark": "node --test --test-concurrency=1 tests/spark-mode.test.mjs tests/spark-tooling.test.mjs tests/ui-security.test.mjs tests/spark-startup.browser.test.mjs tests/spark-local.browser.test.mjs",
-    "test:spark:rules": "firebase emulators:exec --only firestore --project demo-migapos \"node scripts/spark-emulator-guard.mjs && node --test --test-concurrency=1 tests/spark.rules.test.mjs tests/spark-financial.rules.test.mjs\"",
+    "test:spark": "node --test --test-concurrency=1 tests/spark-mode.test.mjs tests/spark-tooling.test.mjs tests/ui-security.test.mjs tests/spark-startup.browser.test.mjs tests/spark-local.browser.test.mjs tests/backups.test.mjs tests/backups.browser.test.mjs",
+    "test:spark:rules": "firebase emulators:exec --only firestore --project demo-migapos \"node scripts/spark-emulator-guard.mjs && node --test --test-concurrency=1 tests/spark.rules.test.mjs tests/spark-financial.rules.test.mjs tests/backups.rules.test.mjs\"",
     "test:legacy": "npm run test:release && npm run test:architecture && npm run test:sales && npm run test:functions && npm run test:reports && npm run test:ui && npm run test:legacy:rules",
     "test:reports": "node --test tests/reports.test.mjs",
     "test:functions": "npm test --prefix functions",
@@ -22,7 +22,9 @@
     "test:release": "node --test tests/phase10.test.mjs",
     "check:release": "node scripts/check-ci.mjs && npm run release:check -- --env emulator",
     "audit:security": "node scripts/audit-security.mjs",
-    "check:build": "node scripts/check-build.mjs"
+    "check:build": "node scripts/check-build.mjs",
+    "test:backups": "node --test --test-concurrency=1 tests/backups.test.mjs tests/backups.browser.test.mjs",
+    "test:backups:rules": "firebase emulators:exec --only firestore --project demo-migapos \"node scripts/spark-emulator-guard.mjs && node --test tests/backups.rules.test.mjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.2",
@@ -30,7 +32,11 @@
   },
   "overrides": {
     "@grpc/grpc-js": "1.13.6",
-    "firebase-tools": { "@google-cloud/pubsub": "6.3.1" },
-    "gaxios@6.7.1": { "uuid": "11.1.1" }
+    "firebase-tools": {
+      "@google-cloud/pubsub": "6.3.1"
+    },
+    "gaxios@6.7.1": {
+      "uuid": "11.1.1"
+    }
   }
 }

@@ -2,8 +2,7 @@ import { brand } from '../config/brand';
 // src/modules/SuperAdmin.jsx
 import React, { useState, memo } from 'react';
 import { useSuperAdmin } from '../hooks/useSuperAdmin'; 
-// 🚀 NUEVO: Importamos el hook para exportar la BD de los clientes
-import { useAdminBackup } from '../hooks/useAdminBackup';
+import BackupPanel from '../features/backups/components/BackupPanel.jsx';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 import { toDateSafe } from '../core/dates/dateValues.js';
 
@@ -17,12 +16,9 @@ const formatDate = (timestamp) => {
 const ClientCard = memo(({ 
   license, 
   isProcessing, 
-  setDeleteModalInfo, 
   setExtendModalInfo, 
   handleToggleStatus,
-  handleCancelDeletion, handlePurgeClient,
-  handleExport,     // 🚀 Nueva prop
-  isBackingUp       // 🚀 Nueva prop para deshabilitar mientras carga
+  handleExport
 }) => {
   const expiryDate = toDateSafe(license.expiry);
   const isExpired = !expiryDate || expiryDate < new Date();
@@ -53,29 +49,20 @@ const ClientCard = memo(({
             
             {/* 🚀 BOTÓN DE EXPORTAR BD */}
             <button 
-              onClick={() => handleExport(license.id, license.purgeJobId || license.maintenanceJobId || license.backupId)}
-              disabled={!runtimeCapabilities.platformJobs || isBackingUp}
-              title="Backup no disponible en Spark; pendiente de SPARK-7"
+              onClick={() => handleExport(license.id)}
+              disabled={isProcessing}
+              title="Exportar datos autorizados a un archivo local" aria-label="Exportar datos autorizados"
               style={{ 
                 background: 'transparent', border: 'none', 
-                cursor: isBackingUp ? 'wait' : 'pointer', 
+                cursor: 'pointer',
                 fontSize: '1.2rem', padding: 0,
-                opacity: isBackingUp ? 0.3 : 0.8,
+                opacity: 0.8,
                 transition: 'opacity 0.2s'
               }}
             >
               📥
             </button>
 
-            {/* BOTÓN DE ELIMINAR */}
-            <button 
-              onClick={() => setDeleteModalInfo(license)}
-              disabled={!runtimeCapabilities.platformJobs || isProcessing || license.tenantStatus !== 'active'}
-              title="Eliminación no disponible en Spark; pendiente de SPARK-7"
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1.1rem', opacity: 0.8, padding: 0 }}
-            >
-              🗑️
-            </button>
           </div>
         </div>
         
@@ -105,14 +92,7 @@ const ClientCard = memo(({
       </div>
 
       {/* Botonera de Tarjeta */}
-      {license.tenantStatus !== 'active' && <div style={{ padding: '15px 20px' }}>
-        <strong>{license.tenantStatus === 'deletion_requested' ? 'Eliminación solicitada' : 'Purga en curso'}</strong>
-        {license.purgeAfter && <p>Recuperable hasta {new Date(license.purgeAfter).toLocaleString('es-PE')}</p>}
-        {license.tenantStatus === 'deletion_requested' && <>
-          <button disabled={!runtimeCapabilities.platformJobs || isProcessing} onClick={() => handleCancelDeletion(license.id)}>Cancelar solicitud</button>
-          <button disabled={!runtimeCapabilities.platformJobs || isProcessing || !!license.maintenanceJobId || new Date(license.purgeAfter) > new Date()} onClick={() => handlePurgeClient(license.id)}>Purgar con backup verificado</button>
-        </>}
-      </div>}
+      {license.tenantStatus !== 'active' && <p role="status">Estado histórico: {license.tenantStatus}. Mantenimiento privilegiado no disponible en Spark.</p>}
       <div style={{ padding: '15px 20px', display: 'flex', gap: '10px' }}>
         <button disabled={isProcessing || license.tenantStatus !== 'active' || !!license.maintenanceJobId} onClick={() => setExtendModalInfo(license.id)} className="btn-primary" style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }}>
           🚀 Renovar
@@ -135,18 +115,15 @@ const ClientCard = memo(({
 function SuperAdmin({ user }) {
   const { 
     isLoading, isProcessing, handleCreateClient, handleExtendLicense, 
-    handleToggleStatus, handleDeleteClient, handleCancelDeletion, handlePurgeClient,
+    handleToggleStatus,
     searchTerm, setSearchTerm, filteredLicenses,
     licenses, error, hasMore, loadMore, refresh
   } = useSuperAdmin(user);
 
-  // 🚀 Instanciamos el hook de Backup Exclusivo
-  const { isBackingUp, downloadTenantBackup, job, error: jobError, retryJob, cancelBackup, restoreDryRun, downloadPart } = useAdminBackup(user);
-  const [partIndex, setPartIndex] = useState(0);
+  const [backupBusinessId, setBackupBusinessId] = useState(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [extendModalInfo, setExtendModalInfo] = useState(null); 
-  const [deleteModalInfo, setDeleteModalInfo] = useState(null); 
 
   const [businessName, setBusinessName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
@@ -195,11 +172,6 @@ function SuperAdmin({ user }) {
     }
   };
 
-  const submitDelete = async () => {
-    const success = await handleDeleteClient(deleteModalInfo.id);
-    if(success) setDeleteModalInfo(null);
-  };
-
   const isActuallyLoading = isLoading || (licenses && licenses.length === 0 && isLoading !== false);
 
   if (isActuallyLoading) {
@@ -224,28 +196,10 @@ function SuperAdmin({ user }) {
           ➕ Nuevo Cliente
         </button>
       </header>
-      <p role="status">Administración Spark mediante Firestore. Usa un Gmail distinto del SuperAdmin para el propietario. Backups, eliminación y purga aún no disponibles.</p>
+      <p role="status">Administración Spark mediante Firestore. Usa un Gmail distinto del SuperAdmin para el propietario. Exportación local bajo demanda; el dueño puede exportar sus datos operativos desde Ajustes. Purga, eliminación masiva, restauración privilegiada, scheduler y jobs backend deshabilitados.</p>
       {error && <p role="alert">{error}</p>}
       <button disabled={isLoading} onClick={refresh}>Actualizar clientes</button>
-      {jobError && <p role="alert">{jobError}</p>}
-      {job && <section className="card" aria-label="Job administrativo">
-        <p>{job.kind} · {job.businessId} · {job.status} · etapa {job.phase}</p>
-        <p>ID: {job.id} · unidades procesadas: {job.unit}</p>
-        {job.lastError && <p role="alert">{job.lastError}</p>}
-        {job.status === 'failed' && <button disabled={isBackingUp} onClick={retryJob}>Reintentar job</button>}
-        {job.kind === 'backup' && !['completed', 'cancelled'].includes(job.status) && <button disabled={isBackingUp} onClick={cancelBackup}>Cancelar backup y liberar pausa</button>}
-        {job.kind === 'backup' && job.verified && <>
-          <p>Copia verificada: {job.partCount} partes privadas, con manifiesto y checksums.</p>
-          <button disabled={isBackingUp} onClick={() => downloadPart()}>Descargar manifiesto</button>
-          {job.partCount > 0 && <label>Parte (0–{job.partCount - 1})
-            <input type="number" min="0" max={job.partCount - 1} value={partIndex} onChange={event => setPartIndex(Number(event.target.value))} />
-            <button disabled={isBackingUp} onClick={() => downloadPart(partIndex)}>Descargar parte</button>
-          </label>}
-          <button disabled={isBackingUp} onClick={restoreDryRun}>Verificar restore dry-run</button>
-          <button disabled={isBackingUp} onClick={() => downloadTenantBackup(job.businessId)}>Crear nueva copia</button>
-        </>}
-        {job.kind === 'restore-dry-run' && job.verified && <p>Restauración validada en dry-run. Escrituras de restauración: 0.</p>}
-      </section>}
+      {backupBusinessId && <BackupPanel key={`${user.uid}:${backupBusinessId}`} user={user} businessId={backupBusinessId} onClose={() => setBackupBusinessId(null)} />}
 
       <div className="filter-bar-container" style={{ marginBottom: '20px' }}>
         <div className="search-container">
@@ -277,13 +231,9 @@ function SuperAdmin({ user }) {
               key={license.id} 
               license={license} 
               isProcessing={isProcessing} 
-              setDeleteModalInfo={setDeleteModalInfo} 
               setExtendModalInfo={setExtendModalInfo} 
               handleToggleStatus={handleToggleStatus}
-              handleCancelDeletion={handleCancelDeletion}
-              handlePurgeClient={handlePurgeClient}
-              handleExport={downloadTenantBackup} // 🚀 Pasamos la función
-              isBackingUp={isBackingUp}           // 🚀 Pasamos el estado de carga
+              handleExport={setBackupBusinessId}
             />
           ))}
         </div>
@@ -371,27 +321,6 @@ function SuperAdmin({ user }) {
         </div>
       )}
 
-      {/* MODAL CRÍTICO: ELIMINAR CLIENTE DEFINITIVAMENTE */}
-      {deleteModalInfo && (
-        <div className="modal-overlay fade-in">
-          <div className="modal-content card" style={{ maxWidth: '400px', borderTop: '5px solid var(--danger)' }}>
-            <h3 className="modal-header-title">Solicitar eliminación</h3>
-            
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px', lineHeight: 1.5 }}>
-              ¿Estás seguro de eliminar a <strong>{deleteModalInfo.businessName}</strong>? <br/><br/>
-              Se bloquearán operaciones nuevas y se preparará un backup privado verificable. La solicitud puede cancelarse durante el período recuperable. <br/><br/>
-              La purga definitiva requiere otra confirmación y un backup verificado.
-            </p>
-            
-            <div className="modal-actions-footer">
-              <button type="button" onClick={() => setDeleteModalInfo(null)} disabled={isProcessing} className="btn-cancel">Cancelar</button>
-              <button type="button" onClick={submitDelete} disabled={isProcessing} className="btn-primary flex-1" style={{ background: 'var(--danger)' }}>
-                {isProcessing ? 'Solicitando...' : 'Solicitar y preparar backup'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

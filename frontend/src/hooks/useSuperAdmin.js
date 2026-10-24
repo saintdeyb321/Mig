@@ -48,7 +48,6 @@ export const useSuperAdmin = user => {
     } catch (failure) { toast.error(failure.message || 'Operación pendiente; reintenta con los mismos datos.', { id: toastId }); return false; }
     finally { if (version === revision.current.value) { busy.current = false; setIsProcessing(false); } }
   }, [fetchLicenses]);
-  const confirmTarget = businessId => window.prompt(`Confirma el ID exacto del tenant: ${businessId}`) === businessId;
   const filteredLicenses = useMemo(() => {
     const value = searchTerm.trim().toLowerCase();
     return licenses.filter(license => ['businessName', 'ownerEmail', 'ownerFirstName', 'ownerLastName', 'id'].some(field => (license[field] ?? '').toLowerCase().includes(value)));
@@ -58,8 +57,5 @@ export const useSuperAdmin = user => {
     handleCreateClient: (businessName, ownerEmail, firstName, lastName, months) => operate('createTenant', { businessName, ownerEmail, firstName, lastName, months: Number(months) }, 'Provisionando tenant…'),
     handleExtendLicense: (businessId, months) => operate('extendTenantLicense', { businessId, months: Number(months) }, 'Renovando licencia…'),
     handleToggleStatus: (businessId, status) => operate('setTenantLicenseStatus', { businessId, status: status === 'activa' ? 'inactiva' : 'activa' }, 'Actualizando licencia…'),
-    handleDeleteClient: businessId => confirmTarget(businessId) && operate('requestTenantDeletion', { businessId, confirmation: businessId }, 'Solicitando eliminación recuperable y backup…'),
-    handleCancelDeletion: businessId => operate('cancelTenantDeletion', { businessId }, 'Cancelando solicitud…'),
-    handlePurgeClient: businessId => confirmTarget(businessId) && operate('startTenantPurge', { businessId, confirmation: businessId }, 'Iniciando purga verificada…'),
   };
 };

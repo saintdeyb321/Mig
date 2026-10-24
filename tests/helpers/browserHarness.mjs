@@ -46,7 +46,7 @@ async function connectCDP(url, onEvent) {
   }) };
 }
 
-export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, mockPng, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
+export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, mockPng, verifyDownload, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
   const browser = findBrowser();
   const root = fileURLToPath(new URL('../../frontend/', import.meta.url));
   const workspace = fileURLToPath(new URL('../../', import.meta.url));
@@ -104,7 +104,7 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
     if (!debug && !finished) complete({ ok: false, error: `Browser did not expose DevTools. ${stderr.slice(-1200)}` });
     if (debug) {
       browserControl = await connectCDP(`ws://127.0.0.1:${debug[0]}${debug[1]}`, () => {});
-      await browserControl.send('Browser.setDownloadBehavior', mockPng
+      await browserControl.send('Browser.setDownloadBehavior', mockPng || verifyDownload
         ? { behavior: 'allow', downloadPath: join(profile, 'downloads') } : { behavior: 'deny' });
       const info = await browserControl.send('SystemInfo.getProcessInfo').catch(() => null);
       browserPid = info?.processInfo?.find(process => process.type === 'browser')?.id;
@@ -142,6 +142,7 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
       }
       assert.ok(workbook?.[0] === 0x50 && workbook?.[1] === 0x4b, 'Spreadsheet download was not written to the isolated profile.');
     }
+    if (verifyDownload) await verifyDownload(join(profile, 'downloads'), result);
     return result;
   } finally {
     clearTimeout(timeout); finished = true;

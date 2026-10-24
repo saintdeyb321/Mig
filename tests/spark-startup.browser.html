@@ -29,7 +29,8 @@ try {
   check([...document.querySelectorAll('.nav-item')].every(button => button.textContent.includes('SaaS Admin')), 'Desktop and mobile only show SaaS navigation');
   check(document.querySelectorAll('.nav-item').length === 2 && !document.querySelector('.bell-button'), 'No business navigation or notification bell mounted');
   check(!document.querySelector('.btn-add-smart').disabled && globalThis.__sparkPageCalls > 0, 'Migrated native administration is enabled');
-  check([...document.querySelectorAll('[title^="Backup"], [title^="Eliminación"]')].every(button => button.disabled), 'Unmigrated platform jobs remain disabled');
+  const exportButton = document.querySelector('[aria-label="Exportar datos autorizados"]');
+  check(exportButton && !exportButton.disabled && !document.querySelector('[title^="Eliminación"]') && document.body.textContent.includes('jobs backend deshabilitados'), 'Local export is available and destructive backend jobs have no controls');
   document.querySelector('.btn-add-smart').click();
   await waitFor(() => document.querySelector('.smart-form'));
   const values = ['MigaPOS Laboratorio UI', 'Dueña', 'Prueba', 'titular-test@gmail.com'];

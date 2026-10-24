@@ -1,3 +1,4 @@
+import BackupPanel from '../features/backups/components/BackupPanel.jsx';
 // src/modules/Settings.jsx
 import React, { useState } from 'react';
 import { useSettings } from '../features/settings/hooks/useSettings';
@@ -166,6 +167,7 @@ function Settings({ user }) {
         )}
       </section>
 
+      {user?.role === 'dueño' && <BackupPanel key={`${user.uid}:${user.businessId}`} user={user} />}
     </div>
   );
 }

@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import { useTenantData } from '../features/branches/context/TenantContext';
 import { toDateSafe } from '../core/dates/dateValues';
 
-export const NotificationBell = ({ alerts, isAdmin, canViewNotifications = false, markAsRead, markAllAsRead, isDesktop = false }) => {
+export const NotificationBell = ({ alerts, notificationError, isAdmin, canViewNotifications = false, markAsRead, markAllAsRead, isDesktop = false }) => {
   const { businessBranches = [] } = useTenantData() ?? {};
   const [isOpen, setIsOpen] = useState(false);
   if (!canViewNotifications && !isAdmin) return null;
   return <div className="bell-wrapper">
     <button className="bell-button" onClick={() => setIsOpen(!isOpen)} title="Notificaciones" aria-expanded={isOpen}>
-      🔔{alerts.length > 0 && <span className="bell-badge fade-in">{alerts.length}</span>}
+      🔔{(notificationError || alerts.length > 0) && <span className="bell-badge fade-in">{notificationError ? '!' : alerts.length}</span>}
     </button>
     {isOpen && <>
       {!isDesktop && <div className="bell-overlay" onClick={() => setIsOpen(false)} />}
@@ -17,7 +17,8 @@ export const NotificationBell = ({ alerts, isAdmin, canViewNotifications = false
           {alerts.length > 0 && markAllAsRead && <button type="button" onClick={markAllAsRead}>Marcar todas como leídas</button>}
         </div>
         <div className="bell-list-container">
-          {!alerts.length && <p className="bell-empty">No tienes notificaciones pendientes.</p>}
+          {notificationError && <p role="alert">{notificationError}</p>}
+          {!notificationError && !alerts.length && <p className="bell-empty">No tienes notificaciones pendientes.</p>}
           {alerts.map(notification => {
             const metadata = notification.metadata ?? {};
             return <div key={notification.id} className="alert-item warning">

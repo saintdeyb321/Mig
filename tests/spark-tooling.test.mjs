@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 it('builds Spark release configuration with no Functions or Storage deployment resources', () => {
   const config = releaseConfig(JSON.parse(readFileSync('firebase.json', 'utf8')), environmentFor('production'));
   assert.equal(config.hosting.site, 'migapos-peru'); assert.equal(config.functions, undefined); assert.equal(config.storage, undefined);
-  assert.equal(config.emulators.functions, undefined); assert.equal(config.emulators.storage, undefined);
+  assert.equal(config.emulators, undefined);
   assert.equal(config.firestore.rules, 'firestore.rules');
   assert.doesNotMatch(JSON.stringify(hostingHeaders(environmentFor('production'))), /cloudfunctions.net|storage.googleapis.com/);
   assert.deepEqual(JSON.parse(readFileSync('scripts/security-exceptions.json', 'utf8')), []);

@@ -73,7 +73,7 @@ export const useAuthManager = () => {
                 return;
               }
 
-              // Comprobación de horario UI; Rules y Functions conservan la autorización real.
+              // Comprobación de horario UI; Firestore Rules conserva la autorización real.
               if (!isWithinShift(userData)) {
                 handleSecurityExit(`Fuera de horario. Turno: ${userData.shiftStart} a ${userData.shiftEnd}`);
                 return;
@@ -81,7 +81,7 @@ export const useAuthManager = () => {
 
               // Usuario válido, actualizamos estado y quitamos loader
               if (!isCurrent() || revision !== profileRevision) return;
-              setUser({ uid: firebaseUser.uid, email: firebaseUser.email, ...userData });
+              setUser({ ...userData, uid: firebaseUser.uid, email: firebaseUser.email ?? userData.email });
               setAuthLoading(false);
 
             } catch (innerError) {

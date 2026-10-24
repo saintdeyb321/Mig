@@ -72,6 +72,7 @@ jobs:
             exit 1
           fi
           npm run check:build
+          node scripts/release.mjs prepare --env emulator
       - run: git diff --check
       - name: Attest successful checks for this exact source
         run: node scripts/release.mjs attest --env emulator

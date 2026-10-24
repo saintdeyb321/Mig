@@ -1,12 +1,4 @@
 {
-  "functions": {
-    "source": "functions",
-    "codebase": "financial",
-    "runtime": "nodejs22",
-    "predeploy": [
-      "node scripts/release.mjs guard"
-    ]
-  },
   "firestore": {
     "database": "(default)",
     "location": "nam5",
@@ -16,17 +8,7 @@
       "node scripts/release.mjs guard"
     ]
   },
-  "storage": {
-    "rules": "storage.rules",
-    "predeploy": [
-      "node scripts/release.mjs guard"
-    ]
-  },
   "emulators": {
-    "functions": {
-      "host": "127.0.0.1",
-      "port": 5001
-    },
     "auth": {
       "host": "127.0.0.1",
       "port": 9099
@@ -34,10 +16,6 @@
     "firestore": {
       "host": "127.0.0.1",
       "port": 8080
-    },
-    "storage": {
-      "host": "127.0.0.1",
-      "port": 9199
     },
     "ui": {
       "enabled": false
@@ -64,7 +42,7 @@
         "headers": [
           {
             "key": "Content-Security-Policy",
-            "value": "default-src 'self'; script-src 'self' ; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.gstatic.com https://firebasestorage.googleapis.com https://storage.googleapis.com; font-src 'self'; connect-src 'self' http://127.0.0.1:9099 http://127.0.0.1:8080 http://127.0.0.1:5001 http://127.0.0.1:9199; frame-src 'self' http://127.0.0.1:9099; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+            "value": "default-src 'self'; script-src 'self' https://apis.google.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://www.gstatic.com; font-src 'self'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebaseinstallations.googleapis.com https://firebase.googleapis.com https://www.google-analytics.com https://region1.google-analytics.com https://analytics.google.com; frame-src 'self' https://migapos.firebaseapp.com https://accounts.google.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
           },
           {
             "key": "X-Content-Type-Options",

@@ -9,6 +9,7 @@ import { prepareContractImages, cleanupContractImagePaths, cleanupRetiredContrac
 import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
 import { commercialContractFields, contractCommandSignature, createContractCommandRegistry, mergeContractPages } from '../application/contractCommands';
 import { useScopedSubscription } from '../../../shared/hooks/useScopedSubscription';
+import { firebaseErrorMessage } from '../../../core/errors/firebaseErrors.js';
 
 const emptyHistory = scopeKey => ({ scopeKey, contracts: [], cursor: null, hasMore: true, loading: false, started: false });
 
@@ -33,7 +34,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
   }, [scope]);
 
   const watchContracts = useCallback((onData, onError) => subscribeActiveContracts(businessId, onData, error => {
-    toast.error('Error al cargar los pedidos activos.', { id: 'agenda-err' });
+    toast.error(firebaseErrorMessage(error), { id: 'agenda-err' });
     onError(error);
   }), [businessId]);
   const { data: activeContracts, isLoading } = useScopedSubscription(businessId ? identityKey : null, watchContracts);
@@ -57,7 +58,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     } catch (error) {
       if (!scope.active || historyRequest.current !== request) return;
       setHistory(previous => previous.scopeKey === identityKey ? { ...previous, loading: false } : previous);
-      toast.error(error.message || 'Error al cargar el historial. Puedes reintentar.');
+      toast.error(firebaseErrorMessage(error));
     } finally {
       if (historyRequest.current === request) historyRequest.current = null;
     }

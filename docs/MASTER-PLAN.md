@@ -72,7 +72,7 @@ Rige `docs/PLAN-REFAC-SPARK-MIGAPOS.md`. Spark es obligatorio: proyecto `migapos
 | SPARK-4 | POS, anulación, stock e idempotencia/offline | VALIDADA LOCALMENTE para POS online de 2 productos; anulación POS y sincronización offline BLOQUEADAS |
 | SPARK-5 | Contratos, ledger, cuotas, refunds y cierre | VALIDADA LOCALMENTE para contratos Spark y cierre operativo; históricos en lectura, conciliación certificada BLOQUEADA |
 | SPARK-6 | Reportes, alertas, imágenes y cuotas Spark | VALIDADA LOCALMENTE; publicación de Rules/índices y aceptación manual pendientes |
-| SPARK-7 | Backups locales, mantenimiento y publicación controlada | PENDIENTE |
+| SPARK-7 | Backups locales, mantenimiento y publicación controlada | IMPLEMENTADA, PENDIENTE DE PUBLICACIÓN Y ACEPTACIÓN MANUAL |
 
 ### SPARK-4–6 — ejecución desde `f5ee85da5ad5375328abeac085537b7fb19749f3`
 
@@ -88,7 +88,62 @@ Rige `docs/PLAN-REFAC-SPARK-MIGAPOS.md`. Spark es obligatorio: proyecto `migapos
 
 **Validación local:** lint, build y diff-check; Rules Spark integradas **34/34** (15 financieras + 19 de autorización/provisioning/caja), incluyendo idempotencia, carreras de última unidad/abonos/catálogo/cierre, aislamiento, horarios, pagos manipulados, compensación de tres métodos y no duplicación. Chromium aislado: **9 checks** de compresión/IndexedDB/cambio de cuenta/cola cifrada y etiqueta de pendiente; comprobaciones Spark de capacidades/SDK/branding aprobadas. Sin cambios del árbol de dependencias: no se repitió auditoría ni suite histórica completa. Permanece el aviso de chunks grandes del build.
 
-**Pendiente externo:** revisar/publicar `firestore.rules` y nuevos índices `confirmedAt`/contratos en `firestore.indexes.json` con autorización posterior; nada se desplegó. Aceptación manual posterior a publicación: dueño con sede Spark → abrir caja → ticket efectivo y mixto de 1–2 productos → stock/historial/impresión; contrato con anticipo → cuota → entrega → cancelación con devolución por dueño → reporte/Excel → cierre operativo; desconectar y revisar pendientes sin sincronizarlos; foto local y otra cuenta/dispositivo sin ella. SPARK-7 sigue pendiente.
+**Pendiente externo:** revisar/publicar `firestore.rules` y nuevos índices `confirmedAt`/contratos en `firestore.indexes.json` con autorización posterior; nada se desplegó. Aceptación manual posterior a publicación: dueño con sede Spark → abrir caja → ticket efectivo y mixto de 1–2 productos → stock/historial/impresión; contrato con anticipo → cuota → entrega → cancelación con devolución por dueño → reporte/Excel → cierre operativo; desconectar y revisar pendientes sin sincronizarlos; foto local y otra cuenta/dispositivo sin ella. El cierre técnico de SPARK-7 se registra en el apartado siguiente; su publicación y aceptación manual siguen pendientes.
+
+### SPARK-7 — implementación desde `4314fbc55bdc007a26f811ae544b38e2fe24399e` (23/10/2026)
+
+**IMPLEMENTADA, PENDIENTE DE PUBLICACIÓN Y ACEPTACIÓN MANUAL.** Se trabaja en `main`; el titular revisa, crea el nuevo commit y lo sube según el flujo de este plan. No se ejecutó deploy ni login real, no se crearon cuentas/datos en `migapos`, no se tocaron `.env` ni se usaron cuentas de servicio. CI remota del nuevo código pendiente.
+
+- **Exportación manual:** dueño en Ajustes y SuperAdmin por empresa. Abrir el panel no consulta Firestore; requiere consentimiento y descarga explícita. Verifica UID/perfil del servidor, negocio y Rules vigentes; SuperAdmin no hereda acceso a catálogo/contratos/sedes. Páginas de hasta 200, máximo configurable 100/500/2000/5000 documentos totales y 16 MiB remotos; puede consumir lecturas adicionales de perfil/páginas vacías. No reserva cuota global ni garantiza disponibilidad al agotarse Spark. Incluye `tenants`, `licenses`, `settings` (empresa), `branches`, `categories`, `products`, `customers`, `sales`, `contracts`, `payments`, `cash_sessions`, `active_cash_sessions`, `users`, `invites`, `spark_contract_operations`, `alerts`, `audit_events`, cuando las Rules autorizan. Se omiten credenciales y campos sensibles; empresa/perfiles tienen listas permitidas. Cada colección declara cantidad, estado y advertencia si está limitada/inaccesible; continúa con el alcance permitido.
+- **Archivos locales separados:** consentimiento propio y cifrado obligatorio para pendientes/fotos. Lee hasta 500 ventas pendientes de UID/negocio y examina hasta 500 cajas locales; cajas no descifrables quedan advertidas sin exponer otra identidad. Fotos JPEG del usuario/negocio actual, hasta 100 y 4 MiB binarios, con original comprimido y miniatura. No modifica IndexedDB, esquema, cifrado anterior, cola, leases, recibos ni referencias Storage. Registros históricos sin identidad indexada, imágenes ajenas y otros dispositivos no se incluyen. No sincroniza ni acredita ingresos.
+- **Formato:** JSON versionado, fechas de inicio/fin del dispositivo (no confirmación financiera), colecciones/cantidades/advertencias y SHA-256 por colección/global; fotos también incluyen digest binario. Cifrado ofrecido y activado por defecto: AES-256-GCM, PBKDF2-SHA256 con 310000 iteraciones, salt/IV aleatorios; contraseña de 12–1024 caracteres solo en memoria y borrada del formulario después de cada intento. Su pérdida impide recuperar el archivo. Máximo 24 MiB de contenido antes de cifrar; reducir/separar el alcance si se excede. La descarga es real; conviene verificar el archivo guardado mediante dry-run local. El dry-run comprueba versión, negocio, cantidades y hashes: **0 escrituras**, ninguna restauración disponible. No certifica origen, saldos ni conciliación; JSON sin cifrar contiene información personal. No es copia integral de Firebase ni snapshot atómico; no exporta Authentication, secretos, Storage, subcolecciones o colecciones no declaradas. Evitar movimientos concurrentes al exportar y conservar los archivos en un lugar privado.
+- **Plataforma/UX:** se retiran hook cloud, pantallas de jobs, descarga de partes Storage, purga y borrado de tenants; permanecen alta, licencias, invitaciones, activación/suspensión y sedes. Sin scheduler ni restauración privilegiada. UID/email de sesión proceden de Auth y no pueden ser reemplazados por campos históricos del perfil. Términos, agenda, exportador y notificaciones muestran diagnóstico de permisos/conexión/índices; una suscripción fallida no se presenta como «sin notificaciones». No se parchea CORS.
+- **Invariantes conservados:** POS online hasta 2 productos, receipt inmutable, precios/stock por sede, idempotencia y confirmación remota; anulación POS y sincronización financiera offline OFF. Contratos Spark/ledger inmutable y restricciones históricas intactos. Cierre con `reconciliationPending: true`, sin certificación. Reportes excluyen pendientes. No se modificaron `firestore.rules`, `firestore.indexes.json` ni `.firebaserc`; revisión focalizada comprobó índices existentes de notificaciones (`businessId/userId/readAt/createdAt DESC`), ventas por `confirmedAt` y contratos por estado/fecha/rangos, sin abrir permisos ni agregar índices especulativos.
+- **Release Spark:** `firebase.json` operativo sin recursos/hooks de Functions/Storage; emuladores solo Auth/Firestore. Configuración de producción generada con únicamente Hosting y Firestore `(default)`, site exacto `migapos-peru`, proyecto `migapos`, SPA estática y CSP sin endpoints de emulador/Functions/Storage. Base bloqueada para deploy por defecto. Guard exige configuración generada, reconocimiento exacto de proyecto/site, checkout limpio, commit/fingerprint con CI aprobada y hashes del entorno público, build completo, configuración y política archivada; el fingerprint normaliza LF/CRLF de texto para Windows/Linux. `prepare` solo admite artefactos demo de CI; producción exige `release:build`. CI verifica exportador/Chromium/Rules, genera configuración demo y nunca despliega. Logo, actualización explícita del SW y persistencia se conservan; no hay limpieza IndexedDB.
+
+**Validación local de SPARK-7:** lint; build/PWA y `check:build`; 10 tests focalizados de formato/cifrado/tamper/secretos/cuota/guardas/índices/tooling; 3 tests de exportación con las Rules principales en Firestore Emulator `demo-migapos`; Chromium aislado: 8 comprobaciones de exportación/descarga cifrada/consentimiento/integridad/identidad/IndexedDB y 10 de arranque SuperAdmin. Configuración real de destino validada localmente, sin conexión Firebase. Diff-check y configuración generada sin deploy. Aviso conocido de chunks grandes. No se repitieron suites históricas ni se declara aprobado el login Google real o CI remota.
+
+**Archivos de publicación futura:** contenido completo de `frontend/dist/` (incluye `index.html`, assets, `manifest.webmanifest`, `sw.js`, Workbox e iconos), `firestore.rules`, `firestore.indexes.json`, usando exclusivamente `firebase.production.generated.json` generado desde el commit final. `.firebaserc` conserva el destino existente; `.release/*` son comprobantes/copias locales, no recursos a publicar. Nunca publicar config demo, `.env`, Functions, Storage, fuentes de tests ni datos de prueba. El build de validación del árbol sin commit no sustituye al build del commit limpio aprobado.
+
+**Procedimiento preparado, NO ejecutado contra Firebase (PowerShell, Node 22 y CLI instalada del lock):** después de revisar/commitear/subir y obtener CI aprobada del mismo commit, descargar su artefacto como `.release/ci-verification.json`; conservar la configuración pública real existente. No exportar variables demo de la sesión de pruebas a esta sesión.
+
+```powershell
+npm run release:check -- --env production
+npm run release:build -- --env production
+npm run check:build
+npm run release:plan -- --env production
+$env:MIGAPOS_RELEASE_ENV = 'production'
+$env:MIGAPOS_ALLOW_RELEASE = 'migapos/migapos-peru'
+```
+
+Solo tras autorización posterior, ejecutar individualmente los comandos de publicación impresos por `release:plan` (sustituir `SHA12` por el prefijo del commit final):
+
+```powershell
+npx --no-install firebase hosting:clone migapos-peru:live migapos-peru:rollback-SHA12 --project migapos
+npx --no-install firebase deploy --only firestore:rules,firestore:indexes --project migapos --config firebase.production.generated.json
+npx --no-install firebase deploy --only hosting --project migapos --config firebase.production.generated.json
+```
+
+Esperar índices listos antes de aceptar consultas. No aceptar borrado de índices desconocidos: revisar diferencias y conservar los necesarios; la operación de índices no es un rollback de datos. Si falla una etapa, detener publicación y verificar el estado real antes de continuar. La autorización de este sprint no autoriza esos comandos.
+
+**Rollback separado:** conservar el canal del Hosting anterior y su vigencia. Tras autorización específica, `npx --no-install firebase hosting:clone migapos-peru:rollback-SHA12 migapos-peru:live --project migapos` revierte únicamente Hosting; la PWA requiere aceptar actualización/recargar, sin borrar IndexedDB. No revierte Rules, índices ni documentos. Cada `release:build` guarda `.release/policy/migapos/SHA_COMPLETO/{firestore.rules,firestore.indexes.json,manifest.json}`: conservar fuera del checkout y registrar qué SHA/hash se publicó realmente. El primer release exige conocer la política anterior efectivamente publicada; un snapshot de repositorio no prueba ese estado. Si no hay esa copia verificada, no prometer rollback de Rules: revisar una corrección compatible hacia delante.
+
+Preparación local de reversión de Rules, **sin ejecutar despliegue**: `node scripts/release.mjs rollback-plan --env production --snapshot SHA_COMPLETO_ANTERIOR`. Verifica hashes y genera `firebase.production.rollback.generated.json` con solo Rules `(default)`, sin Hosting/índices/datos. Revisar la diferencia y los permisos antes de autorizar. La guarda exige CI/build actuales y, además del reconocimiento normal, `MIGAPOS_ALLOW_POLICY_ROLLBACK=migapos/(default)/HASH_POLITICA` exacto impreso. Solo entonces, en otro encargo autorizado: `npx --no-install firebase deploy --only firestore:rules --project migapos --config firebase.production.rollback.generated.json`. No hay restauración de documentos ni purga/borrado de índices preparado.
+
+**Aceptación manual REAL pendiente (solo después de publicación y autorización expresa):** estas operaciones **escribirán datos reales en `migapos`**, incluso usando nombres ficticios. No ejecutarlas con fixtures ni crearlas automáticamente; si ya hay un negocio de laboratorio, exportar primero su alcance autorizado.
+
+1. Entrar con el SuperAdmin real; revisar contexto de plataforma y ausencia de llamadas Functions/Storage.
+2. Crear empresa ficticia con otro Gmail; comprobar licencia, invitación y Sede Principal.
+3. Entrar con ese Gmail como dueño, aceptar términos y verificar negocio/identidad.
+4. Crear una categoría, dos productos con stock por sede y un contacto.
+5. Seleccionar Sede Principal y abrir caja online; recargar y comprobar sesión/candado.
+6. Registrar venta en efectivo de hasta dos productos; comprobar confirmación remota/receipt.
+7. Registrar venta Yape y mixta, verificando importes y vuelto; sin anulación POS.
+8. Comprobar stock, historial, recibo e impresión; pendientes offline identificados y sin sincronizar/cobrar de nuevo.
+9. Crear contrato Spark con anticipo, nueva cuota, foto local, entrega y cancelación por dueño con devolución; comprobar ledger/recibos, sede de origen y caja abierta. Contratos históricos siguen en lectura.
+10. Comparar dashboard/Excel con movimientos confirmados, cerrar caja con conciliación pendiente, descargar datos autorizados y un archivo separado cifrado de pendientes/fotos; verificar ambos localmente, sin restaurar. Probar que otra cuenta/dispositivo no obtiene las fotos.
+
+Registrar en estos planes cualquier error real con ruta/operación/código e índice solicitado; no ampliar permisos por conveniencia. El login real, aceptación de términos contra producción, publicación, índices listos y este recorrido permanecen pendientes.
 
 ### SPARK-0 — implementación y límites
 
