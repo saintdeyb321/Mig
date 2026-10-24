@@ -91,3 +91,17 @@ it('serves valid local branding/PWA PNGs and retains persistent caches without a
   assert.match(sw, /updateServiceWorker\(true\)/);
   assert.doesNotMatch(sw + client, /deleteDatabase|clearIndexedDbPersistence|indexedDB\.delete|offlineDB\.delete/);
 });
+
+
+it('prepares multi-product totals but refuses unverified checkout before starting any transaction', async () => {
+  const { canonicalSale } = await import('../functions/src/sales/domain/saleModel.js');
+  const { checkoutBlockReason } = await import('../frontend/src/features/sales/domain/checkoutPolicy.js');
+  const { createSparkSalesRepository } = await import('../frontend/src/features/sales/infrastructure/sparkSalesRepository.js');
+  const items = Array.from({ length: 20 }, (_, i) => ({ id: `p${i}`, name: `Product ${i}`, category: '', qty: 1, price: 1.25, cost: 0.25 }));
+  const sale = canonicalSale({ localId: 'multi-product-draft', userId: 'cashier', businessId: 'tenant', branchId: 'branch', sessionId: 'session', items, total: 25, payment: 'mixto', splitPayments: { efectivo: 10, yape: 15 }, amountPaid: 25, change: 0, createdAt: new Date() });
+  assert.equal(sale.items.length, 20); assert.equal(sale.total, 25); assert.equal(sale.totalCost, 5);
+  assert.match(checkoutBlockReason(sale.items), /sin cobrar/); assert.equal(checkoutBlockReason(items.slice(0, 2)), null);
+  let writes = 0;
+  const repository = createSparkSalesRepository({}, { currentUser: () => ({ uid: 'cashier' }), sdk: { runTransaction: () => { writes++; } } });
+  await assert.rejects(repository.submit(sale), /no se divide el ticket/); assert.equal(writes, 0);
+});

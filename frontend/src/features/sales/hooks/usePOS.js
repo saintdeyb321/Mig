@@ -9,6 +9,7 @@ import { useTenantData } from '../../branches/context/TenantContext';
 import { generateReceiptHTML } from '../../../utils/receiptTemplate';
 import { usePrintJobs } from '../../../shared/printing/usePrintJobs';
 import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
+import { checkoutBlockReason } from '../domain/checkoutPolicy.js';
 
 export const usePOS = (user, currentSession) => {
   const resources = useSessionResources();
@@ -103,7 +104,8 @@ export const usePOS = (user, currentSession) => {
   const processSale = useCallback(async () => {
     if (!runtimeCapabilities.saleOnline) { toast.error('Confirmación de ventas pendiente de SPARK-4. No se ha creado ninguna venta.'); return; }
     if (!user?.businessId || processingRef.current) return;
-    if (cart.length > 2) { toast.error('Máximo 2 productos distintos por ticket Spark. No se cobra un ticket parcial.'); return; }
+    const blocked = checkoutBlockReason(cart);
+    if (blocked) { toast.error(blocked); return; }
 
     const VAL_TOAST_ID = 'pos-validation-error';
 
@@ -211,6 +213,8 @@ export const usePOS = (user, currentSession) => {
     clearCart, setCart, activeBranchId, catalogProducts, businessBranches, currentSession, resources]);
 
   const handleCheckoutClick = useCallback(() => {
+    const blocked = checkoutBlockReason(cart);
+    if (blocked) { toast.error(blocked); return; }
     if (!runtimeCapabilities.saleOnline) { toast.error('Confirmación de ventas pendiente de SPARK-4.'); return; }
     if (cart.length === 0) {
       toast.error('🛒 El carrito está vacío', { id: 'pos-validation-error' });
@@ -221,7 +225,7 @@ export const usePOS = (user, currentSession) => {
     } else {
       processSale();
     }
-  }, [payment, processSale, cart.length, splitYape]);
+  }, [payment, processSale, cart, splitYape]);
 
   const clearLastSale = useCallback(() => setLastSale(null), []);
 

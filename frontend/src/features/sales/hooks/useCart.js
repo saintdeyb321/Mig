@@ -21,7 +21,6 @@ export const useCart = (products, activeBranchId) => {
 
     setCart(prev => {
       const found = prev.find(p => p.id === product.id);
-      if (!found && prev.length >= 2) { toast.error('Máximo 2 productos distintos por ticket Spark.'); return prev; }
 
       if (stockDisponible <= 0) {
         toast.error(`${product.name} agotado en esta sucursal`, { id: TOAST_ID });

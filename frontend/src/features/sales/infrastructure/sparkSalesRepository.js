@@ -1,8 +1,9 @@
 import { writeOperationNotice } from '../../notifications/infrastructure/sparkOperationNotice.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { canonicalSale, sameSaleOperation, SaleError } from '../domain/saleModel.js';
+import { VERIFIED_ATOMIC_LINE_LIMIT, checkoutBlockReason } from '../domain/checkoutPolicy.js';
 
-export const SPARK_TICKET_LIMIT = 2;
+export const SPARK_TICKET_LIMIT = VERIFIED_ATOMIC_LINE_LIMIT;
 export function createSparkSalesRepository(database, { currentUser, sdk = firestoreSDK } = {}) {
   const { doc, runTransaction, serverTimestamp, getDocFromServer } = sdk;
   const identity = sale => {
@@ -24,7 +25,7 @@ export function createSparkSalesRepository(database, { currentUser, sdk = firest
     if (sale.items.some(item => item.qty > 1000000) || Math.max(sale.total, sale.totalCost, sale.amountPaid) > 1000000000) {
       throw new SaleError('invalid-sale', 'Límite Spark: 1000000 unidades por producto y S/ 1000000000 por importe/costo/recibido. El ticket completo permanece sin confirmar.');
     }
-    if (sale.items.length > SPARK_TICKET_LIMIT) throw new SaleError('invalid-sale', 'Spark admite máximo 2 productos distintos por ticket. No se registró un ticket parcial.');
+    if (sale.items.length > SPARK_TICKET_LIMIT) throw new SaleError('invalid-sale', checkoutBlockReason(sale.items));
     await runTransaction(database, async tx => {
       identity(sale);
       const reference = doc(database, 'sales', sale.saleId), existing = await tx.get(reference);

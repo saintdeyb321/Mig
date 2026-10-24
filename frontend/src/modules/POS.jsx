@@ -6,6 +6,7 @@ import { useTenantData } from '../features/branches/context/TenantContext';
 import { useCashRegister } from '../features/cash-register/hooks/useCashRegister';
 import { CashRegisterModals } from './CashRegisterModals';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
+import { checkoutBlockReason } from '../features/sales/domain/checkoutPolicy.js';
 
 const POSProductButton = memo(({ p, activeBranchId, globalDisabled, addToCart }) => {
   const currentStock = getSafeStock(p, activeBranchId);
@@ -58,6 +59,7 @@ function POS({ user }) {
 
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const checkoutBlocked = checkoutBlockReason(cart);
 
   // Funciones exclusivas de interfaz para autocompletado
   const handleSplitEfectivoChange = (val) => {
@@ -220,7 +222,8 @@ function POS({ user }) {
           </div>
         </section>
 
-        <p role="status">Spark: máximo 2 productos distintos por ticket. Sincronización offline pausada; pendientes conservados para revisión en Historial.</p>
+        <p role="status">Puedes preparar carritos con múltiples productos. El cobro de más de 2 líneas permanece bloqueado hasta verificar un protocolo financiero seguro; es una limitación de la implementación actual, no de Spark. Sincronización offline pausada; pendientes conservados para revisión en Historial.</p>
+        {checkoutBlocked && <p role="alert">{checkoutBlocked}</p>}
         <div className={`cart-mobile-overlay ${isCartOpen ? 'open' : ''}`} onClick={() => setIsCartOpen(false)}></div>
 
         <div id="cart-section" className={`cart-section ${isCartOpen ? 'open' : ''}`}>
@@ -389,7 +392,7 @@ function POS({ user }) {
                   <button
                     className="btn-primary"
                     onClick={handleCheckoutClick}
-                    disabled={!runtimeCapabilities.saleOnline || cart.length === 0 || !isPaymentValid || isProcessing || branchStatus.isReadOnly}
+                    disabled={!!checkoutBlocked || !runtimeCapabilities.saleOnline || cart.length === 0 || !isPaymentValid || isProcessing || branchStatus.isReadOnly}
                     style={{ width: '100%', padding: '15px', fontSize: '1.1rem', fontWeight: '900', textTransform: 'uppercase', borderRadius: '8px', cursor: (cart.length === 0 || !isPaymentValid || branchStatus.isReadOnly) ? 'not-allowed' : 'pointer', opacity: branchStatus.isReadOnly ? 0.5 : 1, border: 'none' }}
                   >
                     {branchStatus.isReadOnly ? '🔒 MODO LECTURA' : isProcessing ? 'Procesando...' : `COBRAR`}
@@ -416,7 +419,7 @@ function POS({ user }) {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '20px' }}>Verifica en tu celular que el abono se haya realizado.</p>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => setShowQrModal(false)} disabled={isProcessing} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '2px solid var(--border)', background: 'transparent', color: 'var(--text-main)', fontWeight: 'bold', cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={processSale} disabled={!runtimeCapabilities.saleOnline || isProcessing} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: 'var(--success)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>{isProcessing ? 'Procesando...' : '✅ Validar Pago'}</button>
+              <button onClick={processSale} disabled={!!checkoutBlocked || !runtimeCapabilities.saleOnline || isProcessing} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: 'var(--success)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>{isProcessing ? 'Procesando...' : '✅ Validar Pago'}</button>
             </div>
           </div>
         </div>
