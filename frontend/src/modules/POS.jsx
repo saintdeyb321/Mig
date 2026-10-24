@@ -171,6 +171,8 @@ function POS({ user }) {
         </div>
       )}
 
+        <p role="status">Spark: máximo 2 productos distintos por ticket. Sincronización offline pausada; pendientes conservados para revisión en Historial.</p>
+        <div className={`cart-mobile-overlay ${isCartOpen ? 'open' : ''}`} onClick={() => setIsCartOpen(false)}></div>
       <div className="pos-grid">
           <section className="products-section">
           <div className="filter-bar-container">
@@ -220,8 +222,6 @@ function POS({ user }) {
           </div>
         </section>
 
-        <p role="status">Spark: máximo 2 productos distintos por ticket. Sincronización offline pausada; pendientes conservados para revisión en Historial.</p>
-        <div className={`cart-mobile-overlay ${isCartOpen ? 'open' : ''}`} onClick={() => setIsCartOpen(false)}></div>
 
         <div id="cart-section" className={`cart-section ${isCartOpen ? 'open' : ''}`}>
           {lastSale ? (

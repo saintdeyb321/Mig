@@ -1,0 +1,48 @@
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --color-canvas: #f5f6fb;
+  --color-panel: #ffffff;
+  --color-subtle: #f0f3f9;
+  --color-ink: #17213b;
+  --color-muted: #627089;
+  --color-line: #e1e6f0;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-soft: #edf3ff;
+  --color-accent: #7654d8;
+  --color-accent-soft: #f3efff;
+  --color-sidebar: #22183d;
+  --color-sidebar-muted: #baafce;
+  --color-success: #167454;
+  --color-success-soft: #e9f8f0;
+  --color-warning: #946017;
+  --color-warning-soft: #fff6df;
+  --color-danger: #bd3345;
+  --color-danger-soft: #fff0f2;
+  --color-focus: #7d9aff;
+  --radius-card: 1rem;
+  --shadow-card: 0 2px 10px rgb(29 35 64 / 0.04);
+  --shadow-float: 0 16px 48px rgb(25 19 50 / 0.16);
+  --breakpoint-xs: 24rem;
+  --breakpoint-3xl: 108rem;
+  --animate-enter: enter 180ms ease-out;
+  @keyframes enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+}
+
+:root {
+  color-scheme: light;
+  /* Compatibility for dynamic chart/print integrations that read CSS variables. */
+  --primary: var(--color-primary);
+  --primary-hover: var(--color-primary-hover);
+  --primary-light: var(--color-primary-soft);
+  --success: var(--color-success);
+  --danger: var(--color-danger);
+  --warning: var(--color-warning);
+  --bg-app: var(--color-canvas);
+  --header-bg: var(--color-panel);
+  --card-bg: var(--color-panel);
+  --text-main: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-line);
+  --radius: var(--radius-card);
+}
