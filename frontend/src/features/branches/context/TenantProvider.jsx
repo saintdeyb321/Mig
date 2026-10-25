@@ -19,12 +19,18 @@ function BusinessTenantProvider({ user, children }) {
   const identityKey = getIdentityKey(user);
   const businessId = user.businessId;
   const branchQuota = useContext(LicenseContext);
-  const [requestedBranchId, requestBranch] = useState(null);
+  const preferenceKey = `migapos:branch:${identityKey}`;
+  const [requestedBranchId, requestBranch] = useState(() => {
+    try { return sessionStorage.getItem(preferenceKey); } catch { return null; }
+  });
   const watchBranches = useCallback((onData, onError) => subscribeBranches(businessId, onData, onError), [businessId]);
   const branches = useScopedSubscription(identityKey, watchBranches);
   const activeBranchId = resolveOperationalBranch(user, branches.data, requestedBranchId);
   const setActiveBranchId = value => {
-    if (user.role === 'dueño' && resolveOperationalBranch(user, branches.data, value) === value) requestBranch(value);
+    if (user.role === 'dueño' && resolveOperationalBranch(user, branches.data, value) === value) {
+      requestBranch(value);
+      try { sessionStorage.setItem(preferenceKey, value); } catch { /* Selection still works without storage. */ }
+    }
   };
 
   const watchSettings = useCallback((onData, onError) => {
@@ -49,7 +55,9 @@ function BusinessTenantProvider({ user, children }) {
 
   return <TenantContext.Provider value={{
     user, identityKey, businessBranches: branches.data,
-    activeBranchId, setActiveBranchId, branchQuota, branchesError: branches.error, retryBranches: branches.retry, settings: settings.data,
+    activeBranchId, setActiveBranchId, branchQuota, branchesLoading: branches.isLoading,
+    branchSelectionNotice: !branches.isLoading && requestedBranchId && requestedBranchId !== 'global' && requestedBranchId !== activeBranchId
+      ? 'La sede elegida ya no está disponible. Selecciona una sede operativa o consulta la vista global.' : null, branchesError: branches.error, retryBranches: branches.retry, settings: settings.data,
     isLoading: branches.isLoading || settings.isLoading,
     error: branches.error || settings.error,
   }}>{children}</TenantContext.Provider>;

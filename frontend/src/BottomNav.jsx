@@ -18,9 +18,9 @@ const BottomNav = memo(({ current, setCurrent, user, isDesktop }) => {
   const secondary = visible.filter(item=>!primary.includes(item));
   const renderItem = ({id,label,icon}) => { const Icon=icon; return <button key={id} type="button" aria-current={current===id?'page':undefined} onClick={()=>setCurrent(id)}
     className={cn('flex min-h-12 min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-focus',
-      isDesktop ? current===id?'border border-white/15 bg-linear-to-r from-primary to-accent text-white shadow-lg shadow-black/10':'border border-transparent text-sidebar-muted hover:bg-white/7 hover:text-white' : 'relative flex-1 flex-col gap-1 rounded-xl px-1 py-2 text-[11px]',
+      isDesktop ? current===id?'px-4 border border-white/15 bg-linear-to-r from-primary to-accent text-white shadow-lg shadow-black/10':'px-4 border border-transparent text-sidebar-muted hover:bg-white/7 hover:text-white' : 'relative flex-1 flex-col gap-1 rounded-xl px-1 py-2 text-[11px]',
       !isDesktop && (current===id?'bg-primary-soft text-primary':'text-muted hover:bg-subtle'))} title={label}><Icon aria-hidden="true" className="size-5 shrink-0" /><span className="truncate">{label}</span></button>; };
-  return <nav aria-label={isDesktop?'Módulos':'Navegación principal'} className={isDesktop?'grid gap-1':'flex min-h-16 items-stretch justify-around gap-1 px-2 py-1'}>
+  return <nav aria-label={isDesktop?'Módulos':'Navegación principal'} className={isDesktop?'grid gap-2':'flex min-h-16 items-stretch justify-around gap-1 px-2 py-1'}>
     {(isDesktop?visible:primary).map(renderItem)}
     {!isDesktop && secondary.length>0 && <DropdownMenu.Root><DropdownMenu.Trigger className={cn('flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold outline-offset-[-4px]',secondary.some(item=>item.id===current)?'text-primary':'text-muted')}><Ellipsis className="size-5" />Más</DropdownMenu.Trigger>
       <DropdownMenu.Portal><DropdownMenu.Content side="top" align="end" sideOffset={10} className="z-50 mb-1 max-h-[min(70dvh,var(--radix-dropdown-menu-content-available-height))] w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-2xl border border-line bg-panel p-2 shadow-float">

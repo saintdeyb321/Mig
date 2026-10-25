@@ -17,8 +17,8 @@
 }
 
 /* Sidebar scroll remains native for touch, wheel and keyboard, in all engines. */
-.sidebar-scroll { scrollbar-width: thin; scrollbar-color: #c2bbdb #211a43; }
+.sidebar-scroll { scrollbar-width: thin; scrollbar-color: #dad5e9 #211a43; }
 .sidebar-scroll::-webkit-scrollbar { width: 6px; }
 .sidebar-scroll::-webkit-scrollbar-track { background: #211a43; border-radius: 999px; }
-.sidebar-scroll::-webkit-scrollbar-thumb { background: #c2bbdb; border: 1px solid #211a43; border-radius: 999px; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: #dad5e9; border: 1px solid #211a43; border-radius: 999px; }
 .sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #eeeaff; }
