@@ -1,4 +1,4 @@
-import { Button } from "../shared/ui";
+import { Button, FullscreenState } from "../shared/ui";
 // src/components/RestrictedAccess.jsx
 import React, { memo, useCallback } from 'react';
 import { auth } from '../core/firebase/client';
@@ -31,7 +31,7 @@ const RestrictedAccess = memo(({
     }
   }, [onLogout]);
   const [title, message] = licenseState === 'expired' ? ['Suscripción vencida', `Tu suscripción venció el ${expirationDateStr}. Comunícate con el administrador para renovarla.`] : accessMessages[licenseState] ?? ['Acceso sin verificar', 'No se pudo comprobar el acceso. Reintenta o consulta al administrador.'];
-  return <div className="animate-enter motion-reduce:animate-none h-dvh w-screen flex flex-col justify-center items-center bg-ink text-panel p-5 text-center z-50">
+  return <FullscreenState tone="dark">
       <span className="text-4xl mb-2.5">🛑</span>
       <h1 className="text-danger-soft mb-2.5">
         {title}
@@ -53,6 +53,6 @@ const RestrictedAccess = memo(({
       <Button onClick={handleSignOut} type="button" variant="secondary" className="bg-transparent border border-muted text-panel py-3 px-6 rounded-xl cursor-pointer font-bold">
         Salir Ahora
       </Button>
-    </div>;
+    </FullscreenState>;
 });
 export default RestrictedAccess;

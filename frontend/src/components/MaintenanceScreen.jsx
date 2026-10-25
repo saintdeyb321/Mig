@@ -1,11 +1,11 @@
-import { Button, Card } from "../shared/ui";
+import { Button, Card, FullscreenState } from "../shared/ui";
 import { brand } from '../config/brand';
 // src/components/MaintenanceScreen.jsx
 import React from 'react';
 export default function MaintenanceScreen({
   message
 }) {
-  return <div className="flex min-h-dvh items-center justify-center bg-canvas p-4 animate-enter motion-reduce:animate-none">
+  return <FullscreenState>
       <Card className="grid w-full max-w-lg gap-4 p-6 text-center" as="div">
 
         {/* Sección de medios (GIF) */}
@@ -20,7 +20,7 @@ export default function MaintenanceScreen({
 
         {/* Mensaje fijo: Corto, directo y tranquilizador */}
         <p className="text-lg text-ink leading-relaxed mb-2.5">
-          Estamos aplicando mejoras rápidas. <strong>Tus ventas y datos están 100% a salvo.</strong>
+          Estamos actualizando el sistema. Vuelve a comprobar el acceso en unos momentos.
         </p>
 
         {/* Mensaje dinámico de Firebase (Solo se muestra si escribiste algo) */}
@@ -36,5 +36,5 @@ export default function MaintenanceScreen({
           Revisar si ya volvió
         </Button>
       </Card>
-    </div>;
+    </FullscreenState>;
 }

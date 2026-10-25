@@ -1,5 +1,5 @@
 import InvitationOnboarding from './components/InvitationOnboarding';
-import { LoadingState } from "./shared/ui";
+import { LoadingState, FullscreenState } from "./shared/ui";
 import { brand } from './config/brand';
 // src/App.jsx
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
@@ -108,7 +108,7 @@ function App() {
     return <MaintenanceScreen message={maintenanceMsg} />;
   }
   if (authLoading) {
-    return <LoadingState>Iniciando {brand.name}...</LoadingState>;
+    return <FullscreenState loading title={`Iniciando ${brand.name}…`} />;
   }
   if (authIssue === 'needs-invite') return <InvitationOnboarding invitation={invitation} onActivate={acceptProfileInvitation} onLogout={handleLogout} />;
   if (authIssue) return <RestrictedAccess licenseState={authIssue} onRetry={retryAuth} onLogout={handleLogout} onAcceptInvitation={authIssue === 'needs-invite' ? acceptProfileInvitation : undefined} />;

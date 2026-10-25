@@ -12,3 +12,5 @@ export { cn } from './cn';
 export { SearchField } from './SearchField';
 export { SectionCard } from './SectionCard';
 export { HelpDisclosure } from './HelpDisclosure';
+
+export { FullscreenState } from './FullscreenState';
