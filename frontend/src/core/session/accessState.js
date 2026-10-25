@@ -34,3 +34,20 @@ export function licenseAccess({ license, tenant, businessId, now = new Date() })
     || license.data.maintenanceJobId) return 'suspended';
   return expiry <= now ? 'expired' : 'active';
 }
+
+
+// Cached documents permit presentation only, for the persisted Google identity.
+export function cachedProfileAccess(data, metadata, user, withinShift) {
+  return metadata?.hasPendingWrites === false && user?.emailVerified === true
+    && user.providerData?.some(provider => provider.providerId === 'google.com')
+    && ['dueño', 'cajero'].includes(data?.role) && data.hasAcceptedTerms === true
+    && profileAccess(data, { fromCache: false, hasPendingWrites: false }, withinShift) === 'ready';
+}
+export function cachedLicenseAccess(records) {
+  const { license, tenant, businessId } = records;
+  return license.received && tenant.received && license.metadata?.hasPendingWrites === false && tenant.metadata?.hasPendingWrites === false
+    && (!license.error || accessErrorState(license.error) === 'network-error') && (!tenant.error || accessErrorState(tenant.error) === 'network-error')
+    && (tenant.data?.businessId === businessId || !tenant.data && records.knownTenantAbsent === true)
+    && licenseAccess({ ...records, license: { ...license, error: null, metadata: { fromCache: false, hasPendingWrites: false } },
+      tenant: { ...tenant, error: null, metadata: { fromCache: false, hasPendingWrites: false } } }) === 'active';
+}

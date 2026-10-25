@@ -1,3 +1,5 @@
+import { AssistedAccessContext } from '../core/session/AssistedAccessContext';
+import { FullscreenState } from '../shared/ui';
 import { LicenseContext } from '../features/licenses/context/LicenseContext';
 import React, { useEffect } from 'react';
 import { reportDiagnostic } from '../core/errors/diagnostics.js';
@@ -12,15 +14,13 @@ export default function LicenseGuard({
     expirationDateStr, retry, licenseData
   } = useLicenseAccess(user);
   useEffect(() => {
-    if (!['active', 'loading'].includes(licenseState)) reportDiagnostic('license', {
+    if (!['active', 'offline-assisted', 'loading'].includes(licenseState)) reportDiagnostic('license', {
       code: 'tenant-restricted'
     }, 'restricted');
   }, [licenseState]);
   if (licenseState === 'loading') {
-    return <div className="h-dvh w-screen flex justify-center items-center bg-subtle">
-        <div className="size-8 animate-spin rounded-full border-3 border-line border-t-primary motion-reduce:animate-none"></div>
-      </div>;
+    return <FullscreenState loading title="Verificando acceso…" />;
   }
-  if (licenseState === 'active') return <LicenseContext.Provider value={licenseData}>{children}</LicenseContext.Provider>;
+  if (['active', 'offline-assisted'].includes(licenseState)) return <AssistedAccessContext.Provider value={licenseState === 'offline-assisted' || user.accessVerified === false}><LicenseContext.Provider value={licenseData}>{children}</LicenseContext.Provider></AssistedAccessContext.Provider>;
   return <RestrictedAccess licenseState={licenseState} expirationDateStr={expirationDateStr} user={user} onRetry={retry} onLogout={handleLogout} />;
 }

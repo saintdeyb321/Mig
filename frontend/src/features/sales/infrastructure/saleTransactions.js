@@ -1,3 +1,4 @@
+import { confirmedWrite } from '../../../core/firebase/confirmedWrite.js';
 import { db, auth } from '../../../core/firebase/client';
 import { createSparkSalesRepository } from './sparkSalesRepository.js';
 import { requireCapability } from '../../../config/runtimeCapabilities.js';
@@ -52,9 +53,9 @@ export const saleQueue = createSaleQueue({
   },
 });
 
-export const saveSaleTransaction = (sale, cartItems, products, user) =>
+export const saveSaleTransaction = confirmedWrite((sale, cartItems, products, user) =>
   saleQueue.submit(canonicalSale({ ...sale, items: cartItems, queuedAt: new Date().toISOString(),
-    origin: navigator.onLine ? 'online' : 'offline' }, products), user, { isolated: true });
+    origin: navigator.onLine ? 'online' : 'offline' }, products), user, { isolated: true }));
 
 // Read-only remote verification can recover a lost local acknowledgment; it never submits a sale.
 export async function verifyPendingSaleTransaction(sale, user) {

@@ -1,5 +1,7 @@
+import { useAssistedAccess } from '../core/session/AssistedAccessContext';
+import { getFirebaseErrorCode } from '../core/errors/firebaseErrors';
 import { isBranchOperational } from '../features/branches/domain/branchPolicy';
-import { Button, Card, LoadingState, ErrorState } from "../shared/ui";
+import { Button, Card, LoadingState, ErrorState, FullscreenState } from "../shared/ui";
 // src/components/BranchGuard.jsx
 import React, { useMemo } from 'react';
 import { useCatalogData } from '../features/catalog/context/CatalogContext';
@@ -9,6 +11,7 @@ export default function BranchGuard({
   handleLogout,
   children
 }) {
+  const assisted = useAssistedAccess();
   const {
     businessBranches, branchesError, retryBranches,
     isLoading: isTenantLoading
@@ -40,15 +43,15 @@ export default function BranchGuard({
     }
     return false;
   }, [isAdmin, myBranch]);
-  if (isTenantLoading || isCatalogLoading) {
+  if (!assisted && (isTenantLoading || isCatalogLoading)) {
     return <LoadingState>Verificando sede y catálogo…</LoadingState>;
   }
 
-  if (branchesError) return <ErrorState title="No se pudo verificar la sede" error={branchesError} onRetry={retryBranches} />;
+  if (branchesError && !(assisted && ['unavailable', 'deadline-exceeded'].includes(getFirebaseErrorCode(branchesError)))) return <ErrorState title="No se pudo verificar la sede" error={branchesError} onRetry={retryBranches} />;
 
   // 🚨 LA BARRERA DE SUCURSAL INACTIVA
-  if (isBlocked) {
-    return <div className="flex min-h-dvh items-center justify-center bg-canvas p-4 animate-enter motion-reduce:animate-none">
+  if (isBlocked && (!assisted || myBranch)) {
+    return <FullscreenState>
         <Card className="grid w-full max-w-lg gap-4 p-6 text-center" as="div">
           <div className="flex justify-center text-4xl mb-2.5">
             🔒
@@ -66,7 +69,7 @@ export default function BranchGuard({
             Cerrar Sesión
           </Button>
         </Card>
-      </div>;
+      </FullscreenState>;
   }
 
   // Si todo está bien, lo dejamos pasar al sistema

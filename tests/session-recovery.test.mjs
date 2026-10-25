@@ -130,3 +130,47 @@ it('retains personnel only inside the same session after index failure and block
   assert.equal(listener.get().data.length, 1); assert.equal(listener.get().isStale, true); assert.equal(listener.get().error.code, 'failed-precondition');
   off(); resources.close(); const other = createSessionResources(); assert.deepEqual(other.watch('personnel', () => () => {}).get().data, []); other.close();
 });
+
+
+it('bootstraps cached business profiles for presentation, then replaces them with server truth', () => {
+  let receive, fail;
+  const states = [], user = { uid: 'offline-owner', email: 'offline@example.test', emailVerified: true, providerData: [{ providerId: 'google.com' }] };
+  const profile = { ...owner, hasAcceptedTerms: true };
+  const session = createProfileSession({ user, subscribe: (_, next, error) => { receive = next; fail = error; return () => {}; },
+    readInvite: async () => null, withinShift: () => true, onState: next => states.push(next) });
+  receive(profile, cached);
+  assert.equal(states.at(-1).status, 'offline-assisted'); assert.equal(states.at(-1).profile.accessVerified, false);
+  receive(profile, server); assert.equal(states.at(-1).status, 'ready'); assert.equal(states.at(-1).profile.accessVerified, true);
+  fail({ code: 'permission-denied' }); assert.equal(states.at(-1).status, 'permission-denied'); assert.equal(states.at(-1).profile, null);
+  receive(profile, cached); assert.notEqual(states.at(-1).status, 'offline-assisted');
+  receive(profile, server); assert.equal(states.at(-1).status, 'ready');
+  receive({ ...profile, role: 'superadmin' }, cached); assert.equal(states.at(-1).status, 'loading');
+  receive(profile, { ...cached, hasPendingWrites: true }); assert.equal(states.at(-1).status, 'loading'); session.close();
+});
+it('requires valid cached license and tenant data without pending writes or confirmed denial', async () => {
+  const { cachedLicenseAccess } = await import('../frontend/src/core/session/accessState.js');
+  const records = { businessId: 'tenant', license: record(license, cached), tenant: record({ businessId: 'tenant', status: 'active' }, cached) };
+  assert.equal(cachedLicenseAccess(records), true);
+  assert.equal(cachedLicenseAccess({ ...records, tenant: record(null, cached), knownTenantAbsent: true }), true);
+  for (const changed of [
+    { license: record({ ...license, expiry: '2020-01-01' }, cached) },
+    { tenant: record({ businessId: 'other', status: 'active' }, cached) },
+    { tenant: record(null, cached) },
+    { license: { ...records.license, error: { code: 'permission-denied' } } },
+    { license: record(license, { ...cached, hasPendingWrites: true }) },
+  ]) assert.ok(!cachedLicenseAccess({ ...records, ...changed }));
+});
+it('never authorizes writes from assisted cache, offline state or a different identity', async () => {
+  const { setProfileAuthority, setLicenseAuthority, resetAccessAuthority, assertConfirmedWrite } = await import('../frontend/src/core/session/operationAccess.js');
+  const { getIdentityKey } = await import('../frontend/src/core/session/identity.js');
+  const user = { uid: 'owner', ...owner }, request = { uid: 'owner', online: true };
+  resetAccessAuthority(); setProfileAuthority(user, false); setLicenseAuthority(getIdentityKey(user), true);
+  assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/);
+  setProfileAuthority(user, true); setLicenseAuthority(getIdentityKey(user), false);
+  assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/);
+  setLicenseAuthority(getIdentityKey(user), true); assert.doesNotThrow(() => assertConfirmedWrite(request));
+  assert.throws(() => assertConfirmedWrite({ ...request, online: false }), /Operación bloqueada/);
+  assert.throws(() => assertConfirmedWrite({ ...request, uid: 'other' }), /Operación bloqueada/);
+  setProfileAuthority({ ...user, businessId: 'other' }, true);
+  assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/); resetAccessAuthority();
+});

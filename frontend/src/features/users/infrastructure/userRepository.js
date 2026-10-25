@@ -1,3 +1,4 @@
+import { confirmedWrite } from '../../../core/firebase/confirmedWrite.js';
 import { withQueryContext } from '../../../core/firebase/queryErrors.js';
 import { collection, query, where, onSnapshot, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../core/firebase/client';
@@ -19,9 +20,9 @@ export const getProfileFromServer = async uid => {
   const snapshot = await getDocFromServer(doc(db, 'users', uid));
   return { data: snapshot.exists() ? snapshot.data() : null, metadata: snapshot.metadata };
 };
-export const updateUser = (uid, data) => updateDoc(doc(db, 'users', uid), data);
-export const createInvite = (email, data) => setDoc(doc(db, 'invites', email), data);
-export const deleteInvite = email => deleteDoc(doc(db, 'invites', email));
+export const updateUser = confirmedWrite((uid, data) => updateDoc(doc(db, 'users', uid), data));
+export const createInvite = confirmedWrite((email, data) => setDoc(doc(db, 'invites', email), data));
+export const deleteInvite = confirmedWrite(email => deleteDoc(doc(db, 'invites', email)));
 export const getUser = async uid => {
   const snapshot = await getDoc(doc(db, 'users', uid));
   return snapshot.exists() ? snapshot.data() : null;
@@ -30,7 +31,7 @@ export const getInvite = async email => {
   const snapshot = await getDoc(doc(db, 'invites', email));
   return snapshot.exists() ? snapshot.data() : null;
 };
-export const createInvitedProfile = (uid, data) => setDoc(doc(db, 'users', uid), data);
+export const createInvitedProfile = confirmedWrite((uid, data) => setDoc(doc(db, 'users', uid), data));
 export const getInviteFromServer = async email => {
   const snapshot = await getDocFromServer(doc(db, 'invites', email));
   return snapshot.exists() ? snapshot.data() : null;
@@ -40,6 +41,6 @@ export const subscribeProfile = (uid, onData, onError) => onSnapshot(
   doc(db, 'users', uid), { includeMetadataChanges: true },
   snapshot => onData(snapshot.exists() ? snapshot.data() : null, snapshot.metadata), onError,
 );
-export const acceptTerms = uid => updateUser(uid, {
+export const acceptTerms = confirmedWrite(uid => updateDoc(doc(db, 'users', uid), {
   hasAcceptedTerms: true, termsAcceptedAt: serverTimestamp(), termsVersion: brand.termsVersion,
-});
+}), { profileOnly: true });

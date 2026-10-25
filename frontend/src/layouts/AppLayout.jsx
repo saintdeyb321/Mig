@@ -1,3 +1,5 @@
+import { useAssistedAccess } from '../core/session/AssistedAccessContext';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { memo, useMemo } from 'react';
 import { LogOut, MapPin, UserRound } from 'lucide-react';
 import { brand } from '../config/brand';
@@ -13,6 +15,7 @@ import { Badge, Button, IconButton } from '../shared/ui';
 const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
   const { businessBranches = [] } = useTenantData() ?? {};
   const notifications = useAlerts(user);
+  const assisted = useAssistedAccess(), online = useNetworkStatus();
   const fullName = useMemo(() => user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : 'Usuario del sistema', [user]);
   const assignedBranchName = useMemo(() => user?.role === 'cajero' && user?.branchId
     ? businessBranches.find(branch => branch.id === user.branchId)?.name || 'Sede desconocida' : null, [user, businessBranches]);
@@ -45,7 +48,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
         {canSelectBranch && <BranchSelector />}
         {assignedBranchName && <Badge><MapPin className="size-3" />{assignedBranchName}</Badge>}
       </header>
-      <main id="main-content" tabIndex={-1} className="mx-auto min-w-0 max-w-[1680px] space-y-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:p-7 xl:p-9">{children}</main>
+      <main id="main-content" tabIndex={-1} className="mx-auto min-w-0 max-w-[1680px] space-y-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:p-7 xl:p-9">{(!online || assisted) && <p role="status" className="rounded-xl border border-warning/20 bg-warning-soft px-4 py-3 text-sm text-warning">{!online ? 'Trabajando sin conexión. Los pendientes del dispositivo se conservan. Puedes consultar datos locales; las operaciones online siguen bloqueadas.' : 'Confirmando el acceso. Puedes consultar datos locales; espera la verificación para registrar operaciones.'}</p>}{children}</main>
     </div>
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-primary/10 bg-panel/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_24px_rgb(33_26_67/0.06)] backdrop-blur-md lg:hidden"><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop={false} /></div>
   </div>;

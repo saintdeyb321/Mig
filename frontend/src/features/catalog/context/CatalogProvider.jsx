@@ -14,7 +14,7 @@ export function CatalogProvider({ children }) {
   const uid = user.uid;
   const queueIdentity = useMemo(() => ({ uid, businessId }), [uid, businessId]);
   const watchProducts = useCallback((onData, onError) => {
-    let raw = [];
+    let raw = [], metadata = { fromCache: true, hasPendingWrites: false };
     let pendingReady = false;
     let active = true;
     let generation = 0;
@@ -27,13 +27,13 @@ export function CatalogProvider({ children }) {
         const pending = await readPendingSales(queueIdentity, 'global', true);
         if (!active || current !== generation) return;
         const projected = projectQueuedStock(raw, pending, businessId);
-        onData(projected.products);
+        onData(projected.products, metadata);
         if (projected.settled.length) await retireStockProjections(projected.settled);
       } catch (error) { if (active && current === generation) onError(error); }
     };
     const stopCache = subscribeTenantCache(offlineDB, 'products', businessId,
       (next, error) => subscribeProducts(businessId, next, error),
-      products => { raw = products; publish(); }, onError);
+      (products, source) => { raw = products; metadata = source; publish(); }, onError);
     const stopPending = subscribeStockQueue(queueIdentity, () => {
       pendingReady = true;
       publish();
@@ -43,11 +43,11 @@ export function CatalogProvider({ children }) {
   const watchCategories = useCallback((onData, onError) => subscribeTenantCache(
     offlineDB, 'categories', businessId,
     (next, error) => subscribeCategories(businessId, next, error),
-    data => onData(data.sort((a, b) => a.name.localeCompare(b.name))), onError,
+    (data, metadata) => onData(data.sort((a, b) => a.name.localeCompare(b.name)), metadata), onError,
     categories => categories.sort((a, b) => a.name.localeCompare(b.name)),
   ), [businessId]);
-  const products = useScopedSubscription(identityKey, watchProducts, EMPTY_LIST, { preserveOnError: true });
-  const categories = useScopedSubscription(identityKey, watchCategories, EMPTY_LIST, { preserveOnError: true });
+  const products = useScopedSubscription(identityKey, watchProducts, EMPTY_LIST, { preserveOnError: true, allowCachedData: true });
+  const categories = useScopedSubscription(identityKey, watchCategories, EMPTY_LIST, { preserveOnError: true, allowCachedData: true });
   const retry = () => { products.retry(); categories.retry(); };
   return <CatalogContext.Provider value={{
     products: products.data, categories: categories.data,
