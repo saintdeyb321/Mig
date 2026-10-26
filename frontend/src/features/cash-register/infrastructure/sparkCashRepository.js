@@ -29,6 +29,8 @@ export function createSparkCashRepository(database, { currentUser, sdk = firesto
         if (!isBranchOperational(branch.data())) throw new Error('Sede inactiva o no verificada.');
         if (branch.data()?.sparkCashVersion !== 1) throw new Error('Sede histórica: requiere revisar cajas y pendientes antes de habilitar su apertura Spark. La lectura se conserva.');
         if (lock.exists()) throw new Error('Ya existe una caja activa o un candado histórico en esta sede. El cierre/mantenimiento sigue pendiente de migración.');
+        // New sessions have a fixed Rules-enforced duration; their clock starts on the server.
+        // Never add this field to historical sessions during reads or idempotent retries.
         const timestamp = serverTimestamp(), p = profile.data() ?? {};
         const cashierName = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim();
         tx.set(ref, { businessId, branchId, userId, cashierName, status: 'open', openingAmount, openingNote, openedAt: timestamp, syncedAt: timestamp, runtime: 'spark', durationHours: 10 });

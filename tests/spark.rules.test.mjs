@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto';
 
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080', 'Only the local demo-migapos Firestore Emulator is allowed.');
 assert.equal(process.env.GCLOUD_PROJECT, 'demo-migapos');
-const { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp, setLogLevel } = sdk;
+const { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, serverTimestamp, Timestamp, setLogLevel } = sdk;
 setLogLevel('silent');
 let env;
 const claims = email => ({ email, email_verified: true, firebase: { sign_in_provider: 'google.com' } });
@@ -52,9 +52,11 @@ const rawBundle = (database, data, { omit, mutate = entries => entries } = {}) =
   return batch.commit();
 };
 const cashRepository = (database, uid = 'owner') => createSparkCashRepository(database, { currentUser: () => ({ uid }), sdk });
-const rawCash = async (database, businessId, branchId, { userId = 'owner', sessionId = 'cash-opening-123456789', session = {}, lock = {}, omit } = {}) => {
+const rawCash = async (database, businessId, branchId, { userId = 'owner', sessionId = 'cash-opening-123456789', session = {}, lock = {}, omit, omitDuration = false } = {}) => {
   const id = await cashLockId(businessId, branchId), timestamp = serverTimestamp(), batch = writeBatch(database);
-  if (omit !== 'session') batch.set(doc(database, 'cash_sessions', sessionId), { businessId, branchId, userId, status: 'open', openingAmount: 20, openingNote: '', cashierName: 'Dueña Prueba', openedAt: timestamp, syncedAt: timestamp, runtime: 'spark', durationHours: 10, ...session });
+  const opening = { businessId, branchId, userId, status: 'open', openingAmount: 20, openingNote: '', cashierName: 'Dueña Prueba', openedAt: timestamp, syncedAt: timestamp, runtime: 'spark', durationHours: 10, ...session };
+  if (omitDuration) delete opening.durationHours;
+  if (omit !== 'session') batch.set(doc(database, 'cash_sessions', sessionId), opening);
   if (omit !== 'lock') batch.set(doc(database, 'active_cash_sessions', id), { businessId, branchId, userId, sessionId, status: 'open', runtime: 'spark', updatedAt: timestamp, ...lock });
   return batch.commit();
 };
@@ -217,11 +219,15 @@ describe('SPARK-3 online cash opening', () => {
     const command = { businessId, branchId, sessionId: 'cash-opening-123456789', openingAmount: 20.25, openingNote: 'Fondo' };
     const session = await repo.open(command), repeated = await repo.open(command);
     assert.equal(session.durationHours, 10);
+    assert.ok(session.openedAt.isEqual(session.syncedAt));
     assert.equal(session.openedAt.toMillis(), repeated.openedAt.toMillis());
     assert.ok(Math.abs(session.openedAt.toMillis() - Date.now()) < 10000);
     const lockId = await cashLockId(businessId, branchId);
     assert.equal(lockId, createHash('sha256').update(JSON.stringify([businessId, branchId])).digest('hex'));
-    assert.equal((await dump(`active_cash_sessions/${lockId}`)).data().sessionId, session.id);
+    const lock = (await dump(`active_cash_sessions/${lockId}`)).data();
+    assert.equal(lock.sessionId, session.id);
+    assert.ok(lock.updatedAt.isEqual(session.openedAt));
+    assert.equal(lock.businessId, session.businessId); assert.equal(lock.branchId, session.branchId); assert.equal(lock.userId, session.userId);
     await assert.rejects(repo.open({ ...command, openingAmount: 30 }), /distinta/);
     assert.equal(session.financialWindow, undefined);
   });
@@ -234,11 +240,23 @@ describe('SPARK-3 online cash opening', () => {
   });
   it('rejects partial openings, invalid amounts, arbitrary edits, forged windows and foreign actor/branch', async () => {
     const { database, businessId, branchId } = await businessOwner();
-    for (const patch of [{ omit: 'session' }, { omit: 'lock' }, { userId: 'another' }, { session: { durationHours: 12 } }, { session: { openingAmount: -1 } }, { session: { openingAmount: 0.001 } },
-      { session: { financialWindow: { expiresAt: Timestamp.fromMillis(Date.now() + 86400000) } } }, { session: { openedAt: Timestamp.fromMillis(Date.now() + 86400000) } }, { lock: { branchId: 'foreign' } }]) await assertFails(rawCash(database, businessId, branchId, patch));
+    const lockId = await cashLockId(businessId, branchId);
+    for (const patch of [{ omit: 'session' }, { omit: 'lock' }, { userId: 'another' }, { omitDuration: true },
+      ...[12, 0, -1, 10.5, '10', null, true].map(durationHours => ({ session: { durationHours } })),
+      { session: { openingAmount: -1 } }, { session: { openingAmount: 0.001 } },
+      { session: { financialWindow: { expiresAt: Timestamp.fromMillis(Date.now() + 86400000) } } }, { session: { expiresAt: serverTimestamp() } },
+      { session: { openedAt: Timestamp.fromMillis(Date.now() + 86400000) } }, { session: { syncedAt: Timestamp.fromMillis(Date.now() - 1000) } },
+      { lock: { branchId: 'foreign' } }, { lock: { durationHours: 10 } }]) {
+      await assertFails(rawCash(database, businessId, branchId, patch));
+      assert.equal((await dump('cash_sessions/cash-opening-123456789')).exists(), false);
+      assert.equal((await dump(`active_cash_sessions/${lockId}`)).exists(), false);
+    }
     await assertFails(rawCash(dbFor('admin'), businessId, branchId, { userId: 'admin' }));
     await rawCash(database, businessId, branchId);
     await assertFails(updateDoc(doc(database, 'cash_sessions', 'cash-opening-123456789'), { openingAmount: 0 }));
+    for (const changes of [{ durationHours: 12 }, { durationHours: deleteField() }, { openedAt: serverTimestamp() }]) {
+      await assertFails(updateDoc(doc(database, 'cash_sessions', 'cash-opening-123456789'), changes));
+    }
     await assertFails(deleteDoc(doc(database, 'cash_sessions', 'cash-opening-123456789')));
     await assertFails(deleteDoc(doc(database, 'active_cash_sessions', await cashLockId(businessId, branchId))));
   });

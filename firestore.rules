@@ -478,7 +478,8 @@ service cloud.firestore {
       let lock = getAfter(/databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, d.branchId))).data;
       return cashActor(d.businessId, d.branchId) && sessionId.matches('^[A-Za-z0-9_-]{16,100}$')
         && d.keys().hasOnly(['businessId', 'branchId', 'userId', 'cashierName', 'status', 'openingAmount', 'openingNote', 'openedAt', 'syncedAt', 'runtime', 'durationHours'])
-        && d.userId == request.auth.uid && d.status == 'open' && d.runtime == 'spark' && d.durationHours == 10
+        && d.userId == request.auth.uid && d.status == 'open' && d.runtime == 'spark'
+        && d.durationHours is int && d.durationHours == 10
         && d.openingAmount is number && d.openingAmount >= 0 && d.openingAmount <= 1000000000
         && d.openingAmount == math.round(d.openingAmount * 100) / 100.0
         && d.openingNote is string && d.openingNote.size() <= 2000 && d.cashierName is string && d.cashierName.size() <= 250
@@ -494,7 +495,8 @@ service cloud.firestore {
         && d.userId == request.auth.uid && d.status == 'open' && d.runtime == 'spark' && d.updatedAt == request.time
         && !exists(/databases/$(database)/documents/cash_sessions/$(d.sessionId))
         && session.businessId == d.businessId && session.branchId == d.branchId && session.userId == d.userId
-        && session.status == 'open' && session.openedAt == request.time && session.runtime == 'spark';
+        && session.status == 'open' && session.openedAt == request.time && session.syncedAt == request.time && session.runtime == 'spark'
+        && session.durationHours is int && session.durationHours == 10;
     }
 
     function cashClosing(sessionId) {
@@ -539,7 +541,9 @@ service cloud.firestore {
         && branch.businessId == d.businessId && branch.get('status', null) == 'activo' && branch.sparkCashVersion == 1
         && session.userId == d.userId && session.businessId == d.businessId && session.branchId == d.branchId
         && session.status == 'open' && session.runtime == 'spark' && session.openedAt <= request.time
-        && (!session.keys().hasAny(['durationHours']) || (session.durationHours == 10 && request.time < session.openedAt + duration.value(10, 'h')))
+        // Only historical sessions may lack durationHours. A client timestamp never extends a new session.
+        && (!session.keys().hasAny(['durationHours']) || (session.durationHours is int && session.durationHours == 10
+          && request.time < session.openedAt + duration.value(10, 'h')))
         && lock.sessionId == d.sessionId && lock.userId == d.userId && lock.status == 'open';
     }
     function line(d, index) {
