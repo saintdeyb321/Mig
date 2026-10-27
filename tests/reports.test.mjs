@@ -31,6 +31,15 @@ const build = options => buildSalesWorkbook(XLSX, { ...scope, stats, sales, paym
 const rows = (wb, name) => XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+it('Plan05 keeps stale presentation for prefixed network errors and withdraws figures after permission denial', async () => {
+  let state, failure;
+  const resource = createReportResource({ ...scope, key: 'plan05-prefixed-errors', cache: createReportCache(), readStats: async () => stats,
+    readPayments: async () => { if (failure) throw Object.assign(Error('Read failed'), { code: failure }); return []; }, onState: value => { state = value; } });
+  await resource.ready; assert.ok(state.model);
+  failure = 'firestore/unavailable'; await resource.refresh(true); assert.ok(state.model); assert.ok(state.queryError);
+  failure = 'firestore/permission-denied'; await resource.refresh(true); assert.equal(state.model, null); resource.close();
+});
+
 it('Plan05 accounts an immutable POS refund once with negative detailed items and reconciled net totals', () => {
   const original = sales[0], refund = { ...base, id: original.id, saleId: original.id, userId: 'owner', reason: 'Devolución comprobada',
     authority: 'pos-compensation', amount: -40, cashAmount: -15, digitalAmount: -25, items: original.items, occurredAt: date('12') };

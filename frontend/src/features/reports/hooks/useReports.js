@@ -6,14 +6,20 @@ import { createReportCache, reportCacheKey, createReportResource, invalidateRepo
 
 import { useSessionResources, useSessionState } from '../../../core/session/sessionResourceHooks.js';
 import { sessionReportReads } from '../infrastructure/sessionReportReads.js';
+import { readViewPreference, writeViewPreference } from '../../../core/session/viewPreference.js';
+const REPORT_FILTERS = ['hoy', 'semana', 'mes', 'todo'];
 export const useReports = user => {
   const { activeBranchId, identityKey } = useTenantData();
   const resources = useSessionResources();
   const cache = resources.value('report:cache', createReportCache);
-  const [timeFilter, selectFilter] = useSessionState(`report:filter:${activeBranchId}`, 'hoy');
+  const preferenceKey = `migapos:report-filter:${identityKey}:${activeBranchId}`;
+  const initialFilter = useMemo(() => readViewPreference(preferenceKey, REPORT_FILTERS, 'hoy'), [preferenceKey]);
+  const [timeFilter, selectFilter] = useSessionState(`report:filter:${activeBranchId}`, initialFilter);
   const setTimeFilter = filter => {
+    if (!REPORT_FILTERS.includes(filter)) return;
     if (['mes', 'todo'].includes(filter) && !window.confirm('Este período consulta movimientos individuales y contratos históricos; puede consumir miles de lecturas Spark. ¿Continuar?')) return;
     selectFilter(filter);
+    writeViewPreference(preferenceKey, filter, REPORT_FILTERS);
   };
   const [day, setDay] = useState(() => reportDay(new Date()));
   const period = useMemo(() => reportPeriod(timeFilter, day + 'T12:00:00-05:00'), [timeFilter, day]);

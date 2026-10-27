@@ -89,6 +89,8 @@ Caja consulta compensaciones de su sesión y las proyecta como reembolsos firmad
 
 ## Etapa 5 — P2: consultas, caché, Excel y offline de lectura (AUD-010, 011, 012)
 
+**Checkpoint E implementado localmente:** filtros de reportes guardados en `sessionStorage` por identidad y sede, con valores permitidos y fallback seguro cuando el almacenamiento está bloqueado. F5 recupera la preferencia, nunca permisos. El historial puede presentar recibos del caché SDK, marcados como lectura pendiente de servidor; excluye documentos con escrituras locales sin confirmar. Checkout aislado consulta solo su ID en IndexedDB, sin recorrer ni modificar pendientes ajenos. Los errores `firestore/unavailable` preservan presentación obsoleta con aviso, mientras `permission-denied` retira cifras del reporte. TTL/single-flight/invalidez dirigida se conservan; no se atribuye a renders React un consumo Firestore no medido. Excel detalla venta y devolución con cantidades/importes de signo opuesto y deduplica compensaciones, sin truncar filas silenciosamente. PWA/Wi-Fi físicos y medición real de lecturas: aceptación manual pendiente.
+
 - Corregir `limit(>10000)` y queries no paginadas; preservar períodos diario/semanal detallado y mensual/anual resumido, detectar exports parciales y mantener políticas explícitas de consumo.
 - Auditar renders React **separados** de remounts, listeners y lecturas remotas; mejorar TTL, invalidación dirigida, filtros y revalidación. No prohibir renders legítimos ni desactivar `StrictMode` para ocultar errores.
 - Cerrar fugas de caché entre usuarios/negocios/sedes. Offline con caché **solo para lectura autorizada por política local**, sin vender permisos cacheados como autorización financiera.

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readViewPreference, writeViewPreference } from '../frontend/src/core/session/viewPreference.js';
 import { it } from 'node:test';
 import { profileAccess, licenseAccess, accessErrorState } from '../frontend/src/core/session/accessState.js';
 import { createProfileSession } from '../frontend/src/core/session/profileSession.js';
@@ -6,6 +7,19 @@ import { createProfileSession } from '../frontend/src/core/session/profileSessio
 const server = { fromCache: false, hasPendingWrites: false };
 const cached = { fromCache: true, hasPendingWrites: false };
 const owner = { role: 'dueño', businessId: 'tenant', status: 'activo' };
+
+it('Plan05 persists only valid view filters across reloads within the same account and branch', () => {
+  const values = new Map(), storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  const allowed = ['hoy', 'semana', 'mes', 'todo'], key = 'report:uid-a:tenant-a:branch-a';
+  writeViewPreference(key, 'semana', allowed, storage);
+  assert.equal(readViewPreference(key, allowed, 'hoy', storage), 'semana');
+  for (const other of ['report:uid-b:tenant-a:branch-a', 'report:uid-a:tenant-b:branch-a', 'report:uid-a:tenant-a:branch-b']) assert.equal(readViewPreference(other, allowed, 'hoy', storage), 'hoy');
+  writeViewPreference(key, 'superadmin', allowed, storage); assert.equal(values.get(key), 'semana');
+  values.set(key, 'unexpected'); assert.equal(readViewPreference(key, allowed, 'hoy', storage), 'hoy');
+  const denied = { getItem: () => { throw Error('Storage denied'); }, setItem: () => { throw Error('Storage denied'); } };
+  assert.equal(readViewPreference(key, allowed, 'hoy', denied), 'hoy');
+  assert.doesNotThrow(() => writeViewPreference(key, 'semana', allowed, denied));
+});
 const record = (data, metadata = server) => ({ received: true, data, metadata });
 const license = { businessId: 'tenant', status: 'activa', expiry: '2030-01-01T00:00:00Z' };
 const access = (licenseDoc, tenantDoc) => licenseAccess({ license: licenseDoc, tenant: tenantDoc, businessId: 'tenant', now: new Date('2026-10-24') });

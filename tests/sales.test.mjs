@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { canonicalSale, paymentBreakdown, statsDelta, saleDay, SaleError } from '../frontend/src/features/sales/domain/saleModel.js';
 import { migrateSaleRecord, migrateCachedProduct, pendingStockDeltas, decodeQueuedSale, isRetryableSaleError, isDeterministicSaleError, SYNC_LEASE_MS } from '../frontend/src/features/sales/domain/queueState.js';
 import { createSaleQueue } from '../frontend/src/features/sales/application/saleQueue.js';
-import { mergeRecentSales } from '../frontend/src/features/sales/application/recentSales.js';
+import { mergeRecentSales, recentSaleRows } from '../frontend/src/features/sales/application/recentSales.js';
 import { projectQueuedStock } from '../frontend/src/features/catalog/application/projectQueuedStock.js';
 import { createQueueLock } from '../frontend/src/features/sales/infrastructure/saleQueueStore.js';
 import { projectProducts } from '../frontend/src/features/catalog/application/projectProducts.js';
@@ -47,6 +47,15 @@ function harness(options = {}) {
 }
 
 describe('Phase 4 deterministic model', () => {
+  it('Plan05 presents cached receipts while excluding uncommitted local writes and untrusted IDs', () => {
+    const snapshot = { metadata: { fromCache: true }, docs: [
+      { id: 'confirmed', metadata: { hasPendingWrites: false }, data: () => ({ id: 'forged', status: 'confirmed' }) },
+      { id: 'local', metadata: { hasPendingWrites: true }, data: () => ({ status: 'confirmed' }) },
+      { id: 'unknown', data: () => ({ status: 'confirmed' }) },
+    ] };
+    const rows = recentSaleRows(snapshot, 'confirmedAt'); assert.equal(rows.length, 1); assert.equal(rows[0].id, 'confirmed');
+    assert.equal(snapshot.metadata.fromCache, true);
+  });
   it('T1 normalizes amounts, immutable identity, version, cost and profit', () => {
     const sale = canonicalSale(input({ items: [{ id: 'p', name: 'Pan', qty: 1, price: 10.123 }], total: 10.123, amountPaid: 12, change: 1.877 }), [{ id: 'p', cost: 2.125 }]);
     assert.equal(sale.saleId, sale.localId); assert.equal(sale.idempotencyKey, sale.saleId); assert.equal(sale.version, 1);
@@ -140,6 +149,14 @@ describe('Phase 4 deterministic model', () => {
 });
 
 describe('Phase 4 durable queue', () => {
+  it('Plan05 isolated checkout reads only its original ID and leaves other pending ciphertext untouched', async () => {
+    const h = harness();
+    await h.queue.enqueue(canonicalSale(input({ localId: 'another-pending' })), identity);
+    const previous = await h.store.get('another-pending');
+    h.store.list = async () => { throw Error('A whole-queue scan is forbidden for isolated checkout'); };
+    const result = await h.queue.submit(canonicalSale(input()), identity, { isolated: true });
+    assert.equal(result.success, true); assert.deepEqual(await h.store.get('another-pending'), previous);
+  });
   it('Plan05 never acknowledges an incomplete or foreign receipt and retains uncertain ciphertext', async () => {
     for (const receipt of [undefined, { status: 'APPLIED' }, { ...receiptFor(canonicalSale(input())), saleId: 'another-sale' }]) {
       const h = harness({ apply: async () => receipt });

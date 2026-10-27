@@ -24,7 +24,7 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
     return withLock(async () => {
       if (!online() || !currentIdentity(identity)) return { pending: true };
       const blockedSessions = onlyId ? new Map() : await syncSessions(identity);
-      const records = await store.list();
+      const records = onlyId ? [await store.get(onlyId)].filter(Boolean) : await store.list();
       const report = { synced: 0, failed: 0, pending: false };
       for (const original of records) {
         if (!currentIdentity(identity)) return { ...report, pending: true };
