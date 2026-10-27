@@ -14,6 +14,8 @@ const identity = { uid: 'cashier-a', businessId: 'tenant-a', role: 'cajero', bra
 const input = (overrides = {}) => ({ localId: 'sale-1', businessId: 'tenant-a', branchId: 'a-1', userId: 'cashier-a',
   sessionId: 'session-a', items: [{ id: 'product-a', name: 'Pan', category: 'pan', qty: 1, price: 10, cost: 3 }],
   total: 10, payment: 'efectivo', amountPaid: 10, change: 0, createdAt: '2026-10-02T12:00:00.000Z', ...overrides });
+const receiptFor = sale => ({ status: 'ALREADY_APPLIED', saleId: sale.saleId, syncedAt: '2026-10-26T12:00:00.000Z',
+  stockVersions: Object.fromEntries(sale.items.map(item => [item.id, 1])) });
 
 function memoryStore(records = []) {
   const rows = new Map(records.map(record => [record.localId, structuredClone(record)]));
@@ -31,11 +33,16 @@ function harness(options = {}) {
   const store = options.store ?? memoryStore();
   const applied = [];
   const events = [];
+  const receipts = new Map();
   const queue = createSaleQueue({ store, encrypt, decrypt, online: () => online, now: () => clock,
     currentIdentity: options.currentIdentity ?? (() => true),
     withLock: options.withLock ?? (callback => callback()), syncSessions: options.syncSessions ?? (async () => { events.push('sessions'); }),
-    verifyReceipt: options.verifyReceipt,
-    apply: options.apply ?? (async sale => { events.push('sale'); applied.push(sale); }) });
+    verifyReceipt: options.verifyReceipt ?? (async sale => { if (receipts.has(sale.saleId)) return receipts.get(sale.saleId); throw new SaleError('receipt-not-found', 'Sin recibo'); }),
+    apply: async sale => {
+      const receipt = options.apply ? await options.apply(sale) : (events.push('sale'), applied.push(sale), receiptFor(sale));
+      if (receipt) receipts.set(sale.saleId, receipt);
+      return receipt;
+    } });
   return { queue, store, applied, events, goOnline: () => { online = true; }, advance: ms => { clock += ms; } };
 }
 
@@ -133,6 +140,26 @@ describe('Phase 4 deterministic model', () => {
 });
 
 describe('Phase 4 durable queue', () => {
+  it('Plan05 never acknowledges an incomplete or foreign receipt and retains uncertain ciphertext', async () => {
+    for (const receipt of [undefined, { status: 'APPLIED' }, { ...receiptFor(canonicalSale(input())), saleId: 'another-sale' }]) {
+      const h = harness({ apply: async () => receipt });
+      const result = await h.queue.submit(canonicalSale(input()), identity);
+      assert.equal(result.success, false); assert.equal(result.pending, true);
+      const row = await h.store.get('sale-1');
+      assert.equal(row.status, 'pending'); assert.notEqual(row.financialAck, true);
+      assert.deepEqual(JSON.parse(await decrypt(row.data, identity.uid)), canonicalSale(input()));
+    }
+  });
+  it('Plan05 never resubmits a previously acknowledged receipt that is now absent or inaccessible', async () => {
+    let calls = 0;
+    const h = harness({ apply: async sale => { calls++; return receiptFor(sale); },
+      verifyReceipt: async () => { throw new SaleError('receipt-not-found', 'Receipt missing'); } });
+    await h.queue.enqueue(canonicalSale(input()), identity);
+    await h.store.update('sale-1', { attempted: true, financialAck: true });
+    await h.queue.flush(identity);
+    assert.equal(calls, 0); assert.equal((await h.store.get('sale-1')).status, 'pending');
+    assert.equal((await h.store.get('sale-1')).requiresReceiptReview, true);
+  });
   it('T6 online submission persists first, then syncing/synced, sessions first', async () => {
     const h = harness(); const result = await h.queue.submit(canonicalSale(input()), identity);
     assert.equal(result.isOffline, false); assert.deepEqual(h.store.states, ['pending', 'syncing', 'synced']);
@@ -140,7 +167,7 @@ describe('Phase 4 durable queue', () => {
   });
   it('T7 queues offline with the exact payload and identity metadata', async () => {
     const h = harness({ online: false }); const sale = canonicalSale(input());
-    const result = await h.queue.submit(sale, identity); assert.equal(result.isOffline, true); assert.equal(h.applied.length, 0);
+    const result = await h.queue.submit(sale, identity); assert.equal(result.isOffline, true); assert.equal(result.success, false); assert.equal(h.applied.length, 0);
     const row = await h.store.get(sale.saleId);
     assert.equal(row.status, 'pending'); assert.equal(row.businessId, sale.businessId); assert.equal(row.branchId, sale.branchId); assert.equal(row.userId, sale.userId);
     assert.deepEqual(JSON.parse(await decrypt(row.data, identity.uid)), sale);
@@ -163,11 +190,11 @@ describe('Phase 4 durable queue', () => {
       return update(id, changes);
     };
     const ids = [];
-    const h = harness({ store, apply: async sale => { ids.push(sale.saleId); } });
+    const h = harness({ store, apply: async sale => { ids.push(sale.saleId); return receiptFor(sale); } });
     await h.queue.submit(canonicalSale(input()), identity);
     assert.equal((await store.get('sale-1')).status, 'pending');
     h.advance(10000); await h.queue.flush(identity);
-    assert.deepEqual(ids, ['sale-1', 'sale-1']); assert.equal((await store.get('sale-1')).status, 'synced');
+    assert.deepEqual(ids, ['sale-1']); assert.equal((await store.get('sale-1')).status, 'synced');
   });
   it('T11 recovers stale syncing records after a crash', async () => {
     const h = harness(); const sale = canonicalSale(input()); await h.queue.enqueue(sale, identity);
@@ -209,7 +236,7 @@ describe('Phase 4 durable queue', () => {
     await assert.rejects(stock.queue.submit(canonicalSale(input()), identity), /Sin stock/);
     assert.equal((await stock.store.get('sale-1')).status, 'failed');
   });
-  for (const code of ['price-changed', 'inactive-product']) {
+  for (const code of ['price-changed', 'inactive-product', 'permission-denied', 'invalid-argument']) {
     it(`${code} is deterministic, preserves the ticket for review and never retries automatically`, async () => {
       assert.equal(isDeterministicSaleError({ code }), true);
       assert.equal(isDeterministicSaleError({ code: `functions/${code}` }), true);
@@ -250,7 +277,7 @@ describe('Phase 4 durable queue', () => {
     const before = await h.store.get('sale-1'); await h.queue.flush(identity);
     const after = await h.store.get('sale-1'); assert.equal(after.data, before.data);
     assert.equal(after.status, 'failed'); assert.equal(after.requiresFinancialReview, true); assert.equal(h.applied.length, 0);
-    const committed = harness({ syncSessions, verifyReceipt: async () => ({ status: 'ALREADY_APPLIED' }) });
+    const committed = harness({ syncSessions, verifyReceipt: async sale => receiptFor(sale) });
     await committed.queue.enqueue(canonicalSale(input()), identity); await committed.queue.flush(identity);
     assert.equal((await committed.store.get('sale-1')).status, 'synced'); assert.equal(committed.applied.length, 0);
   });

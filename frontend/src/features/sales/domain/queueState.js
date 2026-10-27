@@ -14,14 +14,19 @@ export function migrateCachedProduct(product) {
 }
 export function isRetryableSaleError(error) {
   const code = String(error?.code ?? '').replace(/^(firestore|functions)\//, '');
-  if (['price-changed', 'inactive-product'].includes(code)) return false;
+  if (isDeterministicSaleError(error)) return false;
   return ['unavailable', 'deadline-exceeded', 'network-request-failed', 'timeout', 'aborted', 'cancelled', 'offline', 'local-state'].includes(code)
     || /timeout|network|offline/i.test(error?.message ?? '');
 }
 export function isDeterministicSaleError(error) {
-  return ['invalid-sale', 'identity-mismatch', 'product-tenant-mismatch', 'invalid-stock', 'insufficient-stock',
+  return ['invalid-sale', 'invalid-argument', 'identity-mismatch', 'product-tenant-mismatch', 'invalid-stock', 'insufficient-stock',
     'price-changed', 'inactive-product', 'tenant-restricted', 'outside-shift', 'sale-conflict', 'permission-denied', 'decryption-failed', 'invalid-session', 'closed-session', 'unverified-session', 'invalid-stats']
     .includes(String(error?.code).replace(/^(firestore|functions)\//, ''));
+}
+export function hasVerifiedSaleReceipt(receipt, sale) {
+  return ['APPLIED', 'ALREADY_APPLIED'].includes(receipt?.status) && receipt.saleId === sale.saleId
+    && typeof receipt.syncedAt === 'string' && Number.isFinite(Date.parse(receipt.syncedAt))
+    && sale.items.every(item => Number.isSafeInteger(receipt.stockVersions?.[item.id]) && receipt.stockVersions[item.id] > 0);
 }
 export async function decodeQueuedSale(record, identity, decrypt) {
   if ((record.userId && record.userId !== identity.uid) || (record.businessId && record.businessId !== identity.businessId)) {

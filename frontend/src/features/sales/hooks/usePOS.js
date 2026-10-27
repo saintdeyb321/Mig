@@ -88,7 +88,8 @@ export const usePOS = (user, currentSession) => {
 
   const isPaymentValid = useMemo(() => {
     if (payment === 'mixto') {
-      return Math.abs((Number(splitEfectivo) + Number(splitYape)) - total) < 0.01 && total > 0;
+      return [Number(splitEfectivo), Number(splitYape)].every(value => Number.isFinite(value) && value >= 0)
+        && Math.round((Number(splitEfectivo) + Number(splitYape)) * 100) === Math.round(total * 100) && total > 0;
     }
     return payment === 'yape' || (payment === 'efectivo' && Number(amountPaid) >= total);
   }, [payment, amountPaid, splitEfectivo, splitYape, total]);
@@ -188,9 +189,10 @@ export const usePOS = (user, currentSession) => {
       sale = { ...result.sale, isOffline: result.isOffline, status: result.isOffline ? 'pending' : 'confirmed' };
 
       toast.dismiss(toastId);
-      toast.success(result.isOffline ? 'Pendiente local: sin confirmar; revisa antes de volver a cobrar' : 'Venta confirmada por Firestore', { id: 'sale-success', icon: result.isOffline ? '🏠' : '✅' });
+      if (result.success) toast.success('Venta confirmada por Firestore', { id: 'sale-success' });
+      else toast('Pendiente local: sin confirmar; consulta su recibo antes de volver a cobrar', { id: 'sale-pending', icon: '⚠️' });
       isSuccess = true;
-      invalidateReportScope(resources, user.businessId, activeBranchId);
+      if (result.success) invalidateReportScope(resources, user.businessId, activeBranchId);
 
     } catch (err) {
       console.error(err);

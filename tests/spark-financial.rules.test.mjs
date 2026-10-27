@@ -20,6 +20,8 @@ import { buildSalesWorkbook } from '../frontend/src/features/reports/application
 import { reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
 import { updateProductTransaction } from '../frontend/src/features/catalog/infrastructure/productWrites.js';
 import { canonicalSale, sameSaleOperation } from '../functions/src/sales/domain/saleModel.js';
+import { createSaleQueue } from '../frontend/src/features/sales/application/saleQueue.js';
+import { encrypt, decrypt } from '../frontend/src/crypto.js';
 
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080');
 assert.equal(process.env.GCLOUD_PROJECT, 'demo-migapos');
@@ -67,6 +69,37 @@ beforeEach(async () => {
 after(async () => env?.cleanup());
 
 describe('SPARK-4 integrated financial Rules', () => {
+  it('Plan05 preserves an uncertain committed ticket and removes projection only after a definitive Rules rejection', async () => {
+    const rows = new Map();
+    const store = { get: async id => rows.get(id), list: async () => [...rows.values()],
+      insert: async (row, existing) => rows.has(row.localId) ? existing(rows.get(row.localId)) : rows.set(row.localId, row),
+      update: async (id, changes) => Object.assign(rows.get(id), changes) };
+    let loseReceipt = true, denyReceipt = false;
+    const repository = createSparkSalesRepository(database(), { currentUser: () => ({ uid }), sdk: { ...sdk,
+      getDocFromServer: async ref => { if (loseReceipt || denyReceipt) { loseReceipt = false; throw Object.assign(new Error('Receipt denied'), { code: 'permission-denied' }); } return sdk.getDocFromServer(ref); } } });
+    const identity = { uid, businessId };
+    const queue = createSaleQueue({ store, encrypt, decrypt, online: () => true, currentIdentity: () => true,
+      withLock: work => work(), syncSessions: async () => new Map(), apply: sale => repository.submit(sale), verifyReceipt: sale => repository.verify(sale) });
+    const sale = payload('plan05-uncertain', 2), result = await queue.submit(sale, identity, { isolated: true });
+    assert.equal(result.success, false); assert.equal(result.pending, true);
+    assert.equal(rows.get(sale.saleId).status, 'pending'); assert.equal(rows.get(sale.saleId).projectionState, 'pending');
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
+    const ciphertext = rows.get(sale.saleId).data;
+    denyReceipt = true;
+    await queue.flush(identity, { forceId: sale.saleId, onlyId: sale.saleId });
+    assert.equal(rows.get(sale.saleId).requiresReceiptReview, true); assert.equal(rows.get(sale.saleId).data, ciphertext);
+    denyReceipt = false;
+    await queue.flush(identity, { forceId: sale.saleId, onlyId: sale.saleId });
+    assert.equal(rows.get(sale.saleId).status, 'synced'); assert.equal(rows.get(sale.saleId).financialAck, true);
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), { status: 'closed' }));
+    const rejected = payload('plan05-rejected', 2);
+    await assert.rejects(queue.submit(rejected, identity, { isolated: true }), { code: 'sale-failed' });
+    assert.equal(rows.get(rejected.saleId).status, 'failed'); assert.equal(rows.get(rejected.saleId).projectionState, null);
+    assert.equal((await inspect('sales/' + rejected.saleId)).exists(), false);
+    assert.equal((await inspect('notifications/sale_' + rejected.saleId)).exists(), false);
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
+  });
   it('Plan05 reproduces the complete S/16 mixed ticket with two products and its notification', async () => {
     await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'dueño' }));
     const rows = products.slice(0, 2).map((row, index) => ({ ...row, price: index ? 12 : 4 }));

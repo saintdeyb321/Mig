@@ -53,6 +53,8 @@ La ampliación a dos envíos iniciales concurrentes del mismo ID SÍ reprodujo `
 
 ## Etapa 2 — P0: cola durable, errores definitivos e idempotencia (AUD-004, 012)
 
+**Checkpoint B implementado localmente:** `invalid-argument` y `permission-denied` prevalecen sobre palabras como «network/offline» del mensaje; un rechazo definitivo conserva evidencia cifrada, retira la proyección y no se reintenta. Un commit sin verificación remota permanece pendiente. Antes de repetir una operación ya intentada se consulta su ID: solo una ausencia comprobada y sin acuse anterior permite reintentar; errores de lectura permanentes exigen revisión manual sin nuevos cobros. Un recibo incompleto, ajeno o sin versiones no acredita éxito. POS distingue pendiente de confirmado y no invalida reportes por un ingreso incierto. Sin activar sincronización financiera offline, borrar IndexedDB ni cambiar su esquema. Pruebas focalizadas: clasificación, identidad, cifrado, proyección, acuse local perdido y escrituras reales con Rules integradas + lectura de recibo simuladamente denegada.
+
 - Auditar `saleQueue.js`, `saleQueueStore.js`, `queueState.js`, `pendingSalesCache.js`, `projectQueuedStock.js`, `usePOS.js` y los clasificadores de error.
 - Clasificar correctamente error **permanente** (`permission-denied`, `invalid-argument`, conflicto demostrado) frente a **incierto/transitorio** (red, timeout, comprobante no consultable). No borrar pendientes de situación incierta ni marcar un error como definitiva si pudo existir commit exitoso.
 - Ante rechazo definitivo: conservar evidencia para revisión, eliminar la proyección optimista de stock y evitar reintentos automáticos infinitos. Ante resultado incierto: verificar comprobante remoto **con el mismo ID** antes de reintentar.
