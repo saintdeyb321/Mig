@@ -13,6 +13,7 @@ export function createSparkCashRepository(database, { currentUser, sdk = firesto
     async open({ sessionId, businessId, branchId, openingAmount, openingNote = '' }) {
       const userId = currentUser()?.uid;
       if (!userId) throw new Error('Inicia sesión de nuevo.');
+      if (branchId === 'global') throw new Error('Selecciona una sede física; la vista global es de solo lectura.');
       if (typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(sessionId)) throw new Error('ID de apertura inválido.');
       if (!Number.isFinite(openingAmount) || openingAmount < 0 || openingAmount > 1000000000 || Math.round(openingAmount * 100) / 100 !== openingAmount) throw new Error('El fondo inicial debe ser un importe válido con máximo dos decimales.');
       if (typeof openingNote !== 'string' || openingNote.length > 2000) throw new Error('La nota de apertura supera el límite permitido.');

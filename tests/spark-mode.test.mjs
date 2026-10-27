@@ -27,6 +27,11 @@ it('fixes Spark capabilities independently of account, environment or browser fl
   for (const name of ['authentication', 'firestore', 'hosting', 'localPersistence', 'localExports', 'tenantAdministration', 'tenantProvisioning', 'licenseAdministration', 'cashOpening', 'saleOnline', 'saleVoid', 'contractPayments', 'cashClosing']) assert.equal(runtimeCapabilities[name], true, name);
   assert.throws(() => { runtimeCapabilities.cloudFunctions = true; }, TypeError);
 });
+it('Plan05 refuses global cash opening before invoking any SDK operation', async () => {
+  const { createSparkCashRepository } = await import('../frontend/src/features/cash-register/infrastructure/sparkCashRepository.js');
+  const repository = createSparkCashRepository({}, { sdk: {}, currentUser: () => ({ uid: 'cashier' }) });
+  await assert.rejects(repository.open({ sessionId: 'global-opening-123456789', businessId: 'tenant', branchId: 'global', openingAmount: 0 }), /sede física/);
+});
 
 it('keeps platform profiles outside business modules even with stale navigation or a tenant ID', () => {
   const platform = { uid: 'admin', role: 'superadmin', businessId: 'platform-admin' };

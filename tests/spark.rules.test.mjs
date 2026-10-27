@@ -262,6 +262,8 @@ describe('SPARK-3 online cash opening', () => {
   });
   it('requires an active assigned branch, valid license and server-checked cashier shift', async () => {
     const { businessId, branchId, database, user } = await businessOwner();
+    await seed({ 'branches/global': { businessId, name: 'Sede histórica reservada', status: 'activo', sparkCashVersion: 1 } });
+    await assertFails(rawCash(database, businessId, 'global', { sessionId: 'global-cash-123456789' }));
     await repository().setTenantBranchQuota({ businessId, operationId: input('cash-quota').operationId, maxActiveBranches: 2, maxRegisteredBranches: 3 });
     const save = createBranchWriter(database, { sdk, currentUser: () => user });
     await save('cash-alternate', { businessId, name: 'Alternativa', status: 'activo' }, { create: true });

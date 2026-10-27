@@ -71,6 +71,21 @@ beforeEach(async () => {
 after(async () => env?.cleanup());
 
 describe('SPARK-4 integrated financial Rules', () => {
+  it('Plan05 refuses financial writes in the reserved global read-only context even if historical documents exist', async () => {
+    await env.withSecurityRulesDisabled(async ctx => {
+      const db = ctx.firestore();
+      await updateDoc(doc(db, 'users', uid), { role: 'dueño' });
+      await setDoc(doc(db, 'branches', 'global'), { businessId, status: 'activo', sparkCashVersion: 1 });
+      await updateDoc(doc(db, 'cash_sessions', sessionId), { branchId: 'global' });
+      await setDoc(doc(db, 'active_cash_sessions', createHash('sha256').update(JSON.stringify([businessId, 'global'])).digest('hex')), {
+        businessId, branchId: 'global', userId: uid, sessionId, runtime: 'spark', status: 'open',
+      });
+      for (const row of products.slice(0, 2)) await updateDoc(doc(db, 'products', row.id), { stock: { ...row.stock, global: 10 } });
+    });
+    await assertFails(commit({ ...payload('plan05-reserved-global', 2), branchId: 'global' }));
+    assert.equal((await inspect('sales/plan05-reserved-global')).exists(), false);
+    assert.equal((await inspect('products/bread')).data().stock.global, 10);
+  });
   it('Plan05 compensates an eight-product mixed ticket once and preserves the immutable original', async () => {
     const rows = Array.from({ length: 8 }, (_, i) => ({ ...products[0], id: `void-${i}` }));
     await env.withSecurityRulesDisabled(async ctx => {

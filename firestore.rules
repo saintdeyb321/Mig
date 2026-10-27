@@ -474,7 +474,7 @@ service cloud.firestore {
       let profile = currentUser();
       let branch = get(/databases/$(database)/documents/branches/$(branchId)).data;
       return activeUser() && profile.role in ['dueño', 'cajero'] && profile.businessId == businessId
-        && businessId != 'platform-admin' && businessId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && businessId != 'platform-admin' && branchId != 'global' && businessId.matches('^[A-Za-z0-9_-]{1,128}$')
         && branchId.matches('^[A-Za-z0-9_-]{1,128}$') && tenantEnabled(businessId)
         && branch.businessId == businessId && branch.get('status', null) == 'activo'
         && branch.get('sparkCashVersion', null) == 1 && withinCashShift(profile)
@@ -539,7 +539,7 @@ service cloud.firestore {
       let session = getAfter(/databases/$(database)/documents/cash_sessions/$(d.sessionId)).data;
       let lock = getAfter(/databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, d.branchId))).data;
       return authenticated() && user.get('status', 'activo') == 'activo' && user.role in ['dueño', 'cajero']
-        && user.businessId == d.businessId && d.userId == request.auth.uid && d.businessId != 'platform-admin'
+        && user.businessId == d.businessId && d.userId == request.auth.uid && d.businessId != 'platform-admin' && d.branchId != 'global'
         && (user.role == 'dueño' || user.branchId == d.branchId) && withinCashShift(user)
         && d.businessId.matches('^[A-Za-z0-9_-]{1,128}$') && d.branchId.matches('^[A-Za-z0-9_-]{1,128}$')
         && license.businessId == d.businessId && license.status == 'activa' && license.expiry > request.time
