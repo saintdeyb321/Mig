@@ -11,6 +11,13 @@ import { firebaseErrorMessage } from '../frontend/src/core/errors/firebaseErrors
 
 const sample = () => makeBackup({ businessId: 'tenant-a', actorId: 'owner', startedAt: '2026-10-23T12:00:00Z',
   sections: [{ name: 'sales', records: [{ id: 'sale-1', total: 10 }], status: 'complete' }, { name: 'products', records: [], status: 'inaccessible', warning: 'permission-denied' }] });
+it('Plan05 blocks deletion planning for new financial proofs without widening the cleanup whitelist', () => {
+  for (const name of ['pos_sale_groups', 'pos_voids', 'pos_void_groups']) {
+    const verified = { manifest: { businessId: 'tenant-a', purpose: 'inventory' }, sections: [{ name, records: [{ path: `${name}/sale`, businessId: 'tenant-a' }] }] };
+    assert.equal(validCleanupPath(`${name}/sale`, 'tenant-a'), false);
+    assert.throws(() => prepareCleanupPlan(verified, 'tenant-a'), /Baja bloqueada/);
+  }
+});
 it('roundtrips the manifest and rejects tampering, missing collections and another tenant without writes', async () => {
   const backup = await sample(), text = await encodeBackup(backup);
   const result = await verifyBackupFile(text, '', 'tenant-a');

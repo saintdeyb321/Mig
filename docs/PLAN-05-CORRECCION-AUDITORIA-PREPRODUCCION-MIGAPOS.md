@@ -1,6 +1,6 @@
 # MigaPOS — Plan 05: remediación verificable para lanzamiento comercial
 
-**Estado:** EN EJECUCIÓN LOCAL en `fix/migapos-production-readiness`, base `16c1e8c` (incluye Plan 04, bootstrap offline y corrección de caja `dd731b4`). **No autoriza despliegues ni certifica producción.**
+**Estado:** IMPLEMENTACIÓN Y VALIDACIÓN LOCAL COMPLETADAS en `fix/migapos-production-readiness`, base `16c1e8c` (incluye Plan 04, bootstrap offline y corrección de caja `dd731b4`). **Pendientes publicación expresamente autorizada y aceptación manual. NO certifica producción.**
 
 ### Evidencia de ejecución — checkpoint A (26/10/2026)
 
@@ -80,6 +80,8 @@ Caja consulta compensaciones de su sesión y las proyecta como reembolsos firmad
 
 ## Etapa 4 — P1: permisos, caja, contratos y datos históricos (AUD-006, 007, 008)
 
+**Checkpoint D comprobado:** 13 casos seleccionados de onboarding Google/invitaciones, rechazo de escalamiento de perfil/licencia, aislamiento, concurrencia de stock/caja/cupos activos y registrados, regularización histórica y horario del cajero; más los casos financieros de contratos/anticipos/cuotas/cancelación y vencimiento/cierre tardío. Se reprodujo una venta indebidamente permitida en el contexto reservado `global` al existir documentos históricos sintéticos de sede/caja/stock con ese ID. `cashActor` y `saleContext` rechazan ahora ese contexto; el repositorio de caja lo rechaza antes del SDK. Pruebas de apertura y venta directa verifican el rechazo; lectura e históricos preservados. Controles de roles/cupos conservados, sin migraciones. Nuevas Rules mantienen la política de horario: el dueño ya estaba exento en `withinCashShift`; solo se evita evaluar los campos del cajero innecesariamente. Purgas y migraciones privilegiadas continúan bloqueadas.
+
 - Validar que dueños/cajeros no puedan modificar rol, cupos, negocio o sede fuera de autorizaciones; licencias, sedes inactivas, invitaciones y perfiles deben resistir carreras.
 - Mantener `cash_sessions` + `active_cash_sessions`; definir propiedad del lock, quién puede cobrar sobre caja abierta por otra persona, turno del cajero y duración máxima **con tiempo del servidor**. No asumir que cambiar de cajero autoriza reutilizar cualquier sesión.
 - Validar pagos de contratos, anticipos, entrega, cancelación y reembolsos como operaciones atómicas/idempotentes; balances no manipulables ni negativos. Probar perfiles y documentos históricos concretos.
@@ -99,6 +101,36 @@ Caja consulta compensaciones de su sesión y las proyecta como reembolsos firmad
 **Puerta G5:** reportes completos, consumo acotado, caché aislada y cambios de conexión sin falsos éxitos.
 
 ## Etapa 6 — SuperAdmin, exportación y baja (AUD-009)
+
+**Checkpoint F comprobado:** exportación/inventario exclusivo SuperAdmin, lease de lectura de un solo negocio, límites/completitud/checksums y colecciones financieras nuevas incluidas. Cuatro casos de Rules prueban exportación paginada, aislamiento, revocación y rechazo de escrituras administrativas. Las cuentas Authentication no son enumerables exhaustivamente desde este inventario de Firestore; tampoco subcolecciones desconocidas ni fotos de otros dispositivos. La baja continúa por WhatsApp externo, sin módulo de solicitudes. La whitelist de limpieza NO se amplía a las pruebas/compensaciones nuevas: el dry-run las rechaza con «Baja bloqueada», sin preparar ni ejecutar borrados. Inventario/exportación de lectura disponibles; eliminación real, cascadas y restauración privilegiada deshabilitadas.
+
+## Resultado de los 12 hallazgos y límites de la evidencia
+
+La clasificación usa los ámbitos e hipótesis referidos en este Plan; el informe externo completo y su payload real no están disponibles. «Descartado» se refiere al parche/modelo propuesto o al defecto atribuido al HEAD antiguo, no prueba que el incidente de producción haya desaparecido.
+
+| ID | Estado en HEAD actual | Evidencia y resultado |
+|---|---|---|
+| AUD-001 | CONFIRMADO / CORREGIDO LOCALMENTE | El límite era 2 líneas; protocolo agrupado v2 prueba 3/5/8 sin dividir el pago. Máximo visible 8; 9/12 se rechazan íntegros. |
+| AUD-002 | DESCARTADO el modelo propuesto | No existe `stockByBranch`: `stock[branchId]` y versiones por sede. Rules prueban manipulación, atomicidad, última unidad y restitución exacta; proyección local revisada en B. |
+| AUD-003 | DESCARTADO el parche de enum/campos | Contrato real `payment: mixto` + `splitPayments`; efectivo/Yape/mixto de 1–2 líneas y mixto multiproducto aprobados, sin cambiar el formato. |
+| AUD-004 | CONFIRMADO / CORREGIDO | `invalid-argument` y mensajes «network» podían provocar reintentos definitivos. Clasificación explícita, failed durable y retiro de proyección sin borrar el ticket. |
+| AUD-005 | CONFIRMADO LOCAL / PRODUCCIÓN NO VERIFICABLE | 403 con agotamiento de 1000 expresiones reproducido en evaluación integrada; predicados equivalentes optimizados y recibos idénticos recuperables. Falta contrastar Rules/payload efectivamente publicados. |
+| AUD-006 | CONFIRMADO / CORREGIDO el contexto global | Una venta directa fue aceptada con documentos sintéticos de sede/caja `global`; ahora apertura y contexto financiero lo rechazan expresamente. Roles/invitaciones/cupos/aislamiento conservados, sin escalamiento de rol reproducido. La anulación solo permite dueño con caja propia válida. |
+| AUD-007 | DESCARTADO como defecto nuevo | `dd731b4` ya alineaba duración de caja. Continúan 10 h por `request.time`, sesiones históricas en su política/lectura, sin extender duración ni bloquear cierre tardío autorizado. |
+| AUD-008 | CONFIRMADO / CORREGIDO PARA TICKETS V2 | Compensación POS inmutable por ID original, motivo, métodos originales, stock/sede, concurrencia y reporte/caja. Históricos requieren revisión; no se habilita anulación arbitraria. |
+| AUD-009 | DESCARTADO exportación del dueño en este HEAD | UI/repositorio y lease servidor exclusivos SuperAdmin. Nuevas colecciones inventariadas; baja real bloqueada, sin inventario exhaustivo de Auth/subcolecciones. |
+| AUD-010 | DESCARTADO `limit >10000` como defecto actual | Plan 04 ya pagina a <=200; máximo 10000, exceso aborta antes de descargar. Excel diario/semanal, resumen y devoluciones netas serializados/releídos. |
+| AUD-011 | RIESGO / consumo real NO MEDIDO | TTL/single-flight/listeners por scope preservados; filtros F5 y consulta puntual de outbox mejorados. No se equiparan renders, documentos observados y lecturas facturadas. |
+| AUD-012 | CONFIRMADO / CORREGIDO | Pendiente dejó de devolver `success:true`; un resultado incierto conserva ID/cifrado y consulta recibo antes de escribir. Caché solo presenta datos, jamás autoriza finanzas; cambios UID/sede y denegación comprobados. |
+
+## Validación final y publicación pendiente
+
+- **125 pruebas unitarias focalizadas aprobadas** (124 ventas/reportes/sesión/Spark/seguridad UI y 1 bloqueo de baja), **42 casos de Rules integradas aprobados** (29 finanzas/exportación y 13 permisos/cupos/caja), cero fallos u omisiones en la selección final. No se ejecutaron suites históricas masivas ni pruebas contra Firebase real.
+- Lint frontend, build/PWA (39 entradas precache), `git diff --check` e inventario local de índices aprobados. Aviso existente de chunks >500 kB. Dependencias/lockfiles y scripts de publicación no cambiaron; no se afirma aprobación de CI remota ni aceptación en dispositivos reales.
+- Publicación futura: `firestore.rules` completo de esta rama y **4 índices nuevos de `pos_voids`** (negocio/fecha; negocio/sede/fecha; negocio/sede/sesión/fecha; negocio/sede/ID). Revisar primero el conjunto activo; crear solo lo faltante y no borrar índices remotos inesperados. `docs/INDICES-FIRESTORE-MIGAPOS.md` fue actualizado desde el catálogo real, sin consultas a producción.
+- Antes de sustituir políticas: propietario copia en Firebase Console la versión **publicada** de `migapos/(default)` a un archivo fuera del checkout, anota versión/fecha y compara el texto con Git. La captura local con placeholders no es un snapshot de producción. Conservar la copia verificada para rollback manual; no se ejecutó rollback. Rules/índices deben estar autorizados/publicados y habilitados antes de usar el cliente v2; Hosting sigue `migapos-peru` y no se despliega aquí.
+- **Bloqueos restantes:** aceptación del máximo comercial de 8 líneas; contraste del 403 real/Rules publicadas; pruebas manuales de login, dispositivos/PWA y devolución física. Históricos financieros sin prueba v2 requieren revisión. Offline financiero, conciliación certificada, purga, jobs y Storage/Functions siguen OFF. No se declara MVP listo para comercializar únicamente por pruebas verdes.
+- **Recorrido manual recomendado, tras autorización:** dueño → sede → abrir caja → ticket S/16 mixto 4/12 → ticket de 3/5/8 productos → comprobar stock/recibo → doble clic/reintento → anular una vez y devolver por medios originales → revisar historial/netos/stock → anticipo/cuota/entrega/cancelación de contrato → Excel diario/semanal y resumen → cierre → F5/cambio sede/cuenta/offline de lectura → SuperAdmin inventario/exportación, sin baja real.
 
 - Exportación empresarial exclusiva SuperAdmin con comprobación de completitud/alcance, integridad y entregables. Comunicación de baja **por WhatsApp externo**, sin crear tickets en el producto.
 - Vista «Ver detalles»: usuarios/correos Firestore, UIDs, sedes, licencia y manifiesto de rutas, incluyendo subcolecciones conocidas y las que no puedan descubrirse desde el cliente.

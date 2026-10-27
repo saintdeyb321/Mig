@@ -10,6 +10,9 @@ export function validCleanupPath(path, businessId) {
 }
 export function prepareCleanupPlan(verified, businessId) {
   if (verified?.manifest?.businessId !== businessId || verified.manifest.purpose !== 'inventory' || !verified.sections) throw new Error('Selecciona un inventario del negocio, verificado localmente; no un archivo de fotos o datos sin inventariar.');
+  if (verified.sections.some(section => ['pos_sale_groups', 'pos_voids', 'pos_void_groups'].includes(section.name) && section.records.length)) {
+    throw new Error('Baja bloqueada: las pruebas y compensaciones POS requieren revisión administrativa. Conserva el inventario; no se preparó ni ejecutó ningún borrado.');
+  }
   const candidates = new Set(), references = new Set();
   for (const section of verified.sections) for (const record of section.records) {
     if (record.businessId !== businessId || !validCleanupPath(record.path, businessId)) throw new Error('Ruta de inventario inválida o fuera del negocio.');
