@@ -1,5 +1,9 @@
 # MASTER PLAN — Refactor integral de MigaPOS
 
+## Plan 05 — corrección preproducción (26/10/2026)
+
+En ejecución en `fix/migapos-production-readiness`, desde `16c1e8c`, conservando Plan 04 y correcciones posteriores. Rige `docs/PLAN-05-CORRECCION-AUDITORIA-PREPRODUCCION-MIGAPOS.md`. A: venta mixta S/16 individual aprobada con cuatro escrituras; dos intentos iniciales del mismo ID reprodujeron 403/límite de expresiones al colisionar con recibos inmutables. El repositorio recupera solo un recibo de servidor equivalente y marca su comprobación fallida como incierta. Rules publicadas y payload real NO VERIFICADOS; no se afirma que esta carrera explique el incidente real. B–F en curso. No se certifica lanzamiento comercial ni se habilitan compensación, tickets mayores, sincronización offline, purga o conciliación sin pruebas integradas. Sin deploy, merge, `.env`, cuentas de servicio o datos reales.
+
 ## Propósito
 
 Este documento es la referencia maestra de todo el proceso de refactorización de MigaPOS.

@@ -67,6 +67,35 @@ beforeEach(async () => {
 after(async () => env?.cleanup());
 
 describe('SPARK-4 integrated financial Rules', () => {
+  it('Plan05 reproduces the complete S/16 mixed ticket with two products and its notification', async () => {
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'dueño' }));
+    const rows = products.slice(0, 2).map((row, index) => ({ ...row, price: index ? 12 : 4 }));
+    await env.withSecurityRulesDisabled(async ctx => {
+      for (const row of rows) await updateDoc(doc(ctx.firestore(), 'products', row.id), { price: row.price });
+    });
+    const repository = createSparkSalesRepository(database(), { sdk, currentUser: () => ({ uid }) });
+    const sale = canonicalSale({ localId: 'plan05-mixed-16', businessId, branchId, userId: uid, sessionId,
+      items: rows.map(row => ({ ...row, qty: 1 })), total: 16, payment: 'mixto',
+      splitPayments: { efectivo: 4, yape: 12 }, amountPaid: 16, change: 0, origin: 'online',
+      createdAt: '2026-10-26T12:00:00.000Z' }, rows);
+    await assert.doesNotReject(Promise.all([repository.submit(sale), repository.submit(sale)]), 'simultaneous initial owner mixed commit');
+    await repository.submit(sale);
+    assert.equal((await inspect('sales/' + sale.saleId)).data().total, 16);
+    assert.equal((await inspect('notifications/sale_' + sale.saleId)).data().sourceId, sale.saleId);
+    for (const row of rows) {
+      const saved = (await inspect('products/' + row.id)).data();
+      assert.equal(saved.stock[branchId], 9); assert.equal(saved.stock.other, 7);
+      assert.equal(saved.posStockVersion[branchId], 1);
+    }
+    for (const count of [1, 2]) for (const payment of ['efectivo', 'yape', 'mixto']) {
+      const items = rows.slice(0, count).map(row => ({ ...row, qty: 1 })), total = items.reduce((sum, row) => sum + row.price, 0);
+      const command = canonicalSale({ ...sale, localId: `plan05-${count}-${payment}`, saleId: `plan05-${count}-${payment}`,
+        idempotencyKey: `plan05-${count}-${payment}`, items, total, payment, amountPaid: total, change: 0,
+        ...(payment === 'mixto' ? { splitPayments: { efectivo: 4, yape: total - 4 } } : {}) }, rows);
+      await assert.doesNotReject(repository.submit(command), `${count} products, ${payment}`);
+      assert.equal((await inspect('notifications/sale_' + command.saleId)).data().userId, uid);
+    }
+  });
   it('confirms a complete two-product ticket within Rules limits and retries without a second debit', async () => {
     const sale = payload('ticket-two', 2); await commit(sale); const first = (await inspect('sales/ticket-two')).data();
     assert.ok(first.confirmedAt instanceof Timestamp);

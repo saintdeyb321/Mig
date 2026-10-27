@@ -26,7 +26,7 @@ export function createSparkSalesRepository(database, { currentUser, sdk = firest
       throw new SaleError('invalid-sale', 'Límite Spark: 1000000 unidades por producto y S/ 1000000000 por importe/costo/recibido. El ticket completo permanece sin confirmar.');
     }
     if (sale.items.length > SPARK_TICKET_LIMIT) throw new SaleError('invalid-sale', checkoutBlockReason(sale.items));
-    await runTransaction(database, async tx => {
+    try { await runTransaction(database, async tx => {
       identity(sale);
       const reference = doc(database, 'sales', sale.saleId), existing = await tx.get(reference);
       if (existing.exists()) {
@@ -54,7 +54,20 @@ export function createSparkSalesRepository(database, { currentUser, sdk = firest
       tx.set(reference, { ...sale, productIds: sale.items.map(item => item.id), stockVersions, status: 'confirmed', confirmedAt: serverTimestamp() });
       changes.forEach((change, index) => tx.update(rows[index].ref, change));
       writeOperationNotice(tx, database, sdk, 'sale', sale.saleId, sale);
-    });
-    return verify(sale);
+    }); } catch (error) {
+      // Concurrent attempts can be denied as an immutable receipt/notice already exists.
+      // Only an identical server receipt can turn that race into a confirmation.
+      try { return await verify(sale); }
+      catch (verificationError) {
+        if (verificationError.code === 'sale-conflict') throw verificationError;
+        if (verificationError.code === 'receipt-not-found') throw error;
+        throw new SaleError('receipt-unverified', 'Resultado incierto. Conserva el ID original y consulta su recibo antes de volver a cobrar.');
+      }
+    }
+    try { return await verify(sale); }
+    catch (error) {
+      if (error.code === 'sale-conflict') throw error;
+      throw new SaleError('receipt-unverified', 'El commit terminó, pero no se pudo verificar su recibo remoto. Conserva el ID original.');
+    }
   } };
 }
