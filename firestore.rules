@@ -194,20 +194,24 @@ service cloud.firestore {
 
     function validProduct() {
       let data = request.resource.data;
+      let costValue = data.get('cost', 0);
       return data.keys().hasAll(['businessId', 'name', 'price', 'stock'])
         && hasTenant(data) && data.name is string && data.name.size() > 0
         && data.name.size() <= 200 && data.price is number && data.price >= 0 && data.price <= 1000000000
         && data.price == math.round(data.price * 100) / 100.0
-        && data.get('cost', 0) is number && data.get('cost', 0) >= 0 && data.get('cost', 0) <= 1000000000
-        && data.get('cost', 0) == math.round(data.get('cost', 0) * 100) / 100.0
+        && costValue is number && costValue >= 0 && costValue <= 1000000000
+        && costValue == math.round(costValue * 100) / 100.0
         && data.get('status', 'activo') in ['activo', 'inactivo'] && data.stock is map;
     }
 
     function stockValue(stock, key, businessId) {
+      let value = stock[key];
+      return value is int && value >= 0 && value <= 1000000000
+        && ((resource != null && resource.data.stock.get(key, -1) == value) || activeStockBranch(key, businessId));
+    }
+    function activeStockBranch(key, businessId) {
       let branch = get(/databases/$(database)/documents/branches/$(key));
-      return stock[key] is int && stock[key] >= 0 && stock[key] <= 1000000000
-        && ((resource != null && resource.data.stock.get(key, -1) == stock[key])
-          || (branch != null && branch.data.businessId == businessId && branch.data.get('status', null) == 'activo'));
+      return branch != null && branch.data.businessId == businessId && branch.data.get('status', null) == 'activo';
     }
     function stockSlot(stock, keys, index, businessId) {
       return keys.size() <= index || stockValue(stock, keys[index], businessId);
@@ -453,9 +457,12 @@ service cloud.firestore {
       return hashing.sha256('["' + businessId + '","' + branchId + '"]').toHexString().lower();
     }
     function withinCashShift(profile) {
+      return profile.role == 'dueño' || assignedCashShift(profile);
+    }
+    function assignedCashShift(profile) {
       let start = profile.get('shiftStart', null);
       let end = profile.get('shiftEnd', null);
-      return profile.role == 'dueño' || start == null || end == null || cashShiftHours(start, end);
+      return start == null || end == null || cashShiftHours(start, end);
     }
     function cashShiftHours(start, end) {
       let first = int(start.split(':')[0]) * 60 + int(start.split(':')[1]);
@@ -573,8 +580,29 @@ service cloud.firestore {
     }
     function sale(id) {
       let d = request.resource.data;
-      let total = price(d, 0) + price(d, 1);
-      let totalCost = cost(d, 0) + cost(d, 1);
+      return d.get('atomicProtocol', 1) == 2 ? groupedSaleReceipt(d, id) : legacySale(id);
+    }
+    function groupedSaleReceipt(d, id) {
+      return saleContext(d) && d.keys().hasOnly(['saleId', 'localId', 'idempotencyKey', 'version', 'businessId', 'branchId', 'userId', 'sessionId',
+          'items', 'total', 'totalCost', 'grossProfit', 'payment', 'amountPaid', 'change', 'splitPayments', 'createdAt', 'queuedAt', 'origin', 'cashierName', 'productIds', 'stockVersions', 'confirmedAt', 'status', 'atomicProtocol'])
+        && d.saleId == id && d.localId == id && d.idempotencyKey == id && d.version == 1
+        && d.origin == 'online' && d.status == 'confirmed' && d.confirmedAt == request.time
+        && d.createdAt is string && d.createdAt.size() <= 40 && d.queuedAt is string && d.queuedAt.size() <= 40
+        && d.cashierName is string && d.cashierName.size() <= 250
+        && d.items is list && d.items.size() >= 1 && d.items.size() <= 8
+        && d.stockVersions is map && d.stockVersions.keys().hasOnly(d.productIds)
+        && d.productIds is list && d.productIds.size() == d.items.size() && d.productIds.toSet().size() == d.items.size()
+        && d.total > 0 && d.total <= 1000000000 && d.totalCost <= 1000000000
+        && d.grossProfit == (math.round(d.total * 100) - math.round(d.totalCost * 100)) / 100.0 && validPayment(d)
+        && groupedSale(d);
+    }
+    function legacySale(id) {
+      let d = request.resource.data;
+      // Identical canonical sums; avoid evaluating four optional-slot helpers on every legacy ticket.
+      let first = d.items[0];
+      let second = d.items.size() > 1 ? d.items[1] : {'price': 0, 'cost': 0, 'qty': 0};
+      let total = math.round(first.price * 100) * first.qty + math.round(second.price * 100) * second.qty;
+      let totalCost = math.round(first.cost * 100) * first.qty + math.round(second.cost * 100) * second.qty;
       return saleContext(d) && d.keys().hasOnly(['saleId', 'localId', 'idempotencyKey', 'version', 'businessId', 'branchId', 'userId', 'sessionId',
           'items', 'total', 'totalCost', 'grossProfit', 'payment', 'amountPaid', 'change', 'splitPayments', 'createdAt', 'queuedAt', 'origin', 'cashierName', 'productIds', 'stockVersions', 'confirmedAt', 'status'])
         && d.saleId == id && d.localId == id && d.idempotencyKey == id && d.version == 1
@@ -584,10 +612,29 @@ service cloud.firestore {
         && d.items is list && d.items.size() >= 1 && d.items.size() <= 2
         && d.stockVersions is map && d.stockVersions.keys().hasOnly(d.productIds)
         && d.productIds is list && d.productIds.size() == d.items.size() && d.productIds.toSet().size() == d.items.size()
-        && slot(d, 0) && slot(d, 1)
+        && line(d, 0) && slot(d, 1)
         && d.total > 0 && d.total <= 1000000000 && d.total == total / 100.0
         && d.totalCost <= 1000000000 && d.totalCost == totalCost / 100.0
         && d.grossProfit == (total - totalCost) / 100.0 && validPayment(d);
+    }
+    function groupedSale(d) {
+      let first = getAfter(/databases/$(database)/documents/pos_sale_groups/$(d.saleId + '_0')).data;
+      let second = d.items.size() > 4 ? getAfter(/databases/$(database)/documents/pos_sale_groups/$(d.saleId + '_1')).data : {'totalCents': 0, 'costCents': 0, 'createdAt': request.time};
+      return first.createdAt == request.time && second.createdAt == request.time
+        && d.total == (first.totalCents + second.totalCents) / 100.0 && d.totalCost == (first.costCents + second.costCents) / 100.0;
+    }
+    function saleGroup(id) {
+      let g = request.resource.data;
+      let d = getAfter(/databases/$(database)/documents/sales/$(g.saleId)).data;
+      let start = g.index * 4;
+      return authenticated() && g.index in [0, 1] && id == g.saleId + (g.index == 0 ? '_0' : '_1')
+        && g.keys().hasOnly(['businessId', 'branchId', 'userId', 'saleId', 'index', 'totalCents', 'costCents', 'createdAt'])
+        && g.userId == request.auth.uid && g.userId == d.userId && g.businessId == d.businessId && g.branchId == d.branchId
+        && d.atomicProtocol == 2 && d.confirmedAt == request.time && g.createdAt == request.time && d.items.size() > start
+        && !exists(/databases/$(database)/documents/sales/$(g.saleId))
+        && slot(d, start) && slot(d, start + 1) && slot(d, start + 2) && slot(d, start + 3)
+        && g.totalCents == price(d, start) + price(d, start + 1) + price(d, start + 2) + price(d, start + 3)
+        && g.costCents == cost(d, start) + cost(d, start + 1) + cost(d, start + 2) + cost(d, start + 3);
     }
     function debitAt(d, productId, index) {
       return d.items.size() > index && d.items[index].id == productId
@@ -597,7 +644,7 @@ service cloud.firestore {
       let d = getAfter(/databases/$(database)/documents/sales/$(request.resource.data.posLastSaleId)).data;
       return request.auth != null && d.userId == request.auth.uid && d.businessId == resource.data.businessId
         && d.confirmedAt == request.time && !exists(/databases/$(database)/documents/sales/$(d.saleId))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastSaleId'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastSaleId', 'posSaleLineIndex'])
         && request.resource.data.posStockVersion is map
         && request.resource.data.posStockVersion.diff(resource.data.get('posStockVersion', {})).affectedKeys().hasOnly([d.branchId])
         && request.resource.data.posStockVersion[d.branchId] is int
@@ -605,9 +652,61 @@ service cloud.firestore {
         && request.resource.data.posStockVersion[d.branchId] == resource.data.get('posStockVersion', {}).get(d.branchId, 0) + 1
         && request.resource.data.stock.diff(resource.data.stock).affectedKeys().hasOnly([d.branchId])
         && request.resource.data.stock[d.branchId] is int && request.resource.data.stock[d.branchId] >= 0
-        && (debitAt(d, productId, 0) || debitAt(d, productId, 1));
+        && (debitAt(d, productId, 0) || debitAt(d, productId, 1)
+          || (d.get('atomicProtocol', 1) == 2 && request.resource.data.posSaleLineIndex is int
+            && request.resource.data.posSaleLineIndex >= 2 && request.resource.data.posSaleLineIndex < d.items.size()
+            && debitAt(d, productId, request.resource.data.posSaleLineIndex)));
     }
 
+    function voidGroupPresent(v, source) {
+      return getAfter(/databases/$(database)/documents/pos_void_groups/$(v.saleId + '_0')).data.createdAt == request.time
+        && (source.items.size() <= 4 || getAfter(/databases/$(database)/documents/pos_void_groups/$(v.saleId + '_1')).data.createdAt == request.time);
+    }
+    function saleVoid(id) {
+      let v = request.resource.data;
+      let source = get(/databases/$(database)/documents/sales/$(id)).data;
+      let cash = source.payment == 'efectivo' ? source.total : source.payment == 'mixto' ? source.splitPayments.efectivo : 0;
+      return saleContext(v) && currentRole() == 'dueño' && id == v.saleId
+        && source.atomicProtocol == 2 && source.status == 'confirmed' && source.businessId == v.businessId && source.branchId == v.branchId
+        && source.items.size() >= 1 && source.items.size() <= 8
+        && v.keys().hasOnly(['businessId', 'branchId', 'userId', 'sessionId', 'saleId', 'reason', 'amount', 'cashAmount', 'digitalAmount', 'items', 'stockVersions', 'protocol', 'authority', 'occurredAt'])
+        && v.items == source.items
+        && v.reason is string && v.reason.size() >= 5 && v.reason.size() <= 1000
+        && v.amount == -source.total && v.cashAmount == -cash && v.digitalAmount == -(math.round(source.total * 100) - math.round(cash * 100)) / 100.0
+        && v.protocol == 1 && v.authority == 'pos-compensation' && v.occurredAt == request.time
+        && v.stockVersions is map && v.stockVersions.keys().hasOnly(source.productIds) && voidGroupPresent(v, source);
+    }
+    function voidSlot(v, source, index) {
+      let product = source.items.size() <= index ? {} : getAfter(/databases/$(database)/documents/products/$(source.items[index].id)).data;
+      return source.items.size() <= index || (product.posLastVoidSaleId == v.saleId
+        && product.businessId == v.businessId && v.stockVersions[source.items[index].id] == product.posStockVersion[v.branchId]);
+    }
+    function voidGroup(id) {
+      let g = request.resource.data;
+      let v = getAfter(/databases/$(database)/documents/pos_voids/$(g.saleId)).data;
+      let source = get(/databases/$(database)/documents/sales/$(g.saleId)).data;
+      let start = g.index * 4;
+      return authenticated() && g.index is int && g.index in [0, 1] && id == g.saleId + (g.index == 0 ? '_0' : '_1')
+        && g == {'businessId': v.businessId, 'branchId': v.branchId, 'userId': request.auth.uid, 'saleId': v.saleId, 'index': g.index, 'createdAt': request.time}
+        && v.userId == request.auth.uid && v.occurredAt == request.time && source.items.size() > start
+        && !exists(/databases/$(database)/documents/pos_voids/$(g.saleId))
+        && voidSlot(v, source, start) && voidSlot(v, source, start + 1) && voidSlot(v, source, start + 2) && voidSlot(v, source, start + 3);
+    }
+    function credit(productId) {
+      let v = getAfter(/databases/$(database)/documents/pos_voids/$(request.resource.data.posLastVoidSaleId)).data;
+      let source = get(/databases/$(database)/documents/sales/$(v.saleId)).data;
+      let index = request.resource.data.posVoidLineIndex;
+      return authenticated() && v.userId == request.auth.uid && v.businessId == resource.data.businessId && v.occurredAt == request.time
+        && !exists(/databases/$(database)/documents/pos_voids/$(v.saleId))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastVoidSaleId', 'posVoidLineIndex'])
+        && index is int && index >= 0 && index < source.items.size() && source.items[index].id == productId
+        && request.resource.data.stock.diff(resource.data.stock).affectedKeys().hasOnly([v.branchId])
+        && request.resource.data.stock[v.branchId] is int && request.resource.data.stock[v.branchId] >= 0 && request.resource.data.stock[v.branchId] <= 9007199254740991
+        && request.resource.data.stock[v.branchId] == resource.data.stock[v.branchId] + source.items[index].qty
+        && request.resource.data.posStockVersion.diff(resource.data.get('posStockVersion', {})).affectedKeys().hasOnly([v.branchId])
+        && request.resource.data.posStockVersion[v.branchId] is int && request.resource.data.posStockVersion[v.branchId] > 0 && request.resource.data.posStockVersion[v.branchId] <= 9007199254740991
+        && request.resource.data.posStockVersion[v.branchId] == resource.data.get('posStockVersion', {}).get(v.branchId, 0) + 1;
+    }
     function projectedContractStatus(balance, previous) {
       return previous in ['entregado', 'entregado_con_deuda']
         ? (balance == 0 ? 'entregado' : 'entregado_con_deuda')
@@ -752,8 +851,10 @@ service cloud.firestore {
       allow read: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if tenantCreator() && validProduct() && validStock(request.resource.data.stock)
         && request.resource.data.keys().hasOnly(['businessId', 'name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'createdAt', 'updatedAt']);
-      allow update: if debit(productId) || (businessUnchanged() && tenantManager() && validProduct()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'updatedAt'])
+      allow update: if (request.resource.data.diff(resource.data).affectedKeys().hasAny(['posLastSaleId']) && debit(productId))
+        || (request.resource.data.diff(resource.data).affectedKeys().hasAny(['posLastVoidSaleId']) && credit(productId))
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'updatedAt'])
+        && businessUnchanged() && tenantManager() && validProduct()
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['stock']) || validStock(request.resource.data.stock)));
       allow delete: if tenantManager() && resource.data.get('posStockVersion', {}).size() == 0;
     }
@@ -763,6 +864,22 @@ service cloud.firestore {
       allow get: if activeUser() && (resource == null || permittedFinancialResource());
       allow list: if permittedFinancialResource();
       allow create: if sale(saleId);
+      allow update, delete: if false;
+    }
+    match /pos_sale_groups/{groupId} {
+      allow read: if permittedFinancialResource();
+      allow create: if saleGroup(groupId);
+      allow update, delete: if false;
+    }
+    match /pos_voids/{saleId} {
+      allow get: if activeUser() && (resource == null || permittedFinancialResource());
+      allow list: if permittedFinancialResource();
+      allow create: if saleVoid(saleId);
+      allow update, delete: if false;
+    }
+    match /pos_void_groups/{groupId} {
+      allow read: if permittedFinancialResource();
+      allow create: if voidGroup(groupId);
       allow update, delete: if false;
     }
 
@@ -864,11 +981,11 @@ service cloud.firestore {
         ? getAfter(/databases/$(database)/documents/sales/$(n.sourceId)).data
         : getAfter(/databases/$(database)/documents/payments/$(n.sourceId)).data;
       return authenticated() && n.sourceType in ['sale', 'payment'] && id == n.sourceType + '_' + n.sourceId
-        && n.keys().hasOnly(['businessId', 'branchId', 'userId', 'sourceType', 'sourceId', 'authority', 'readAt', 'title', 'message', 'actorName', 'createdAt'])
-        && n.businessId == source.businessId && n.branchId == source.branchId && n.userId == request.auth.uid && source.userId == n.userId
-        && n.createdAt == request.time && n.readAt == null && n.authority == 'informational'
-        && n.actorName == source.cashierName && n.title == 'Operación registrada'
-        && n.message == 'Aviso informativo. Consulta el movimiento confirmado; este aviso no certifica importes.'
+        // Exact equality retains every field/value check with a smaller expression budget.
+        && source.userId == request.auth.uid && n == {'businessId': source.businessId, 'branchId': source.branchId,
+          'userId': request.auth.uid, 'sourceType': n.sourceType, 'sourceId': n.sourceId,
+          'authority': 'informational', 'readAt': null, 'actorName': source.cashierName, 'createdAt': request.time,
+          'title': 'Operación registrada', 'message': 'Aviso informativo. Consulta el movimiento confirmado; este aviso no certifica importes.'}
         && (n.sourceType == 'sale' ? source.confirmedAt == request.time && !exists(/databases/$(database)/documents/sales/$(n.sourceId))
           : source.createdAt == request.time && !exists(/databases/$(database)/documents/payments/$(n.sourceId)));
     }

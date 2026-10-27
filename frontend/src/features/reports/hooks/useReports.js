@@ -24,7 +24,7 @@ export const useReports = user => {
     if (!user?.businessId || !activeBranchId) return;
     const reads = sessionReportReads(resources, user.businessId, activeBranchId, period);
     const current = createReportResource({ key, businessId: user.businessId, branchId: activeBranchId, period, cache,
-      readStats: reads.stats, readContracts: reads.contracts, readPayments: reads.payments,
+      readStats: reads.stats, readContracts: reads.contracts, readPayments: reads.payments, readVoids: reads.voids,
       onState: setState });
     resource.current = current;
     const timer = setInterval(() => { setDay(reportDay(new Date())); }, REPORT_TTL);

@@ -49,7 +49,11 @@ add('admin-page', 'SaaS Admin', 'licenses', admin, 'administrationPage', [], [as
 for (const collection of ['users', 'invites']) add(`admin-owner-${collection}`, 'SaaS Admin propietario', collection, admin, 'administrationPage', [eq('businessId'), eq('role')], [], 3, 'equality-merge');
 add('admin-email', 'SaaS alta negocio', 'users', admin, 'createTenant', [eq('email')], [], 3, 'automatic');
 for (const collection of ['branches', 'users', 'invites']) add(`admin-detail-${collection}`, 'Detalle/cupo SaaS', collection, source('licenses', 'platformBusinessRepository'), 'createPlatformBusinessReader', [eq('businessId')], [], 3, 'automatic', 'Solo al abrir: hasta 200 sedes, 50 perfiles y 50 invitaciones; presencia de otras colecciones limitada a 1.');
-const inventoryCollections = ['branches', 'categories', 'products', 'customers', 'sales', 'contracts', 'payments', 'cash_sessions', 'active_cash_sessions', 'users', 'invites', 'spark_contract_operations', 'alerts', 'audit_events', 'daily_stats', 'notifications', 'platform_jobs', 'platform_operations', 'platform_audit', 'owner_email_claims'];
+scoped('pos-voids-period', 'Compensaciones POS', 'pos_voids', source('sales', 'posVoidQueryRepository'), 'inPeriod', period('occurredAt'), [asc('occurredAt'), asc('__name__')], 2);
+add('pos-voids-session', 'Devoluciones por caja', 'pos_voids', source('sales', 'posVoidQueryRepository'), 'bySession', [eq('businessId'), eq('branchId'), eq('sessionId')], [asc('occurredAt'), asc('__name__')]);
+add('pos-voids-ids-global', 'Estado de tickets POS', 'pos_voids', source('sales', 'posVoidQueryRepository'), 'subscribeIds', [eq('businessId'), ['__name__', 'in']], [asc('__name__')], 1, 'automatic');
+add('pos-voids-ids-branch', 'Estado de tickets POS', 'pos_voids', source('sales', 'posVoidQueryRepository'), 'subscribeIds', [eq('businessId'), eq('branchId'), ['__name__', 'in']], [asc('__name__')]);
+const inventoryCollections = ['branches', 'categories', 'products', 'customers', 'sales', 'contracts', 'payments', 'cash_sessions', 'active_cash_sessions', 'users', 'invites', 'spark_contract_operations', 'alerts', 'audit_events', 'daily_stats', 'notifications', 'platform_jobs', 'platform_operations', 'platform_audit', 'owner_email_claims', 'pos_sale_groups', 'pos_voids', 'pos_void_groups'];
 for (const collection of inventoryCollections) add(`backup-${collection}`, 'Inventario/exportación SaaS', collection, source('backups', 'backupRepository'), 'createBackupRepository', [eq('businessId')], [asc('__name__')], 3, 'automatic', 'Colecciones declaradas; settings/tenants/licenses se leen por ID. No collectionGroup.');
 add('backup-job-children', 'Subcolecciones conocidas', 'scopes / asset_sources', source('backups', 'backupRepository'), 'const path =', [], [asc('__name__')], 3, 'automatic', 'Ruta platform_jobs/{id}/(scopes|asset_sources), colección concreta; no colección group ni rutas desconocidas.');
 for (const collection of inventoryCollections.filter(name => !['branches', 'users', 'invites'].includes(name))) add(`admin-presence-${collection}`, 'Presencia inicial SaaS', collection, source('licenses', 'platformBusinessRepository'), 'result.inventory', [eq('businessId')], [], 3, 'automatic', 'Muestra de 1 documento, no conteo total.');
@@ -61,12 +65,14 @@ export const reviewedSDKQueryCounts = {
   [source('cash-register', 'cashQueryRepository')]: 2, [source('contracts', 'contractQueryRepository')]: 2,
   [source('contracts', 'contractPeriodRepository')]: 1, [source('sales', 'salesRepository')]: 1,
   [source('sales', 'salesQueryRepository')]: 2, [source('payments', 'paymentQueryRepository')]: 2,
+  [source('sales', 'posVoidQueryRepository')]: 2,
   [source('payments', 'sparkLegacyPayments')]: 1, [source('notifications', 'notificationQueryRepository')]: 2,
   [source('notifications', 'auditQueryRepository')]: 1, [source('notifications', 'alertRepository')]: 1,
   [source('customers', 'customerRepository')]: 1, [source('licenses', 'sparkAdministrationRepository')]: 4,
   [source('licenses', 'platformBusinessRepository')]: 3, [source('backups', 'backupRepository')]: 2,
 };
 export const dynamicQueryReviews = {
+  [source('sales', 'posVoidQueryRepository')]: 'Negocio/sede fijos; filtros por sesión o rango occurredAt, páginas <=200, máximo 10000; listeners de hasta 50 IDs en lotes de 10.',
   [source('cash-register', 'cashQueryRepository')]: 'field: openedAt/closedAt, wrappers de cashRegisterRepository; branch/user opcionales.',
   [source('sales', 'salesRepository')]: 'field: confirmedAt/createdAt; sede opcional.',
   [source('sales', 'salesQueryRepository')]: 'ranges: confirmedAt Timestamp, createdAt Timestamp/ISO; sede y cursor opcionales.',

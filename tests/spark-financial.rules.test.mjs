@@ -22,6 +22,8 @@ import { updateProductTransaction } from '../frontend/src/features/catalog/infra
 import { canonicalSale, sameSaleOperation } from '../functions/src/sales/domain/saleModel.js';
 import { createSaleQueue } from '../frontend/src/features/sales/application/saleQueue.js';
 import { encrypt, decrypt } from '../frontend/src/crypto.js';
+import { createPosVoidRepository } from '../frontend/src/features/sales/infrastructure/posVoidRepository.js';
+import { createPosVoidReader, voidCashPayments } from '../frontend/src/features/sales/infrastructure/posVoidQueryRepository.js';
 
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080');
 assert.equal(process.env.GCLOUD_PROJECT, 'demo-migapos');
@@ -69,6 +71,146 @@ beforeEach(async () => {
 after(async () => env?.cleanup());
 
 describe('SPARK-4 integrated financial Rules', () => {
+  it('Plan05 compensates an eight-product mixed ticket once and preserves the immutable original', async () => {
+    const rows = Array.from({ length: 8 }, (_, i) => ({ ...products[0], id: `void-${i}` }));
+    await env.withSecurityRulesDisabled(async ctx => {
+      await updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'dueño' });
+      for (const row of rows) await setDoc(doc(ctx.firestore(), 'products', row.id), row);
+    });
+    const repo = createSparkSalesRepository(database(), { sdk, protocolVersion: 2, currentUser: () => ({ uid }) });
+    const sale = canonicalSale({ localId: 'plan05-void-eight', businessId, branchId, userId: uid, sessionId,
+      items: rows.map(row => ({ ...row, qty: 1 })), total: 10, amountPaid: 10, change: 0, payment: 'mixto',
+      splitPayments: { efectivo: 4, yape: 6 }, createdAt: '2026-10-26T12:00:00.000Z' }, rows);
+    await repo.submit(sale);
+    const before = (await inspect('sales/' + sale.saleId)).data();
+    const voids = createPosVoidRepository(database(), { sdk, currentUser: () => ({ uid }) });
+    const command = { saleId: sale.saleId, reason: 'Devolución de prueba' };
+    await Promise.all([voids.void(command), voids.void(command)]);
+    const result = await voids.void(command);
+    assert.equal(result.amount, -10); assert.equal(result.cashAmount, -4); assert.equal(result.digitalAmount, -6);
+    assert.deepEqual((await inspect('sales/' + sale.saleId)).data(), before);
+    for (const row of rows) {
+      const saved = (await inspect('products/' + row.id)).data();
+      assert.equal(saved.stock[branchId], 10); assert.equal(saved.stock.other, 7); assert.equal(saved.posStockVersion[branchId], 2);
+    }
+    await assert.rejects(voids.void({ ...command, reason: 'Una segunda devolución' }), { code: 'sale-conflict' });
+    await assertFails(updateDoc(doc(database(), 'pos_voids', sale.saleId), { amount: -20 }));
+    await assertFails(updateDoc(doc(database(), 'sales', sale.saleId), { voided: true }));
+    const reader = createPosVoidReader(database(), { sdk });
+    const period = reportPeriod('hoy'), from = new Date(Date.now() - 60000), to = new Date(Date.now() + 60000);
+    const [refunds, receipts] = await Promise.all([reader.inPeriod(businessId, from, to, branchId),
+      createSalesPeriodReader(database(), { sdk })(businessId, from, to, { branchId })]);
+    const model = aggregateReport({ sales: receipts, voids: refunds, businessId, branchId, period });
+    assert.equal(model.summary.netRevenue, 0); assert.equal(model.summary.posCash, 0); assert.equal(model.summary.posDigital, 0);
+    assert.equal(model.summary.contractRevenue, 0); assert.equal(model.summary.voidedTicketCount, 1);
+    assert.ok(model.products.every(row => row.qty === 0 && row.revenue === 0));
+    const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
+    const workbook = buildSalesWorkbook(XLSX, { period, sales: receipts, voids: refunds, businessId, branchId }).workbook;
+    const copy = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
+    assert.ok(copy.SheetNames.some(name => XLSX.utils.sheet_to_json(copy.Sheets[name]).some(row => row['Total movimiento (S/)'] === -10)));
+    await assertFails(reader.inPeriod('foreign', from, to, branchId));
+    const adjustedStock = { [branchId]: 11, other: 7 };
+    await env.withSecurityRulesDisabled(async ctx => {
+      for (let index = 0; index < 4; index++) {
+        const id = `catalog-extra-${index}`; adjustedStock[id] = 1;
+        await setDoc(doc(ctx.firestore(), 'branches', id), { businessId, status: 'activo' });
+      }
+    });
+    await updateDoc(doc(database(), 'products', rows[0].id), { stock: adjustedStock });
+    assert.deepEqual((await inspect('products/' + rows[0].id)).data().stock, adjustedStock);
+    const close = createSparkCashClosingRepository(database(), { sdk, currentUser: () => ({ uid }),
+      readSales: createSalesSessionReader(database(), { sdk }), readPayments: async session => voidCashPayments(await reader.bySession(session)) });
+    assert.equal((await close.close(sessionId, 10)).status, 'closed');
+  });
+  it('Plan05 void Rules reject false refunds, omitted stock/proofs, foreign scope, cashier escalation and expired cash', async () => {
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'dueño' }));
+    const sale = payload('plan05-void-negative', 2);
+    await createSparkSalesRepository(database(), { sdk, protocolVersion: 2, currentUser: () => ({ uid }) }).submit(sale);
+    const command = { saleId: sale.saleId, reason: 'Devolución rechazada' };
+    for (const mutate of [
+      (path, data) => path.startsWith('pos_voids/') ? { ...data, cashAmount: -99 } : data,
+      (path, data) => path.startsWith('pos_voids/') ? { ...data, amount: -99 } : data,
+      (path, data) => path.startsWith('pos_voids/') ? { ...data, businessId: 'foreign' } : data,
+      (path, data) => path.startsWith('pos_voids/') ? { ...data, reason: '' } : data,
+      (path, data) => path.startsWith('pos_void_groups/') ? null : data,
+      (path, data) => path === 'products/bread' ? null : data,
+      (path, data) => path.startsWith('products/') ? { ...data, stock: { ...data.stock, [branchId]: 11 } } : data,
+      (path, data) => path.startsWith('products/') ? { ...data, stock: { ...data.stock, other: 0 } } : data,
+    ]) {
+      const injected = { ...sdk, runTransaction: (db, work) => sdk.runTransaction(db, tx => work({ get: ref => tx.get(ref),
+        set: (ref, data) => { const changed = mutate(ref.path, data); if (changed) tx.set(ref, changed); },
+        update: (ref, data) => { const changed = mutate(ref.path, data); if (changed) tx.update(ref, changed); },
+      })) };
+      await assert.rejects(createPosVoidRepository(database(), { sdk: injected, currentUser: () => ({ uid }) }).void(command), { code: 'permission-denied' });
+      assert.equal((await inspect('pos_voids/' + sale.saleId)).exists(), false);
+      assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
+    }
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'cajero' }));
+    const forgedProfileSDK = { ...sdk, runTransaction: (db, work) => sdk.runTransaction(db, tx => work({
+      get: async ref => { const saved = await tx.get(ref); return ref.path === `users/${uid}` ? { data: () => ({ ...saved.data(), role: 'dueño' }) } : saved; },
+      set: (ref, data) => tx.set(ref, data), update: (ref, data) => tx.update(ref, data),
+    })) };
+    await assert.rejects(createPosVoidRepository(database(), { sdk: forgedProfileSDK, currentUser: () => ({ uid }) }).void(command), { code: 'permission-denied' });
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'dueño' }));
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), { durationHours: 10, openedAt: Timestamp.fromMillis(Date.now() - 11 * 3600000) }));
+    await assert.rejects(createPosVoidRepository(database(), { sdk, currentUser: () => ({ uid }) }).void(command), { code: 'permission-denied' });
+    assert.equal((await inspect('pos_voids/' + sale.saleId)).exists(), false);
+  });
+  it('Plan05 groups 3, 5 and 8 products in one indivisible receipt', async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => ({ ...products[0], id: `group-${index}` }));
+    await env.withSecurityRulesDisabled(async ctx => {
+      for (const row of rows) await setDoc(doc(ctx.firestore(), 'products', row.id), row);
+    });
+    const repository = createSparkSalesRepository(database(), { sdk, protocolVersion: 2, currentUser: () => ({ uid }) });
+    for (const count of [3, 5, 8]) {
+      const total = count * 1.25;
+      const sale = canonicalSale({ localId: `plan05-group-${count}`, businessId, branchId, userId: uid, sessionId,
+        items: rows.slice(0, count).map(row => ({ ...row, qty: 1 })), total, payment: 'mixto', amountPaid: total, change: 0,
+        splitPayments: { efectivo: 1.25, yape: total - 1.25 }, createdAt: '2026-10-26T12:00:00.000Z' }, rows);
+      await assert.doesNotReject(repository.submit(sale), `grouped ticket with ${count} products`);
+      await repository.submit(sale);
+      assert.equal((await inspect('sales/' + sale.saleId)).data().items.length, count);
+    }
+    assert.equal((await inspect('products/group-0')).data().stock[branchId], 7);
+  });
+  it('Plan05 grouped Rules reject incomplete proofs, altered prices, foreign stock and concurrent oversell', async () => {
+    const rows = Array.from({ length: 8 }, (_, index) => ({ ...products[0], id: `proof-${index}` }));
+    await env.withSecurityRulesDisabled(async ctx => { for (const row of rows) await setDoc(doc(ctx.firestore(), 'products', row.id), row); });
+    const command = id => canonicalSale({ localId: id, businessId, branchId, userId: uid, sessionId,
+      items: rows.map(row => ({ ...row, qty: 1 })), total: 10, payment: 'mixto', amountPaid: 10, change: 0,
+      splitPayments: { efectivo: 4, yape: 6 }, createdAt: '2026-10-26T12:00:00.000Z' }, rows);
+    const mutations = [
+      (path, data) => path.startsWith('pos_sale_groups/') && data.index === 1 ? null : data,
+      (path, data) => path === 'products/proof-7' ? null : data,
+      (path, data) => path.startsWith('pos_sale_groups/') ? { ...data, totalCents: data.totalCents + 1 } : data,
+      (path, data) => path.startsWith('sales/') ? { ...data, privileged: true } : data,
+      (path, data) => path.startsWith('sales/') ? { ...data, items: data.items.map((line, i) => i ? line : { ...line, price: 0 }) } : data,
+      (path, data) => path.startsWith('products/') ? { ...data, stock: { ...data.stock, other: 0 } } : data,
+      (path, data) => path.startsWith('products/') ? { ...data, posSaleLineIndex: 8 } : data,
+      (path, data) => path.startsWith('notifications/') ? { ...data, title: 'Forged notice' } : data,
+    ];
+    for (const [index, mutate] of mutations.entries()) {
+      const id = `plan05-proof-negative-${index}`;
+      const injected = { ...sdk, runTransaction: (db, work) => sdk.runTransaction(db, tx => work({
+        get: ref => tx.get(ref), set: (ref, data) => { const changed = mutate(ref.path, data); if (changed) tx.set(ref, changed); },
+        update: (ref, data) => { const changed = mutate(ref.path, data); if (changed) tx.update(ref, changed); },
+      })) };
+      const repository = createSparkSalesRepository(database(), { sdk: injected, protocolVersion: 2, currentUser: () => ({ uid }) });
+      await assert.rejects(repository.submit(command(id)), { code: 'permission-denied' });
+      for (const path of [`sales/${id}`, `notifications/sale_${id}`, `pos_sale_groups/${id}_0`, `pos_sale_groups/${id}_1`]) assert.equal((await inspect(path)).exists(), false);
+      for (const row of rows) assert.equal((await inspect('products/' + row.id)).data().stock[branchId], 10);
+    }
+    await env.withSecurityRulesDisabled(async ctx => { for (const row of rows) await updateDoc(doc(ctx.firestore(), 'products', row.id), { stock: { [branchId]: 1, other: 7 } }); });
+    const repository = createSparkSalesRepository(database(), { sdk, protocolVersion: 2, currentUser: () => ({ uid }) });
+    const race = await Promise.allSettled(['plan05-proof-race-a', 'plan05-proof-race-b'].map(id => repository.submit(command(id))));
+    assert.equal(race.filter(row => row.status === 'fulfilled').length, 1);
+    for (const row of rows) assert.equal((await inspect('products/' + row.id)).data().stock[branchId], 0);
+    for (const count of [9, 12]) {
+      const draftRows = Array.from({ length: count }, (_, i) => ({ ...rows[0], id: `over-${i}`, qty: 1 }));
+      await assert.rejects(repository.submit({ ...command('plan05-over-limit'), items: draftRows, total: count * 1.25, amountPaid: count * 1.25,
+        payment: 'yape' }), { code: 'invalid-sale' });
+    }
+  });
   it('Plan05 preserves an uncertain committed ticket and removes projection only after a definitive Rules rejection', async () => {
     const rows = new Map();
     const store = { get: async id => rows.get(id), list: async () => [...rows.values()],
@@ -106,7 +248,7 @@ describe('SPARK-4 integrated financial Rules', () => {
     await env.withSecurityRulesDisabled(async ctx => {
       for (const row of rows) await updateDoc(doc(ctx.firestore(), 'products', row.id), { price: row.price });
     });
-    const repository = createSparkSalesRepository(database(), { sdk, currentUser: () => ({ uid }) });
+    const repository = createSparkSalesRepository(database(), { sdk, protocolVersion: 1, currentUser: () => ({ uid }) });
     const sale = canonicalSale({ localId: 'plan05-mixed-16', businessId, branchId, userId: uid, sessionId,
       items: rows.map(row => ({ ...row, qty: 1 })), total: 16, payment: 'mixto',
       splitPayments: { efectivo: 4, yape: 12 }, amountPaid: 16, change: 0, origin: 'online',

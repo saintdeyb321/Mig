@@ -3,6 +3,9 @@ import { getContractsInPeriod } from '../../contracts/infrastructure/contractRep
 import { getPaymentsInPeriod, getContractAuditDocuments } from '../../payments/infrastructure/paymentRepository.js';
 import { salesToDailyStats } from '../domain/sparkReport.js';
 import { reportTTL } from '../application/reportResource.js';
+import { db } from '../../../core/firebase/client.js';
+import { createPosVoidReader } from '../../sales/infrastructure/posVoidQueryRepository.js';
+const compensations = createPosVoidReader(db);
 
 export function sessionReportReads(resources, businessId, branchId, period) {
   const key = JSON.stringify([businessId, branchId, period.start, period.end]);
@@ -10,7 +13,8 @@ export function sessionReportReads(resources, businessId, branchId, period) {
   const sales = () => resources.read(`report:sales:${key}`, () => getSalesInPeriod(businessId, period.startDate, period.endDate, { branchId, maxRows: 10000, signal }), ttl);
   const contracts = () => resources.read(`report:contracts:${key}`, () => getContractsInPeriod(businessId, period.startDate, period.endDate, branchId, 10000, { signal }), ttl);
   const payments = () => resources.read(`report:payments:${key}`, () => getPaymentsInPeriod(businessId, period.startDate, period.endDate, branchId, { requireMigrated: true, maxRows: 10000, signal }), ttl);
-  return { sales, contracts, payments, stats: async () => salesToDailyStats(await sales()),
+  const voids = () => resources.read(`report:voids:${key}`, () => compensations.inPeriod(businessId, period.startDate, period.endDate, branchId, { signal }), ttl);
+  return { sales, contracts, payments, voids, stats: async () => salesToDailyStats(await sales()),
     async exportContracts() {
       const rows = await payments(); signal.throwIfAborted();
       const [audit, created] = await Promise.all([rows.length ? resources.read(`report:audit:${key}`, () => getContractAuditDocuments(businessId, rows.map(row => row.sourceId), { signal }), ttl) : [], contracts()]);

@@ -30,6 +30,10 @@ before(async () => {
       'products/foreign':{businessId:'tenant-b',name:'Foreign'},'customers/customer':{businessId:'tenant-a',name:'Fixture'},
       'sales/sale':{businessId:'tenant-a',total:10,confirmedAt:sdk.Timestamp.now()},'contracts/contract':{businessId:'tenant-a',total:10},
       'payments/payment':{businessId:'tenant-a',amount:10},'platform_jobs/job-a':{businessId:'tenant-a'},'platform_jobs/job-a/scopes/child':{path:'contracts/contract/unknown'},'platform_jobs/job-b':{businessId:'tenant-b'},'platform_jobs/job-b/scopes/foreign':{path:'foreign'},'cash_sessions/cash':{businessId:'tenant-a',status:'closed',reconciliationPending:true}};
+    for (const name of ['pos_sale_groups','pos_voids','pos_void_groups']) {
+      rows[`${name}/local-proof`] = {businessId:'tenant-a',branchId:'branch',saleId:'sale'};
+      rows[`${name}/foreign-proof`] = {businessId:'tenant-b',branchId:'other',saleId:'foreign'};
+    }
     for (let index=0;index<205;index++) rows[`products/p-${String(index).padStart(3,'0')}`] = {businessId:'tenant-a',name:'Producto',price:1};
     for (const [path,value] of Object.entries(rows)) batch.set(sdk.doc(db,path),value);
     await batch.commit();
@@ -43,6 +47,10 @@ it('pages past 200 documents using the main Rules and excludes secrets and forei
   assert.ok(progress.filter(p=>p.collection==='products').length>=2);
   assert.doesNotMatch(JSON.stringify(exported),/never-export|"Foreign"/);
   for (const name of ['sales','contracts','payments','cash_sessions']) assert.equal(exported.sections.find(s=>s.name===name).records.length,1,name);
+  for (const name of ['pos_sale_groups','pos_voids','pos_void_groups']) {
+    const section = exported.sections.find(s=>s.name===name); assert.equal(section.records.length,1,name);
+    assert.equal(section.status,'complete'); assert.equal(section.records[0].businessId,'tenant-a');
+  }
   assert.equal(exported.sections.find(s=>s.name==='cash_sessions').records[0].reconciliationPending,true);
 });
 it('caps documents and grants SuperAdmin only temporary scoped reads; revokes at the end', async () => {

@@ -13,6 +13,8 @@ import { createSparkCashClosingRepository } from './sparkCashClosingRepository.j
 import { getSessionSales } from '../../sales/infrastructure/salesRepository.js';
 import { getPaymentsBySession } from '../../payments/infrastructure/paymentRepository.js';
 import { runtimeCapabilities, requireCapability } from '../../../config/runtimeCapabilities.js';
+import { createPosVoidReader, voidCashPayments } from '../../sales/infrastructure/posVoidQueryRepository.js';
+const posVoids = createPosVoidReader(db);
 
 const sparkCash = createSparkCashRepository(db, { currentUser: () => auth.currentUser });
 
@@ -59,7 +61,10 @@ export const createSession = confirmedWrite(async data => {
     openingAmount: data.openingAmount, notes: data.openingNote }));
 });
 const closing = createSparkCashClosingRepository(db, { currentUser: () => auth.currentUser,
-  readSales: getSessionSales, readPayments: session => getPaymentsBySession(session.businessId, session.id, session.branchId, { sparkOnly: session.runtime === 'spark' }) });
+  readSales: getSessionSales, readPayments: async session => {
+    const [payments, voids] = await Promise.all([getPaymentsBySession(session.businessId, session.id, session.branchId, { sparkOnly: session.runtime === 'spark' }), posVoids.bySession(session)]);
+    return [...payments, ...voidCashPayments(voids)];
+  } });
 export const previewSessionClose = (id, declaredAmount) => closing.preview(id, declaredAmount);
 export const updateSession = confirmedWrite(async (id, data) => sessionDTO(await closing.close(id, data.declaredAmount, data.closingNote)));
 export async function syncLocalSession(id, session, acknowledgedData) {

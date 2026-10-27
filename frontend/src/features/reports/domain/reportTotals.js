@@ -45,7 +45,7 @@ export function statProducts(stat) {
   }
   return [...products].map(([id, product]) => ({ id, name: product.name ?? id, qty: amount(product.qty), revenue: amount(product.revenue) }));
 }
-export function aggregateReport({ stats = [], sales = null, payments = [], businessId, branchId = 'global', period } = {}) {
+export function aggregateReport({ stats = [], sales = null, payments = [], voids = [], businessId, branchId = 'global', period } = {}) {
   const summary = emptyMetrics(), branches = new Map(), days = new Map(), products = new Map();
   const accepted = (row, day) => (!businessId || row.businessId === businessId) && (branchId === 'global' || row.branchId === branchId)
     && (!period || (day >= period.start && day <= period.end));
@@ -91,6 +91,21 @@ export function aggregateReport({ stats = [], sales = null, payments = [], busin
       target.contractRevenue = money(target.contractRevenue + net); target.contractCash = money(target.contractCash + split.efectivo); target.contractDigital = money(target.contractDigital + split.yape);
       if (payment.type === 'refund') { target.refunds = money(target.refunds + net); target.refundCount++; } else target.contractPaymentCount++;
     }
+  }
+  const seenVoids = new Set();
+  for (const row of voids) {
+    const day = reportDay(row.occurredAt);
+    if (!accepted(row, day) || seenVoids.has(row.id)) continue;
+    if (!row.id || row.saleId !== row.id || row.authority !== 'pos-compensation' || row.amount >= 0 || !Array.isArray(row.items) || !row.items.length
+      || money(row.items.reduce((sum, item) => sum + money(item.price * item.qty), 0)) !== -row.amount
+      || row.cashAmount > 0 || row.digitalAmount > 0 || money(row.cashAmount + row.digitalAmount) !== row.amount) throw new Error('Compensación POS no verificable.');
+    seenVoids.add(row.id);
+    for (const target of targets(row, day)) {
+      target.posRevenue = money(target.posRevenue + row.amount); target.posCash = money(target.posCash + row.cashAmount);
+      target.posDigital = money(target.posDigital + row.digitalAmount); target.refunds = money(target.refunds + row.amount);
+      target.refundCount++; target.voidedTicketCount++;
+    }
+    for (const item of row.items) addProduct(row, { id: item.id, name: item.name, qty: -item.qty, revenue: -money(item.price * item.qty) });
   }
   [summary, ...branches.values(), ...days.values()].forEach(finishMetrics);
   const chartData = period ? chartSkeleton(period) : [];

@@ -187,7 +187,7 @@ describe('SPARK-2 tenant operations and catalog invariants', () => {
     const previous = { [branchId]: 10 }, product = { businessId, name: 'Pan', price: 2, stock: previous };
     await setDoc(doc(database, 'products', 'race'), product);
     const results = await Promise.allSettled([12, 15].map(quantity => updateProductTransaction(database, 'race', { ...product, stock: { [branchId]: quantity } }, previous, { sdk })));
-    assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+    assert.equal(results.filter(result => result.status === 'fulfilled').length, 1, JSON.stringify(results.map(row => row.reason?.message ?? row.status)));
     assert.ok([12, 15].includes((await getDoc(doc(database, 'products', 'race'))).data().stock[branchId]));
   });
   it('retains scoped notifications and the index required by the actual unread query', async () => {

@@ -1,6 +1,7 @@
 import { contractCounts } from '../domain/sparkReport.js';
 import { aggregateReport } from '../domain/reportTotals.js';
 import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
+import { getFirebaseErrorCode } from '../../../core/errors/firebaseErrors.js';
 
 export const REPORT_TTL = 30000;
 export const reportTTL = period => ['mes', 'todo'].includes(period.filter ?? period.key?.split(':')[0]) ? 15 * 60 * 1000 : 2 * 60 * 1000;
@@ -17,25 +18,26 @@ export function createReportCache({ ttl = REPORT_TTL, max = 12, now = Date.now }
     get size() { return entries.size; },
   };
 }
-export function createReportResource({ key, businessId, branchId, period, cache, readStats, readPayments, readContracts = async () => [], subscribeStats, onState, now = Date.now }) {
+export function createReportResource({ key, businessId, branchId, period, cache, readStats, readPayments, readContracts = async () => [], readVoids = async () => [], subscribeStats, onState, now = Date.now }) {
   const ttl = reportTTL(period);
   const cached = cache.peek?.(key) ?? cache.get(key);
   let active = true, stats = cached?.stats ?? null, payments = cached?.payments ?? null, loadedAt = cached?.loadedAt ?? -Infinity;
   let contracts = cached?.contracts ?? [];
+  let voids = cached?.voids ?? [];
   let pending = null, generation = 0, lastModel = null, stop = () => {};
   const emit = () => {
     if (!active || stats === null || payments === null) return;
     try {
-      const model = aggregateReport({ stats, payments, businessId, branchId, period });
+      const model = aggregateReport({ stats, payments, voids, businessId, branchId, period });
       model.contractCounts = contractCounts(contracts);
       lastModel = model;
-      cache.set(key, { stats, payments, contracts, loadedAt, ttl });
+      cache.set(key, { stats, payments, contracts, voids, loadedAt, ttl });
       onState({ key, model, isLoading: false, isRefreshing: false, error: null, updatedAt: loadedAt });
     } catch (error) { fail(error); }
   };
   const fail = error => { if (active) {
     reportDiagnostic('report', error); cache.invalidate(key);
-    const transient = ['unavailable', 'deadline-exceeded', 'network-request-failed'].includes(error.code ?? error.cause?.code);
+    const transient = ['unavailable', 'deadline-exceeded', 'network-request-failed'].includes(getFirebaseErrorCode(error.code ? error : error.cause ?? error));
     onState({ key, model: transient ? lastModel : null, isLoading: false, isRefreshing: false, error: error.message, queryError: error, updatedAt: loadedAt });
   } };
   async function refresh(force = false) {
@@ -46,11 +48,11 @@ export function createReportResource({ key, businessId, branchId, period, cache,
     if (lastModel) onState({ key, model: lastModel, isLoading: false, isRefreshing: true, error: null, updatedAt: loadedAt });
     pending = (async () => {
       try {
-        const [nextStats, nextPayments, nextContracts] = await Promise.all([subscribeStats && stats !== null ? stats : readStats(), readPayments(), readContracts()]);
+        const [nextStats, nextPayments, nextContracts, nextVoids] = await Promise.all([subscribeStats && stats !== null ? stats : readStats(), readPayments(), readContracts(), readVoids()]);
         if (!active || revision !== generation) return;
         // A live snapshot may have advanced while the payment query was pending.
         if (!subscribeStats || stats === null) stats = nextStats;
-        contracts = nextContracts; payments = nextPayments; loadedAt = now(); emit();
+        contracts = nextContracts; payments = nextPayments; voids = nextVoids; loadedAt = now(); emit();
       } catch (error) { if (revision === generation) { payments = null; fail(error); } }
       finally { if (revision === generation) pending = null; }
     })();

@@ -6,14 +6,16 @@ import { reportRows, amount } from '../domain/reportTotals.js';
 import { reportDay, visibleDay, reportTime } from '../domain/reportPeriod.js';
 
 export const MAX_EXPORT_ROWS = 10000;
-export function buildSalesWorkbook(XLSX, { stats = [], sales = [], payments = [], contracts = [], sessions = [], branchesMap = {}, period,
+export function buildSalesWorkbook(XLSX, { stats = [], sales = [], payments = [], voids = [], contracts = [], sessions = [], branchesMap = {}, period,
   businessId, branchId = 'global', detailed = ['hoy', 'semana'].includes(period.filter), now = new Date() }) {
   const scope = { businessId, branchId, period };
   const scopedSales = reportRows(sales, scope, row => row.createdAt);
   const scopedPayments = reportRows(payments, scope);
+  const scopedVoids = [...new Map(reportRows(voids, scope).map(row => [row.id, row])).values()];
   const scopedContracts = reportRows(contracts.filter(contract => contract.createdAt != null), scope, row => row.createdAt);
-  if (scopedSales.reduce((count, sale) => count + (sale.items?.length ?? 0) + 1, scopedPayments.length + scopedContracts.length) > MAX_EXPORT_ROWS) throw new Error('Demasiadas filas de detalle. Selecciona un período menor.');
-  const processed = detailed ? processSales(scopedSales, branchesMap, scopedPayments, scope) : processDailyStats(stats, scopedPayments, scope);
+  const voidRows = scopedVoids.reduce((count, row) => count + (row.items?.length ?? 0) + 1, 0);
+  if (scopedSales.reduce((count, sale) => count + (sale.items?.length ?? 0) + 1, scopedPayments.length + scopedContracts.length + voidRows) > MAX_EXPORT_ROWS) throw new Error('Demasiadas filas de detalle. Selecciona un período menor.');
+  const processed = detailed ? processSales(scopedSales, branchesMap, scopedPayments, { ...scope, voids: scopedVoids }) : processDailyStats(stats, scopedPayments, { ...scope, voids: scopedVoids });
   const { model } = processed, metrics = model.summary;
   const wb = XLSX.utils.book_new();
   const append = (name, rows, { currency = [], widths = [], style = 'default', detail = false } = {}) => {
@@ -34,11 +36,11 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = [], payments = []
     { Concepto: '🎂 INGRESOS NETOS PEDIDOS ESPECIALES', Valor: metrics.contractRevenue },
     { Concepto: ' ↳ Efectivo Pedidos', Valor: metrics.contractCash },
     { Concepto: ' ↳ Yape/Plin Pedidos', Valor: metrics.contractDigital },
-    { Concepto: ' ↳ Reembolsos de Pedidos (ya incluidos)', Valor: metrics.refunds },
+    { Concepto: ' ↳ Reembolsos POS y Pedidos (ya incluidos)', Valor: metrics.refunds },
     { Concepto: 'Efectivo Neto Total', Valor: metrics.cashRevenue },
     { Concepto: 'Yape/Plin Neto Total', Valor: metrics.digitalRevenue },
     { Concepto: 'Ticket promedio POS', Valor: metrics.posAverageTicket },
-    { Concepto: 'Tickets POS Completados', Valor: metrics.posTicketCount },
+    { Concepto: 'Tickets POS Registrados', Valor: metrics.posTicketCount },
     { Concepto: 'Pagos de Pedidos Procesados', Valor: metrics.contractPaymentCount },
     { Concepto: 'Tickets POS Anulados', Valor: metrics.voidedTicketCount },
     { Concepto: 'Reembolsos Procesados', Valor: metrics.refundCount },

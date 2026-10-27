@@ -31,6 +31,19 @@ const build = options => buildSalesWorkbook(XLSX, { ...scope, stats, sales, paym
 const rows = (wb, name) => XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+it('Plan05 accounts an immutable POS refund once with negative detailed items and reconciled net totals', () => {
+  const original = sales[0], refund = { ...base, id: original.id, saleId: original.id, userId: 'owner', reason: 'Devolución comprobada',
+    authority: 'pos-compensation', amount: -40, cashAmount: -15, digitalAmount: -25, items: original.items, occurredAt: date('12') };
+  const { workbook, model } = build({ sales: [original], stats: [], payments: [], voids: [refund, refund] });
+  assert.equal(model.summary.netRevenue, 0); assert.equal(model.summary.contractRevenue, 0); assert.equal(model.summary.refundCount, 1);
+  assert.ok(model.products.every(row => row.qty === 0 && row.revenue === 0));
+  const copy = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
+  const details = rows(copy, copy.SheetNames.find(name => name.startsWith('Detalle_')));
+  assert.equal(details.filter(row => row.Cantidad === -2).length, 1);
+  assert.equal(details.reduce((sum, row) => sum + (Number(row['Total movimiento (S/)']) || 0), 0), 0);
+  assert.throws(() => build({ voids: [{ ...refund, items: [{ ...item, qty: 1 }] }] }), /no verificable/);
+});
+
 describe('Phase 7 canonical financial reports', () => {
   it('normal POS sale records one net ticket', () => {
     const result = aggregateReport({ sales: [sales[1]], ...scope }).summary;

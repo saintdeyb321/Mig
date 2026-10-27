@@ -91,7 +91,7 @@ export function SaleHistoryCard({
                   </div>
 
                   {s.isOffline && <Button disabled={isProcessing} onClick={() => verificarPendiente(s)} type="button" variant="secondary">Consultar receipt remoto (sin cobrar)</Button>}
-                  {!isAnulada && !s.isOffline && (user?.role === 'dueño' || user?.role === 'superadmin' || user?.role === 'cajero') && <Button onClick={() => setSaleToCancel(s)} disabled={isProcessing || !runtimeCapabilities.saleVoid} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado" type="button" variant="danger" aria-label="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado">
+                  {!isAnulada && !s.isOffline && user?.role === 'dueño' && <Button onClick={() => setSaleToCancel(s)} disabled={isProcessing || !runtimeCapabilities.saleVoid || s.atomicProtocol !== 2} title={s.atomicProtocol === 2 ? 'Requiere tu caja activa en la sede de origen; devolución única por los medios originales.' : 'Ticket histórico: requiere revisión; se conserva sin modificar.'} type="button" variant="danger">
                       {isProcessing ? '...' : 'Anular Ticket'}
                     </Button>}
                 </div>

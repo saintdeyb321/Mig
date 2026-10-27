@@ -27,15 +27,16 @@ export const useExportSales = user => {
       const period = reportPeriod(timeFilter), detailed = ['hoy', 'semana'].includes(timeFilter);
       const reads = sessionReportReads(resources, user.businessId, activeBranchId, period);
       const branchesMap = Object.fromEntries((businessBranches ?? []).map(branch => [branch.id, branch.name]));
-      const [XLSX, pos, contractData, sessions] = await Promise.all([
+      const [XLSX, pos, contractData, sessions, voids] = await Promise.all([
         import('xlsx-js-style'),
         detailed ? reads.sales() : reads.stats(),
         reads.exportContracts(),
         detailed ? getSessionsInPeriod(user.businessId, period.startDate.toISOString(), period.endDate.toISOString(), activeBranchId) : [],
+        reads.voids(),
       ]);
       if (!scope.active) { toast.dismiss(toastId); return; }
       const { workbook } = buildSalesWorkbook(XLSX, { period, detailed, businessId: user.businessId, branchId: activeBranchId, branchesMap,
-        ...(detailed ? { sales: pos } : { stats: pos }), payments: contractData.payments, contracts: contractData.contracts, sessions });
+        ...(detailed ? { sales: pos } : { stats: pos }), payments: contractData.payments, voids, contracts: contractData.contracts, sessions });
       const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
       const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
       try {

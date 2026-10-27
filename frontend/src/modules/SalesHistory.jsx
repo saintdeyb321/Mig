@@ -51,7 +51,7 @@ function SalesHistory({
     }}>
 
             <p className="text-muted text-sm mb-5">
-              Estás a punto de anular una venta de <strong>S/ {Number(saleToCancel.total).toFixed(2)}</strong>. El dinero se restará de la caja y se devolverá el stock.
+              Estás a punto de registrar la devolución de <strong>S/ {Number(saleToCancel.total).toFixed(2)}</strong> por los medios originales y reintegrar el stock. El ticket original se conservará. Si el resultado es incierto, no repitas la devolución física.
             </p>
 
             <form onSubmit={async e => {
@@ -70,17 +70,17 @@ function SalesHistory({
                   MOTIVO DE LA ANULACIÓN (Obligatorio):
                 </>}>
 
-                <Textarea required minLength="5" value={voidReason} onChange={e => setVoidReason(e.target.value)} placeholder="Ej: El cliente se arrepintió, error de cobro, etc." autoFocus className="w-full p-3 rounded-xl border-2 border-warning min-h-20 resize-y font-sans" />
+                <Textarea required minLength="5" maxLength="1000" value={voidReason} onChange={e => setVoidReason(e.target.value)} placeholder="Ej: El cliente se arrepintió, error de cobro, etc." autoFocus className="w-full p-3 rounded-xl border-2 border-warning min-h-20 resize-y font-sans" />
               </FormField>
 
               <div className="mt-5 flex-wrap justify-end flex gap-2.5">
                 <Button type="button" className="min-w-0 flex-1 p-3 rounded-xl border-2 border-line bg-transparent text-ink font-bold cursor-pointer" onClick={() => {
             setSaleToCancel(null);
             setVoidReason('');
-          }} disabled={isProcessing} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado" variant="secondary">
+          }} disabled={isProcessing} variant="secondary">
                   Cancelar
                 </Button>
-                <Button type="submit" className="min-w-0 flex-1 p-3 border-0 rounded-xl font-bold cursor-pointer" disabled={isProcessing || !runtimeCapabilities.saleVoid} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado" variant="danger" aria-label="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado">
+                <Button type="submit" className="min-w-0 flex-1 p-3 border-0 rounded-xl font-bold cursor-pointer" disabled={isProcessing || !runtimeCapabilities.saleVoid} variant="danger">
                   {isProcessing ? 'Anulando...' : 'Sí, anular venta'}
                 </Button>
               </div>

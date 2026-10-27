@@ -2,17 +2,20 @@ import { useTenantData } from '../../branches/context/TenantContext';
 import { useRecentSales } from './useRecentSales';
 import { toDateSafe } from '../../../core/dates/dateValues';
 import { getFirebaseErrorCode } from '../../../core/errors/firebaseErrors';
-import { useSessionState } from '../../../core/session/sessionResourceHooks.js';
+import { useSessionState, useSessionResources } from '../../../core/session/sessionResourceHooks.js';
+import { invalidateReportScope } from '../../reports/application/reportResource.js';
 import { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { voidSaleTransaction, verifyPendingSaleTransaction } from '../infrastructure/saleTransactions';
 
 export const useSalesHistory = (user) => {
+  const resources = useSessionResources();
   const { activeBranchId } = useTenantData();
   const [pendingOnly, setPendingOnly] = useSessionState(`sales:pending:${activeBranchId}`, false);
   const { sales: globalSales, isLoading: isGlobalLoading, error, isStale, updatedAt, retry } = useRecentSales(user, { pendingOnly });
   const { businessBranches } = useTenantData();
   const [isProcessing, setIsProcessing] = useState(false);
+  const processing = resources.value(`sales:operation:${user.uid}:${activeBranchId}`, () => ({ busy: false }));
 
   const sales = useMemo(() => {
     const rawSales = globalSales || [];
@@ -39,7 +42,8 @@ export const useSalesHistory = (user) => {
     }).format(dateObj);
   };
   const anularVentaConfirmada = async (venta, voidReason) => {
-    if (user?.role !== 'dueño' && user?.role !== 'superadmin' && user?.role !== 'cajero') {
+    if (processing.busy) return false;
+    if (user?.role !== 'dueño') {
       toast.error('Acceso denegado: No tienes permisos para anular ventas.'); return false;
     }
 
@@ -47,13 +51,14 @@ export const useSalesHistory = (user) => {
       toast.error('Esta venta ya fue anulada anteriormente.'); return false;
     }
 
-    setIsProcessing(true);
+    processing.busy = true; setIsProcessing(true);
     const toastId = toast.loading('Anulando venta y ajustando contabilidad...');
 
     try {
-      await voidSaleTransaction({ id: venta.id, voidReason });
+      const result = await voidSaleTransaction({ id: venta.id, voidReason });
 
-      toast.success('Venta anulada correctamente', { id: toastId });
+      toast.success(result.status === 'ALREADY_APPLIED' ? 'Anulación ya confirmada; no repitas la devolución física.' : 'Compensación confirmada: devuelve por los medios de pago originales.', { id: toastId });
+      invalidateReportScope(resources, user.businessId, venta.branchId);
       return true;
 
     } catch (error) {
@@ -65,16 +70,16 @@ export const useSalesHistory = (user) => {
       }
       return false;
     } finally {
-      setIsProcessing(false);
+      processing.busy = false; setIsProcessing(false);
     }
   };
 
   const verificarPendiente = async sale => {
-    if (isProcessing) return;
-    setIsProcessing(true);
+    if (processing.busy) return;
+    processing.busy = true; setIsProcessing(true);
     try { await verifyPendingSaleTransaction(sale, user); toast.success('Receipt remoto verificado; no se volvió a cobrar.'); }
     catch (error) { toast.error(error.message || 'Sigue pendiente para revisión.'); }
-    finally { setIsProcessing(false); }
+    finally { processing.busy = false; setIsProcessing(false); }
   };
   return { isStale, updatedAt, retry, pendingOnly, setPendingOnly, sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, verificarPendiente, businessBranches };
 };

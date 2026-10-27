@@ -218,6 +218,7 @@ describe('Hosting policy and conservative cleanup', () => {
     for (const path of ['frontend/src/firebase.js', 'frontend/src/utils/adminExcelStyles.js', 'frontend/src/utils/backupAdmin/adminDataProcessor.js', 'backend/src/index.js', 'shared/README.md']) assert.ok(!existsSync(path), path);
     const markdown = execFileSync('git', ['ls-files', '*.md'], { encoding: 'utf8' }).trim().split(/\r?\n/).filter(existsSync);
     assert.ok(markdown.includes('docs/MASTER-PLAN.md'));
-    assert.ok(markdown.every(path => ['docs/MASTER-PLAN.md', 'docs/PLAN-REFAC-SPARK-MIGAPOS.md', 'docs/PLAN-REFAC-FRONTEND-UX-MIGAPOS.md', 'docs/PLAN-03-CORRECCION-FLUJOS-OPERATIVOS-MIGAPOS.md', 'docs/INDICES-FIRESTORE-MIGAPOS.md'].includes(path)));
+    assert.ok(markdown.every(path => ['docs/MASTER-PLAN.md', 'docs/PLAN-REFAC-SPARK-MIGAPOS.md', 'docs/PLAN-REFAC-FRONTEND-UX-MIGAPOS.md', 'docs/PLAN-03-CORRECCION-FLUJOS-OPERATIVOS-MIGAPOS.md', 'docs/INDICES-FIRESTORE-MIGAPOS.md',
+      'docs/PLAN-01-RESCATE-UX-IX-MIGAPOS.md', 'docs/PLAN-02-RECUPERACION-SPARK-FLUJOS-DATOS-MIGAPOS.md', 'docs/PLAN-04-CIERRE-MVP-MIGAPOS.md', 'docs/PLAN-05-CORRECCION-AUDITORIA-PREPRODUCCION-MIGAPOS.md'].includes(path)));
   });
 });
