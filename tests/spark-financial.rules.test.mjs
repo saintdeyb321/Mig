@@ -24,6 +24,9 @@ import { createSaleQueue } from '../frontend/src/features/sales/application/sale
 import { encrypt, decrypt } from '../frontend/src/crypto.js';
 import { createPosVoidRepository } from '../frontend/src/features/sales/infrastructure/posVoidRepository.js';
 import { createPosVoidReader, voidCashPayments } from '../frontend/src/features/sales/infrastructure/posVoidQueryRepository.js';
+import { createNotificationRepository, projectFinancialNotice } from '../frontend/src/features/notifications/infrastructure/notificationQueryRepository.js';
+import { createCashAvailabilityWatcher } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
+import { createSparkCashRepository } from '../frontend/src/features/cash-register/infrastructure/sparkCashRepository.js';
 
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080');
 assert.equal(process.env.GCLOUD_PROJECT, 'demo-migapos');
@@ -77,6 +80,93 @@ beforeEach(async () => {
 after(async () => env?.cleanup());
 
 describe('SPARK-4 integrated financial Rules', () => {
+  it('Plan06 cashier compensates eight lines once with a verified actor and owner evidence read acknowledgements', async () => {
+    const rows = Array.from({ length:8 }, (_,i)=>({ ...products[0], id:`cashier-void-${i}` }));
+    await env.withSecurityRulesDisabled(async ctx => {
+      for (const row of rows) await setDoc(doc(ctx.firestore(),'products',row.id),row);
+      await setDoc(doc(ctx.firestore(),'users','manager'), { businessId, role:'dueño', status:'activo' });
+    });
+    const sale = canonicalSale({ ...payload('plan06-cashier-void',1), items:rows.map(row=>({ ...row,qty:1 })),total:10,amountPaid:10,
+      payment:'mixto',splitPayments:{efectivo:4,yape:6} });
+    await createSparkSalesRepository(database(), { sdk,currentUser:()=>({uid}) }).submit(sale);
+    const original = (await inspect('sales/'+sale.saleId)).data();
+    const voids = createPosVoidRepository(database(), { sdk,currentUser:()=>({uid}) });
+    const command={saleId:sale.saleId,reason:'Devolución autorizada en sede'};
+    await Promise.all([voids.void(command),voids.void(command)]);
+    await voids.void(command);
+    const compensation=(await inspect('pos_voids/'+sale.saleId)).data();
+    assert.equal(compensation.userId,uid); assert.equal(compensation.amount,-10);
+    assert.deepEqual((await inspect('sales/'+sale.saleId)).data(),original);
+    for(const row of rows) { const p=(await inspect('products/'+row.id)).data(); assert.equal(p.stock[branchId],10); assert.equal(p.posStockVersion[branchId],2); }
+    const ownerDb=env.authenticatedContext('manager').firestore();
+    const notifications=createNotificationRepository(ownerDb,{sdk});
+    const notice=await new Promise((resolve,reject)=>{
+      let stop=()=>{}; const timer=setTimeout(()=>{stop();reject(Error('Owner evidence timed out'));},8000);
+      stop=notifications.subscribeUnreadNotifications(businessId,'manager',(rows,meta)=>{if(!meta.fromCache&&rows.some(row=>row.sourceId===sale.saleId)){ clearTimeout(timer);stop();resolve(rows.find(row=>row.sourceId===sale.saleId));}},reject,{owner:true});
+    });
+    assert.equal(notice.metadata.actorId,uid); assert.equal(notice.metadata.reason,command.reason); assert.equal(notice.metadata.amount,10);
+    await notifications.markNotificationRead(notice); await notifications.markNotificationRead(notice);
+    const ack=(await inspect('notifications/'+notice.id)).data(); assert.equal(ack.authority,'read-marker'); assert.equal(ack.userId,'manager'); assert.equal(ack.amount,undefined);
+    const bulk=Array.from({length:30},(_,i)=>({...compensation,id:`bulk-${i}`,saleId:`bulk-${i}`}));
+    await env.withSecurityRulesDisabled(async ctx=>{const batch=writeBatch(ctx.firestore());for(const row of bulk) {const {id,...data}=row;batch.set(doc(ctx.firestore(),'pos_voids',id),data);}await batch.commit();});
+    await notifications.markAllNotificationsRead(businessId,'manager',bulk.map(row=>projectFinancialNotice('pos-void',row,businessId,'manager')));
+    assert.ok((await inspect('notifications/read_pos-void_bulk-29_manager')).exists());
+    const marker={...ack,readAt:serverTimestamp()};
+    await assertFails(setDoc(doc(database(),'notifications',`read_pos-void_${sale.saleId}_${uid}`),{...marker,userId:uid}));
+    await assertFails(setDoc(doc(ownerDb,'notifications',notice.id),{...marker,amount:100}));
+    await assertFails(setDoc(doc(ownerDb,'notifications','read_pos-void_absent_manager'),{...marker,sourceId:'absent'}));
+    await env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'pos_voids','foreign-void'),{...compensation,businessId:'foreign',saleId:'foreign-void'}));
+    await assertFails(setDoc(doc(ownerDb,'notifications','read_pos-void_foreign-void_manager'),{...marker,sourceId:'foreign-void'}));
+  });
+  it('Plan06 owner closes a foreign cash with counting, releases availability, and bars a prepared late sale', async () => {
+    await env.withSecurityRulesDisabled(async ctx=>{
+      await setDoc(doc(ctx.firestore(),'users','manager'),{businessId,role:'dueño',status:'activo'});
+      await setDoc(doc(ctx.firestore(),'users','next-cashier'),{businessId,role:'cajero',branchId,status:'activo'});
+    });
+    const prepared=payload('plan06-prepared-before-close',2);
+    const foreignDb=env.authenticatedContext('next-cashier').firestore();
+    const unauthorized=createSparkCashClosingRepository(foreignDb,{sdk,currentUser:()=>({uid:'next-cashier'}),readSales:async()=>[],readPayments:async()=>[]});
+    await assert.rejects(unauthorized.close(sessionId,10,''));
+    const db=env.authenticatedContext('manager').firestore();
+    const closing=createSparkCashClosingRepository(db,{sdk,currentUser:()=>({uid:'manager'}),readSales:async()=>[],readPayments:async()=>[]});
+    let released=0;
+    const stop=createCashAvailabilityWatcher(foreignDb,{sdk})(businessId,branchId,sessionId,()=>released++,error=>assert.fail(error.message));
+    try {
+      const closed=await closing.close(sessionId,8,'Faltante declarado tras arqueo');
+      assert.equal(closed.closeEstimate.difference,-2);assert.equal(closed.reconciliationPending,true);assert.equal(closed.userId,uid);assert.equal(closed.closedBy,'manager');
+      for(let i=0;i<30&&!released;i++) await new Promise(resolve=>setTimeout(resolve,50));
+      assert.ok(released);
+      await assert.rejects(createSparkSalesRepository(database(),{sdk,currentUser:()=>({uid})}).submit(prepared),{code:'permission-denied'});
+      assert.equal((await inspect('sales/'+prepared.saleId)).exists(),false);assert.equal((await inspect('products/bread')).data().stock[branchId],10);
+      const opened=await createSparkCashRepository(foreignDb,{sdk,currentUser:()=>({uid:'next-cashier'})}).open({sessionId:'plan06-next-cashier-session',businessId,branchId,openingAmount:10});
+      assert.equal(opened.userId,'next-cashier');
+      const marker={businessId,userId:'manager',sourceType:'cash-close',sourceId:sessionId,authority:'read-marker',readAt:serverTimestamp()};
+      await setDoc(doc(db,'notifications',`read_cash-close_${sessionId}_manager`),marker);
+      await assertFails(setDoc(doc(db,'notifications',`read_cash-close_${opened.id}_manager`),{...marker,sourceId:opened.id}));
+    } finally {stop();}
+  });
+  it('Plan06 history reads missing and existing compensation IDs with tenant and cashier branch isolation', async () => {
+    const read = (db, business, branch, ids) => new Promise((resolve, reject) => {
+      let stop = () => {};
+      const timer = setTimeout(() => { stop(); reject(new Error('History listener timed out')); }, 8000);
+      stop = createPosVoidReader(db, { sdk }).subscribeIds(business, branch, ids, (rows, meta) => {
+        if (!meta.fromCache) { clearTimeout(timer); stop(); resolve(rows); }
+      }, error => { clearTimeout(timer); stop(); reject(error); });
+    });
+    await env.withSecurityRulesDisabled(async ctx => {
+      await setDoc(doc(ctx.firestore(), 'pos_voids', 'history-existing'), { businessId, branchId, saleId: 'history-existing' });
+      await setDoc(doc(ctx.firestore(), 'pos_voids', 'history-other'), { businessId, branchId: 'other', saleId: 'history-other' });
+      await setDoc(doc(ctx.firestore(), 'pos_voids', 'history-foreign'), { businessId: 'foreign', branchId, saleId: 'history-foreign' });
+    });
+    for (const role of ['cajero', 'dueño']) {
+      await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role }));
+      assert.deepEqual(await read(database(), businessId, branchId, ['history-missing']), []);
+      assert.equal((await read(database(), businessId, branchId, ['history-existing', 'history-missing']))[0].saleId, 'history-existing');
+    }
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'cajero' }));
+    await assert.rejects(read(database(), businessId, 'other', ['history-other']), { code: 'permission-denied' });
+    await assert.rejects(read(database(), 'foreign', branchId, ['history-foreign']), { code: 'permission-denied' });
+  });
   it('Plan06 remote Rules reject excessive cash, precision, totals and quantities through both protocols without partial stock', async () => {
     await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'products', 'bread'), { price: 22, stock: { [branchId]: 5000, other: 7 } }));
     const make = (id, price = 22, qty = 1) => canonicalSale({ localId: id, businessId, branchId, userId: uid, sessionId,
@@ -214,7 +304,7 @@ describe('SPARK-4 integrated financial Rules', () => {
       assert.equal((await inspect('pos_voids/' + sale.saleId)).exists(), false);
       assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
     }
-    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'cajero' }));
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'cajero', branchId: 'other' }));
     const forgedProfileSDK = { ...sdk, runTransaction: (db, work) => sdk.runTransaction(db, tx => work({
       get: async ref => { const saved = await tx.get(ref); return ref.path === `users/${uid}` ? { data: () => ({ ...saved.data(), role: 'dueño' }) } : saved; },
       set: (ref, data) => tx.set(ref, data), update: (ref, data) => tx.update(ref, data),

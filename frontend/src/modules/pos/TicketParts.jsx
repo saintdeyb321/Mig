@@ -2,7 +2,7 @@ import { Check, Clock3, Minus, Plus, Printer, ReceiptText, ShoppingBag, Trash2 }
 import { Badge, Button, Card, EmptyState, IconButton, cn } from '../../shared/ui';
 
 export function CashStatus({ readOnly, session, isExpired = false, expiresAt = null, remainingMinutes = null }) {
-  return <Badge title={expiresAt ? `Vence ${new Date(expiresAt).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}. Hora orientativa; el servidor valida cada cobro.` : undefined} variant={readOnly||!session?'danger':session.needsForceClose||isExpired?'warning':'success'}>{readOnly?'Solo lectura':!session?'Caja cerrada':session.needsForceClose?'Turno pendiente':isExpired?'Caja vencida':expiresAt?`Caja · ${remainingMinutes} min restantes aprox.`:'Caja abierta'}</Badge>;
+  return <Badge title={expiresAt ? `Vence ${new Date(expiresAt).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}. Hora orientativa; el servidor valida cada cobro.` : undefined} variant={readOnly||!session?'danger':session.needsForceClose||isExpired?'warning':'success'}>{readOnly?'Solo lectura':!session?'Caja cerrada':session.heldByOther?'Otro responsable':session.needsForceClose?'Turno pendiente':isExpired?'Caja vencida':expiresAt?`Caja · ${remainingMinutes} min restantes aprox.`:'Caja abierta'}</Badge>;
 }
 export function CartItem({ item, onQty, onRemove, disabled }) {
   return <div className="space-y-2 border-b border-line py-3 last:border-0"><div className="flex items-start justify-between gap-3"><p className="min-w-0 break-words text-sm font-semibold">{item.name}</p><strong className="shrink-0 text-sm tabular-nums">S/ {(item.price*item.qty).toFixed(2)}</strong></div>

@@ -12,7 +12,7 @@ export const useSalesHistory = (user) => {
   const resources = useSessionResources();
   const { activeBranchId } = useTenantData();
   const [pendingOnly, setPendingOnly] = useSessionState(`sales:pending:${activeBranchId}`, false);
-  const { sales: globalSales, isLoading: isGlobalLoading, error, isStale, updatedAt, retry } = useRecentSales(user, { pendingOnly });
+  const { sales: globalSales, localCount, rejectedCount, uncertainCount, isLoading: isGlobalLoading, error, isStale, updatedAt, retry } = useRecentSales(user, { pendingOnly });
   const { businessBranches } = useTenantData();
   const [isProcessing, setIsProcessing] = useState(false);
   const processing = resources.value(`sales:operation:${user.uid}:${activeBranchId}`, () => ({ busy: false }));
@@ -43,7 +43,7 @@ export const useSalesHistory = (user) => {
   };
   const anularVentaConfirmada = async (venta, voidReason) => {
     if (processing.busy) return false;
-    if (user?.role !== 'dueño') {
+    if (!['dueño', 'cajero'].includes(user?.role) || (user.role === 'cajero' && venta.branchId !== user.branchId)) {
       toast.error('Acceso denegado: No tienes permisos para anular ventas.'); return false;
     }
 
@@ -77,9 +77,9 @@ export const useSalesHistory = (user) => {
   const verificarPendiente = async sale => {
     if (processing.busy) return;
     processing.busy = true; setIsProcessing(true);
-    try { await verifyPendingSaleTransaction(sale, user); toast.success('Receipt remoto verificado; no se volvió a cobrar.'); }
+    try { await verifyPendingSaleTransaction(sale, user); toast.success('Comprobante confirmado; no se volvió a cobrar.'); }
     catch (error) { toast.error(error.message || 'Sigue pendiente para revisión.'); }
     finally { processing.busy = false; setIsProcessing(false); }
   };
-  return { isStale, updatedAt, retry, pendingOnly, setPendingOnly, sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, verificarPendiente, businessBranches };
+  return { isStale, updatedAt, retry, pendingOnly, setPendingOnly, localCount, rejectedCount, uncertainCount, sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, verificarPendiente, businessBranches };
 };

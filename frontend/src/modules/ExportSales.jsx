@@ -30,9 +30,10 @@ function ExportSales({
         </p>
       </div>
 
-      <p className="text-sm text-muted">Diario/semanal: detalle bajo demanda. Mes/año también consulta tickets individuales. Máximo 10000 movimientos y 500 contratos históricos; no se genera un informe parcial si se exceden.</p>
-      <FirestoreQueryError error={queryError} area="reports" user={user} />
-      <label className="flex min-h-11 items-center gap-3 rounded-xl border border-finance-line bg-panel p-3 text-sm"><Input type="checkbox" checked={consent} disabled={isExporting} onChange={event => setConsent(event.target.checked)} /> Acepto el consumo de lecturas Spark de este período.</label>
+      <p className="text-sm text-muted">El archivo incluye ventas, devoluciones y pagos del período. Los reportes diarios y semanales detallan cada movimiento; mes y año resumen por día.</p>
+      <details className="text-xs text-muted"><summary className="min-h-8 cursor-pointer">Alcance y límites de la consulta</summary><p>Se consultan los movimientos del período elegido. Máximo 10 000 movimientos y 500 contratos históricos. Si falta información o se excede el límite, se solicita reducir el período y no se descarga un Excel parcial.</p></details>
+      <FirestoreQueryError error={queryError} area="reports" user={user} commercial />
+      <label className="flex min-h-11 items-center gap-3 rounded-xl border border-finance-line bg-panel p-3 text-sm"><Input type="checkbox" checked={consent} disabled={isExporting} onChange={event => setConsent(event.target.checked)} /> Autorizo consultar los movimientos del período seleccionado para generar el Excel.</label>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <FormField label="Período de exportación" className="min-w-0 flex-1">
           {/* 🚀 Selector de Calendario Estricto */}

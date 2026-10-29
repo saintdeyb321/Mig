@@ -3,10 +3,60 @@ import { readViewPreference, writeViewPreference } from '../frontend/src/core/se
 import { it } from 'node:test';
 import { profileAccess, licenseAccess, accessErrorState } from '../frontend/src/core/session/accessState.js';
 import { createProfileSession } from '../frontend/src/core/session/profileSession.js';
+import { salesHistoryPresentation } from '../frontend/src/features/sales/application/recentSales.js';
+import { createNotificationRepository, projectFinancialNotice } from '../frontend/src/features/notifications/infrastructure/notificationQueryRepository.js';
 
 const server = { fromCache: false, hasPendingWrites: false };
 const cached = { fromCache: true, hasPendingWrites: false };
 const owner = { role: 'dueño', businessId: 'tenant', status: 'activo' };
+
+it('Plan06 keeps confirmed history separate from rejected and uncertain local attempts', () => {
+  const pending=Array.from({length:50},(_,i)=>({id:`local-${i}`,isOffline:true,queueStatus:i%2?'failed':'pending',createdAt:'2026-10-29T12:00:00Z'}));
+  const remote=[{id:'confirmed',createdAt:'2026-10-28T12:00:00Z'}];
+  const normal=salesHistoryPresentation(pending,remote);
+  assert.deepEqual(normal.rows,remote);assert.equal(normal.rejectedCount,25);assert.equal(normal.uncertainCount,25);
+  assert.equal(salesHistoryPresentation(pending,remote,true).rows.length,50);
+  assert.equal(salesHistoryPresentation([{...pending[0],id:'confirmed'}],remote).localCount,0);
+});
+
+it('Plan06 projects confirmed refunds and estimated close differences without claiming reconciliation', () => {
+  const refund={id:'ticket',saleId:'ticket',businessId:'tenant',branchId:'branch',userId:'cashier',authority:'pos-compensation',protocol:1,amount:-6,
+    reason:'Motivo registrado',occurredAt:'2026-10-29T12:00:00Z'};
+  const notice=projectFinancialNotice('pos-void',refund,'tenant','owner');
+  assert.equal(notice.metadata.actorId,'cashier');assert.equal(notice.metadata.amount,6);assert.equal(notice.metadata.ticketId,'ticket');
+  assert.equal(projectFinancialNotice('pos-void',refund,'foreign','owner'),null);
+  assert.equal(projectFinancialNotice('pos-void',{...refund,amount:NaN},'tenant','owner'),null);
+  const close={id:'shift',businessId:'tenant',branchId:'branch',userId:'cashier',closedBy:'manager',runtime:'spark',status:'closed_with_discrepancy',
+    closedAt:'2026-10-29T12:00:00Z',reconciliationPending:true};
+  for(const [difference,title] of [[-2,'Faltante'],[2,'Sobrante'],[0,'Cierre']]) {
+    const item=projectFinancialNotice('cash-close',{...close,closeEstimate:{authority:'client-estimate',difference}},'tenant','owner');
+    assert.ok(item.title.startsWith(title));assert.equal(item.metadata.responsibleId,'cashier');assert.equal(item.metadata.actorId,'manager');assert.match(item.message,/conciliación pendiente/);
+  }
+  assert.equal(projectFinancialNotice('cash-close',{...close,status:'open'},'tenant','owner'),null);
+});
+
+it('Plan06 financial inbox keeps read state with source-only acknowledgements and ignores callbacks after disposal', async () => {
+  const listeners=[],writes=[],states=[];
+  const sdk={collection:(_,name)=>({name}),query:(ref,...filters)=>({...ref,filters}),where:(...args)=>args,orderBy:(...args)=>args,limit:n=>n,
+    doc:(_,name,id)=>({path:`${name}/${id}`}),onSnapshot:(ref,options,next,error)=>{const listener={ref,next,error,stopped:false};listeners.push(listener);return()=>{listener.stopped=true;};},
+    serverTimestamp:()=> 'SERVER',setDoc:async(ref,data)=>writes.push({ref,data}),writeBatch:()=>({set:(ref,data)=>writes.push({ref,data}),update:(ref,data)=>writes.push({ref,data}),commit:async()=>{}})};
+  const repository=createNotificationRepository({}, {sdk});
+  const stop=repository.subscribeUnreadNotifications('tenant','owner',rows=>states.push(rows),error=>assert.fail(error.message),{owner:true});
+  const snapshot=docs=>({docs:docs.map(data=>({id:data.id,metadata:server,data:()=>data})),metadata:server});
+  listeners.find(l=>l.ref.name==='notifications').next(snapshot([]));
+  listeners.find(l=>l.ref.name==='pos_voids').next(snapshot([{id:'ticket',saleId:'ticket',businessId:'tenant',branchId:'branch',userId:'cashier',authority:'pos-compensation',protocol:1,amount:-6,reason:'Devolución verificada',occurredAt:'2026-10-29T12:00:00Z'}]));
+  listeners.find(l=>l.ref.name==='cash_sessions').next(snapshot([]));
+  const marker=listeners.find(l=>l.ref.path?.includes('read_pos-void'));
+  marker.next({exists:()=>false,metadata:server});
+  const notice=states.at(-1)[0];assert.equal(notice.metadata.amount,6);
+  await repository.markNotificationRead(notice);
+  assert.deepEqual(Object.keys(writes[0].data).sort(),['authority','businessId','readAt','sourceId','sourceType','userId']);
+  await repository.markAllNotificationsRead('tenant','owner',[notice]);assert.equal(writes.length,2);
+  await assert.rejects(repository.markAllNotificationsRead('foreign','owner',[notice]));
+  marker.next({exists:()=>true,data:()=>({readAt:'SERVER'}),metadata:server});assert.equal(states.at(-1).length,0);
+  stop();const count=states.length;listeners.forEach(l=>l.next(l.ref.path?{exists:()=>false,metadata:server}:snapshot([])));
+  assert.equal(states.length,count);assert.ok(listeners.every(l=>l.stopped));
+});
 
 it('Plan05 persists only valid view filters across reloads within the same account and branch', () => {
   const values = new Map(), storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };

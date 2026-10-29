@@ -2,6 +2,7 @@ import { checkedRead } from '../../../core/firebase/readDiagnostics.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { mapDocuments } from '../../../core/firebase/documents.js';
 import { toDateSafe } from '../../../core/dates/dateValues.js';
+import { cashLockId } from './sparkCashRepository.js';
 
 export const CASH_PAGE_SIZE = 200;
 export function createCashPeriodReader(database, { sdk = firestoreSDK, project = value => value } = {}) {
@@ -38,5 +39,19 @@ export function createCashStateReader(database, { sdk = firestoreSDK } = {}) {
     const open = await getDocs(query(collection(database, 'cash_sessions'), where('businessId', '==', businessId),
       where('branchId', '==', branchId), ...(userId ? [where('userId', '==', userId)] : []), where('status', '==', 'open'), limit(1)));
     return mapDocuments(open)[0] ?? null;
+  };
+}
+
+export function createCashAvailabilityWatcher(database, { sdk = firestoreSDK } = {}) {
+  return (businessId, branchId, sessionId, onReleased, onError) => {
+    let closed = false, stop = () => {};
+    void cashLockId(businessId, branchId).then(id => {
+      if (closed) return;
+      stop = sdk.onSnapshot(sdk.doc(database, 'active_cash_sessions', id), { includeMetadataChanges: true }, snapshot => {
+        if (closed || snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return;
+        if (!snapshot.exists() || snapshot.data().sessionId !== sessionId) onReleased();
+      }, error => { if (!closed) onError(error); });
+    }).catch(error => { if (!closed) onError(error); });
+    return () => { closed = true; stop(); };
   };
 }

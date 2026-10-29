@@ -7,7 +7,7 @@ import { callBackend } from '../../../core/firebase/callable.js';
 import offlineDB from '../../../offlineDB.js';
 import { encrypt, decrypt } from '../../../crypto.js';
 import { persistCashSession } from '../application/sessionCache.js';
-import { createCashStateReader, createCashPeriodReader } from './cashQueryRepository.js';
+import { createCashStateReader, createCashPeriodReader, createCashAvailabilityWatcher } from './cashQueryRepository.js';
 import { createSparkCashRepository } from './sparkCashRepository.js';
 import { createSparkCashClosingRepository } from './sparkCashClosingRepository.js';
 import { getSessionSales } from '../../sales/infrastructure/salesRepository.js';
@@ -40,6 +40,7 @@ export async function reserveOfflineSession(user, branchId) {
   return cacheSession(await callBackend('reserveOfflineCashSession', { sessionId: crypto.randomUUID(), branchId }), { preservePending: true });
 }
 const readOpenSession = createCashStateReader(db);
+export const watchCashAvailability = createCashAvailabilityWatcher(db);
 export const findOpenSession = async (...args) => {
   const session = await readOpenSession(...args);
   return session ? sessionDTO(session) : null;

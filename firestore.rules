@@ -669,7 +669,8 @@ service cloud.firestore {
       let v = request.resource.data;
       let source = get(/databases/$(database)/documents/sales/$(id)).data;
       let cash = source.payment == 'efectivo' ? source.total : source.payment == 'mixto' ? source.splitPayments.efectivo : 0;
-      return saleContext(v) && currentRole() == 'dueño' && id == v.saleId
+      // saleContext binds the current owner/cashier, assigned branch, own live cash and server clock.
+      return saleContext(v) && id == v.saleId
         && source.atomicProtocol == 2 && source.status == 'confirmed' && source.businessId == v.businessId && source.branchId == v.branchId
         && source.items.size() >= 1 && source.items.size() <= 8
         && v.keys().hasOnly(['businessId', 'branchId', 'userId', 'sessionId', 'saleId', 'reason', 'amount', 'cashAmount', 'digitalAmount', 'items', 'stockVersions', 'protocol', 'authority', 'occurredAt'])
@@ -992,13 +993,27 @@ service cloud.firestore {
         && (n.sourceType == 'sale' ? source.confirmedAt == request.time && !exists(/databases/$(database)/documents/sales/$(n.sourceId))
           : source.createdAt == request.time && !exists(/databases/$(database)/documents/payments/$(n.sourceId)));
     }
+    function financialNoticeRead(id) {
+      let n = request.resource.data;
+      let source = n.sourceType == 'pos-void' ? get(/databases/$(database)/documents/pos_voids/$(n.sourceId)).data
+        : get(/databases/$(database)/documents/cash_sessions/$(n.sourceId)).data;
+      return owner() && tenantEnabled(currentBusiness()) && n.sourceType in ['pos-void', 'cash-close']
+        && id == 'read_' + n.sourceType + '_' + n.sourceId + '_' + request.auth.uid
+        && n == {'businessId': currentBusiness(), 'userId': request.auth.uid, 'sourceType': n.sourceType,
+          'sourceId': n.sourceId, 'authority': 'read-marker', 'readAt': request.time}
+        && source.businessId == currentBusiness()
+        && (n.sourceType == 'pos-void' ? source.authority == 'pos-compensation' && source.protocol == 1 && source.saleId == n.sourceId && source.occurredAt is timestamp
+          : source.runtime == 'spark' && source.status in ['closed','closed_with_discrepancy'] && source.closedAt is timestamp);
+    }
     match /notifications/{notificationId} {
+      // An absent per-owner acknowledgement discloses no financial document.
+      allow get: if owner() && tenantEnabled(currentBusiness()) && resource == null;
       allow read: if (activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid && tenantEnabled(currentBusiness())) || platformDataReader();
       allow update: if activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid
         && tenantEnabled(currentBusiness())
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
         && request.resource.data.readAt is timestamp && request.resource.data.readAt == request.time;
-      allow create: if operationNotice(notificationId);
+      allow create: if request.resource.data.get('authority', '') == 'read-marker' ? financialNoticeRead(notificationId) : operationNotice(notificationId);
       allow delete: if false;
     }
 

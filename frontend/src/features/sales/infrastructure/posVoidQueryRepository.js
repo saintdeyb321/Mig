@@ -5,7 +5,7 @@ import { toDateSafe } from '../../../core/dates/dateValues.js';
 import { withQueryContext } from '../../../core/firebase/queryErrors.js';
 
 export function createPosVoidReader(database, { sdk = firestore } = {}) {
-  const { collection, query, where, orderBy, documentId, limit, startAfter, Timestamp, getDocsFromServer, onSnapshot } = sdk;
+  const { collection, doc, query, where, orderBy, documentId, limit, startAfter, Timestamp, getDocsFromServer, onSnapshot } = sdk;
   const scoped = (businessId, branchId) => {
     if (!businessId || businessId === 'platform-admin' || !branchId) throw new Error('Negocio y sede requeridos para leer compensaciones.');
     return [where('businessId', '==', businessId), ...(branchId === 'global' ? [] : [where('branchId', '==', branchId)])];
@@ -34,16 +34,25 @@ export function createPosVoidReader(database, { sdk = firestore } = {}) {
     subscribeIds(businessId, branchId, ids, onData, onError) {
       ids = [...new Set(ids)];
       if (ids.length > 50) throw new Error('Hasta 50 tickets por consulta de compensaciones.');
+      if (ids.some(id => typeof id !== 'string' || !id || id.includes('/'))) throw new Error('ID de ticket inválido.');
       if (!ids.length) { onData([], { fromCache: false }); return () => {}; }
-      const values = new Map(), metadata = new Map(), base = scoped(businessId, branchId);
-      const total = Math.ceil(ids.length / 10);
-      const stops = Array.from({ length: total }, (_, index) => onSnapshot(query(collection(database, 'pos_voids'), ...base,
-        where(documentId(), 'in', ids.slice(index * 10, index * 10 + 10)), limit(10)), { includeMetadataChanges: true }, snapshot => {
-        values.set(index, mapDocuments({ docs: snapshot.docs.filter(row => !row.metadata?.hasPendingWrites) })); metadata.set(index, snapshot.metadata);
+      scoped(businessId, branchId);
+      const values = new Map(), metadata = new Map(), total = ids.length;
+      let closed = false, failed = false;
+      const fail = error => { if (!closed && !failed) { failed = true; onError(withQueryContext(error, 'pos-voids-ids')); } };
+      // An ID-in list evaluates missing documents as null resources. Individual gets use the
+      // existing absent-receipt permission while every existing document remains tenant/branch scoped.
+      const stops = ids.map(id => onSnapshot(doc(database, 'pos_voids', id), { includeMetadataChanges: true }, snapshot => {
+        if (closed || failed) return;
+        const row = snapshot.exists() ? snapshot.data() : null;
+        if (row && (row.businessId !== businessId || (branchId !== 'global' && row.branchId !== branchId))) {
+          fail(Object.assign(new Error('La compensación no pertenece al negocio o sede consultados.'), { code: 'permission-denied' })); return;
+        }
+        values.set(id, row && snapshot.metadata.hasPendingWrites === false ? [{ ...row, id: snapshot.id }] : []); metadata.set(id, snapshot.metadata);
         onData([...values.values()].flat(), { fromCache: metadata.size < total || [...metadata.values()].some(value => value.fromCache || value.hasPendingWrites),
-          observedDocumentCount: snapshot.size });
-      }, error => onError(withQueryContext(error, 'pos-voids-ids'))));
-      return () => stops.forEach(stop => stop());
+          observedDocumentCount: row ? 1 : 0 });
+      }, fail));
+      return () => { closed = true; stops.forEach(stop => stop()); };
     },
   };
 }

@@ -1,12 +1,16 @@
 import { queryErrorDiagnostic } from '../core/firebase/queryErrors.js';
 import { Alert, Button } from '../shared/ui';
 
-export default function FirestoreQueryError({ error, area, user, onRetry }) {
+export default function FirestoreQueryError({ error, area, user, onRetry, commercial = false }) {
   if (!error) return null;
   const diagnostic = queryErrorDiagnostic(error, area);
   const admin = ['dueño', 'superadmin'].includes(user?.role) || import.meta.env.DEV;
-  return <Alert variant="danger" title={diagnostic.missingIndex ? 'Índice de Firestore pendiente' : 'Lectura no confirmada'}>
-    <p>{diagnostic.message}</p>
+  const message = commercial ? diagnostic.missingIndex ? 'La consulta necesita preparación por el administrador. Conservamos los registros; reintenta después.'
+    : ['permission-denied','unauthenticated'].includes(diagnostic.code) ? 'Tu cuenta no pudo acceder a esta información. Solicita revisión al dueño; los registros se conservan.'
+    : ['unavailable','deadline-exceeded'].includes(diagnostic.code) ? 'No pudimos actualizar la información. Revisa tu conexión y vuelve a intentar.'
+    : 'No se pudo completar la consulta. Reintenta o solicita revisión al administrador.' : diagnostic.message;
+  return <Alert variant="danger" title={commercial ? 'No se pudo actualizar' : diagnostic.missingIndex ? 'Índice de Firestore pendiente' : 'Lectura no confirmada'}>
+    <p>{message}</p>
     {admin && <details className="mt-3 rounded-xl border border-danger/20 bg-panel/70 p-3"><summary className="min-h-8 cursor-pointer font-semibold">Diagnóstico · {diagnostic.area}</summary>
       <p className="mb-2 text-xs">Código: {diagnostic.code || 'sin código SDK'}. Módulo/consulta: {diagnostic.area}.</p>
       <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs">{diagnostic.technical}</pre>

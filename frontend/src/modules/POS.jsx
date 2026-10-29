@@ -106,7 +106,8 @@ function POS({ user }) {
   const action = readError ? <Button variant="secondary" onClick={checkSession}>Reintentar lectura de caja</Button> : !currentSession&&!branchStatus.isReadOnly
     ? <Button className="w-full" onClick={()=>setShowOpenModal(true)}><UnlockKeyhole />Abrir caja para vender</Button>
     : currentSession?.needsForceClose
-      ? <Button variant="danger" className="w-full" onClick={()=>setShowCloseModal(true)} disabled={!currentSession.canForceClose}>{currentSession.canForceClose?'Cerrar turno anterior':'Requiere administrador'}</Button>
+      ? currentSession.canForceClose ? <Button variant="danger" className="w-full" onClick={()=>setShowCloseModal(true)}>Revisar y cerrar turno anterior</Button>
+        : <Button variant="secondary" className="w-full" onClick={checkSession}>Comprobar disponibilidad</Button>
       : <Button className="w-full" size="lg" onClick={requestCheckout} loading={isProcessing} disabled={isExpired||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>{branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':'Cobrar'}</Button>;
   const ticket = lastSale ? <SaleStatus sale={lastSale} onPrint={printReceipt} onNew={handleNuevaVenta} />
     : <Ticket drawer={isCartOpen} cart={cart} total={total} onQty={updateQty} onRemove={removeFromCart} isProcessing={isProcessing} action={action}>
@@ -120,10 +121,10 @@ function POS({ user }) {
     <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
     <PageHeader title="Punto de venta" icon={ShoppingBag} eyebrow="Venta del día" description="Elige productos y prepara tu ticket." actions={<>
       <CashStatus readOnly={branchStatus.isReadOnly} session={currentSession} isExpired={isExpired} expiresAt={expiresAt} remainingMinutes={remainingMinutes} />
-      {currentSession&&!branchStatus.isReadOnly&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={()=>setShowCloseModal(true)}><LockKeyhole />{currentSession.needsForceClose?'Forzar cierre de caja':'Cerrar caja'}</Button>}
+      {currentSession&&!branchStatus.isReadOnly&&(!currentSession.needsForceClose||currentSession.canForceClose)&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={()=>setShowCloseModal(true)}><LockKeyhole />{currentSession.needsForceClose?'Revisar cierre anterior':'Cerrar caja'}</Button>}
     </>} />
     {branchStatus.isReadOnly&&<Alert variant="warning" title="Modo lectura">{branchStatus.reason==='global'?'Estás en la vista global. Selecciona una sucursal específica en el menú.':`La sucursal ${branchStatus.name} está inactiva.`}</Alert>}
-    {currentSession?.needsForceClose&&!branchStatus.isReadOnly&&<Alert variant="danger" title="Acción requerida">Hay un turno o reserva offline de otro usuario. {currentSession.canForceClose?'Verifica el conteo para cerrarlo como administrador.':'Solicita el cierre a un administrador.'}</Alert>}
+    {currentSession?.needsForceClose&&!branchStatus.isReadOnly&&<Alert variant="warning" title="Caja a cargo de otro responsable"><p>{businessBranches?.find(branch=>branch.id===currentSession.branchId)?.name??'Esta sede'} · {currentSession.cashierName||'Responsable'} · UID: {currentSession.userId}</p><p>{currentSession.canForceClose?'Revisa los movimientos y realiza el arqueo antes de cerrar este turno.':'Solicita al dueño que realice el arqueo y cierre el turno anterior. Te avisaremos al quedar disponible; también puedes comprobarlo aquí.'}</p></Alert>}
     <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
       <section aria-label="Catálogo de productos" className="min-w-0 space-y-4 pb-20 lg:pb-0">
         <ProductSearch value={search} onChange={setSearch} />

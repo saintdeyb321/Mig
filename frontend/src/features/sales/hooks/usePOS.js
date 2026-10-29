@@ -121,7 +121,7 @@ export const usePOS = (user, currentSession) => {
       return;
     }
 
-    if (!currentSession || !currentSession.id) {
+    if (!currentSession || !currentSession.id || currentSession.userId !== user.uid || currentSession.needsForceClose) {
       toast.error('⛔ Venta bloqueada. Debes abrir tu caja.', { id: VAL_TOAST_ID });
       setShowQrModal(false);
       return;

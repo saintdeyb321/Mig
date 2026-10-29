@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useTenantData } from '../../branches/context/TenantContext';
 import { subscribeRecentSales } from '../infrastructure/salesRepository';
 import { subscribePendingSales } from '../infrastructure/pendingSalesCache';
-import { mergeRecentSales } from '../application/recentSales';
+import { mergeRecentSales, salesHistoryPresentation } from '../application/recentSales';
 import { useSharedSubscription } from '../../../core/session/sessionResourceHooks.js';
 import { createSubscriptionScope } from '../../../shared/utils/subscriptionScope';
 import { db } from '../../../core/firebase/client.js';
@@ -25,7 +25,7 @@ export function useRecentSales(user, { pendingOnly = false } = {}) {
       if (failure) { onError(failure); return; }
       const byId = new Map(voids.map(row => [row.saleId, row]));
       const decorated = remote.map(sale => byId.has(sale.id) ? { ...sale, voided: true, voidReason: byId.get(sale.id).reason, posVoid: byId.get(sale.id) } : sale);
-      onData(mergeRecentSales(pending, pendingOnly ? [] : decorated), { ...metadata, fromCache: metadata.fromCache || voidMetadata.fromCache, observedDocumentCount });
+      onData(salesHistoryPresentation(pending, decorated, pendingOnly), { ...metadata, fromCache: metadata.fromCache || voidMetadata.fromCache, observedDocumentCount });
     });
     const stopRemote = pendingOnly ? () => {} : subscribeRecentSales(businessId, branchId, (sales, source) => {
       remote = sales; metadata = source;
@@ -36,7 +36,7 @@ export function useRecentSales(user, { pendingOnly = false } = {}) {
         stopVoids = compensations.subscribeIds(businessId, branchId, ids, scope.guard((rows, meta) => {
           if (revision !== voidRevision) return;
           voids = rows; voidMetadata = meta; publish(meta.observedDocumentCount);
-        }), fail);
+        }), error => { if (revision === voidRevision) fail(error); });
       }
       publish(source.observedDocumentCount);
     }, fail);
@@ -44,5 +44,6 @@ export function useRecentSales(user, { pendingOnly = false } = {}) {
     return () => { scope.close(); voidRevision++; stopVoids(); stopRemote(); stopPending(); };
   }, [businessId, branchId, user, pendingOnly]);
   const result = useSharedSubscription(`sales:${identityKey}:${branchId}:${pendingOnly}`, subscribe, undefined, { preserveOnError: true });
-  return { sales: result.data, isLoading: result.isLoading, error: result.error, retry: result.retry, isStale: result.isStale, updatedAt: result.updatedAt };
+  return { sales: result.data?.rows ?? [], localCount: result.data?.localCount ?? 0, rejectedCount: result.data?.rejectedCount ?? 0,
+    uncertainCount: result.data?.uncertainCount ?? 0, isLoading: result.isLoading, error: result.error, retry: result.retry, isStale: result.isStale, updatedAt: result.updatedAt };
 }

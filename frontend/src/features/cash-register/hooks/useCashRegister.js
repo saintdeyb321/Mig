@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSessionResources, useSessionState } from '../../../core/session/sessionResourceHooks.js';
 import { toMillisSafe } from '../../../core/dates/dateValues.js';
 import toast from 'react-hot-toast';
-import { findOpenSession, createSession, updateSession, cacheSession, reserveOfflineSession, previewSessionClose } from '../infrastructure/cashRegisterRepository';
+import { findOpenSession, createSession, updateSession, cacheSession, reserveOfflineSession, previewSessionClose, watchCashAvailability } from '../infrastructure/cashRegisterRepository';
 import { calculateCashTotals } from '../../../../../functions/src/cash-register/domain/cashTotals.js';
 import { money } from '../../sales/domain/saleModel.js';
 import offlineDB from '../../../offlineDB';
@@ -55,7 +55,7 @@ export const useCashRegister = (user, currentBranchId) => {
         if (session?.userId === user.uid) {
           const cached = session.runtime === 'spark' ? session : await cacheSession(session, { preservePending: true });
           if (active()) setCurrentSession(cached.status === 'open' ? cached : null);
-        } else if (session) setCurrentSession({ ...session, needsForceClose: true, canForceClose: canForce });
+        } else if (session) setCurrentSession({ ...session, heldByOther: true, needsForceClose: true, canForceClose: canForce });
         else setCurrentSession(null);
       }
     } catch (error) {
@@ -69,6 +69,14 @@ export const useCashRegister = (user, currentBranchId) => {
     window.addEventListener('online', online);
     return () => { revisionRef.current++; window.removeEventListener('online', online); };
   }, [checkSession, resources, readKey]);
+  const observedSessionId = currentSession?.id;
+  useEffect(() => {
+    if (!observedSessionId || !user?.businessId || !currentBranchId || currentBranchId === 'global') return;
+    return watchCashAvailability(user.businessId, currentBranchId, observedSessionId, () => {
+      resources.invalidate(readKey); void checkSession();
+    }, error => { if (resources.active && auth.currentUser?.uid === user.uid) setReadError(error); });
+  }, [observedSessionId, user?.businessId, user?.uid, currentBranchId, resources, readKey, checkSession, setReadError]);
+  const refreshSession = useCallback(() => { resources.invalidate(readKey); return checkSession(); }, [resources, readKey, checkSession]);
   const authorizeOffline = async () => {
     if (!runtimeCapabilities.offlineSync) { toast.error('La autorización offline sigue pendiente de SPARK-4.'); return; }
     if (!navigator.onLine || processing.current || !user?.uid || currentBranchId === 'global') return;
@@ -157,5 +165,5 @@ export const useCashRegister = (user, currentBranchId) => {
     } catch (error) { toast.error(error.message || 'No se pudo cerrar la caja.', { id: toastId }); return false; }
     finally { processing.current = false; }
   };
-  return { currentSession, isExpired, expiresAt, remainingMinutes: expiresAt === null ? null : Math.max(0, Math.ceil((expiresAt - clock) / 60000)), readError, isLoadingSession, checkSession, authorizeOffline, openRegister, calculateClose, confirmClose };
+  return { currentSession, isExpired, expiresAt, remainingMinutes: expiresAt === null ? null : Math.max(0, Math.ceil((expiresAt - clock) / 60000)), readError, isLoadingSession, checkSession: refreshSession, authorizeOffline, openRegister, calculateClose, confirmClose };
 };

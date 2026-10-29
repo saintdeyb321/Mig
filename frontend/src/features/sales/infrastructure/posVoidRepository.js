@@ -28,11 +28,12 @@ export function createPosVoidRepository(database, { sdk = firestore, currentUser
         return;
       }
       const actor = profile.data(), original = source.data();
-      if (actor?.role !== 'dueño' || actor.businessId !== original?.businessId) throw new SaleError('permission-denied', 'Solo el dueño del negocio puede anular el ticket.');
+      if (!['dueño', 'cajero'].includes(actor?.role) || (actor.status ?? 'activo') !== 'activo' || actor.businessId !== original?.businessId
+        || (actor.role === 'cajero' && actor.branchId !== original?.branchId)) throw new SaleError('permission-denied', 'No puedes anular tickets de este negocio o sucursal.');
       if (original?.atomicProtocol !== 2 || original.status !== 'confirmed') throw new SaleError('legacy-review-required', 'Ticket histórico: lectura conservada; requiere revisión administrativa.');
       const sale = canonicalSale(original);
       const lock = (await tx.get(doc(database, 'active_cash_sessions', await cashLockId(sale.businessId, sale.branchId)))).data();
-      if (lock?.userId !== uid || lock.status !== 'open' || lock.runtime !== 'spark') throw new SaleError('invalid-session', 'Abre tu caja Spark en la sede de origen para devolver el dinero.');
+      if (lock?.userId !== uid || lock.status !== 'open' || lock.runtime !== 'spark') throw new SaleError('invalid-session', 'Abre tu propia caja en la sede de origen para registrar la devolución.');
       const products = await Promise.all(sale.items.map(item => tx.get(doc(database, 'products', item.id))));
       const versions = {}, changes = products.map((snapshot, index) => {
         const product = snapshot.data(), item = sale.items[index], version = product?.posStockVersion?.[sale.branchId] ?? 0;

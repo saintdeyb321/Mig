@@ -16,6 +16,16 @@ export function SaleHistoryCard({
   const isYape = tipoPago === 'yape' || tipoPago === 'plin';
   const isMixto = tipoPago === 'mixto';
 
+  if (s.isOffline) {
+    const rejected = s.queueStatus === 'failed';
+    return <Card className="space-y-3"><div className="flex flex-wrap justify-between gap-2"><Badge variant={rejected ? 'danger' : 'warning'}>{rejected ? 'Intento rechazado' : 'Sin confirmar'}</Badge><span className="text-xs text-muted">{formatDate(s.createdAt)}</span></div>
+      <p className="text-sm">{rejected ? 'No se confirmó esta venta. El intento se conserva para revisión.' : 'Consulta el comprobante antes de volver a cobrar. No repitas la devolución ni el cobro.'}</p>
+      <p className="text-xs text-muted">{branchName}</p>
+      {!rejected&&<Button disabled={isProcessing} onClick={()=>verificarPendiente(s)} variant="secondary">Consultar confirmación</Button>}
+      <details className="text-xs text-muted"><summary className="min-h-8 cursor-pointer">Detalle del intento</summary><p className="break-all">ID: {s.id}</p><p>Importe intentado: S/ {Number(s.total).toFixed(2)}</p>{s.lastError&&<p className="break-words">{s.lastError}</p>}</details>
+    </Card>;
+  }
+
   // Definimos el color del borde de la cabecera
   let borderClass = '';
   if (isAnulada) borderClass = "border-t-line";else if (isEfectivo) borderClass = "border-t-success";else if (isYape) borderClass = "border-t-accent";else if (isMixto) borderClass = "border-t-primary";
@@ -90,8 +100,7 @@ export function SaleHistoryCard({
                     </span>
                   </div>
 
-                  {s.isOffline && <Button disabled={isProcessing} onClick={() => verificarPendiente(s)} type="button" variant="secondary">Consultar receipt remoto (sin cobrar)</Button>}
-                  {!isAnulada && !s.isOffline && user?.role === 'dueño' && <Button onClick={() => setSaleToCancel(s)} disabled={isProcessing || !runtimeCapabilities.saleVoid || s.atomicProtocol !== 2} title={s.atomicProtocol === 2 ? 'Requiere tu caja activa en la sede de origen; devolución única por los medios originales.' : 'Ticket histórico: requiere revisión; se conserva sin modificar.'} type="button" variant="danger">
+                  {!isAnulada && ['dueño', 'cajero'].includes(user?.role) && (user.role !== 'cajero'||s.branchId===user.branchId) && <Button onClick={() => setSaleToCancel(s)} disabled={isProcessing || !runtimeCapabilities.saleVoid || s.atomicProtocol !== 2} title={s.atomicProtocol === 2 ? 'Requiere tu caja activa en la sede de origen; devolución única por los medios originales.' : 'Ticket histórico: requiere revisión; se conserva sin modificar.'} type="button" variant="danger">
                       {isProcessing ? '...' : 'Anular Ticket'}
                     </Button>}
                 </div>
