@@ -1,6 +1,6 @@
 import { writeOperationNotice } from '../../notifications/infrastructure/sparkOperationNotice.js';
 import * as firestoreSDK from 'firebase/firestore';
-import { canonicalSale, sameSaleOperation, SaleError } from '../domain/saleModel.js';
+import { canonicalSale, canonicalNewSale, sameSaleOperation, SaleError } from '../domain/saleModel.js';
 import { VERIFIED_ATOMIC_LINE_LIMIT, checkoutBlockReason } from '../domain/checkoutPolicy.js';
 
 export const SPARK_TICKET_LIMIT = VERIFIED_ATOMIC_LINE_LIMIT;
@@ -22,9 +22,6 @@ export function createSparkSalesRepository(database, { currentUser, sdk = firest
   return { verify, async submit(input) {
     const sale = canonicalSale(input); identity(sale);
     if (sale.origin !== 'online') throw new SaleError('offline-review-required', 'Pendiente offline: requiere revisión; la hora local no autoriza su aceptación.');
-    if (sale.items.some(item => item.qty > 1000000) || Math.max(sale.total, sale.totalCost, sale.amountPaid) > 1000000000) {
-      throw new SaleError('invalid-sale', 'Límite Spark: 1000000 unidades por producto y S/ 1000000000 por importe/costo/recibido. El ticket completo permanece sin confirmar.');
-    }
     if (sale.items.length > (protocolVersion === 2 ? SPARK_TICKET_LIMIT : 2)) throw new SaleError('invalid-sale', checkoutBlockReason(sale.items) || 'Este protocolo histórico admite dos líneas.');
     try { await runTransaction(database, async tx => {
       identity(sale);
@@ -33,6 +30,8 @@ export function createSparkSalesRepository(database, { currentUser, sdk = firest
         if (!sameSaleOperation(sale, existing.data())) throw new SaleError('sale-conflict', 'El ID ya pertenece a otro ticket.');
         return;
       }
+      // An identical historical receipt can be recovered above; every NEW write uses today's policy.
+      canonicalNewSale(input);
       const rows = await Promise.all(sale.items.map(item => tx.get(doc(database, 'products', item.id))));
       const stockVersions = {};
       const changes = rows.map((row, index) => {
@@ -63,6 +62,8 @@ export function createSparkSalesRepository(database, { currentUser, sdk = firest
       }
       writeOperationNotice(tx, database, sdk, 'sale', sale.saleId, sale);
     }); } catch (error) {
+      // Local policy errors happen before tx writes and are never an uncertain remote result.
+      if (error.code === 'invalid-sale') throw error;
       // Concurrent attempts can be denied as an immutable receipt/notice already exists.
       // Only an identical server receipt can turn that race into a confirmation.
       try { return await verify(sale); }

@@ -1,12 +1,21 @@
-import { canonicalSale, assertSaleIdentity, sameSaleOperation, SaleError } from '../domain/saleModel.js';
+import { canonicalSale, canonicalNewSale, assertSaleIdentity, sameSaleOperation, SaleError } from '../domain/saleModel.js';
 import { decodeQueuedSale, migrateSaleRecord, isDeterministicSaleError, isRetryableSaleError, hasVerifiedSaleReceipt, SYNC_LEASE_MS } from '../domain/queueState.js';
 import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 
 export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, withLock, online, now = Date.now, currentIdentity = () => true,
   captureProjection = async () => ({}), verifyReceipt, afterFlush = async () => {} }) {
-  async function enqueue(input, identity) {
-    const sale = canonicalSale(input);
+  async function enqueue(input, identity, products = []) {
+    let sale = canonicalSale(input, products);
     assertSaleIdentity(sale, identity);
+    // Existing ciphertext/IDs retain their historical contract, including uncertain receipts.
+    const existing = await store.get(sale.saleId);
+    if (existing) {
+      const decoded = await decodeQueuedSale(existing, identity, decrypt);
+      if (!sameSaleOperation(decoded, sale)) throw new SaleError('sale-conflict', 'ID local reutilizado con otro payload.');
+      return canonicalSale(decoded);
+    }
+    // Validate ORIGINAL numeric values before encryption, projection or a durable insert.
+    sale = canonicalNewSale(input, products);
     const data = await encrypt(JSON.stringify(sale), identity.uid);
     await store.insert({ localId: sale.saleId, idempotencyKey: sale.saleId, data,
       businessId: sale.businessId, branchId: sale.branchId, userId: sale.userId,
@@ -118,8 +127,8 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
     });
   }
 
-  async function submit(input, identity, { isolated = false } = {}) {
-    const sale = await enqueue(input, identity);
+  async function submit(input, identity, { isolated = false, products = [] } = {}) {
+    const sale = await enqueue(input, identity, products);
     if (online() && (!isolated || sale.origin === 'online')) {
       // If local acknowledgement fails after commit, the durable syncing record is recoverable.
       try { await flush(identity, { forceId: sale.saleId, ...(isolated ? { onlyId: sale.saleId } : {}) }); }

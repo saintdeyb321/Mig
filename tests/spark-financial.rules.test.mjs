@@ -48,7 +48,13 @@ async function commit(data, { mutate = value => value, omitProduct = null, recei
     if (receipt) tx.set(ref, sale);
     for (const [index, item] of data.items.entries()) if (item.id !== omitProduct) {
       const product = rows[index].data();
-      tx.update(doc(db, 'products', item.id), { stock: { ...product.stock, [data.branchId]: product.stock[data.branchId] - item.qty }, posLastSaleId: data.saleId, posStockVersion: { ...product.posStockVersion, [data.branchId]: (product.posStockVersion?.[data.branchId] ?? 0) + 1 } });
+      tx.update(doc(db, 'products', item.id), { ...(data.atomicProtocol === 2 ? { posSaleLineIndex: index } : {}), stock: { ...product.stock, [data.branchId]: product.stock[data.branchId] - item.qty }, posLastSaleId: data.saleId, posStockVersion: { ...product.posStockVersion, [data.branchId]: (product.posStockVersion?.[data.branchId] ?? 0) + 1 } });
+    }
+    if (data.atomicProtocol === 2) for (let offset = 0; offset < data.items.length; offset += 4) {
+      const items = data.items.slice(offset, offset + 4), index = offset / 4;
+      tx.set(doc(db, 'pos_sale_groups', `${data.saleId}_${index}`), { businessId: data.businessId, branchId: data.branchId, userId: data.userId,
+        saleId: data.saleId, index, createdAt: serverTimestamp(), totalCents: items.reduce((sum, item) => sum + Math.round(item.price * 100) * item.qty, 0),
+        costCents: items.reduce((sum, item) => sum + Math.round(item.cost * 100) * item.qty, 0) });
     }
     return sale;
   });
@@ -71,6 +77,54 @@ beforeEach(async () => {
 after(async () => env?.cleanup());
 
 describe('SPARK-4 integrated financial Rules', () => {
+  it('Plan06 remote Rules reject excessive cash, precision, totals and quantities through both protocols without partial stock', async () => {
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'products', 'bread'), { price: 22, stock: { [branchId]: 5000, other: 7 } }));
+    const make = (id, price = 22, qty = 1) => canonicalSale({ localId: id, businessId, branchId, userId: uid, sessionId,
+      items: [{ ...products[0], price, qty }], total: price * qty, payment: 'efectivo', amountPaid: price * qty, change: 0, createdAt: '2026-10-29T12:00:00Z' });
+    for (const atomicProtocol of [undefined, 2]) {
+      for (const [index, changes] of [
+        { amountPaid: 2000000000, change: 1999999978 }, { amountPaid: 1000000000, change: 999999978 },
+        { amountPaid: 50000.01, change: 49978.01 }, { amountPaid: 22.001, change: 0.001 },
+        { amountPaid: -22, change: -44 }, { payment: 'mixto', splitPayments: { efectivo: 19.40, yape: 2.602345 } },
+        { payment: 'mixto', splitPayments: { efectivo: 19.40, yape: 2.59 } },
+      ].entries()) {
+        const sale = { ...make(`plan06-bad-${atomicProtocol ?? 1}-${index}`), ...(atomicProtocol ? { atomicProtocol } : {}), ...changes };
+        await assertFails(commit(sale));
+        assert.equal((await inspect(`sales/${sale.saleId}`)).exists(), false);
+        if (atomicProtocol) assert.equal((await inspect(`pos_sale_groups/${sale.saleId}_0`)).exists(), false);
+      }
+    }
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 5000);
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'products', 'bread'), { price: 50000.01 }));
+    for (const atomicProtocol of [undefined, 2]) await assertFails(commit({ ...make(`plan06-total-${atomicProtocol ?? 1}`, 50000.01), ...(atomicProtocol ? { atomicProtocol } : {}) }));
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'products', 'bread'), { price: 1 }));
+    for (const atomicProtocol of [undefined, 2]) {
+      await assertFails(commit({ ...make(`plan06-quantity-${atomicProtocol ?? 1}`, 1, 1001), ...(atomicProtocol ? { atomicProtocol } : {}) }));
+    }
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 5000);
+    await commit({ ...make('plan06-quantity-boundary', 1, 1000), atomicProtocol: 2 });
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 4000);
+  });
+  it('Plan06 confirms valid cash/change and exact mixed cents, and recovers a historical oversized receipt without new writes', async () => {
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'products', 'bread'), { price: 22 }));
+    const repo = createSparkSalesRepository(database(), { sdk, currentUser: () => ({ uid }) });
+    const cash = canonicalSale({ ...payload('plan06-cash', 1), items: [{ ...payload('template', 1).items[0], price: 22 }], total: 22, amountPaid: 50, change: 28 });
+    for (const amountPaid of [2000000000, 1000000000]) await assert.rejects(repo.submit({ ...cash, amountPaid, change: amountPaid - 22 }), { code: 'invalid-sale' });
+    await repo.submit(cash); await repo.submit(cash);
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
+    const historic = canonicalSale({ ...cash, saleId: 'plan06-historical', localId: 'plan06-historical', idempotencyKey: 'plan06-historical', amountPaid: 1000000000, change: 999999978 });
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'sales', historic.saleId), { ...historic, atomicProtocol: 2, status: 'confirmed', confirmedAt: Timestamp.now(), stockVersions: { bread: 1 }, productIds: ['bread'] }));
+    assert.equal((await repo.verify(historic)).status, 'ALREADY_APPLIED');
+    await repo.submit(historic);
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'products', 'bread'), { price: 6 }));
+    const mixed = canonicalSale({ ...cash, saleId: 'plan06-mixed', localId: 'plan06-mixed', idempotencyKey: 'plan06-mixed', items: [{ ...cash.items[0], price: 6 }], total: 6,
+      payment: 'mixto', amountPaid: 6, change: 0, splitPayments: { efectivo: 3.40, yape: 2.60 } });
+    await assert.rejects(repo.submit({ ...mixed, splitPayments: { efectivo: 3.40, yape: 2.602345 } }), { code: 'invalid-sale' });
+    await repo.submit(mixed); await repo.submit(mixed);
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 8);
+    assert.equal((await inspect('sales/' + mixed.saleId)).data().splitPayments.yape, 2.60);
+  });
   it('Plan05 refuses financial writes in the reserved global read-only context even if historical documents exist', async () => {
     await env.withSecurityRulesDisabled(async ctx => {
       const db = ctx.firestore();

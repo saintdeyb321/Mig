@@ -4,6 +4,7 @@ import { isBranchOperational } from '../features/branches/domain/branchPolicy';
 import { useState, useMemo } from 'react';
 import { LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
 import { checkoutBlockReason } from '../features/sales/domain/checkoutPolicy.js';
+import { parsePaymentCents, saleAmountCents } from '../features/sales/domain/saleModel.js';
 import { getSafeStock } from '../features/sales/domain/cartStock';
 import { usePOS } from '../features/sales/hooks/usePOS';
 import { useTenantData } from '../features/branches/context/TenantContext';
@@ -27,7 +28,7 @@ function POS({ user }) {
     filteredProducts, cart, payment, setPayment, amountPaid, setAmountPaid,
     splitEfectivo, setSplitEfectivo, splitYape, setSplitYape,
     search, setSearch, isProcessing, showQrModal, setShowQrModal, qrUrl,
-    addToCart, updateQty, removeFromCart, total, isPaymentValid, handleCheckoutClick, processSale,
+    addToCart, updateQty, removeFromCart, total, isPaymentValid, paymentValidation, handleCheckoutClick, processSale,
     lastSale, clearLastSale, printReceipt, activeCategories, isLoading
   } = usePOS(user, currentSession);
 
@@ -43,21 +44,25 @@ function POS({ user }) {
   // Funciones exclusivas de interfaz para autocompletado
   const handleSplitEfectivoChange = (val) => {
     setSplitEfectivo(val);
-    const num = Number(val);
     if (val === '') {
       setSplitYape('');
-    } else if (num >= 0 && num <= total) {
-      setSplitYape((total - num).toFixed(2));
+    } else {
+      try {
+        const cents = parsePaymentCents(val), totalCents = saleAmountCents(total);
+        if (cents <= totalCents) setSplitYape(((totalCents - cents) / 100).toFixed(2));
+      } catch { /* Keep the original invalid text visible; never round the other part from it. */ }
     }
   };
 
   const handleSplitYapeChange = (val) => {
     setSplitYape(val);
-    const num = Number(val);
     if (val === '') {
       setSplitEfectivo('');
-    } else if (num >= 0 && num <= total) {
-      setSplitEfectivo((total - num).toFixed(2));
+    } else {
+      try {
+        const cents = parsePaymentCents(val), totalCents = saleAmountCents(total);
+        if (cents <= totalCents) setSplitEfectivo(((totalCents - cents) / 100).toFixed(2));
+      } catch { /* Validation below reports the unmodified input. */ }
     }
   };
 
@@ -107,7 +112,7 @@ function POS({ user }) {
     : <Ticket drawer={isCartOpen} cart={cart} total={total} onQty={updateQty} onRemove={removeFromCart} isProcessing={isProcessing} action={action}>
       {checkoutAttempted && checkoutBlocked && <Alert variant="warning" title="No se puede confirmar este ticket">{checkoutBlocked} El carrito se conserva completo; no se ha registrado ningún cobro.</Alert>}
       <PaymentSelector payment={payment} onSelect={selectPayment} disabled={branchStatus.isReadOnly||isProcessing} />
-      <PaymentFields payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} disabled={branchStatus.isReadOnly||isProcessing} />
+      <PaymentFields payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} validation={paymentValidation} disabled={branchStatus.isReadOnly||isProcessing} />
     </Ticket>;
   return <div className="min-w-0 space-y-5">
     {isExpired && <Alert variant="warning" title="Caja vencida">Cierra este turno y abre uno nuevo para cobrar. Los movimientos se conservan.</Alert>}
@@ -134,7 +139,7 @@ function POS({ user }) {
     {showQrModal&&<Dialog title="Escanea para pagar" description="Verifica en tu celular que el abono se haya realizado." onClose={()=>setShowQrModal(false)} busy={isProcessing} className="max-w-sm">
       <p className="text-center text-3xl font-bold text-accent">S/ {payment==='mixto'?Number(splitYape).toFixed(2):total.toFixed(2)}</p>
       <div className="mx-auto flex aspect-square w-full max-w-60 items-center justify-center rounded-2xl border border-line bg-panel p-3">{qrUrl?<img src={qrUrl} alt="QR Yape" className="size-full object-contain" />:<Alert variant="warning">QR no configurado en Ajustes.</Alert>}</div>
-      <div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={isProcessing} onClick={()=>setShowQrModal(false)}>Cancelar</Button><Button variant="success" onClick={processSale} loading={isProcessing} disabled={!!checkoutBlocked||!runtimeCapabilities.saleOnline||isProcessing}>{isProcessing?'Procesando…':'Validar pago'}</Button></div>
+      <div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={isProcessing} onClick={()=>setShowQrModal(false)}>Cancelar</Button><Button variant="success" onClick={processSale} loading={isProcessing} disabled={!!checkoutBlocked||!isPaymentValid||!runtimeCapabilities.saleOnline||isProcessing}>{isProcessing?'Procesando…':'Validar pago'}</Button></div>
     </Dialog>}
     <CashRegisterModals showOpenModal={showOpenModal} setShowOpenModal={setShowOpenModal} showCloseModal={showCloseModal} setShowCloseModal={setShowCloseModal} isLoadingSession={isLoadingSession} openRegister={openRegister} authorizeOffline={authorizeOffline} calculateClose={calculateClose} confirmClose={confirmClose} />
   </div>;

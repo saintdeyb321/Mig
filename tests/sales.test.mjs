@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { canonicalSale, paymentBreakdown, statsDelta, saleDay, SaleError } from '../frontend/src/features/sales/domain/saleModel.js';
+import { canonicalSale, canonicalNewSale, sameSaleOperation, parsePaymentCents, validatePOSPayment, SALE_LIMITS, paymentBreakdown, statsDelta, saleDay, SaleError } from '../frontend/src/features/sales/domain/saleModel.js';
 import { migrateSaleRecord, migrateCachedProduct, pendingStockDeltas, decodeQueuedSale, isRetryableSaleError, isDeterministicSaleError, SYNC_LEASE_MS } from '../frontend/src/features/sales/domain/queueState.js';
 import { createSaleQueue } from '../frontend/src/features/sales/application/saleQueue.js';
 import { mergeRecentSales, recentSaleRows } from '../frontend/src/features/sales/application/recentSales.js';
@@ -47,6 +47,55 @@ function harness(options = {}) {
 }
 
 describe('Phase 4 deterministic model', () => {
+  it('Plan06 validates original payment text and integer-cent sums without rounding', () => {
+    for (const text of ['2.602345', '2.600', '1e3', '-1', 'NaN', 'Infinity', ' 2.60 ', '2,60', '']) assert.throws(() => parsePaymentCents(text));
+    assert.equal(parsePaymentCents('0.29'), 29); assert.equal(parsePaymentCents('2.60'), 260);
+    const mixed = { payment: 'mixto', total: 6, splitEfectivo: '3.40', splitYape: '2.60' };
+    assert.equal(validatePOSPayment(mixed).valid, true);
+    for (const splitYape of ['2.602345', '2.600', '2.59', '2.61', '-2.60']) assert.equal(validatePOSPayment({ ...mixed, splitYape }).valid, false);
+    assert.equal(validatePOSPayment({ payment: 'yape', total: 6 }).valid, true);
+    assert.equal(validatePOSPayment({ payment: 'yape', total: 6.001 }).valid, false);
+    const cash = validatePOSPayment({ payment: 'efectivo', total: 22, amountPaid: '50.00' });
+    assert.equal(cash.valid, true); assert.equal(cash.change, 28);
+    for (const amountPaid of ['2000000000', '1000000000', '50000.01', '50.001']) assert.equal(validatePOSPayment({ payment: 'efectivo', total: 22, amountPaid }).valid, false);
+  });
+  it('Plan06 enforces new retail limits and precision without changing historical canonical comparison', () => {
+    const sale = input({ items: [{ ...input().items[0], price: 22 }], total: 22, amountPaid: 50, change: 28 });
+    assert.equal(canonicalNewSale(sale).change, 28);
+    for (const amountPaid of [2000000000, 1000000000, 50000.01, 50.001, -1, NaN, Infinity]) assert.throws(() => canonicalNewSale({ ...sale, amountPaid, change: amountPaid - 22 }));
+    for (const field of ['total', 'amountPaid', 'change']) assert.throws(() => canonicalNewSale({ ...sale, [field]: sale[field] + 0.001 }));
+    const mixed = input({ payment: 'mixto', splitPayments: { efectivo: 7.40, yape: 2.602345 } });
+    assert.equal(canonicalSale(mixed).splitPayments.yape, 2.6);
+    assert.throws(() => canonicalNewSale(mixed), /dos decimales/);
+    const boundary = input({ items: [{ ...input().items[0], price: SALE_LIMITS.maxTotal }], total: SALE_LIMITS.maxTotal, amountPaid: SALE_LIMITS.maxReceived });
+    assert.equal(canonicalNewSale(boundary).total, 50000);
+    assert.throws(() => canonicalNewSale({ ...boundary, total: 50000.01, amountPaid: 50000.01 }));
+    const bulk = input({ items: [{ ...input().items[0], qty: 1000, price: 1 }], total: 1000, amountPaid: 1000 });
+    assert.equal(canonicalNewSale(bulk).items[0].qty, 1000);
+    assert.throws(() => canonicalNewSale({ ...bulk, items: [{ ...bulk.items[0], qty: 1001 }], total: 1001, amountPaid: 1001 }));
+    const historic = canonicalSale({ ...sale, amountPaid: 1000000000, change: 999999978 });
+    assert.equal(sameSaleOperation(historic, structuredClone(historic)), true);
+    assert.equal(canonicalSale(historic).amountPaid, 1000000000);
+  });
+  it('Plan06 rejects new invalid tickets before encryption, persistence, projection or remote submission', async () => {
+    const h = harness();
+    const queue = createSaleQueue({ store: h.store, online: () => true,
+      encrypt: () => assert.fail('Invalid tickets must not be encrypted'), captureProjection: () => assert.fail('No projection'), apply: () => assert.fail('No remote write') });
+    for (const amountPaid of [2000000000, 1000000000]) await assert.rejects(queue.submit(input({ items: [{ ...input().items[0], price: 22 }], total: 22, amountPaid, change: amountPaid - 22 }), identity), { code: 'invalid-sale' });
+    await assert.rejects(queue.submit(input({ payment: 'mixto', splitPayments: { efectivo: 7.40, yape: 2.602345 } }), identity), { code: 'invalid-sale' });
+    assert.equal(h.store.rows.size, 0); assert.deepEqual(h.store.states, []); assert.deepEqual(h.events, []);
+    const result = await h.queue.submit(input({ amountPaid: 20, change: 10 }), identity);
+    assert.equal(result.success, true); assert.equal(h.applied.length, 1);
+  });
+  it('Plan06 preserves historical ciphertext and verifies an uncertain oversized receipt before any retry', async () => {
+    const sale = canonicalSale(input({ amountPaid: 1000000000, change: 999999990 }));
+    const data = await encrypt(JSON.stringify(sale), identity.uid);
+    const store = memoryStore([{ ...sale, data, status: 'pending', sync: false, attempted: true, retries: 1 }]);
+    const h = harness({ store, verifyReceipt: async frozen => { assert.deepEqual(frozen, sale); return receiptFor(frozen); } });
+    const result = await h.queue.submit(sale, identity, { isolated: true });
+    assert.equal(result.success, true); assert.equal(store.rows.size, 1); assert.equal(store.rows.get(sale.saleId).data, data);
+    await h.queue.submit(sale, identity, { isolated: true }); assert.equal(h.applied.length, 0);
+  });
   it('Plan05 presents cached receipts while excluding uncommitted local writes and untrusted IDs', () => {
     const snapshot = { metadata: { fromCache: true }, docs: [
       { id: 'confirmed', metadata: { hasPendingWrites: false }, data: () => ({ id: 'forged', status: 'confirmed' }) },

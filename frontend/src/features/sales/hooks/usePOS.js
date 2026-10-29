@@ -12,6 +12,7 @@ import { generateReceiptHTML } from '../../../utils/receiptTemplate';
 import { usePrintJobs } from '../../../shared/printing/usePrintJobs';
 import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
 import { checkoutBlockReason } from '../domain/checkoutPolicy.js';
+import { validatePOSPayment } from '../domain/saleModel.js';
 
 export const usePOS = (user, currentSession) => {
   const resources = useSessionResources();
@@ -86,13 +87,9 @@ export const usePOS = (user, currentSession) => {
     }
   }, [currentSession, cart.length, clearCart]);
 
-  const isPaymentValid = useMemo(() => {
-    if (payment === 'mixto') {
-      return [Number(splitEfectivo), Number(splitYape)].every(value => Number.isFinite(value) && value >= 0)
-        && Math.round((Number(splitEfectivo) + Number(splitYape)) * 100) === Math.round(total * 100) && total > 0;
-    }
-    return payment === 'yape' || (payment === 'efectivo' && Number(amountPaid) >= total);
-  }, [payment, amountPaid, splitEfectivo, splitYape, total]);
+  const paymentValidation = useMemo(() => validatePOSPayment({ payment, total, amountPaid, splitEfectivo, splitYape }),
+    [payment, amountPaid, splitEfectivo, splitYape, total]);
+  const isPaymentValid = paymentValidation.valid;
 
 
   const printReceipt = useCallback((saleData) => {
@@ -109,6 +106,7 @@ export const usePOS = (user, currentSession) => {
     if (!user?.businessId || processingRef.current) return;
     const blocked = checkoutBlockReason(cart);
     if (blocked) { toast.error(blocked); return; }
+    if (!paymentValidation.valid) { toast.error(paymentValidation.error); return; }
 
     const VAL_TOAST_ID = 'pos-validation-error';
 
@@ -150,24 +148,13 @@ export const usePOS = (user, currentSession) => {
     const localId = crypto.randomUUID();
     let isSuccess = false;
 
-    let finalAmountPaid = total;
-    let finalChange = 0;
-
-    if (payment === 'efectivo') {
-      finalAmountPaid = Number(amountPaid);
-      finalChange = Number(amountPaid) - total;
-    } else if (payment === 'yape' || payment === 'mixto') {
-      finalAmountPaid = total;
-      finalChange = 0;
-    }
-
     let sale = {
       localId,
       items: cartBackup,
       total,
       payment,
-      amountPaid: finalAmountPaid,
-      change: finalChange,
+      amountPaid: paymentValidation.amountPaid,
+      change: paymentValidation.change,
       createdAt: new Date(),
       businessId: user.businessId,
       branchId: activeBranchId,
@@ -177,10 +164,7 @@ export const usePOS = (user, currentSession) => {
       sync: false
     };
     if (payment === 'mixto') {
-      sale.splitPayments = {
-        efectivo: Number(splitEfectivo) || 0,
-        yape: Number(splitYape) || 0
-      };
+      sale.splitPayments = paymentValidation.splitPayments;
     }
 
     try {
@@ -213,23 +197,24 @@ export const usePOS = (user, currentSession) => {
         setCart(cartBackup);
       }
     }
-  }, [user, cart, total, payment, amountPaid, splitEfectivo, splitYape, products,
+  }, [user, cart, total, payment, paymentValidation, products,
     clearCart, setCart, activeBranchId, catalogProducts, businessBranches, currentSession, resources]);
 
   const handleCheckoutClick = useCallback(() => {
     const blocked = checkoutBlockReason(cart);
     if (blocked) { toast.error(blocked); return; }
+    if (!paymentValidation.valid) { toast.error(paymentValidation.error); return; }
     if (!runtimeCapabilities.saleOnline) { toast.error('Confirmación de ventas pendiente de SPARK-4.'); return; }
     if (cart.length === 0) {
       toast.error('🛒 El carrito está vacío', { id: 'pos-validation-error' });
       return;
     }
-    if (payment === 'yape' || (payment === 'mixto' && Number(splitYape) > 0)) {
+    if (payment === 'yape' || (payment === 'mixto' && paymentValidation.splitPayments.yape > 0)) {
       setShowQrModal(true);
     } else {
       processSale();
     }
-  }, [payment, processSale, cart, splitYape]);
+  }, [payment, processSale, cart, paymentValidation]);
 
   const clearLastSale = useCallback(() => setLastSale(null), []);
 
@@ -237,7 +222,7 @@ export const usePOS = (user, currentSession) => {
     products, filteredProducts, cart, payment, setPayment, amountPaid, setAmountPaid,
     splitEfectivo, setSplitEfectivo, splitYape, setSplitYape,
     search, setSearch, isProcessing, showQrModal, setShowQrModal, qrUrl,
-    addToCart, updateQty, removeFromCart, total, isPaymentValid,
+    addToCart, updateQty, removeFromCart, total, isPaymentValid, paymentValidation,
     handleCheckoutClick, processSale, printReceipt, lastSale, clearLastSale, activeCategories
   };
 };

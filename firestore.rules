@@ -558,7 +558,7 @@ service cloud.firestore {
       let product = getAfter(/databases/$(database)/documents/products/$(item.id)).data;
       return item == {'id': d.productIds[index], 'name': product.name, 'category': product.get('category', ''),
           'qty': item.qty, 'price': product.price, 'cost': product.get('cost', 0)}
-        && item.qty is int && item.qty > 0 && item.qty <= 1000000
+        && item.qty is int && item.qty > 0 && item.qty <= 1000
         && product.businessId == d.businessId && product.get('status', 'activo') == 'activo'
         && product.price >= 0 && product.get('cost', 0) >= 0
         && product.posLastSaleId == d.saleId && d.stockVersions[item.id] == product.posStockVersion[d.branchId];
@@ -568,9 +568,12 @@ service cloud.firestore {
     function cost(d, index) { return d.items.size() <= index ? 0 : math.round(d.items[index].cost * 100) * d.items[index].qty; }
     function cents(value) { return value is number && value >= 0 && value <= 1000000000 && value == math.round(value * 100) / 100.0; }
     function validPayment(d) {
-      return d.payment == 'efectivo'
-        ? cents(d.amountPaid) && d.amountPaid >= d.total && d.change == (math.round(d.amountPaid * 100) - math.round(d.total * 100)) / 100.0
-        : d.amountPaid == d.total && d.change == 0 && (d.payment == 'yape' || (d.payment == 'mixto' && mixedPayment(d)));
+      // New-sale commercial limits only; receipt reads and compensations keep their historical policy.
+      let paid = d.amountPaid;
+      // Exact nonnegative cash difference (or zero digitally) also bounds change by the received amount.
+      return paid <= 50000 && (d.payment == 'efectivo'
+        ? cents(paid) && paid >= d.total && d.change == (math.round(paid * 100) - math.round(d.total * 100)) / 100.0
+        : paid == d.total && d.change == 0 && (d.payment == 'yape' || (d.payment == 'mixto' && mixedPayment(d))));
     }
     function mixedPayment(d) {
       let split = d.splitPayments;
@@ -592,7 +595,7 @@ service cloud.firestore {
         && d.items is list && d.items.size() >= 1 && d.items.size() <= 8
         && d.stockVersions is map && d.stockVersions.keys().hasOnly(d.productIds)
         && d.productIds is list && d.productIds.size() == d.items.size() && d.productIds.toSet().size() == d.items.size()
-        && d.total > 0 && d.total <= 1000000000 && d.totalCost <= 1000000000
+        && d.total > 0 && d.total <= 50000 && d.totalCost <= 1000000000
         && d.grossProfit == (math.round(d.total * 100) - math.round(d.totalCost * 100)) / 100.0 && validPayment(d)
         && groupedSale(d);
     }
@@ -613,7 +616,7 @@ service cloud.firestore {
         && d.stockVersions is map && d.stockVersions.keys().hasOnly(d.productIds)
         && d.productIds is list && d.productIds.size() == d.items.size() && d.productIds.toSet().size() == d.items.size()
         && line(d, 0) && slot(d, 1)
-        && d.total > 0 && d.total <= 1000000000 && d.total == total / 100.0
+        && d.total > 0 && d.total <= 50000 && d.total == total / 100.0
         && d.totalCost <= 1000000000 && d.totalCost == totalCost / 100.0
         && d.grossProfit == (total - totalCost) / 100.0 && validPayment(d);
     }

@@ -8,7 +8,7 @@ const sparkVoids = createPosVoidRepository(db, { currentUser: () => auth.current
 import { syncLocalSession, reconcilePendingSessions } from '../../cash-register/infrastructure/cashRegisterRepository.js';
 import offlineDB from '../../../offlineDB';
 import { encrypt, decrypt } from '../../../crypto';
-import { canonicalSale, SaleError } from '../domain/saleModel.js';
+import { SaleError } from '../domain/saleModel.js';
 import { createSaleQueue } from '../application/saleQueue.js';
 import { dexieSaleStore, createQueueLock } from './saleQueueStore.js';
 
@@ -56,8 +56,8 @@ export const saleQueue = createSaleQueue({
 });
 
 export const saveSaleTransaction = confirmedWrite((sale, cartItems, products, user) =>
-  saleQueue.submit(canonicalSale({ ...sale, items: cartItems, queuedAt: new Date().toISOString(),
-    origin: navigator.onLine ? 'online' : 'offline' }, products), user, { isolated: true }));
+  saleQueue.submit({ ...sale, items: cartItems, queuedAt: new Date().toISOString(),
+    origin: navigator.onLine ? 'online' : 'offline' }, user, { isolated: true, products }));
 
 // Read-only remote verification can recover a lost local acknowledgment; it never submits a sale.
 export async function verifyPendingSaleTransaction(sale, user) {
