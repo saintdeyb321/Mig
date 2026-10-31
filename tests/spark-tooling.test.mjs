@@ -5,10 +5,54 @@ import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { gzipSync } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
 import { releaseConfig } from '../scripts/release.mjs';
 import { environmentFor, hostingHeaders } from '../frontend/src/config/environments.js';
 
 const require = createRequire(import.meta.url);
+it('keeps patched glob APIs compatible across all trees and the archive/filelist consumers', async () => {
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  for (const folder of ['../', '../frontend/', '../functions/']) {
+    const consumer = createRequire(new URL(folder + 'package.json', import.meta.url));
+    const glob = consumer('glob');
+    const cwd = fileURLToPath(new URL(folder, import.meta.url));
+    assert.deepEqual(glob.sync('package.json', { cwd, nodir: true }), ['package.json']);
+    assert.deepEqual(await glob.glob('package.json', { cwd, nodir: true }), ['package.json']);
+    await assert.rejects(glob.glob('*.jsx', { cwd: fileURLToPath(new URL('../frontend/src/modules/pos/', import.meta.url)),
+      signal: AbortSignal.abort(new Error('expected cancellation')) }), /expected cancellation/);
+  }
+  const archive = require('archiver')('zip'), entries = [], chunks = [];
+  const completed = new Promise((resolve, reject) => { archive.on('error', reject); archive.on('entry', entry => entries.push(entry.name)); archive.on('data', chunk => chunks.push(chunk)); archive.on('end', resolve); });
+  archive.glob('package.json', { cwd: root }); await archive.finalize(); await completed;
+  assert.deepEqual(entries, ['package.json']); assert.equal(Buffer.concat(chunks).subarray(0, 2).toString(), 'PK');
+  const frontend = createRequire(new URL('../frontend/package.json', import.meta.url));
+  const { FileList } = frontend('filelist');
+  // A small directory and basename pattern avoid recursively scanning node_modules and
+  // filelist's existing Windows path-normalization behavior (independent of this update).
+  const previous = process.cwd();
+  try {
+    process.chdir(fileURLToPath(new URL('../frontend/src/modules/pos/', import.meta.url)));
+    assert.ok(new FileList('*.jsx').toArray().includes('PaymentParts.jsx'));
+  } finally { process.chdir(previous); }
+});
+
+it('retains callable minimatch consumers rather than forcing incompatible global exports', () => {
+  const modern = createRequire(require.resolve('glob/package.json'))('minimatch');
+  assert.equal(typeof modern.minimatch, 'function');
+  assert.throws(() => modern('assets/main.js', '**/*.js'), TypeError);
+  const { configMatcher } = require('superstatic/lib/utils/patterns.js');
+  assert.equal(configMatcher('/assets/main.js', { source: '/assets/**' }), true);
+  assert.equal(configMatcher('/private/data', { source: '/assets/**' }), false);
+});
+
+it('keeps patched RE2JS repeated lookbehind matching compatible with the Firestore SDK', async () => {
+  const frontend = createRequire(new URL('../frontend/package.json', import.meta.url));
+  for (const { RE2JS } of [require('re2js'), frontend('re2js'), await import('re2js')]) {
+    const matcher = RE2JS.compile('(?<=a)b', RE2JS.LOOKBEHINDS).matcher('ab'.repeat(256));
+    let count = 0; while (matcher.find()) count++;
+    assert.equal(count, 256);
+  }
+});
 it('builds Spark release configuration with no Functions or Storage deployment resources', () => {
   const config = releaseConfig(JSON.parse(readFileSync('firebase.json', 'utf8')), environmentFor('production'));
   assert.equal(config.hosting.site, 'migapos-peru'); assert.equal(config.functions, undefined); assert.equal(config.storage, undefined);
