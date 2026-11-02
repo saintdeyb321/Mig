@@ -3,6 +3,17 @@ import React, { useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Alert, Button, Dialog, DialogFooter, FormField, Input, Textarea } from '../shared/ui';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
+import { saleAmountCents } from '../features/sales/domain/saleModel.js';
+
+function cashAmount(text) {
+  if (!/^(?:\d+(?:\.\d{1,2})?|\.\d{1,2})$/.test(text)) {
+    throw new Error('Ingresa un importe no negativo con máximo dos decimales, sin redondear.');
+  }
+  const value = Number(text);
+  // Keep the existing cash/Rules ceiling; the POS text parser has a lower sale-only cap.
+  saleAmountCents(value, 'El importe de caja', 1000000000);
+  return value;
+}
 
 export const CashRegisterModals = ({
   showOpenModal, setShowOpenModal,
@@ -18,9 +29,10 @@ export const CashRegisterModals = ({
 
   const handleOpen = async (e) => {
     e.preventDefault();
-    const amount = Number(openingAmount);
-    if (isNaN(amount) || amount < 0) {
-      toast.error("Ingresa un monto válido", { id: MODAL_TOAST_ID });
+    let amount;
+    try { amount = cashAmount(openingAmount); }
+    catch (error) {
+      toast.error(error.message, { id: MODAL_TOAST_ID });
       return;
     }
     const success = await openRegister(amount);
@@ -32,9 +44,10 @@ export const CashRegisterModals = ({
 
   const handleCalculate = async (e) => {
     e.preventDefault();
-    const amount = Number(declaredAmount);
-    if (isNaN(amount) || amount < 0) {
-      toast.error("Ingresa un monto válido", { id: MODAL_TOAST_ID });
+    let amount;
+    try { amount = cashAmount(declaredAmount); }
+    catch (error) {
+      toast.error(error.message, { id: MODAL_TOAST_ID });
       return;
     }
     const result = await calculateClose(amount);
@@ -79,7 +92,7 @@ export const CashRegisterModals = ({
     {showOpenModal && !tempSummary && <Dialog icon={WalletCards} title="Apertura de caja" onClose={() => setShowOpenModal(false)} busy={busy} description="Cuenta el fondo inicial. La nueva caja admite cobros durante un máximo de 10 horas; después debes cerrarla.">
       <form onSubmit={submit(handleOpen)}>
         <fieldset disabled={busy} className="space-y-4">
-          <FormField label="Monto inicial (S/)"><Input type="number" step="0.10" required value={openingAmount} onChange={e => setOpeningAmount(e.target.value)} placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" /></FormField>
+          <FormField label="Monto inicial (S/)"><Input type="number" min="0" step="0.01" required value={openingAmount} onChange={e => setOpeningAmount(e.target.value)} placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" /></FormField>
           <DialogFooter><Button variant="secondary" onClick={() => setShowOpenModal(false)}>Cancelar</Button><Button type="submit" loading={busy}>Abrir caja</Button></DialogFooter>
         </fieldset>
       </form>
@@ -87,7 +100,7 @@ export const CashRegisterModals = ({
     </Dialog>}
     {showCloseModal && !tempSummary && <Dialog icon={Banknote} title="¿Cuánto dinero tienes en la caja?" onClose={() => setShowCloseModal(false)} busy={busy} description="Cierre operativo: el resumen es una estimación del navegador, sin conciliación certificada. Cuenta toda la plata que tienes físicamente (billetes y monedas) y escribe el total abajo.">
       <form onSubmit={submit(handleCalculate)}><fieldset disabled={busy} className="space-y-4">
-        <FormField label="Toda la plata que contaste (S/)"><Input type="number" step="0.10" required value={declaredAmount} onChange={e => setDeclaredAmount(e.target.value)} placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" /></FormField>
+        <FormField label="Toda la plata que contaste (S/)"><Input type="number" min="0" step="0.01" required value={declaredAmount} onChange={e => setDeclaredAmount(e.target.value)} placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" /></FormField>
         <DialogFooter><Button variant="secondary" onClick={() => setShowCloseModal(false)}>Aún no cerrar</Button><Button type="submit" loading={busy}>Siguiente</Button></DialogFooter>
       </fieldset></form>
     </Dialog>}

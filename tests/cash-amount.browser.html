@@ -1,0 +1,49 @@
+<!doctype html><meta charset="utf-8"><title>Cash cent precision</title><div id="root"></div>
+<script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { CashRegisterModals } from '/src/modules/CashRegisterModals.jsx';
+const root = createRoot(document.getElementById('root'));
+const checks = [], calls = [];
+const check = (ok, label) => { if (!ok) throw Error(label); checks.push(label); };
+const tick = () => new Promise(resolve => setTimeout(resolve, 25));
+const wait = async test => { for (let i = 0; i < 100; i++) { if (test()) return; await tick(); } throw Error('React render timed out'); };
+const props = { setShowOpenModal: () => {}, setShowCloseModal: () => {}, isLoadingSession: false,
+  openRegister: async amount => { calls.push(['open', amount]); return false; },
+  calculateClose: async amount => { calls.push(['close', amount]); return null; },
+  confirmClose: async () => { throw Error('No financial close should run in this test'); } };
+let result;
+try {
+  for (const mode of ['open', 'close']) {
+    root.render(React.createElement(CashRegisterModals, { ...props, showOpenModal: mode === 'open', showCloseModal: mode === 'close' }));
+    await wait(() => document.querySelector('input[type="number"]') && document.querySelector('h2')?.textContent.includes(mode === 'open' ? 'Apertura' : '¿Cuánto'));
+    let input = document.querySelector('input[type="number"]');
+    check(input.step === '0.01' && input.min === '0', `${mode}: native validation allows cents and bars negatives`);
+    const enter = async text => {
+      input = document.querySelector('input[type="number"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, text);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      await tick();
+    };
+    const submit = async () => {
+      document.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await tick();
+      await wait(() => !document.querySelector('fieldset').disabled);
+    };
+    for (const text of ['0', '0.01', '10.05', '50000.01', '1000000000.00']) {
+      await enter(text); check(input.checkValidity(), `${mode}: ${text} has no visual step mismatch`);
+      const count = calls.length; await submit();
+      check(calls.length === count + 1 && calls.at(-1)[0] === mode && calls.at(-1)[1] === Number(text), `${mode}: ${text} reaches only the intended callback unchanged`);
+    }
+    for (const text of ['-0.01', '10.051', '10.050', '0.001', '1e-2', '1e309', 'NaN', 'Infinity', '', '1000000000.01']) {
+      await enter(text); const count = calls.length; await submit();
+      check(calls.length === count, `${mode}: rejects ${text || '(empty)'} without rounding or calling a repository`);
+    }
+    await enter('10.05');
+    check(input.value === '10.05', `${mode}: a rejected attempt keeps the form editable`);
+  }
+  result = { ok: true, checks };
+} catch (error) { result = { ok: false, checks, error: error.stack }; }
+root.unmount();
+await fetch('/__phase4-report', { method: 'POST', body: JSON.stringify(result) });
+</script>

@@ -10,6 +10,19 @@ import { releaseConfig } from '../scripts/release.mjs';
 import { environmentFor, hostingHeaders } from '../frontend/src/config/environments.js';
 
 const require = createRequire(import.meta.url);
+it('resolves the locked glob version through each overridden CLI and PWA consumer', async () => {
+  for (const [folder, consumers] of [['../', ['firebase-tools', 'archiver-utils', 'exegesis', 'rimraf']], ['../frontend/', ['workbox-build']]]) {
+    const project = createRequire(new URL(folder + 'package.json', import.meta.url));
+    for (const name of consumers) {
+      const consumer = createRequire(project.resolve(name + '/package.json'));
+      assert.equal(consumer('glob/package.json').version, '14.0.3', name);
+      const glob = consumer('glob');
+      const cwd = fileURLToPath(new URL(folder, import.meta.url));
+      assert.deepEqual(glob.sync('package.json', { cwd, nodir: true }), ['package.json'], name);
+      assert.deepEqual(await glob.glob('package.json', { cwd, nodir: true }), ['package.json'], name);
+    }
+  }
+});
 it('keeps patched glob APIs compatible across all trees and the archive/filelist consumers', async () => {
   const root = fileURLToPath(new URL('../', import.meta.url));
   for (const folder of ['../', '../frontend/', '../functions/']) {

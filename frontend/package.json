@@ -39,7 +39,7 @@
   },
   "overrides": {
     "@grpc/grpc-js": "1.13.6",
-    "glob@^11.0.0": "14.0.3",
+    "glob": "14.0.3",
     "filelist": { "minimatch": "11.0.3" },
     "re2js@^2.0.0": "2.8.7"
   }
