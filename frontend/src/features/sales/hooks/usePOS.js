@@ -2,7 +2,7 @@ import { invalidateReportScope } from '../../reports/application/reportResource.
 import { isBranchOperational } from '../../branches/domain/branchPolicy';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { saveSaleTransaction } from '../infrastructure/saleTransactions';
+import { saveSaleTransaction, verifyPendingSaleTransaction, subscribeSaleAcknowledgement } from '../infrastructure/saleTransactions';
 import { useSessionResources } from '../../../core/session/sessionResourceHooks.js';
 import { useCart } from './useCart';
 import { getSafeStock } from '../domain/cartStock';
@@ -13,6 +13,7 @@ import { usePrintJobs } from '../../../shared/printing/usePrintJobs';
 import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
 import { checkoutBlockReason } from '../domain/checkoutPolicy.js';
 import { validatePOSPayment } from '../domain/saleModel.js';
+import { hasVerifiedSaleReceipt } from '../domain/queueState.js';
 
 export const usePOS = (user, currentSession) => {
   const resources = useSessionResources();
@@ -46,7 +47,37 @@ export const usePOS = (user, currentSession) => {
     return products.filter(p => p.name.toLowerCase().includes(q) || (p.category && p.category.toLowerCase().includes(q)));
   }, [products, search]);
 
-  const { cart, setCart, total, addToCart, updateQty, removeFromCart: baseRemoveFromCart, clearCart } = useCart(products, activeBranchId);
+  const { cart, setCart, total, addToCart, updateQty, removeFromCart: baseRemoveFromCart, clearCart, catalogChanges, acceptCatalogChange: acceptCartChange } = useCart(products, activeBranchId);
+  const acceptCatalogChange = id => {
+    if (processingRef.current) return;
+    acceptCartChange(id); setAmountPaid(''); setSplitEfectivo(''); setSplitYape(''); setShowQrModal(false);
+  };
+  const operationScope = useRef(0);
+  useEffect(() => { const ref = operationScope; return () => { ref.current++; }; }, [user.uid, user.businessId, activeBranchId]);
+  const catalogBlocked = Object.keys(catalogChanges).length > 0;
+  const paymentTotal = useRef(total);
+  useEffect(() => {
+    if (paymentTotal.current === total) return;
+    paymentTotal.current = total;
+    setAmountPaid(''); setSplitEfectivo(''); setSplitYape(''); setShowQrModal(false);
+  }, [total]);
+  const pendingSaleId = lastSale?.isOffline ? lastSale.saleId : null;
+  useEffect(() => {
+    if (!pendingSaleId) return;
+    let active = true;
+    const stop = subscribeSaleAcknowledgement(pendingSaleId, record => {
+      if (!active || !resources.active || record?.userId !== user.uid || record.businessId !== user.businessId || record.branchId !== activeBranchId) return;
+      if (record.status !== 'synced' || record.financialAck !== true) {
+        setLastSale(previous => previous?.saleId === pendingSaleId ? { ...previous,
+          receiptState: record.lastErrorCode === 'receipt-not-found' || !record.attempted ? 'unconfirmed' : 'uncertain', verificationMessage: record.lastError } : previous);
+        return;
+      }
+      setLastSale(previous => previous?.saleId === pendingSaleId && hasVerifiedSaleReceipt({ status: 'ALREADY_APPLIED', saleId: pendingSaleId,
+        syncedAt: record.syncedAt, stockVersions: record.stockVersions }, previous)
+        ? { ...previous, isOffline: false, status: 'confirmed', receiptState: 'confirmed', verificationMessage: null, confirmedAt: record.syncedAt } : previous);
+    }, () => {});
+    return () => { active = false; stop(); };
+  }, [pendingSaleId, user.uid, user.businessId, activeBranchId, resources]);
   const prevBranchId = useRef(activeBranchId);
   const removeFromCart = useCallback((id) => {
     baseRemoveFromCart(id);
@@ -106,6 +137,7 @@ export const usePOS = (user, currentSession) => {
     if (!user?.businessId || processingRef.current) return;
     const blocked = checkoutBlockReason(cart);
     if (blocked) { toast.error(blocked); return; }
+    if (catalogBlocked) { toast.error('Cambió el catálogo. Revisa los productos señalados antes de cobrar.'); return; }
     if (!paymentValidation.valid) { toast.error(paymentValidation.error); return; }
 
     const VAL_TOAST_ID = 'pos-validation-error';
@@ -170,7 +202,7 @@ export const usePOS = (user, currentSession) => {
     try {
       const result = await saveSaleTransaction(sale, cartBackup, products, user);
 
-      sale = { ...result.sale, isOffline: result.isOffline, status: result.isOffline ? 'pending' : 'confirmed' };
+      sale = { ...result.sale, isOffline: result.isOffline, receiptState: result.receiptState, status: result.isOffline ? 'pending' : 'confirmed' };
 
       toast.dismiss(toastId);
       if (result.success) toast.success('Venta confirmada por Firestore', { id: 'sale-success' });
@@ -198,11 +230,12 @@ export const usePOS = (user, currentSession) => {
       }
     }
   }, [user, cart, total, payment, paymentValidation, products,
-    clearCart, setCart, activeBranchId, catalogProducts, businessBranches, currentSession, resources]);
+    clearCart, setCart, activeBranchId, catalogProducts, businessBranches, currentSession, resources, catalogBlocked]);
 
   const handleCheckoutClick = useCallback(() => {
     const blocked = checkoutBlockReason(cart);
     if (blocked) { toast.error(blocked); return; }
+    if (catalogBlocked) { toast.error('Revisa los cambios del catálogo antes de cobrar.'); return; }
     if (!paymentValidation.valid) { toast.error(paymentValidation.error); return; }
     if (!runtimeCapabilities.saleOnline) { toast.error('Confirmación de ventas pendiente de SPARK-4.'); return; }
     if (cart.length === 0) {
@@ -214,7 +247,19 @@ export const usePOS = (user, currentSession) => {
     } else {
       processSale();
     }
-  }, [payment, processSale, cart, paymentValidation]);
+  }, [payment, processSale, cart, paymentValidation, catalogBlocked]);
+
+  const verifyLastSale = async () => {
+    if (!lastSale?.isOffline || processingRef.current || lastSale.branchId !== activeBranchId || lastSale.userId !== user.uid) return;
+    processingRef.current = true; setIsProcessing(true);
+    const token = operationScope.current;
+    try {
+      await verifyPendingSaleTransaction(lastSale, user, () => resources.active && operationScope.current === token);
+      toast.success('Recibo confirmado por el servidor. No se volvió a cobrar.');
+      invalidateReportScope(resources, user.businessId, activeBranchId);
+    } catch (error) { toast.error(error.message || 'El resultado sigue pendiente de revisión. No vuelvas a cobrar.'); }
+    finally { processingRef.current = false; setIsProcessing(false); }
+  };
 
   const clearLastSale = useCallback(() => setLastSale(null), []);
 
@@ -223,6 +268,7 @@ export const usePOS = (user, currentSession) => {
     splitEfectivo, setSplitEfectivo, splitYape, setSplitYape,
     search, setSearch, isProcessing, showQrModal, setShowQrModal, qrUrl,
     addToCart, updateQty, removeFromCart, total, isPaymentValid, paymentValidation,
-    handleCheckoutClick, processSale, printReceipt, lastSale, clearLastSale, activeCategories
+    handleCheckoutClick, processSale, printReceipt, lastSale, clearLastSale, activeCategories,
+    catalogChanges, catalogBlocked, acceptCatalogChange, verifyLastSale
   };
 };

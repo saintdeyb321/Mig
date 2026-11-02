@@ -80,6 +80,118 @@ beforeEach(async () => {
 after(async () => env?.cleanup());
 
 describe('SPARK-4 integrated financial Rules', () => {
+  it('Plan07 recovers a committed sale and cashier void after losing their post-commit reads', async () => {
+    const db = database(), input = payload('plan07-receipts', 2);
+    let loseRead = true, transactionCount = 0;
+    const injected = { ...sdk, runTransaction: (...args) => { transactionCount++; return sdk.runTransaction(...args); },
+      getDocFromServer: reference => loseRead ? Promise.reject(Object.assign(new Error('Lost receipt read'), { code: 'unavailable' })) : sdk.getDocFromServer(reference) };
+    const sales = createSparkSalesRepository(db, { sdk: injected, currentUser: () => ({ uid }) });
+    const rows = new Map(), store = { get: async id => rows.get(id), list: async () => [...rows.values()],
+      insert: async row => rows.set(row.localId, row), update: async (id, changes) => Object.assign(rows.get(id), changes) };
+    const identity = { uid, businessId, branchId };
+    const queue = createSaleQueue({ store, encrypt, decrypt, online: () => true, currentIdentity: () => true,
+      syncSessions: async () => new Map(), withLock: work => work(), apply: sales.submit, verifyReceipt: sales.verify });
+    assert.equal((await queue.submit(input, identity, { isolated: true })).pending, true);
+    assert.ok((await inspect('sales/' + input.saleId)).exists());
+    const ciphertext = rows.get(input.saleId).data;
+    loseRead = false;
+    assert.equal((await queue.reconcile(identity))[0].state, 'confirmed');
+    assert.deepEqual(await queue.reconcile(identity), []); assert.equal(transactionCount, 1); assert.equal(rows.get(input.saleId).data, ciphertext);
+    const voids = createPosVoidRepository(db, { sdk: injected, currentUser: () => ({ uid }) });
+    const command = { saleId: input.saleId, reason: 'Corrección real de simulación', businessId, branchId };
+    loseRead = true;
+    await assert.rejects(voids.void(command), { code: 'void-unverified' });
+    const saved = (await inspect('pos_voids/' + input.saleId)).data();
+    assert.equal(saved.authority, 'pos-compensation');
+    loseRead = false;
+    assert.equal((await voids.verify(command)).status, 'ALREADY_APPLIED');
+    assert.equal((await voids.verify(command)).status, 'ALREADY_APPLIED');
+    assert.equal(transactionCount, 2);
+    assert.equal((await inspect('products/bread')).data().stock[branchId], 10);
+    assert.equal((await inspect('products/bread')).data().posStockVersion[branchId], 2);
+  });
+  it('Plan07 keeps prior-session cash and digital compensations separate in a provisional negative cash close', async () => {
+    const db = database(), sales = createSparkSalesRepository(db, { sdk, currentUser: () => ({ uid }) });
+    const original = payload('plan07-prior-cash', 2);
+    await sales.submit(original);
+    const digital = { ...payload('plan07-prior-yape', 1), payment: 'yape' };
+    const mixed = { ...payload('plan07-prior-mixed', 1), payment: 'mixto', splitPayments: { efectivo: 0.25, yape: 1 } };
+    await sales.submit(digital); await sales.submit(mixed);
+    const reader = createPosVoidReader(db, { sdk });
+    const closing = createSparkCashClosingRepository(db, { sdk, currentUser: () => ({ uid }),
+      readSales: createSalesSessionReader(db, { sdk }), readPayments: async session => voidCashPayments(await reader.bySession(session)) });
+    const cashCompensation = original.total + 0.25;
+    await assert.doesNotReject(closing.close(sessionId, 10 + cashCompensation, 'Cierre previo a compensación'), 'Previous session close');
+    const nextId = 'plan07-current-cash-session';
+    await createSparkCashRepository(db, { sdk, currentUser: () => ({ uid }) }).open({ sessionId: nextId, businessId, branchId, openingAmount: 0 });
+    const command = { saleId: original.saleId, reason: 'Ticket de una caja anterior', businessId, branchId };
+    const voids = createPosVoidRepository(db, { sdk, currentUser: () => ({ uid }) });
+    await voids.void(command); await voids.verify(command);
+    for (const source of [digital, mixed]) await voids.void({ ...command, saleId: source.saleId });
+    const currentDigital = { ...payload('plan07-current-yape', 1), sessionId: nextId, payment: 'yape' };
+    await sales.submit(currentDigital); await voids.void({ ...command, saleId: currentDigital.saleId });
+    const estimate = await closing.preview(nextId, 0);
+    assert.equal(estimate.contractCash, 0); assert.equal(estimate.posCompensationCash, -cashCompensation);
+    assert.equal(estimate.expectedCash, -cashCompensation); assert.equal(estimate.difference, cashCompensation);
+    assert.equal(estimate.digitalTotal, -2.25);
+    assert.equal(estimate.hasUnverifiedDisbursements, true); assert.equal(estimate.requiresOwnerReview, true);
+    let results;
+    await assert.doesNotReject(async () => { results = await Promise.all([closing.close(nextId, 0, 'Entrega física no acreditada; revisión del dueño'), closing.close(nextId, 0, 'Entrega física no acreditada; revisión del dueño')]); }, 'Negative estimate concurrent close');
+    assert.ok(results.every(row => row.reconciliationPending));
+    const saved = (await inspect('cash_sessions/' + nextId)).data();
+    assert.equal(saved.closeEstimate.posCompensationCash, -cashCompensation); assert.equal(saved.status, 'closed_with_discrepancy');
+    await assert.rejects(sales.submit({ ...payload('plan07-after-close', 1), sessionId: nextId }), { code: 'permission-denied' });
+  });
+  it('Plan07 detects an owner opening cash while the cashier has no local session, then its release', async () => {
+    const cashierDb = database();
+    await createSparkCashClosingRepository(cashierDb, { sdk, currentUser: () => ({ uid }), readSales: async () => [], readPayments: async () => [] }).close(sessionId, 10);
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'users', 'manager'), { businessId, role: 'dueño', status: 'activo' }));
+    const ownerDb = env.authenticatedContext('manager').firestore();
+    let changes = 0;
+    const stop = createCashAvailabilityWatcher(cashierDb, { sdk })(businessId, branchId, null, () => changes++, error => assert.fail(error.message));
+    try {
+      const id = 'plan07-owner-cash-session';
+      await createSparkCashRepository(ownerDb, { sdk, currentUser: () => ({ uid: 'manager' }) }).open({ sessionId: id, businessId, branchId, openingAmount: 0 });
+      for (let i = 0; i < 100 && changes < 1; i++) await new Promise(resolve => setTimeout(resolve, 10));
+      assert.equal(changes, 1);
+      await createSparkCashClosingRepository(ownerDb, { sdk, currentUser: () => ({ uid: 'manager' }), readSales: async () => [], readPayments: async () => [] }).close(id, 0);
+      for (let i = 0; i < 100 && changes < 2; i++) await new Promise(resolve => setTimeout(resolve, 10));
+      assert.equal(changes, 2);
+    } finally { stop(); }
+  });
+  it('Plan07 verifies notification markers after a lost batch response without relaxing evidence Rules', async () => {
+    await env.withSecurityRulesDisabled(async ctx => {
+      await setDoc(doc(ctx.firestore(), 'users', 'manager'), { businessId, role: 'dueño', status: 'activo' });
+      const batch = writeBatch(ctx.firestore());
+      for (let index = 0; index < 12; index++) batch.set(doc(ctx.firestore(), 'pos_voids', `plan07-notice-${index}`), {
+        businessId, branchId, userId: uid, saleId: `plan07-notice-${index}`, authority: 'pos-compensation', protocol: 1,
+        amount: -9, reason: 'Prueba de lectura', occurredAt: Timestamp.now(),
+      });
+      await batch.commit();
+    });
+    const ownerDb = env.authenticatedContext('manager').firestore();
+    const injected = { ...sdk, writeBatch: db => {
+      const batch = sdk.writeBatch(db);
+      return { set: (...args) => batch.set(...args), update: (...args) => batch.update(...args), commit: async () => { await batch.commit(); throw Object.assign(new Error('Lost batch response'), { code: 'unavailable' }); } };
+    } };
+    const repo = createNotificationRepository(ownerDb, { sdk: injected, currentUser: () => ({ uid: 'manager' }) });
+    const notices = [];
+    for (let index = 0; index < 12; index++) notices.push(projectFinancialNotice('pos-void', { ...(await inspect(`pos_voids/plan07-notice-${index}`)).data(), id: `plan07-notice-${index}` }, businessId, 'manager'));
+    assert.equal((await repo.markAllNotificationsRead(businessId, 'manager', notices)).confirmedIds.length, 12);
+    assert.equal((await repo.markAllNotificationsRead(businessId, 'manager', notices)).confirmedIds.length, 12);
+    assert.ok((await inspect('notifications/' + notices.at(-1).id)).data().readAt.toDate());
+  });
+  it('Plan07 rejects 9, 12, 15 and 16 product writes atomically with the current eight-line Rules protocol', async () => {
+    const rows = Array.from({ length: 16 }, (_, index) => ({ ...products[0], id: `plan07-bound-${index}` }));
+    await env.withSecurityRulesDisabled(async ctx => { const batch = writeBatch(ctx.firestore()); for (const row of rows) batch.set(doc(ctx.firestore(), 'products', row.id), row); await batch.commit(); });
+    for (const count of [9, 12, 15, 16]) {
+      const input = canonicalSale({ ...payload(`plan07-bound-ticket-${count}`, 1), items: rows.slice(0, count).map(row => ({ ...row, qty: 1 })), total: count * 1.25, amountPaid: count * 1.25 });
+      await assertFails(commit({ ...input, atomicProtocol: 2 }));
+      assert.equal((await inspect('sales/' + input.saleId)).exists(), false);
+      assert.equal((await inspect('products/' + rows[0].id)).data().stock[branchId], 10);
+      assert.equal((await inspect('products/' + rows[count - 1].id)).data().stock[branchId], 10);
+    }
+  });
   it('Plan06 cashier compensates eight lines once with a verified actor and owner evidence read acknowledgements', async () => {
     const rows = Array.from({ length:8 }, (_,i)=>({ ...products[0], id:`cashier-void-${i}` }));
     await env.withSecurityRulesDisabled(async ctx => {
@@ -267,6 +379,7 @@ describe('SPARK-4 integrated financial Rules', () => {
     const workbook = buildSalesWorkbook(XLSX, { period, sales: receipts, voids: refunds, businessId, branchId }).workbook;
     const copy = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
     assert.ok(copy.SheetNames.some(name => XLSX.utils.sheet_to_json(copy.Sheets[name]).some(row => row['Total movimiento (S/)'] === -10)));
+    assert.ok(XLSX.utils.sheet_to_json(copy.Sheets.Resumen_Financiero).some(row => row.Concepto === 'Alcance de las compensaciones POS' && row.Valor.includes('sin evidencia de desembolso físico')));
     await assertFails(reader.inPeriod('foreign', from, to, branchId));
     const adjustedStock = { [branchId]: 11, other: 7 };
     await env.withSecurityRulesDisabled(async ctx => {

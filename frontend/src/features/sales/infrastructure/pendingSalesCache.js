@@ -17,6 +17,7 @@ export async function readPendingSales(identity, branchId = 'global', projection
     try {
       const sale = canonicalSale(await decodeQueuedSale(record, identity, decrypt));
       return { ...sale, id: record.localId, isOffline: true, queueStatus: migrateSaleRecord(record).status,
+        receiptState: migrateSaleRecord(record).status === 'failed' ? 'rejected' : record.lastErrorCode === 'receipt-not-found' || !record.attempted ? 'unconfirmed' : 'uncertain',
         lastError: record.lastError, attempted: record.attempted, projectionBase: record.projectionBase,
         financialAck: record.financialAck, stockVersions: record.stockVersions };
     } catch { return null; }

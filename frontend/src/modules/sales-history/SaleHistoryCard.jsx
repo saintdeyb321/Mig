@@ -7,6 +7,7 @@ export function SaleHistoryCard({
   formatDate,
   isProcessing,
   verificarPendiente,
+  verificarAnulacion,
   setSaleToCancel
 }) {
   const isAnulada = s.voided === true;
@@ -18,7 +19,7 @@ export function SaleHistoryCard({
 
   if (s.isOffline) {
     const rejected = s.queueStatus === 'failed';
-    return <Card className="space-y-3"><div className="flex flex-wrap justify-between gap-2"><Badge variant={rejected ? 'danger' : 'warning'}>{rejected ? 'Intento rechazado' : 'Sin confirmar'}</Badge><span className="text-xs text-muted">{formatDate(s.createdAt)}</span></div>
+    return <Card className="space-y-3"><div className="flex flex-wrap justify-between gap-2"><Badge variant={rejected ? 'danger' : 'warning'}>{rejected ? 'Intento rechazado' : s.receiptState === 'uncertain' ? 'Resultado remoto incierto' : 'Venta aún no confirmada'}</Badge><span className="text-xs text-muted">{formatDate(s.createdAt)}</span></div>
       <p className="text-sm">{rejected ? 'No se confirmó esta venta. El intento se conserva para revisión.' : 'Consulta el comprobante antes de volver a cobrar. No repitas la devolución ni el cobro.'}</p>
       <p className="text-xs text-muted">{branchName}</p>
       {!rejected&&<Button disabled={isProcessing} onClick={()=>verificarPendiente(s)} variant="secondary">Consultar confirmación</Button>}
@@ -100,7 +101,8 @@ export function SaleHistoryCard({
                     </span>
                   </div>
 
-                  {!isAnulada && ['dueño', 'cajero'].includes(user?.role) && (user.role !== 'cajero'||s.branchId===user.branchId) && <Button onClick={() => setSaleToCancel(s)} disabled={isProcessing || !runtimeCapabilities.saleVoid || s.atomicProtocol !== 2} title={s.atomicProtocol === 2 ? 'Requiere tu caja activa en la sede de origen; devolución única por los medios originales.' : 'Ticket histórico: requiere revisión; se conserva sin modificar.'} type="button" variant="danger">
+                  {!isAnulada && s.voidCheckPending && <div className="space-y-2"><p role="status" className="text-sm text-warning">Anulación pendiente de comprobar. Conserva ID y motivo; no repitas la compensación ni la entrega física.</p><Button variant="secondary" disabled={isProcessing} onClick={() => verificarAnulacion(s)}>Verificar anulación</Button></div>}
+                  {!isAnulada && !s.voidCheckPending && ['dueño', 'cajero'].includes(user?.role) && (user.role !== 'cajero'||s.branchId===user.branchId) && <Button onClick={() => setSaleToCancel(s)} disabled={isProcessing || !runtimeCapabilities.saleVoid || s.atomicProtocol !== 2} title={s.atomicProtocol === 2 ? 'Requiere tu caja activa en la sede de origen; compensación única, sin certificar entrega física.' : 'Ticket histórico: requiere revisión; se conserva sin modificar.'} type="button" variant="danger">
                       {isProcessing ? '...' : 'Anular Ticket'}
                     </Button>}
                 </div>

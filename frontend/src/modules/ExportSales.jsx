@@ -30,7 +30,7 @@ function ExportSales({
         </p>
       </div>
 
-      <p className="text-sm text-muted">El archivo incluye ventas, devoluciones y pagos del período. Los reportes diarios y semanales detallan cada movimiento; mes y año resumen por día.</p>
+      <p className="text-sm text-muted">El archivo incluye ventas, compensaciones POS y pagos del período. Una compensación contable no acredita entrega física de efectivo ni devolución digital. Los reportes diarios y semanales detallan cada movimiento; mes y año resumen por día.</p>
       <details className="text-xs text-muted"><summary className="min-h-8 cursor-pointer">Alcance y límites de la consulta</summary><p>Se consultan los movimientos del período elegido. Máximo 10 000 movimientos y 500 contratos históricos. Si falta información o se excede el límite, se solicita reducir el período y no se descarga un Excel parcial.</p></details>
       <FirestoreQueryError error={queryError} area="reports" user={user} commercial />
       <label className="flex min-h-11 items-center gap-3 rounded-xl border border-finance-line bg-panel p-3 text-sm"><Input type="checkbox" checked={consent} disabled={isExporting} onChange={event => setConsent(event.target.checked)} /> Autorizo consultar los movimientos del período seleccionado para generar el Excel.</label>

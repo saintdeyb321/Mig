@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { getSafeStock } from '../domain/cartStock';
 import { money, saleAmountCents, SALE_LIMITS } from '../domain/saleModel';
+import { cartCatalogChanges, acceptCartCatalogChange, canAddDistinctProduct } from '../domain/cartCatalog.js';
 
 export const useCart = (products, activeBranchId) => {
   const [cart, setCart] = useState([]);
@@ -21,6 +22,10 @@ export const useCart = (products, activeBranchId) => {
 
     setCart(prev => {
       const found = prev.find(p => p.id === product.id);
+      if (!canAddDistinctProduct(prev, product.id)) {
+        toast.error(`Carrito lleno: máximo ${SALE_LIMITS.maxDistinctProducts} productos diferentes. Finaliza este ticket antes de iniciar otra venta.`, { id: TOAST_ID });
+        return prev;
+      }
       if (found && found.qty >= SALE_LIMITS.maxQuantity) {
         toast.error('Máximo 1 000 unidades por producto.', { id: TOAST_ID });
         return prev;
@@ -61,6 +66,8 @@ export const useCart = (products, activeBranchId) => {
   }, []);
 
   const clearCart = useCallback(() => setCart([]), []);
+  const catalogChanges = useMemo(() => cartCatalogChanges(cart, products, activeBranchId), [cart, products, activeBranchId]);
+  const acceptCatalogChange = useCallback(id => setCart(previous => acceptCartCatalogChange(previous, id, products)), [products]);
 
-  return { cart, setCart, total, addToCart, updateQty, removeFromCart, clearCart };
+  return { cart, setCart, total, addToCart, updateQty, removeFromCart, clearCart, catalogChanges, acceptCatalogChange };
 };

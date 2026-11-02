@@ -1,4 +1,8 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useEffect, useRef } from 'react';
+import { useSessionResources } from '../../../core/session/sessionResourceHooks.js';
+import { auth } from '../../../core/firebase/client.js';
+import { recoverFinancialReceipts } from '../../sales/infrastructure/saleTransactions.js';
+import { startReceiptRecovery } from '../../sales/application/receiptRecovery.js';
 import { CatalogContext } from './CatalogContext';
 import { useTenantData } from '../../branches/context/TenantContext';
 import { subscribeProducts, subscribeCategories } from '../infrastructure/catalogRepository';
@@ -9,10 +13,20 @@ import { EMPTY_LIST, useScopedSubscription } from '../../../shared/hooks/useScop
 import offlineDB from '../../../offlineDB';
 
 export function CatalogProvider({ children }) {
-  const { user, identityKey } = useTenantData();
+  const { user, identityKey, activeBranchId } = useTenantData();
+  const resources = useSessionResources();
   const businessId = user.businessId;
   const uid = user.uid;
   const queueIdentity = useMemo(() => ({ uid, businessId }), [uid, businessId]);
+  const recoveryRefresh = useRef(() => {});
+  useEffect(() => {
+    if (!activeBranchId || activeBranchId === 'global') return;
+    const identity = { uid, businessId, branchId: activeBranchId };
+    const recovery = startReceiptRecovery({ isCurrent: () => resources.active && auth.currentUser?.uid === uid,
+      verify: isCurrent => recoverFinancialReceipts(identity, isCurrent) });
+    recoveryRefresh.current = recovery.refresh;
+    return () => { recoveryRefresh.current = () => {}; recovery.stop(); };
+  }, [uid, businessId, activeBranchId, resources]);
   const watchProducts = useCallback((onData, onError) => {
     let raw = [], metadata = { fromCache: true, hasPendingWrites: false };
     let pendingReady = false;
@@ -33,7 +47,12 @@ export function CatalogProvider({ children }) {
     };
     const stopCache = subscribeTenantCache(offlineDB, 'products', businessId,
       (next, error) => subscribeProducts(businessId, next, error),
-      (products, source) => { raw = products; metadata = source; publish(); }, onError);
+      (products, source) => {
+        const wasCached = metadata.fromCache || metadata.hasPendingWrites;
+        raw = products; metadata = source;
+        if (wasCached && !metadata.fromCache && !metadata.hasPendingWrites) recoveryRefresh.current();
+        publish();
+      }, onError);
     const stopPending = subscribeStockQueue(queueIdentity, () => {
       pendingReady = true;
       publish();

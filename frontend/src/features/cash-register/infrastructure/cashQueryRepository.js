@@ -33,7 +33,8 @@ export function createCashPeriodReader(database, { sdk = firestoreSDK, project =
 }
 
 export function createCashStateReader(database, { sdk = firestoreSDK } = {}) {
-  const { getDocs: readDocs, query, collection, where, limit } = sdk;
+  const { query, collection, where, limit } = sdk;
+  const readDocs = sdk.getDocsFromServer ?? sdk.getDocs;
   const getDocs = checkedRead(readDocs, 'cash-open');
   return async (businessId, branchId, userId = null) => {
     const open = await getDocs(query(collection(database, 'cash_sessions'), where('businessId', '==', businessId),
@@ -43,15 +44,34 @@ export function createCashStateReader(database, { sdk = firestoreSDK } = {}) {
 }
 
 export function createCashAvailabilityWatcher(database, { sdk = firestoreSDK } = {}) {
+  const scopes = new Map();
   return (businessId, branchId, sessionId, onReleased, onError) => {
-    let closed = false, stop = () => {};
-    void cashLockId(businessId, branchId).then(id => {
-      if (closed) return;
-      stop = sdk.onSnapshot(sdk.doc(database, 'active_cash_sessions', id), { includeMetadataChanges: true }, snapshot => {
-        if (closed || snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return;
-        if (!snapshot.exists() || snapshot.data().sessionId !== sessionId) onReleased();
-      }, error => { if (!closed) onError(error); });
-    }).catch(error => { if (!closed) onError(error); });
-    return () => { closed = true; stop(); };
+    const key = JSON.stringify([businessId, branchId]);
+    let entry = scopes.get(key);
+    if (!entry) {
+      entry = { observers: new Set(), stop: () => {}, closed: false, fingerprint: undefined };
+      scopes.set(key, entry);
+      const scope = entry;
+      void cashLockId(businessId, branchId).then(id => {
+        if (scope.closed) return;
+        scope.stop = sdk.onSnapshot(sdk.doc(database, 'active_cash_sessions', id), { includeMetadataChanges: true }, snapshot => {
+          if (scope.closed || snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return;
+          const data = snapshot.exists() ? snapshot.data() : null;
+          const fingerprint = data ? JSON.stringify([data.sessionId, data.userId, data.status, data.runtime]) : 'empty';
+          const first = scope.fingerprint === undefined;
+          if (!first && scope.fingerprint === fingerprint) return;
+          scope.fingerprint = fingerprint;
+          for (const observer of scope.observers) {
+            if (!first || (data?.sessionId ?? null) !== (observer.sessionId ?? null)) observer.onReleased();
+          }
+        }, error => { if (!scope.closed) for (const observer of scope.observers) observer.onError(error); });
+      }).catch(error => { if (!scope.closed) for (const observer of scope.observers) observer.onError(error); });
+    }
+    const observer = { sessionId, onReleased, onError };
+    entry.observers.add(observer);
+    return () => {
+      entry.observers.delete(observer);
+      if (!entry.observers.size) { entry.closed = true; entry.stop(); scopes.delete(key); }
+    };
   };
 }

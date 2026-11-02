@@ -22,6 +22,7 @@ function SalesHistory({
     formatDate,
     anularVentaConfirmada,
     verificarPendiente,
+    verificarAnulacion,
     isProcessing,
     businessBranches
   } = useSalesHistory(user);
@@ -43,7 +44,7 @@ function SalesHistory({
         <span>{isStale ? 'Lectura local; actualización pendiente.' : updatedAt ? `Actualizado ${new Date(updatedAt).toLocaleTimeString('es-PE')}` : ''}</span></div>
       <FirestoreQueryError error={error} area="sales-recent" user={user} onRetry={retry} commercial />
       {sales.length === 0 && error ? null : sales.length === 0 ? <EmptyState title={pendingOnly ? 'Sin pendientes locales' : 'Sin ventas confirmadas'} description={pendingOnly ? 'No hay intentos locales para revisar en esta vista.' : 'Las ventas confirmadas aparecerán aquí.'} /> : <div className="grid min-w-0 gap-4 xl:grid-cols-2 3xl:grid-cols-3">
-          {sales.map(s => <SaleHistoryCard key={s.id} s={s} user={user} businessBranches={businessBranches} formatDate={formatDate} isProcessing={isProcessing||isStale||!!error} verificarPendiente={verificarPendiente} setSaleToCancel={setSaleToCancel} />)}
+          {sales.map(s => <SaleHistoryCard key={s.id} s={s} user={user} businessBranches={businessBranches} formatDate={formatDate} isProcessing={isProcessing||isStale||!!error} verificarPendiente={verificarPendiente} verificarAnulacion={verificarAnulacion} setSaleToCancel={setSaleToCancel} />)}
         </div>}
 
       {saleToCancel && <Dialog title={<><span>⚠️</span> ¿Anular esta venta?</>} busy={isProcessing} className="max-w-lg" onClose={() => {
@@ -52,7 +53,7 @@ function SalesHistory({
     }}>
 
             <p className="text-muted text-sm mb-5">
-              Estás a punto de registrar la devolución de <strong>S/ {Number(saleToCancel.total).toFixed(2)}</strong> por los medios originales y reintegrar el stock. El ticket original se conservará. Si el resultado es incierto, no repitas la devolución física.
+              Estás a punto de registrar una compensación contable de <strong>S/ {Number(saleToCancel.total).toFixed(2)}</strong> por los medios originales y reintegrar el stock. El ticket original se conserva. Esta operación no acredita un desembolso físico. Si el resultado es incierto, verifica el mismo ID y conserva el motivo.
             </p>
 
             <form onSubmit={async e => {
@@ -61,7 +62,9 @@ function SalesHistory({
           toast.error("Por favor, explica detalladamente el motivo.");
           return;
         }
-        const confirmed = await anularVentaConfirmada(saleToCancel, voidReason);
+        const current = sales.find(sale => sale.id === saleToCancel.id);
+        const pendingVoid = current?.voidCheckPending || current?.voided;
+        const confirmed = pendingVoid ? await verificarAnulacion(saleToCancel) : await anularVentaConfirmada(saleToCancel, voidReason);
         if (!confirmed) return;
         setSaleToCancel(null);
         setVoidReason('');
@@ -71,7 +74,7 @@ function SalesHistory({
                   MOTIVO DE LA ANULACIÓN (Obligatorio):
                 </>}>
 
-                <Textarea required minLength="5" maxLength="1000" value={voidReason} onChange={e => setVoidReason(e.target.value)} placeholder="Ej: El cliente se arrepintió, error de cobro, etc." autoFocus className="w-full p-3 rounded-xl border-2 border-warning min-h-20 resize-y font-sans" />
+                <Textarea required minLength="5" maxLength="1000" value={voidReason} disabled={isProcessing || !!sales.find(sale => sale.id === saleToCancel.id && (sale.voidCheckPending || sale.voided))} onChange={e => setVoidReason(e.target.value)} placeholder="Ej: El cliente se arrepintió, error de cobro, etc." autoFocus className="w-full p-3 rounded-xl border-2 border-warning min-h-20 resize-y font-sans" />
               </FormField>
 
               <div className="mt-5 flex-wrap justify-end flex gap-2.5">
@@ -82,7 +85,7 @@ function SalesHistory({
                   Cancelar
                 </Button>
                 <Button type="submit" className="min-w-0 flex-1 p-3 border-0 rounded-xl font-bold cursor-pointer" disabled={isProcessing || !runtimeCapabilities.saleVoid} variant="danger">
-                  {isProcessing ? 'Anulando...' : 'Sí, anular venta'}
+                  {isProcessing ? 'Comprobando...' : sales.find(sale => sale.id === saleToCancel.id && (sale.voidCheckPending || sale.voided)) ? 'Verificar anulación' : 'Sí, anular venta'}
                 </Button>
               </div>
             </form>

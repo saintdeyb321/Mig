@@ -4,9 +4,9 @@ import { toDateSafe } from '../../../core/dates/dateValues';
 import { getFirebaseErrorCode } from '../../../core/errors/firebaseErrors';
 import { useSessionState, useSessionResources } from '../../../core/session/sessionResourceHooks.js';
 import { invalidateReportScope } from '../../reports/application/reportResource.js';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { voidSaleTransaction, verifyPendingSaleTransaction } from '../infrastructure/saleTransactions';
+import { voidSaleTransaction, verifyPendingSaleTransaction, voidRecovery } from '../infrastructure/saleTransactions';
 
 export const useSalesHistory = (user) => {
   const resources = useSessionResources();
@@ -16,6 +16,8 @@ export const useSalesHistory = (user) => {
   const { businessBranches } = useTenantData();
   const [isProcessing, setIsProcessing] = useState(false);
   const processing = resources.value(`sales:operation:${user.uid}:${activeBranchId}`, () => ({ busy: false }));
+  const scope = useRef(0);
+  useEffect(() => { const ref = scope; return () => { ref.current++; }; }, [user.uid, user.businessId, activeBranchId]);
 
   const sales = useMemo(() => {
     const rawSales = globalSales || [];
@@ -55,9 +57,9 @@ export const useSalesHistory = (user) => {
     const toastId = toast.loading('Anulando venta y ajustando contabilidad...');
 
     try {
-      const result = await voidSaleTransaction({ id: venta.id, voidReason });
+      const result = await voidSaleTransaction({ id: venta.id, voidReason, identity: { ...user, branchId: venta.branchId } });
 
-      toast.success(result.status === 'ALREADY_APPLIED' ? 'Anulación ya confirmada; no repitas la devolución física.' : 'Compensación confirmada: devuelve por los medios de pago originales.', { id: toastId });
+      toast.success(result.status === 'ALREADY_APPLIED' ? 'Anulación ya aplicada. No se creó otra compensación.' : 'Compensación contable confirmada y stock restituido. La entrega física del dinero no está acreditada.', { id: toastId });
       invalidateReportScope(resources, user.businessId, venta.branchId);
       return true;
 
@@ -77,9 +79,22 @@ export const useSalesHistory = (user) => {
   const verificarPendiente = async sale => {
     if (processing.busy) return;
     processing.busy = true; setIsProcessing(true);
-    try { await verifyPendingSaleTransaction(sale, user); toast.success('Comprobante confirmado; no se volvió a cobrar.'); }
+    const token = scope.current;
+    try { await verifyPendingSaleTransaction(sale, user, () => resources.active && scope.current === token); toast.success('Comprobante confirmado; no se volvió a cobrar.'); }
     catch (error) { toast.error(error.message || 'Sigue pendiente para revisión.'); }
     finally { processing.busy = false; setIsProcessing(false); }
   };
-  return { isStale, updatedAt, retry, pendingOnly, setPendingOnly, localCount, rejectedCount, uncertainCount, sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, verificarPendiente, businessBranches };
+  const verificarAnulacion = async sale => {
+    if (processing.busy || (activeBranchId !== 'global' && sale.branchId !== activeBranchId)) return false;
+    processing.busy = true; setIsProcessing(true);
+    const token = scope.current;
+    try {
+      await voidRecovery.verify({ saleId: sale.id }, { ...user, branchId: sale.branchId }, () => resources.active && scope.current === token);
+      toast.success('Anulación confirmada por el servidor. No se repitió stock, compensación ni entrega física.');
+      invalidateReportScope(resources, user.businessId, sale.branchId);
+      return true;
+    } catch (error) { toast.error(error.message || 'Anulación pendiente de revisión. No repitas la operación.'); return false; }
+    finally { processing.busy = false; setIsProcessing(false); }
+  };
+  return { isStale, updatedAt, retry, pendingOnly, setPendingOnly, localCount, rejectedCount, uncertainCount, sales, error, isLoading: isGlobalLoading, isProcessing, formatDate, anularVentaConfirmada, verificarPendiente, verificarAnulacion, businessBranches };
 };

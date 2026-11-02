@@ -60,4 +60,4 @@ export function createPosVoidReader(database, { sdk = firestore } = {}) {
 // A read-only projection for the cash calculator; the immutable compensation is its authority.
 export const voidCashPayments = rows => rows.flatMap(row => [['efectivo', row.cashAmount], ['yape', row.digitalAmount]]
   .filter(([, amount]) => amount < 0).map(([method, amount]) => ({ ...row, id: `pos-void:${row.id}:${method}`, sourceId: row.saleId,
-    sourceType: 'sale', type: 'refund', method, amount, runtime: 'spark' })));
+    sourceType: 'sale', type: 'refund', method, amount, runtime: 'spark', physicalDisbursementVerified: false })));

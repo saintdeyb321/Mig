@@ -10,17 +10,19 @@ export function createSparkCashClosingRepository(database, { currentUser, readSa
   const { doc, getDocFromServer, runTransaction, serverTimestamp } = sdk;
   const who = () => { const uid = currentUser()?.uid; if (!uid) throw new Error('Inicia sesión.'); return uid; };
   async function preview(id, declaredAmount) {
-    who(); contractAmount(declaredAmount);
+    const uid = who(); contractAmount(declaredAmount);
     const saved = await getDocFromServer(doc(database, 'cash_sessions', id));
     if (!saved.exists() || saved.data().runtime !== 'spark') throw new Error('Caja histórica: requiere revisión, sin migración automática.');
     const session = { ...saved.data(), id };
     const [sales, payments] = await Promise.all([readSales(session), readPayments(session)]);
+    if (who() !== uid) throw new Error('La sesión cambió durante la lectura.');
     const openedAt = toMillisSafe(session.openedAt);
     const confirmedSales = sales.filter(sale => sale.status === 'confirmed' && (toMillisSafe(sale.confirmedAt) ?? -Infinity) >= openedAt);
     const confirmedPayments = payments.filter(payment => payment.runtime === 'spark' && (toMillisSafe(payment.occurredAt) ?? -Infinity) >= openedAt);
     const totals = calculateCashTotals(session, confirmedSales, confirmedPayments);
     return { ...totals, expectedAmount: totals.expectedCash, declaredAmount,
       difference: money(declaredAmount - totals.expectedCash),
+      requiresOwnerReview: totals.expectedCash < 0 || totals.hasUnverifiedDisbursements || declaredAmount !== totals.expectedCash,
       reconciliationPending: true, authority: 'client-estimate' };
   }
   return { preview, async close(id, declaredAmount, notes = '') {
@@ -37,7 +39,17 @@ export function createSparkCashClosingRepository(database, { currentUser, readSa
     // Read committed rows only, before the final barrier. A racing sale may change this estimate.
     const estimate = await preview(id, declaredAmount);
     if (estimate.difference !== 0 && notes.trim().length < 5) throw new Error('Explica la diferencia con al menos 5 caracteres y vuelve a revisar el cierre.');
-    await runTransaction(database, async tx => {
+    const verifyClose = async () => {
+      const saved = await getDocFromServer(ref);
+      if (who() !== actorId) throw new Error('La sesión cambió.');
+      const data = saved.exists() ? saved.data() : null;
+      if (saved.metadata?.fromCache || saved.metadata?.hasPendingWrites || !['closed', 'closed_with_discrepancy'].includes(data?.status)
+        || data.closedBy !== actorId || data.declaredAmount !== declaredAmount || data.closingNote !== notes || data.reconciliationPending !== true) {
+        throw new Error('El servidor no confirma este cierre. Revisa la caja antes de repetir la operación.');
+      }
+      return { ...data, id };
+    };
+    try { await runTransaction(database, async tx => {
       if (who() !== actorId) throw new Error('La sesión cambió.');
       const saved = await tx.get(ref), session = saved.data();
       if (session?.runtime !== 'spark') throw new Error('Caja histórica: cierre Spark no autorizado.');
@@ -52,9 +64,11 @@ export function createSparkCashClosingRepository(database, { currentUser, readSa
         declaredAmount, closingNote: notes, closedAt: serverTimestamp(), closedBy: actorId,
         reconciliationPending: true, closeEstimate: estimate });
       tx.delete(lock);
-    });
-    const saved = await getDocFromServer(ref);
-    if (who() !== actorId) throw new Error('La sesión cambió.');
-    return { ...saved.data(), id };
+    }); } catch (error) {
+      // Concurrent identical closes may be denied after the other call releases the lock.
+      // Only the exact server declaration can acknowledge that result; never repeat the write.
+      try { return await verifyClose(); } catch { throw error; }
+    }
+    return verifyClose();
   } };
 }

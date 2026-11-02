@@ -17,14 +17,19 @@ export function useScopedSubscription(scopeKey, subscribe, initialData = EMPTY_L
   useEffect(() => {
     if (!scopeKey) return;
     const scope = createSubscriptionScope();
-    let timer = setTimeout(scope.guard(() => { timer = null; setSnapshot(previous => ({ ...previous, isLoading: false, isStale: true,
+    let serverSeen = false, timedOut = false;
+    let timer = setTimeout(scope.guard(() => { timer = null; timedOut = true; setSnapshot(previous => ({ ...previous, isLoading: false, isStale: true,
       error: Object.assign(new Error('No se confirmó la lectura con el servidor. Comprueba la conexión y reintenta.'), { code: 'unavailable' }) })); }), 10000);
     const done = () => { clearTimeout(timer); timer = null; };
     const unsubscribe = subscribe(
       scope.guard((data, metadata) => {
         const isStale = metadata?.fromCache === true || metadata?.hasPendingWrites === true;
+        if (!isStale) { serverSeen = true; timedOut = false; }
         if (!isStale || allowCachedData) done();
-        setSnapshot({ scopeKey, data, isLoading: !allowCachedData && isStale && timer !== null, isStale, error: !allowCachedData && isStale && timer === null ? Object.assign(new Error('Lectura local pendiente de confirmar con el servidor.'), { code: 'unavailable' }) : null });
+        setSnapshot(previous => ({ scopeKey,
+          data: preserveOnError && isStale && serverSeen && previous.scopeKey === scopeKey ? previous.data : data,
+          isLoading: !allowCachedData && isStale && !serverSeen && !timedOut, isStale,
+          error: !allowCachedData && isStale && timedOut ? Object.assign(new Error('Lectura local pendiente de confirmar con el servidor.'), { code: 'unavailable' }) : null }));
       }),
       scope.guard(error => { done(); setSnapshot(previous => ({ scopeKey,
         data: preserveOnError && previous.scopeKey === scopeKey ? previous.data : initialData,

@@ -7,6 +7,7 @@ import { useSharedSubscription } from '../../../core/session/sessionResourceHook
 import { createSubscriptionScope } from '../../../shared/utils/subscriptionScope';
 import { db } from '../../../core/firebase/client.js';
 import { createPosVoidReader } from '../infrastructure/posVoidQueryRepository.js';
+import { subscribeVoidAttempts } from '../infrastructure/saleTransactions.js';
 const compensations = createPosVoidReader(db);
 
 export function useRecentSales(user, { pendingOnly = false } = {}) {
@@ -17,6 +18,7 @@ export function useRecentSales(user, { pendingOnly = false } = {}) {
     const scope = createSubscriptionScope();
     let remote = [];
     let pending = [];
+    let voidAttempts = [];
     let failure = null;
     let metadata = { fromCache: !pendingOnly };
     let voids = [], voidKey = null, voidRevision = 0, stopVoids = () => {}, voidMetadata = { fromCache: !pendingOnly };
@@ -24,7 +26,9 @@ export function useRecentSales(user, { pendingOnly = false } = {}) {
     const publish = scope.guard((observedDocumentCount = 0) => {
       if (failure) { onError(failure); return; }
       const byId = new Map(voids.map(row => [row.saleId, row]));
-      const decorated = remote.map(sale => byId.has(sale.id) ? { ...sale, voided: true, voidReason: byId.get(sale.id).reason, posVoid: byId.get(sale.id) } : sale);
+      const attempts = new Map(voidAttempts.map(row => [row.saleId, row]));
+      const decorated = remote.map(sale => byId.has(sale.id) ? { ...sale, voided: true, voidReason: byId.get(sale.id).reason, posVoid: byId.get(sale.id) }
+        : attempts.has(sale.id) ? { ...sale, voidCheckPending: true, voidAttempt: attempts.get(sale.id) } : sale);
       onData(salesHistoryPresentation(pending, decorated, pendingOnly), { ...metadata, fromCache: metadata.fromCache || voidMetadata.fromCache, observedDocumentCount });
     });
     const stopRemote = pendingOnly ? () => {} : subscribeRecentSales(businessId, branchId, (sales, source) => {
@@ -41,7 +45,10 @@ export function useRecentSales(user, { pendingOnly = false } = {}) {
       publish(source.observedDocumentCount);
     }, fail);
     const stopPending = subscribePendingSales(user, branchId, sales => { pending = sales; publish(); }, fail);
-    return () => { scope.close(); voidRevision++; stopVoids(); stopRemote(); stopPending(); };
+    const stopAttempts = branchId ? subscribeVoidAttempts({ ...user, branchId }, scope.guard(rows => {
+      voidAttempts = rows; publish();
+    }), fail) : () => {};
+    return () => { scope.close(); voidRevision++; stopVoids(); stopRemote(); stopPending(); stopAttempts(); };
   }, [businessId, branchId, user, pendingOnly]);
   const result = useSharedSubscription(`sales:${identityKey}:${branchId}:${pendingOnly}`, subscribe, undefined, { preserveOnError: true });
   return { sales: result.data?.rows ?? [], localCount: result.data?.localCount ?? 0, rejectedCount: result.data?.rejectedCount ?? 0,

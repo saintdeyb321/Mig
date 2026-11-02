@@ -44,7 +44,7 @@ export const useCashRegister = (user, currentBranchId) => {
           try {
             const local = JSON.parse(await decrypt(record.data, user.uid));
             if (local.userId === user.uid && local.businessId === user.businessId && local.branchId === currentBranchId && local.status === 'open') {
-              found = { ...local, id: record.localId }; break;
+              found = { ...local, id: record.localId, serverConfirmed: false }; break;
             }
           } catch { /* Ignore another identity's encrypted records. */ }
         }
@@ -54,8 +54,8 @@ export const useCashRegister = (user, currentBranchId) => {
         if (!active()) return;
         if (session?.userId === user.uid) {
           const cached = session.runtime === 'spark' ? session : await cacheSession(session, { preservePending: true });
-          if (active()) setCurrentSession(cached.status === 'open' ? cached : null);
-        } else if (session) setCurrentSession({ ...session, heldByOther: true, needsForceClose: true, canForceClose: canForce });
+          if (active()) setCurrentSession(cached.status === 'open' ? { ...cached, serverConfirmed: true } : null);
+        } else if (session) setCurrentSession({ ...session, serverConfirmed: true, heldByOther: true, needsForceClose: true, canForceClose: canForce });
         else setCurrentSession(null);
       }
     } catch (error) {
@@ -69,13 +69,15 @@ export const useCashRegister = (user, currentBranchId) => {
     window.addEventListener('online', online);
     return () => { revisionRef.current++; window.removeEventListener('online', online); };
   }, [checkSession, resources, readKey]);
-  const observedSessionId = currentSession?.id;
   useEffect(() => {
-    if (!observedSessionId || !user?.businessId || !currentBranchId || currentBranchId === 'global') return;
-    return watchCashAvailability(user.businessId, currentBranchId, observedSessionId, () => {
+    if (!user?.businessId || !currentBranchId || currentBranchId === 'global') return;
+    let active = true;
+    const stop = watchCashAvailability(user.businessId, currentBranchId, null, () => {
+      if (!active || !resources.active || auth.currentUser?.uid !== user.uid) return;
       resources.invalidate(readKey); void checkSession();
     }, error => { if (resources.active && auth.currentUser?.uid === user.uid) setReadError(error); });
-  }, [observedSessionId, user?.businessId, user?.uid, currentBranchId, resources, readKey, checkSession, setReadError]);
+    return () => { active = false; stop(); };
+  }, [user?.businessId, user?.uid, currentBranchId, resources, readKey, checkSession, setReadError]);
   const refreshSession = useCallback(() => { resources.invalidate(readKey); return checkSession(); }, [resources, readKey, checkSession]);
   const authorizeOffline = async () => {
     if (!runtimeCapabilities.offlineSync) { toast.error('La autorización offline sigue pendiente de SPARK-4.'); return; }

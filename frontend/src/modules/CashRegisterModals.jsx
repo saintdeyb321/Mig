@@ -93,13 +93,15 @@ export const CashRegisterModals = ({
     </Dialog>}
     {tempSummary && <Dialog icon={ClipboardCheck} title="Confirmar cierre" onClose={() => setTempSummary(null)} busy={busy} description="Estimación del navegador. El cierre será operativo y quedará pendiente de conciliación; no certifica el libro completo.">
       <dl className="space-y-3 rounded-2xl border border-finance-line bg-success-soft p-5 text-sm">
-        <div className="flex flex-wrap justify-between gap-2"><dt className="text-muted">Efectivo esperado (estimación)</dt><dd className="font-semibold">S/ {tempSummary.expectedAmount.toFixed(2)}</dd></div>
+        {[['Fondo inicial', tempSummary.openingAmount], ['Ventas cobradas en efectivo (incluye mixtos)', tempSummary.posCash], ['Cobros y devoluciones de contratos en efectivo', tempSummary.contractCash], ['Compensaciones POS en efectivo (entrega no acreditada)', tempSummary.posCompensationCash ?? 0], ['Efectivo esperado estimado', tempSummary.expectedAmount]].map(([label, amount]) => <div key={label} className="flex flex-wrap justify-between gap-2"><dt className="text-muted">{label}</dt><dd className="font-semibold">S/ {Number(amount).toFixed(2)}</dd></div>)}
         <div className="flex flex-wrap justify-between gap-2"><dt>Dinero que dejaste</dt><dd className="font-bold text-primary">S/ {tempSummary.declaredAmount.toFixed(2)}</dd></div>
       </dl>
-      <Alert variant={tempSummary.difference < 0 ? 'danger' : tempSummary.difference > 0 ? 'warning' : 'success'} title="Diferencia frente a la estimación">
-        {tempSummary.difference === 0 && 'Conteo sin diferencia estimada'}
-        {tempSummary.difference > 0 && <>Sobran S/ {tempSummary.difference.toFixed(2)}</>}
-        {tempSummary.difference < 0 && <>Faltan S/ {Math.abs(tempSummary.difference).toFixed(2)}</>}
+      {(tempSummary.hasUnverifiedDisbursements || tempSummary.expectedAmount < 0) && <Alert variant="warning" title="Revisión del dueño y conciliación pendientes">Las compensaciones se registran en la caja donde se anula, incluso para tickets de turnos anteriores. No acreditan una entrega física de efectivo ni Yape. {tempSummary.expectedAmount < 0 && 'La estimación negativa indica que las compensaciones superan el efectivo contable disponible; no representa un saldo físico ni un sobrante normal.'} El cierre conserva esta limitación y la declaración física.</Alert>}
+      <Alert variant={tempSummary.requiresOwnerReview ? 'warning' : tempSummary.difference < 0 ? 'danger' : tempSummary.difference > 0 ? 'warning' : 'success'} title="Diferencia declarada frente a la estimación">
+        {tempSummary.expectedAmount < 0 || tempSummary.hasUnverifiedDisbursements ? <>Diferencia estimada: S/ {tempSummary.difference.toFixed(2)}. Pendiente de revisión; no certifica faltante ni sobrante físico.</>
+          : tempSummary.difference === 0 ? 'Conteo sin diferencia estimada'
+          : tempSummary.difference > 0 ? <>Sobran S/ {tempSummary.difference.toFixed(2)} frente a la estimación</>
+          : <>Faltan S/ {Math.abs(tempSummary.difference).toFixed(2)} frente a la estimación</>}
       </Alert>
       <p className="text-xs leading-relaxed text-muted">Fondo: S/ {Number(tempSummary.openingAmount).toFixed(2)} · POS efectivo (incluye mixtos): S/ {Number(tempSummary.posCash).toFixed(2)} · Contratos efectivo: S/ {Number(tempSummary.contractCash).toFixed(2)} · Digital (incluye mixtos): S/ {Number(tempSummary.digitalTotal).toFixed(2)}</p>
       <form onSubmit={submit(handleFinalSave)}><fieldset disabled={busy} className="space-y-4">

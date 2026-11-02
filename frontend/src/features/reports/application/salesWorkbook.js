@@ -36,14 +36,15 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = [], payments = []
     { Concepto: '🎂 INGRESOS NETOS PEDIDOS ESPECIALES', Valor: metrics.contractRevenue },
     { Concepto: ' ↳ Efectivo Pedidos', Valor: metrics.contractCash },
     { Concepto: ' ↳ Yape/Plin Pedidos', Valor: metrics.contractDigital },
-    { Concepto: ' ↳ Reembolsos POS y Pedidos (ya incluidos)', Valor: metrics.refunds },
+    { Concepto: ' ↳ Compensaciones POS y reembolsos Pedidos (ya incluidos)', Valor: metrics.refunds },
     { Concepto: 'Efectivo Neto Total', Valor: metrics.cashRevenue },
     { Concepto: 'Yape/Plin Neto Total', Valor: metrics.digitalRevenue },
     { Concepto: 'Ticket promedio POS', Valor: metrics.posAverageTicket },
     { Concepto: 'Tickets POS Registrados', Valor: metrics.posTicketCount },
     { Concepto: 'Pagos de Pedidos Procesados', Valor: metrics.contractPaymentCount },
     { Concepto: 'Tickets POS Anulados', Valor: metrics.voidedTicketCount },
-    { Concepto: 'Reembolsos Procesados', Valor: metrics.refundCount },
+    { Concepto: 'Compensaciones y reembolsos registrados', Valor: metrics.refundCount },
+    { Concepto: 'Alcance de las compensaciones POS', Valor: 'Registro contable sin evidencia de desembolso físico. Cierres operativos con conciliación pendiente.' },
   ];
   const summary = append('Resumen_Financiero', summaryRows, { currency: ['B'], widths: [{ wch: 52 }, { wch: 32 }] });
   summaryRows.forEach((row, index) => { if (index >= 14 && summary[`B${index + 2}`]) summary[`B${index + 2}`].z = '0'; });

@@ -5,6 +5,7 @@ import { useState, useMemo } from 'react';
 import { LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
 import { checkoutBlockReason } from '../features/sales/domain/checkoutPolicy.js';
 import { parsePaymentCents, saleAmountCents } from '../features/sales/domain/saleModel.js';
+import { canAddDistinctProduct } from '../features/sales/domain/cartCatalog.js';
 import { getSafeStock } from '../features/sales/domain/cartStock';
 import { usePOS } from '../features/sales/hooks/usePOS';
 import { useTenantData } from '../features/branches/context/TenantContext';
@@ -29,7 +30,8 @@ function POS({ user }) {
     splitEfectivo, setSplitEfectivo, splitYape, setSplitYape,
     search, setSearch, isProcessing, showQrModal, setShowQrModal, qrUrl,
     addToCart, updateQty, removeFromCart, total, isPaymentValid, paymentValidation, handleCheckoutClick, processSale,
-    lastSale, clearLastSale, printReceipt, activeCategories, isLoading
+    lastSale, clearLastSale, printReceipt, activeCategories, isLoading,
+    catalogChanges, catalogBlocked, acceptCatalogChange, verifyLastSale
   } = usePOS(user, currentSession);
 
   const [selectedCategory, setSelectedCategory] = useState('todas');
@@ -108,9 +110,10 @@ function POS({ user }) {
     : currentSession?.needsForceClose
       ? currentSession.canForceClose ? <Button variant="danger" className="w-full" onClick={()=>setShowCloseModal(true)}>Revisar y cerrar turno anterior</Button>
         : <Button variant="secondary" className="w-full" onClick={checkSession}>Comprobar disponibilidad</Button>
-      : <Button className="w-full" size="lg" onClick={requestCheckout} loading={isProcessing} disabled={isExpired||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>{branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':'Cobrar'}</Button>;
-  const ticket = lastSale ? <SaleStatus sale={lastSale} onPrint={printReceipt} onNew={handleNuevaVenta} />
-    : <Ticket drawer={isCartOpen} cart={cart} total={total} onQty={updateQty} onRemove={removeFromCart} isProcessing={isProcessing} action={action}>
+      : <Button className="w-full" size="lg" onClick={requestCheckout} loading={isProcessing} disabled={isExpired||catalogBlocked||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>{branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':'Cobrar'}</Button>;
+  const ticket = lastSale ? <SaleStatus sale={lastSale} onPrint={printReceipt} onNew={handleNuevaVenta} onVerify={verifyLastSale} isProcessing={isProcessing} />
+    : <Ticket drawer={isCartOpen} cart={cart} total={total} onQty={updateQty} onRemove={removeFromCart} isProcessing={isProcessing} action={action} catalogChanges={catalogChanges} onAcceptChange={acceptCatalogChange}>
+      {catalogBlocked && <Alert variant="warning">Cambió el catálogo. Acepta los datos vigentes, ajusta cantidades o retira los productos señalados antes de cobrar.</Alert>}
       {checkoutAttempted && checkoutBlocked && <Alert variant="warning" title="No se puede confirmar este ticket">{checkoutBlocked} El carrito se conserva completo; no se ha registrado ningún cobro.</Alert>}
       <PaymentSelector payment={payment} onSelect={selectPayment} disabled={branchStatus.isReadOnly||isProcessing} />
       <PaymentFields payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} validation={paymentValidation} disabled={branchStatus.isReadOnly||isProcessing} />
@@ -130,7 +133,7 @@ function POS({ user }) {
         <ProductSearch value={search} onChange={setSearch} />
         <CategoryFilters categories={activeCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {displayedProducts.length?displayedProducts.map(product=><ProductCard key={product.id} product={product} stock={getSafeStock(product,activeBranchId)} disabled={isGlobalDisabled||isProcessing} onAdd={addToCart} />):catalogError?null:<EmptyState title="No hay productos" description={search?`No se encontraron productos para “${search}”.`:'No hay productos registrados en esta selección.'} />}
+          {displayedProducts.length?displayedProducts.map(product=><ProductCard key={product.id} product={product} stock={getSafeStock(product,activeBranchId)} disabled={isGlobalDisabled||isProcessing||!canAddDistinctProduct(cart,product.id)} onAdd={addToCart} />):catalogError?null:<EmptyState title="No hay productos" description={search?`No se encontraron productos para “${search}”.`:'No hay productos registrados en esta selección.'} />}
         </div>
       </section>
       <aside aria-label="Ticket" className="sticky top-6 hidden min-w-0 lg:block">{ticket}</aside>
@@ -140,7 +143,7 @@ function POS({ user }) {
     {showQrModal&&<Dialog title="Escanea para pagar" description="Verifica en tu celular que el abono se haya realizado." onClose={()=>setShowQrModal(false)} busy={isProcessing} className="max-w-sm">
       <p className="text-center text-3xl font-bold text-accent">S/ {payment==='mixto'?Number(splitYape).toFixed(2):total.toFixed(2)}</p>
       <div className="mx-auto flex aspect-square w-full max-w-60 items-center justify-center rounded-2xl border border-line bg-panel p-3">{qrUrl?<img src={qrUrl} alt="QR Yape" className="size-full object-contain" />:<Alert variant="warning">QR no configurado en Ajustes.</Alert>}</div>
-      <div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={isProcessing} onClick={()=>setShowQrModal(false)}>Cancelar</Button><Button variant="success" onClick={processSale} loading={isProcessing} disabled={!!checkoutBlocked||!isPaymentValid||!runtimeCapabilities.saleOnline||isProcessing}>{isProcessing?'Procesando…':'Validar pago'}</Button></div>
+      <div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={isProcessing} onClick={()=>setShowQrModal(false)}>Cancelar</Button><Button variant="success" onClick={processSale} loading={isProcessing} disabled={catalogBlocked||!!checkoutBlocked||!isPaymentValid||!runtimeCapabilities.saleOnline||isProcessing}>{isProcessing?'Procesando…':'Validar pago'}</Button></div>
     </Dialog>}
     <CashRegisterModals showOpenModal={showOpenModal} setShowOpenModal={setShowOpenModal} showCloseModal={showCloseModal} setShowCloseModal={setShowCloseModal} isLoadingSession={isLoadingSession} openRegister={openRegister} authorizeOffline={authorizeOffline} calculateClose={calculateClose} confirmClose={confirmClose} />
   </div>;

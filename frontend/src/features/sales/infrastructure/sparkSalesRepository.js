@@ -2,6 +2,7 @@ import { writeOperationNotice } from '../../notifications/infrastructure/sparkOp
 import * as firestoreSDK from 'firebase/firestore';
 import { canonicalSale, canonicalNewSale, sameSaleOperation, SaleError } from '../domain/saleModel.js';
 import { VERIFIED_ATOMIC_LINE_LIMIT, checkoutBlockReason } from '../domain/checkoutPolicy.js';
+import { hasVerifiedSaleReceipt } from '../domain/queueState.js';
 
 export const SPARK_TICKET_LIMIT = VERIFIED_ATOMIC_LINE_LIMIT;
 export function createSparkSalesRepository(database, { currentUser, sdk = firestoreSDK, protocolVersion = 2 } = {}) {
@@ -17,7 +18,13 @@ export function createSparkSalesRepository(database, { currentUser, sdk = firest
     identity(sale);
     if (!saved.exists()) throw new SaleError('receipt-not-found', 'Venta pendiente: no existe confirmación remota.');
     if (!sameSaleOperation(sale, saved.data())) throw new SaleError('sale-conflict', 'El ID ya pertenece a otro ticket.');
-    return receipt(saved.data());
+    const data = saved.data();
+    if (saved.metadata?.fromCache || saved.metadata?.hasPendingWrites || data.status !== 'confirmed' || !data.confirmedAt?.toDate) {
+      throw new SaleError('receipt-unverified', 'El servidor aún no acredita este recibo.');
+    }
+    const result = receipt(data);
+    if (!hasVerifiedSaleReceipt(result, sale)) throw new SaleError('receipt-unverified', 'Versiones del recibo incompletas. Requiere revisión.');
+    return result;
   }
   return { verify, async submit(input) {
     const sale = canonicalSale(input); identity(sale);
@@ -40,6 +47,7 @@ export function createSparkSalesRepository(database, { currentUser, sdk = firest
           || (product.cost ?? 0) !== item.cost || product.name !== item.name || (product.category ?? '') !== item.category) {
           throw new SaleError('price-changed', 'Cambió el catálogo. Revisa el ticket pendiente antes de volver a cobrar.');
         }
+        if ((product.status ?? 'activo') !== 'activo') throw new SaleError('inactive-product', 'El producto ya no está disponible. Revisa el catálogo.');
         if (!Number.isSafeInteger(product.stock?.[sale.branchId]) || product.stock[sale.branchId] < item.qty) throw new SaleError('insufficient-stock', 'Stock insuficiente.');
         const versions = product.posStockVersion ?? {};
         if (typeof versions !== 'object' || Array.isArray(versions)) throw new SaleError('invalid-stock', 'Versión histórica de stock incompatible; requiere revisión.');

@@ -61,7 +61,7 @@ export default function Reports({
       <p role="status" className="text-sm text-muted">Lectura del reporte: {updatedAt ? new Date(updatedAt).toLocaleString('es-PE') : 'pendiente'}. Informe histórico, no saldo en tiempo real. <Button onClick={refreshReport} variant="secondary">Actualizar período</Button></p>
       <p>Pedidos creados en el período: {contractCounts.pending} pendientes · {contractCounts.delivered} entregados · {contractCounts.cancelled} cancelados · {contractCounts.withDebt} con saldo.</p>
 
-      <HelpDisclosure title="Alcance de este informe">Movimientos confirmados; excluye pendientes locales. Lectura limitada a 10000 movimientos y 500 contratos por negocio. Los cierres operativos conservan conciliación pendiente.</HelpDisclosure>
+      <HelpDisclosure title="Alcance de este informe">Movimientos contables confirmados; excluye pendientes locales. Las compensaciones POS se descuentan una sola vez por el método original y no acreditan desembolso físico de efectivo ni Yape. Lectura limitada a 10000 movimientos y 500 contratos por negocio. Los cierres operativos conservan conciliación pendiente.</HelpDisclosure>
 
       <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Ingresos Netos" value={`S/ ${formatMoney(total)}`} subtext={`POS: S/ ${formatMoney(summary.posRevenue)} · Pedidos: S/ ${formatMoney(summary.contractRevenue)}`} emoji="💰" borderColor="border-primary" bgColor="bg-primary-soft" />
@@ -69,9 +69,9 @@ export default function Reports({
         <MetricCard title="Tickets POS" value={totalSales.toLocaleString('en-US')} subtext={`Promedio POS: S/ ${formatMoney(summary.posAverageTicket)} · Anulados: ${summary.voidedTicketCount} · Pagos pedidos: ${summary.contractPaymentCount}`} emoji="🧾" borderColor="border-t-4 border-t-ink" bgColor="bg-subtle" />
 
         {/* 🚀 Ahora estos reflejan el Efectivo y Yape de la Sede Seleccionada (o el Global) */}
-        <MetricCard title="Ingresos en Efectivo" value={`S/ ${formatMoney(cash)}`} emoji="💵" borderColor="border-success" bgColor="bg-success-soft" valueColor="text-success" />
+        <MetricCard title="Neto contable en efectivo" value={`S/ ${formatMoney(cash)}`} subtext="Incluye compensaciones; no certifica el saldo físico." emoji="💵" borderColor="border-success" bgColor="bg-success-soft" valueColor="text-success" />
 
-        <MetricCard title="Vía Yape / Plin" value={`S/ ${formatMoney(yape)}`} emoji="📲" borderColor="border-t-4 border-t-accent" bgColor="bg-accent-soft" valueColor="text-accent" />
+        <MetricCard title="Neto contable Yape / Plin" value={`S/ ${formatMoney(yape)}`} subtext="No acredita una devolución digital efectuada." emoji="📲" borderColor="border-t-4 border-t-accent" bgColor="bg-accent-soft" valueColor="text-accent" />
       </div>
 
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">

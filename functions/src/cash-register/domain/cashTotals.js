@@ -13,6 +13,8 @@ function split(method, amount, parts) {
 }
 export function calculateCashTotals(session, sales, payments) {
   let posCash = 0, contractCash = 0, digitalTotal = 0, validTransactionCount = 0;
+  let posCompensationCash = 0, posCompensationDigital = 0;
+  const compensations = new Set();
   for (const sale of sales) {
     if (sale.voided) continue;
     const amounts = split(sale.payment, sale.total, sale.splitPayments);
@@ -25,11 +27,20 @@ export function calculateCashTotals(session, sales, payments) {
       throw new SaleError('invalid-ledger', 'Movimiento con tipo/signo inválido.');
     }
     const amounts = split(payment.method, payment.amount, payment.splitPayments);
-    contractCash = money(contractCash + amounts.cash); digitalTotal = money(digitalTotal + amounts.digital);
+    if (payment.authority === 'pos-compensation') {
+      if (!payment.id || !payment.sourceId || payment.type !== 'refund') throw new SaleError('invalid-ledger', 'Compensación sin referencia verificable.');
+      if (compensations.has(payment.id)) continue;
+      compensations.add(payment.id);
+      posCompensationCash = money(posCompensationCash + amounts.cash);
+      posCompensationDigital = money(posCompensationDigital + amounts.digital);
+    } else contractCash = money(contractCash + amounts.cash);
+    digitalTotal = money(digitalTotal + amounts.digital);
     if (payment.amount > 0) validTransactionCount++;
   }
   const openingAmount = money(session.openingAmount ?? 0);
-  const totalCash = money(posCash + contractCash);
+  const totalCash = money(posCash + contractCash + posCompensationCash);
   return { openingAmount, posCash, contractCash, totalCash, digitalTotal, totalYape: digitalTotal,
+    posCompensationCash, posCompensationDigital, hasUnverifiedDisbursements: compensations.size > 0,
+    cashBeforePosCompensations: money(openingAmount + posCash + contractCash),
     expectedCash: money(openingAmount + totalCash), totalSales: validTransactionCount, validTransactionCount };
 }

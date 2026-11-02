@@ -4,6 +4,7 @@ import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 
 export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, withLock, online, now = Date.now, currentIdentity = () => true,
   captureProjection = async () => ({}), verifyReceipt, afterFlush = async () => {} }) {
+  let recoveryScope = null, recoveryOffset = 0;
   async function enqueue(input, identity, products = []) {
     let sale = canonicalSale(input, products);
     assertSaleIdentity(sale, identity);
@@ -141,7 +142,55 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
     if (record.status === 'failed') { reportDiagnostic('sale', { code: record.lastErrorCode }, record.requiresFinancialReview ? 'review' : 'rejected'); throw new SaleError('sale-failed', record.lastError); }
     reportDiagnostic('sale', null, record.status === 'synced' ? 'confirmed' : 'pending');
     const confirmed = record.status === 'synced' && record.financialAck === true;
-    return { success: confirmed, pending: !confirmed, isOffline: !confirmed, sale: isolated && confirmed ? { ...sale, confirmedAt: record.syncedAt } : sale };
+    return { success: confirmed, pending: !confirmed, isOffline: !confirmed,
+      receiptState: confirmed ? 'confirmed' : record.lastErrorCode === 'receipt-not-found' || !record.attempted ? 'unconfirmed' : 'uncertain',
+      sale: isolated && confirmed ? { ...sale, confirmedAt: record.syncedAt } : sale };
   }
-  return { enqueue, flush, submit };
+  // Receipt recovery never calls apply/flush or rewrites the frozen encrypted payload.
+  async function reconcile(identity, { onlyId, maxRecords = 10, isCurrent = () => true } = {}) {
+    if (!identity?.uid || !identity.businessId || !identity.branchId || identity.branchId === 'global') return [];
+    if (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords > 10) throw new SaleError('invalid-argument', 'Hasta diez recibos por revisión.');
+    const active = () => currentIdentity(identity) && isCurrent();
+    if (!active()) return [];
+    return withLock(async () => {
+      let records = onlyId ? [await store.get(onlyId)].filter(Boolean) : await store.list();
+      if (!onlyId) {
+        records = records.filter(record => record.userId === identity.uid && record.businessId === identity.businessId && record.branchId === identity.branchId
+          && !['failed', 'synced'].includes(migrateSaleRecord(record).status) && (record.attempted || record.status === 'syncing' || record.financialAck))
+          .sort((a, b) => a.localId.localeCompare(b.localId));
+        const key = JSON.stringify([identity.uid, identity.businessId, identity.branchId]);
+        if (recoveryScope !== key) { recoveryScope = key; recoveryOffset = 0; }
+        const offset = recoveryOffset % (records.length || 1);
+        records = [...records.slice(offset), ...records.slice(0, offset)];
+      }
+      const results = [];
+      for (const record of records) {
+        if (!active() || results.length >= maxRecords) break;
+        if (record.userId !== identity.uid || record.businessId !== identity.businessId || record.branchId !== identity.branchId
+          || ['failed', 'synced'].includes(migrateSaleRecord(record).status)
+          || (!onlyId && !record.attempted && record.status !== 'syncing' && !record.financialAck)) continue;
+        let sale;
+        try {
+          sale = canonicalSale(await decodeQueuedSale(record, identity, decrypt));
+          if (sale.branchId !== identity.branchId || !active()) continue;
+          const receipt = await verifyReceipt(sale, identity);
+          if (!hasVerifiedSaleReceipt(receipt, sale)) throw new SaleError('receipt-unverified', 'El recibo no acredita este ticket y sus versiones de stock.');
+          if (!active()) break;
+          await store.update(record.localId, { status: 'synced', sync: true, financialAck: true,
+            stockVersions: receipt.stockVersions, syncedAt: receipt.syncedAt, lastError: null, lastErrorCode: null,
+            requiresReceiptReview: false, syncStartedAt: null, nextRetryAt: 0 });
+          results.push({ saleId: record.localId, state: 'confirmed', receipt });
+        } catch (error) {
+          if (!active()) break;
+          // Absence is not a rejection, nor permission to submit the same charge again.
+          await store.update(record.localId, { lastError: error.message, lastErrorCode: error.code,
+            requiresReceiptReview: true });
+          results.push({ saleId: record.localId, state: error.code === 'receipt-not-found' ? 'unconfirmed' : 'uncertain', error });
+        }
+      }
+      if (!onlyId) recoveryOffset += results.length;
+      return results;
+    });
+  }
+  return { enqueue, flush, submit, reconcile };
 }
