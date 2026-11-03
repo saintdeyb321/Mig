@@ -15,6 +15,8 @@ export function calculateCashTotals(session, sales, payments) {
   let posCash = 0, contractCash = 0, digitalTotal = 0, validTransactionCount = 0;
   let posCompensationCash = 0, posCompensationDigital = 0;
   const compensations = new Set();
+  const compensatedTickets = new Set();
+  let contractCashCollected = 0, contractCashRefunds = 0, unverifiedContractRefundCount = 0;
   for (const sale of sales) {
     if (sale.voided) continue;
     const amounts = split(sale.payment, sale.total, sale.splitPayments);
@@ -31,16 +33,26 @@ export function calculateCashTotals(session, sales, payments) {
       if (!payment.id || !payment.sourceId || payment.type !== 'refund') throw new SaleError('invalid-ledger', 'Compensación sin referencia verificable.');
       if (compensations.has(payment.id)) continue;
       compensations.add(payment.id);
+      compensatedTickets.add(payment.sourceId);
       posCompensationCash = money(posCompensationCash + amounts.cash);
       posCompensationDigital = money(posCompensationDigital + amounts.digital);
-    } else contractCash = money(contractCash + amounts.cash);
+    } else {
+      contractCash = money(contractCash + amounts.cash);
+      if (payment.amount > 0) contractCashCollected = money(contractCashCollected + amounts.cash);
+      else {
+        contractCashRefunds = money(contractCashRefunds + amounts.cash);
+        if (payment.physicalDisbursementVerified !== true) unverifiedContractRefundCount++;
+      }
+    }
     digitalTotal = money(digitalTotal + amounts.digital);
     if (payment.amount > 0) validTransactionCount++;
   }
   const openingAmount = money(session.openingAmount ?? 0);
   const totalCash = money(posCash + contractCash + posCompensationCash);
   return { openingAmount, posCash, contractCash, totalCash, digitalTotal, totalYape: digitalTotal,
-    posCompensationCash, posCompensationDigital, hasUnverifiedDisbursements: compensations.size > 0,
+    posCompensationCash, posCompensationDigital, posCompensationCount: compensatedTickets.size,
+    posCompensationTotal: money(posCompensationCash + posCompensationDigital), contractCashCollected, contractCashRefunds,
+    hasUnverifiedDisbursements: compensations.size > 0 || unverifiedContractRefundCount > 0,
     cashBeforePosCompensations: money(openingAmount + posCash + contractCash),
     expectedCash: money(openingAmount + totalCash), totalSales: validTransactionCount, validTransactionCount };
 }

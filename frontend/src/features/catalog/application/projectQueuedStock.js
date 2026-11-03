@@ -1,14 +1,24 @@
 import { projectProducts } from './projectProducts.js';
+import { saleFinancialState } from '../../sales/domain/queueState.js';
 
 // Stock versions connect a backend acknowledgement to a product snapshot without
 // reading receipts. While an attempt is ambiguous, retain its pre-attempt stock.
-export function projectQueuedStock(products, queued, businessId) {
-  const sales = queued.filter(sale => sale.businessId === businessId && sale.queueStatus !== 'failed');
+export function projectQueuedStock(products, queued, businessId, { serverConfirmed = false } = {}) {
+  const sales = queued.filter(sale => sale.businessId === businessId && sale.queueStatus !== 'failed'
+    && saleFinancialState({ ...sale, status: sale.queueStatus }, sale) !== 'draft_offline');
+  // These markers only choose the authoritative product stock for presentation.
+  // They NEVER acknowledge a sale, change a receipt, or synthesize stock quantities.
+  const reflected = (product, sale, branchId) => {
+    const version = product.posStockVersion?.[branchId];
+    const base = sale.projectionBase?.[product.id]?.version;
+    return serverConfirmed && Number.isSafeInteger(version) && Number.isSafeInteger(base) && version > base
+      && (product.posLastSaleId === sale.saleId || (product.posLastVoidSaleId === sale.saleId && version >= base + 2));
+  };
   const settled = [];
   const prepared = products.map(product => {
     const stock = { ...product.stock };
     for (const [branchId, value] of Object.entries(stock)) {
-      const affecting = sales.filter(sale => sale.branchId === branchId && sale.items.some(item => item.id === product.id));
+      const affecting = sales.filter(sale => sale.branchId === branchId && sale.items.some(item => item.id === product.id) && !reflected(product, sale, branchId));
       let version = product.posStockVersion?.[branchId] ?? 0;
       let baseStock = value;
       for (const sale of affecting) {

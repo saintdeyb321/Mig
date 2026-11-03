@@ -1,7 +1,7 @@
 import * as firestore from 'firebase/firestore';
 import { cashLockId } from '../../cash-register/infrastructure/sparkCashRepository.js';
-import { canonicalSale, sameSaleOperation, SaleError } from '../domain/saleModel.js';
-import { hasVerifiedSaleReceipt } from '../domain/queueState.js';
+import { canonicalSale, SaleError } from '../domain/saleModel.js';
+import { matchesPosVoidReceipt } from '../domain/posVoidReceipt.js';
 
 export function createPosVoidRepository(database, { sdk = firestore, currentUser } = {}) {
   const { doc, runTransaction, serverTimestamp, getDocFromServer } = sdk;
@@ -17,14 +17,8 @@ export function createPosVoidRepository(database, { sdk = firestore, currentUser
     const source = await getDocFromServer(doc(database, 'sales', saleId));
     if (currentUser()?.uid !== uid) throw new SaleError('session-changed', 'La sesión cambió.');
     const original = source.exists() ? source.data() : null;
-    const cash = original?.payment === 'efectivo' ? original.total : original?.payment === 'mixto' ? original.splitPayments?.efectivo : 0;
     if (saved.metadata?.fromCache || saved.metadata?.hasPendingWrites || source.metadata?.fromCache || source.metadata?.hasPendingWrites
-      || data.authority !== 'pos-compensation' || data.protocol !== 1 || !data.occurredAt?.toDate
-      || original?.status !== 'confirmed' || original.businessId !== data.businessId || original.branchId !== data.branchId
-      || !sameSaleOperation({ ...original, items: data.items }, original) || data.amount !== -original.total || data.cashAmount !== -cash
-      || data.digitalAmount !== -(Math.round(original.total * 100) - Math.round(cash * 100)) / 100
-      || !hasVerifiedSaleReceipt({ status: 'ALREADY_APPLIED', saleId, stockVersions: data.stockVersions,
-        syncedAt: data.occurredAt.toDate().toISOString() }, original)) throw new SaleError('void-unverified', 'El recibo de anulación está incompleto. Requiere revisión.');
+      || !matchesPosVoidReceipt(data, original, { userId: uid, reason })) throw new SaleError('void-unverified', 'No se pudo comprobar esta anulación. Conserva el ticket para revisión.');
     return { ...data, id: saleId, status: 'ALREADY_APPLIED' };
   }
   return { verify, async void({ saleId, reason, businessId, branchId }) {
@@ -33,7 +27,7 @@ export function createPosVoidRepository(database, { sdk = firestore, currentUser
     reason = typeof reason === 'string' ? reason.trim() : '';
     if (reason.length < 5 || reason.length > 1000) throw new SaleError('invalid-sale', 'Explica el motivo con 5 a 1000 caracteres.');
     const ref = doc(database, 'pos_voids', saleId);
-    let created = false;
+    let created = false, committedData;
     const verified = () => verify({ saleId, reason, businessId, branchId });
     try { await runTransaction(database, async tx => {
       created = false;
@@ -41,6 +35,11 @@ export function createPosVoidRepository(database, { sdk = firestore, currentUser
       if (currentUser()?.uid !== uid) throw new SaleError('session-changed', 'La sesión cambió.');
       if (existing.exists()) {
         if (existing.data().userId !== uid || existing.data().reason !== reason) throw new SaleError('sale-conflict', 'Este ticket ya tiene otra anulación.');
+        if (!matchesPosVoidReceipt(existing.data(), source.data(), { userId: uid, reason })
+          || (businessId && existing.data().businessId !== businessId) || (branchId && existing.data().branchId !== branchId)) {
+          throw new SaleError('void-unverified', 'El comprobante de anulación necesita revisión.');
+        }
+        committedData = existing.data();
         return;
       }
       const actor = profile.data(), original = source.data();
@@ -63,14 +62,16 @@ export function createPosVoidRepository(database, { sdk = firestore, currentUser
       });
       const cash = sale.payment === 'efectivo' ? sale.total : sale.payment === 'mixto' ? sale.splitPayments.efectivo : 0;
       created = true;
-      tx.set(ref, { businessId: sale.businessId, branchId: sale.branchId, userId: uid, sessionId: lock.sessionId, saleId, reason,
+      committedData = { businessId: sale.businessId, branchId: sale.branchId, userId: uid, sessionId: lock.sessionId, saleId, reason,
         amount: -sale.total, cashAmount: -cash, digitalAmount: -(Math.round(sale.total * 100) - Math.round(cash * 100)) / 100,
-        items: sale.items, stockVersions: versions, protocol: 1, authority: 'pos-compensation', occurredAt: serverTimestamp() });
+        items: sale.items, stockVersions: versions, protocol: 1, authority: 'pos-compensation', occurredAt: serverTimestamp() };
+      tx.set(ref, committedData);
       changes.forEach((change, index) => tx.update(products[index].ref, change));
       for (let index = 0; index < Math.ceil(sale.items.length / 4); index++) tx.set(doc(database, 'pos_void_groups', `${saleId}_${index}`), {
         businessId: sale.businessId, branchId: sale.branchId, userId: uid, saleId, index, createdAt: serverTimestamp(),
       });
     }); } catch (error) {
+      if (error instanceof SaleError && ['sale-conflict', 'permission-denied', 'invalid-session', 'legacy-review-required', 'invalid-stock', 'invalid-sale'].includes(error.code)) throw error;
       try { return { ...await verified(), status: 'ALREADY_APPLIED' }; }
       catch (verificationError) {
         if (verificationError.code === 'sale-conflict' || verificationError.code === 'session-changed') throw verificationError;
@@ -78,7 +79,11 @@ export function createPosVoidRepository(database, { sdk = firestore, currentUser
         throw new SaleError('void-unverified', 'Resultado incierto. Verifica la anulación por su ID; no repitas la compensación ni la entrega de dinero.');
       }
     }
-    try { return { ...await verified(), status: created ? 'APPLIED' : 'ALREADY_APPLIED' }; }
-    catch (error) { if (error.code === 'sale-conflict') throw error; throw new SaleError('void-unverified', 'Anulación pendiente de comprobar. Conserva el ID y el motivo; no repitas la devolución física.'); }
+    if (currentUser()?.uid !== uid) throw new SaleError('session-changed', 'La sesión cambió.');
+    // A resolved SDK transaction is a server acknowledgement, including Rules validation.
+    // Do not downgrade that acknowledgement because a redundant follow-up read failed.
+    const result = { ...committedData, id: saleId, status: created ? 'APPLIED' : 'ALREADY_APPLIED', confirmation: 'server-commit' };
+    if (created) delete result.occurredAt; // Never present a serverTimestamp sentinel as a resolved date.
+    return result;
   } };
 }

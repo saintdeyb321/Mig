@@ -11,6 +11,7 @@ import { subscribeStockQueue, retireStockProjections, readPendingSales } from '.
 import { subscribeTenantCache } from '../../../core/cache/subscribeTenantCache';
 import { EMPTY_LIST, useScopedSubscription } from '../../../shared/hooks/useScopedSubscription';
 import offlineDB from '../../../offlineDB';
+import { isServerSnapshot } from '../../../core/session/accessState.js';
 
 export function CatalogProvider({ children }) {
   const { user, identityKey, activeBranchId } = useTenantData();
@@ -40,7 +41,7 @@ export function CatalogProvider({ children }) {
         // Read current local ack state so that callback ordering cannot double the debit.
         const pending = await readPendingSales(queueIdentity, 'global', true);
         if (!active || current !== generation) return;
-        const projected = projectQueuedStock(raw, pending, businessId);
+        const projected = projectQueuedStock(raw, pending, businessId, { serverConfirmed: isServerSnapshot(metadata) });
         onData(projected.products, metadata);
         if (projected.settled.length) await retireStockProjections(projected.settled);
       } catch (error) { if (active && current === generation) onError(error); }

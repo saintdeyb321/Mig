@@ -1,6 +1,14 @@
 import { assertSaleIdentity, SaleError } from './saleModel.js';
 
 export const SYNC_LEASE_MS = 120000;
+export function saleFinancialState(record, sale = record) {
+  const normalized = migrateSaleRecord(record), { status } = normalized;
+  if (status === 'synced' && record.financialAck === true) return 'confirmed';
+  if (status === 'failed') return 'rejected';
+  if (!record.attempted && !record.financialAck && status !== 'syncing' && !record.submissionData
+    && (record.financialState === 'draft_offline' || ((record.attempted === false || sale.origin === 'offline') && normalized.retries === 0 && !record.syncStartedAt))) return 'draft_offline';
+  return 'submitted_uncertain';
+}
 export function migrateSaleRecord(record) {
   const status = record.status ?? (record.sync === true ? 'synced' : record.sync === 'failed' ? 'failed' : 'pending');
   return { ...record, idempotencyKey: record.idempotencyKey ?? record.localId, status,
@@ -33,7 +41,7 @@ export async function decodeQueuedSale(record, identity, decrypt) {
     throw new SaleError('foreign-queue-record', 'Registro de otra sesión.');
   }
   let sale;
-  try { sale = JSON.parse(await decrypt(record.data, record.userId || identity.uid)); }
+  try { sale = JSON.parse(await decrypt(record.submissionData ?? record.data, record.userId || identity.uid)); }
   catch { throw new SaleError(record.userId ? 'decryption-failed' : 'unclaimed-legacy-record', 'No se pudo descifrar la venta.'); }
   assertSaleIdentity(sale, identity);
   if (sale.localId !== record.localId || (sale.saleId && sale.saleId !== record.localId)) throw new SaleError('sale-conflict', 'ID local diferente del payload.');
@@ -42,7 +50,7 @@ export async function decodeQueuedSale(record, identity, decrypt) {
 export function pendingStockDeltas(sales, businessId) {
   const result = {};
   for (const sale of sales) {
-    if (sale.businessId !== businessId || sale.voided) continue;
+    if (sale.businessId !== businessId || sale.voided || sale.financialState === 'draft_offline') continue;
     for (const item of sale.items) {
       const branches = result[item.id] ??= {};
       branches[sale.branchId] = (branches[sale.branchId] ?? 0) + item.qty;

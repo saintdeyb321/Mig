@@ -12,11 +12,13 @@ export function mergeRecentSales(pending, remote, limit = 50) {
   return [...byId.values()].sort((a, b) => toMillisSafe(b.createdAt || b.date) - toMillisSafe(a.createdAt || a.date)).slice(0, limit);
 }
 
-// Local attempts have their own bounded view; they never displace confirmed receipts.
-export function salesHistoryPresentation(pending, remote, pendingOnly = false) {
+// Keep both bounded sources visible; local records never participate in financial totals.
+export function salesHistoryPresentation(pending, remote) {
   const confirmedIds = new Set(remote.map(sale => sale.id ?? sale.localId));
   const local = mergeRecentSales(pending, []).filter(sale => !confirmedIds.has(sale.id ?? sale.localId));
-  return { rows: pendingOnly ? local : mergeRecentSales([], remote), localCount: local.length,
-    rejectedCount: local.filter(sale => sale.queueStatus === 'failed').length,
-    uncertainCount: local.filter(sale => sale.queueStatus !== 'failed').length };
+  const rejected = local.filter(sale => sale.queueStatus === 'failed' || sale.financialState === 'rejected');
+  const active = local.filter(sale => !rejected.includes(sale));
+  return { rows: mergeRecentSales(active, remote, 100), rejected, localCount: active.length,
+    rejectedCount: rejected.length, draftCount: active.filter(sale => sale.financialState === 'draft_offline').length,
+    uncertainCount: active.filter(sale => sale.financialState !== 'draft_offline').length };
 }

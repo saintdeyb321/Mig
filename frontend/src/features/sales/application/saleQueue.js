@@ -1,9 +1,9 @@
 import { canonicalSale, canonicalNewSale, assertSaleIdentity, sameSaleOperation, SaleError } from '../domain/saleModel.js';
-import { decodeQueuedSale, migrateSaleRecord, isDeterministicSaleError, isRetryableSaleError, hasVerifiedSaleReceipt, SYNC_LEASE_MS } from '../domain/queueState.js';
+import { decodeQueuedSale, migrateSaleRecord, isDeterministicSaleError, isRetryableSaleError, hasVerifiedSaleReceipt, saleFinancialState, SYNC_LEASE_MS } from '../domain/queueState.js';
 import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 
 export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, withLock, online, now = Date.now, currentIdentity = () => true,
-  captureProjection = async () => ({}), verifyReceipt, afterFlush = async () => {} }) {
+  captureProjection = async () => ({}), verifyReceipt, afterFlush = async () => {}, receiptOnlyRetries = false }) {
   let recoveryScope = null, recoveryOffset = 0;
   async function enqueue(input, identity, products = []) {
     let sale = canonicalSale(input, products);
@@ -21,7 +21,8 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
     await store.insert({ localId: sale.saleId, idempotencyKey: sale.saleId, data,
       businessId: sale.businessId, branchId: sale.branchId, userId: sale.userId,
       status: 'pending', sync: false, createdAt: sale.createdAt, queuedAt: sale.queuedAt, origin: sale.origin,
-      projectionState: 'pending', version: sale.version,
+      projectionState: sale.origin === 'offline' ? null : 'pending', version: sale.version,
+      attempted: false, ...(sale.origin === 'offline' ? { financialState: 'draft_offline' } : {}),
       retries: 0, lastError: null, syncStartedAt: null, nextRetryAt: 0 }, async existing => {
       const decoded = await decodeQueuedSale(existing, identity, decrypt);
       if (!sameSaleOperation(decoded, sale)) throw new SaleError('sale-conflict', 'ID local reutilizado con otro payload.');
@@ -41,6 +42,7 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
         const record = migrateSaleRecord(original);
         if (onlyId && record.localId !== onlyId) continue;
         if (record.status === 'synced' || record.status === 'failed') continue;
+        if (receiptOnlyRetries && saleFinancialState(record) === 'draft_offline' && record.origin === 'offline') { report.pending = true; continue; }
         if (record.requiresReceiptReview && record.localId !== forceId) { report.pending = true; continue; }
         if (record.status === 'syncing' && now() - (record.syncStartedAt ?? 0) < SYNC_LEASE_MS) { report.pending = true; continue; }
         if (record.localId !== forceId && (record.nextRetryAt ?? 0) > now()) { report.pending = true; continue; }
@@ -67,8 +69,8 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
             if (!verifyReceipt) throw new SaleError('receipt-unverified', 'Consulta remota del recibo requerida antes de reintentar.');
             await acknowledge(await verifyReceipt(sale, identity)); report.synced++; continue;
           } catch (error) {
-            if (error.code !== 'receipt-not-found' || record.financialAck) {
-              const manual = !isRetryableSaleError(error);
+            if (error.code !== 'receipt-not-found' || record.financialAck || receiptOnlyRetries) {
+              const manual = receiptOnlyRetries || !isRetryableSaleError(error);
               await store.update(record.localId, { status: 'pending', sync: false, lastError: error.message, lastErrorCode: error.code,
                 requiresReceiptReview: manual, syncStartedAt: null, nextRetryAt: manual ? 0 : now() + 60000 });
               report.pending = true; continue;
@@ -143,6 +145,7 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
     reportDiagnostic('sale', null, record.status === 'synced' ? 'confirmed' : 'pending');
     const confirmed = record.status === 'synced' && record.financialAck === true;
     return { success: confirmed, pending: !confirmed, isOffline: !confirmed,
+      financialState: saleFinancialState(record, sale),
       receiptState: confirmed ? 'confirmed' : record.lastErrorCode === 'receipt-not-found' || !record.attempted ? 'unconfirmed' : 'uncertain',
       sale: isolated && confirmed ? { ...sale, confirmedAt: record.syncedAt } : sale };
   }

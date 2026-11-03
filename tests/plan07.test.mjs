@@ -154,10 +154,12 @@ it('Plan07 verifies an applied void after a lost read without a second compensat
   const store = memoryStore(), recovery = createVoidRecovery({ store, encrypt, decrypt, repository, currentIdentity: () => true });
   const command = { saleId: input.saleId, reason: 'Error confirmado de ticket' };
   remote.state.failReceipt = true;
+  remote.state.failAfterCommit = true;
   await assert.rejects(recovery.submit(command, identity), { code: 'void-unverified' });
   const writes = remote.state.writes, stock = remote.rows.get('products/bread').stock.branch;
   const ciphertext = [...store.rows.values()][0].data;
   remote.state.failReceipt = false;
+  remote.state.failAfterCommit = false;
   assert.equal((await recovery.verify(command, identity)).status, 'ALREADY_APPLIED');
   assert.equal((await recovery.submit(command, identity)).status, 'ALREADY_APPLIED');
   assert.equal(remote.state.transactions, 1); assert.equal(remote.state.writes, writes); assert.equal(remote.rows.get('products/bread').stock.branch, stock);

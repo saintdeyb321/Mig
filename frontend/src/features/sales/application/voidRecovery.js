@@ -38,7 +38,8 @@ export function createVoidRecovery({ store, encrypt, decrypt, repository, curren
     if (!original || !active(identity) || !isCurrent()) throw new SaleError('session-changed', 'Conserva el intento original; cambió la sesión o sede.');
     const receipt = await repository.verify(original);
     if (!active(identity) || !isCurrent()) throw new SaleError('session-changed', 'La sesión o sede cambió durante la lectura.');
-    await store.update(key(identity, command.saleId), { status: 'confirmed', lastError: null });
+    try { await store.update(key(identity, command.saleId), { status: 'confirmed', lastError: null }); }
+    catch { return { ...receipt, localAcknowledgementPending: true }; }
     return receipt;
   }
   async function submit(command, identity) {
@@ -69,7 +70,8 @@ export function createVoidRecovery({ store, encrypt, decrypt, repository, curren
       if (!active(identity)) throw new SaleError('session-changed', 'La sesión cambió.');
       const receipt = await repository.void(original);
       if (!active(identity)) throw new SaleError('session-changed', 'La sesión cambió.');
-      await store.update(key(identity, command.saleId), { status: 'confirmed', lastError: null });
+      try { await store.update(key(identity, command.saleId), { status: 'confirmed', lastError: null }); }
+      catch { return { ...receipt, localAcknowledgementPending: true }; }
       return receipt;
     } catch (error) {
       await store.update(key(identity, command.saleId), { status: isDeterministicSaleError(error) ? 'rejected' : 'pending', lastError: error.message });

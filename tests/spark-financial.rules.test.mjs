@@ -100,7 +100,7 @@ describe('SPARK-4 integrated financial Rules', () => {
     const voids = createPosVoidRepository(db, { sdk: injected, currentUser: () => ({ uid }) });
     const command = { saleId: input.saleId, reason: 'Corrección real de simulación', businessId, branchId };
     loseRead = true;
-    await assert.rejects(voids.void(command), { code: 'void-unverified' });
+    assert.equal((await voids.void(command)).status, 'APPLIED');
     const saved = (await inspect('pos_voids/' + input.saleId)).data();
     assert.equal(saved.authority, 'pos-compensation');
     loseRead = false;

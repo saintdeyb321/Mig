@@ -1,0 +1,176 @@
+<!doctype html><meta charset="utf-8"><title>Plan 08 POS state races</title><div id="root"></div>
+<script type="module">
+import React, { useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { liveQuery } from 'dexie';
+import { usePOS } from '/src/features/sales/hooks/usePOS.js';
+import { CatalogContext } from '/src/features/catalog/context/CatalogContext.js';
+import { TenantContext } from '/src/features/branches/context/TenantContext.js';
+import { SessionResourcesContext } from '/src/core/session/sessionResourceHooks.js';
+import { createSessionResources } from '/src/core/session/sessionResources.js';
+import { Ticket, SaleStatus } from '/src/modules/pos/TicketParts.jsx';
+import { DraftSaleReview } from '/src/modules/sales-history/DraftSaleReview.jsx';
+import { CashCountSummary } from '/src/modules/CashRegisterModals.jsx';
+import { createOfflineDatabase } from '/src/offlineDB.js';
+import { createSaleQueue } from '/src/features/sales/application/saleQueue.js';
+import { createDraftCheckout } from '/src/features/sales/application/draftCheckout.js';
+import { startReceiptRecovery } from '/src/features/sales/application/receiptRecovery.js';
+import { dexieSaleStore, createQueueLock } from '/src/features/sales/infrastructure/saleQueueStore.js';
+import { decodeQueuedSale, saleFinancialState } from '/src/features/sales/domain/queueState.js';
+import { canonicalNewSale, sameSaleOperation, SaleError } from '/src/features/sales/domain/saleModel.js';
+import { projectQueuedStock } from '/src/features/catalog/application/projectQueuedStock.js';
+import { encrypt, decrypt } from '/src/crypto.js';
+const rootElement = document.getElementById('root');
+const checks = [], check = (ok, name) => { if (!ok) throw Error(name); checks.push(name); };
+const pause = () => new Promise(resolve => setTimeout(resolve, 25));
+const wait = async predicate => { for (let i = 0; i < 180; i++) { if (predicate()) return; await pause(); } throw Error('POS state timed out'); };
+const text = () => [rootElement, ...document.querySelectorAll('[role="dialog"]')].map(el => el.innerText).join('\n');
+const button = (label, parent = document) => [...parent.querySelectorAll('button')].find(el => el.textContent.trim() === label);
+const user = { uid: 'p08-pos-cashier', businessId: 'p08-pos-tenant', branchId: 'p08-pos-branch', role: 'cajero' };
+window.__p08Actor = user;
+const model = { online: true, mode: 'delayed', writes: 0, raw: { id: 'pos-product', businessId: user.businessId, name: 'Producto de última unidad',
+  category: '', price: 5, cost: 1, status: 'activo', stock: { [user.branchId]: 1 }, posStockVersion: { [user.branchId]: 0 } }, receipts: new Map() };
+Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => model.online });
+const db = createOfflineDatabase('p08-isolated-state-races'), store = dexieSaleStore(db), resources = createSessionResources();
+let setCatalog, setBranch, api, openReview, showCash, generation = 0;
+const queued = async () => Promise.all((await db.sales.where('projectionState').equals('pending').toArray()).map(async record => ({
+  ...await decodeQueuedSale(record, user, decrypt), queueStatus: record.status, attempted: record.attempted,
+  financialState: saleFinancialState(record), financialAck: record.financialAck, stockVersions: record.stockVersions, projectionBase: record.projectionBase,
+})));
+async function publish() {
+  const token = ++generation, rows = await queued();
+  if (token !== generation) return;
+  const projection = projectQueuedStock([model.raw], rows, user.businessId, { serverConfirmed: true });
+  setCatalog?.(projection.products);
+  if (projection.settled.length) await db.sales.where('localId').anyOf(projection.settled).modify({ projectionState: null });
+}
+const verify = async sale => {
+  if (!model.online) throw new SaleError('unavailable', 'Conéctate para revisar el ticket.');
+  const saved = model.receipts.get(sale.saleId);
+  if (!saved) throw new SaleError('receipt-not-found', 'Todavía no hay una venta registrada.');
+  if (!sameSaleOperation(saved.sale, sale)) throw new SaleError('sale-conflict', 'Payload diferente.');
+  return saved.receipt;
+};
+const apply = async input => {
+  const sale = canonicalNewSale(input);
+  if (model.mode === 'reject') {
+    model.raw = { ...model.raw, stock: { [user.branchId]: 0 }, posStockVersion: { [user.branchId]: model.raw.posStockVersion[user.branchId] + 1 }, posLastSaleId: 'external-sale' };
+    await publish(); throw new SaleError('insufficient-stock', 'Stock insuficiente confirmado por el servidor.');
+  }
+  const version = model.raw.posStockVersion[user.branchId] + 1;
+  model.raw = { ...model.raw, stock: { [user.branchId]: model.raw.stock[user.branchId] - sale.items[0].qty }, posStockVersion: { [user.branchId]: version }, posLastSaleId: sale.saleId };
+  const receipt = { status: 'APPLIED', saleId: sale.saleId, stockVersions: { 'pos-product': version }, syncedAt: new Date().toISOString() };
+  model.writes++; model.receipts.set(sale.saleId, { sale, receipt }); await publish();
+  if (model.mode === 'delayed') await new Promise(resolve => { model.finish = resolve; });
+  return receipt;
+};
+const queue = createSaleQueue({ store, encrypt, decrypt, online: () => model.online, currentIdentity: identity => identity.uid === user.uid,
+  receiptOnlyRetries: true,
+  syncSessions: async () => { throw Error('Automatic offline writes must remain disabled'); }, withLock: createQueueLock(db), verifyReceipt: verify, apply,
+  captureProjection: async () => ({ 'pos-product': { stock: model.raw.stock[user.branchId], version: model.raw.posStockVersion[user.branchId] } }) });
+const prepare = async original => {
+  if (!model.online) throw new SaleError('unavailable', 'Conéctate para revisar el ticket.');
+  const item = { id: 'pos-product', name: model.raw.name, category: '', qty: original.items[0].qty, price: model.raw.price, cost: model.raw.cost };
+  return { candidate: canonicalNewSale({ ...original, origin: 'online', items: [item], total: item.price * item.qty, amountPaid: item.price * item.qty, change: 0, payment: 'efectivo', sessionId: 'current-cash' }),
+    projectionBase: { 'pos-product': { stock: model.raw.stock[user.branchId], version: model.raw.posStockVersion[user.branchId] } } };
+};
+const drafts = createDraftCheckout({ store, encrypt, decrypt, prepare, apply, verifyReceipt: verify, withLock: createQueueLock(db), currentIdentity: identity => identity.uid === user.uid });
+window.__p08Transactions = {
+  save: (sale, items, products) => queue.submit({ ...sale, items, origin: 'online', queuedAt: new Date().toISOString() }, user, { isolated: true, products }),
+  draft: (sale, items, products) => queue.submit({ ...sale, items, origin: 'offline', queuedAt: new Date().toISOString() }, user, { isolated: true, products }),
+  subscribe(id, callback, onError) {
+    const watcher = liveQuery(async () => { const record = await db.sales.get(id); return record && { ...record, verifiedPayload: await decodeQueuedSale(record, user, decrypt) }; }).subscribe({ next: callback, error: onError });
+    return () => watcher.unsubscribe();
+  },
+  review: (sale, identity, active) => drafts.review(sale.saleId, identity, active), confirm: (...args) => drafts.confirm(...args),
+  verify: () => new Promise(resolve => { model.finishVerification = resolve; }),
+};
+const watch = liveQuery(() => db.sales.toArray()).subscribe({ next: () => { void publish(); }, error: error => { throw error; } });
+const recovery = startReceiptRecovery({ isCurrent: () => true, verify: active => queue.reconcile(user, { isCurrent: active }) });
+function Probe() {
+  api = usePOS(user, { id: 'current-cash', userId: user.uid });
+  const [review, setReview] = useState(null), [cash, setCash] = useState(null); openReview = setReview; showCash = setCash;
+  return React.createElement(React.Fragment, null,
+    cash ? React.createElement(CashCountSummary, { summary: cash }) : api.lastSale
+      ? React.createElement(SaleStatus, { sale: api.lastSale, onNew: api.clearLastSale, onPrint: () => {}, onVerify: api.verifyLastSale, onReview: () => setReview(api.lastSale), isProcessing: api.isProcessing })
+      : React.createElement(Ticket, { cart: api.cart, total: api.total, onQty: api.updateQty, onRemove: api.removeFromCart, isProcessing: api.isProcessing,
+        catalogChanges: api.catalogChanges, onAcceptChange: api.acceptCatalogChange }),
+    review && React.createElement(DraftSaleReview, { sale: review, user, activeBranchId: user.branchId, onClose: () => setReview(null),
+      onResult: result => { api.acceptReviewedSale(result); setReview(null); } }));
+}
+function Fixture() {
+  const [products, update] = useState(projectQueuedStock([model.raw], [], user.businessId).products); setCatalog = update;
+  const [branchId, updateBranch] = useState(user.branchId); setBranch = updateBranch;
+  return React.createElement(SessionResourcesContext.Provider, { value: resources }, React.createElement(TenantContext.Provider,
+    { value: { activeBranchId: branchId, businessBranches: [{ id: user.branchId, status: 'activo' }], settings: {} } },
+    React.createElement(CatalogContext.Provider, { value: { products, categories: [] } }, React.createElement(Probe))));
+}
+const root = createRoot(rootElement); root.render(React.createElement(Fixture));
+let result, warningsDuringProcessing = 0;
+const observer = new MutationObserver(() => { if (api?.isProcessing && rootElement.innerText.includes('Stock insuficiente')) warningsDuringProcessing++; });
+observer.observe(rootElement, { subtree: true, childList: true, characterData: true });
+try {
+  await wait(() => api);
+  api.addToCart(projectQueuedStock([model.raw], [], user.businessId).products[0]); await wait(() => api.total === 5);
+  api.setAmountPaid('5.00'); await wait(() => api.isPaymentValid);
+  const checkout = api.processSale();
+  await wait(() => model.writes === 1 && api.isProcessing && api.catalogBlocked && model.finish);
+  check(!text().includes('Stock insuficiente'), 'last-unit transaction does not show a false stock failure while its own commit is processing');
+  api.addToCart({ ...model.raw, price: 5 }); api.updateQty('pos-product', 2); api.removeFromCart('pos-product');
+  check(api.cart.length === 1 && api.cart[0].qty === 1, 'cart mutation is blocked synchronously during financial processing');
+  model.finish(); await checkout; await wait(() => api.lastSale?.isOffline === false && api.cart.length === 0);
+  check(model.writes === 1 && model.raw.stock[user.branchId] === 0 && warningsDuringProcessing === 0, 'one receipt and one debit confirm without an intermediate warning');
+
+  model.raw = { ...model.raw, stock: { [user.branchId]: 1 }, posStockVersion: { [user.branchId]: 2 }, posLastVoidSaleId: api.lastSale.saleId };
+  await publish(); api.clearLastSale(); await wait(() => !api.lastSale);
+  api.addToCart(projectQueuedStock([model.raw], [], user.businessId).products[0]); await wait(() => api.cart.length === 1);
+  api.setAmountPaid('5.00'); await wait(() => api.isPaymentValid); model.mode = 'reject'; await api.processSale();
+  await wait(() => !api.isProcessing && text().includes('Stock insuficiente'));
+  check(api.cart.length === 1 && model.writes === 1, 'a genuine remote rejection preserves the cart and reveals the stock failure after processing');
+  api.removeFromCart('pos-product'); await wait(() => api.cart.length === 0);
+  model.raw = { ...model.raw, stock: { [user.branchId]: 1 }, posStockVersion: { [user.branchId]: 4 }, posLastVoidSaleId: 'external-sale' };
+  await publish(); model.online = false; window.dispatchEvent(new Event('offline')); await wait(() => !api.isOnline);
+  api.addToCart(projectQueuedStock([model.raw], [], user.businessId).products[0]); await wait(() => api.cart.length === 1);
+  api.setAmountPaid('5.00'); await wait(() => api.isPaymentValid); await api.processSale(); await wait(() => api.lastSale?.financialState === 'draft_offline');
+  const draftId = api.lastSale.saleId, before = (await db.sales.get(draftId)).data;
+  check(text().includes('Sin cobrar') && !button('Verificar venta') && model.writes === 1, 'offline storage is an uncharged draft, not an uncertain receipt or remote sale');
+  check(model.raw.stock[user.branchId] === 1 && (await db.sales.get(draftId)).projectionState === null, 'saving an offline draft leaves remote stock and projection untouched');
+  model.online = true; window.dispatchEvent(new Event('online')); await pause(); await pause();
+  check(model.writes === 1, 'reconnection cannot auto-submit a draft');
+  model.raw = { ...model.raw, price: 6 }; await publish();
+  button('Revisar y confirmar').click(); await wait(() => document.querySelector('[role="dialog"] form'));
+  check(text().includes('Importe guardado: S/ 5.00') && text().includes('S/ 6.00'), 'explicit review shows original and current price before requesting a new payment');
+  const dialog = document.querySelector('[role="dialog"]'), payment = dialog.querySelector('input[inputmode="decimal"]');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(payment, '6.00'); payment.dispatchEvent(new Event('input', { bubbles: true })); await pause();
+  check(button('Confirmar venta', dialog).disabled, 'review cannot charge without explicit consent');
+  dialog.querySelector('input[type="checkbox"]').click(); await pause(); model.mode = 'immediate';
+  dialog.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  dialog.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await wait(() => !document.querySelector('[role="dialog"]') && api.lastSale?.isOffline === false);
+  const saved = await db.sales.get(draftId);
+  check(model.writes === 2 && model.receipts.has(draftId) && saved.data === before && saved.submissionData, 'explicit confirmation keeps the same ID and original encrypted draft, and charges once');
+  check(api.lastSale.total === 6 && text().includes('Venta registrada') && model.raw.stock[user.branchId] === 0, 'recovered local acknowledgement displays the accepted reviewed amount and exact remaining stock');
+
+  showCash({ openingAmount: 11, posCash: 106.30, contractCash: 0, posCompensationCount: 1, posCompensationCash: -106.30,
+    posCompensationDigital: 0, posCompensationTotal: -106.30, expectedAmount: 11, declaredAmount: 11, difference: 0, hasUnverifiedDisbursements: true });
+  await wait(() => text().includes('Por revisar con el dueño'));
+  check(!rootElement.innerText.includes('Coincide') && !rootElement.innerText.includes('Sobran') && !rootElement.innerText.includes('Faltan'), 'zero-difference cash with unverified refunds is not presented as physically reconciled');
+  check(rootElement.innerText.includes('Dinero con que abriste') && rootElement.innerText.includes('Dinero que contaste') && !rootElement.innerText.includes('conciliación'), 'primary cash count is commercial and simple while technical detail stays collapsed');
+  showCash({ openingAmount: 0, posCash: 0, contractCash: 0, posCompensationCount: 1, posCompensationCash: -9, posCompensationTotal: -9,
+    expectedAmount: -9, declaredAmount: 0, difference: 9, hasUnverifiedDisbursements: true });
+  await wait(() => rootElement.innerText.includes('referencia negativa'));
+  check(rootElement.innerText.includes('S/ -9.00') && !rootElement.innerText.includes('Sobran'), 'a negative reference stays visible without claiming a physical surplus');
+
+  showCash(null); await pause();
+  const verifiedSale = api.lastSale;
+  api.acceptReviewedSale({ sale: verifiedSale, isOffline: true, financialState: 'submitted_uncertain' }); await wait(() => api.lastSale?.isOffline);
+  const verifying = api.verifyLastSale(); await wait(() => api.isProcessing && model.finishVerification);
+  setBranch('p08-other-branch'); await wait(() => !api.lastSale);
+  check(!text().includes('Venta registrada'), 'switching branch clears the old ticket while its read is in flight');
+  model.finishVerification(); await verifying; await wait(() => !api.isProcessing);
+  check(!api.lastSale && model.writes === 2, 'a late verification cannot revive a previous branch ticket or leave processing stuck');
+  result = { ok: true, checks, remoteWrites: model.writes, warningsDuringProcessing };
+} catch (error) { result = { ok: false, checks, error: error.stack }; }
+observer.disconnect(); recovery.stop(); watch.unsubscribe(); root.unmount(); resources.close(); db.close();
+await fetch('/__phase4-report', { method: 'POST', body: JSON.stringify(result) });
+</script>

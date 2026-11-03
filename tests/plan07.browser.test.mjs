@@ -10,6 +10,7 @@ it('Plan07 verifies cart transitions, pending receipt UI and transient cached no
     moduleMocks: {
       [client]: 'export const auth = { currentUser: { uid: "cashier" } }; export const db = {};',
       [transactions]: `export async function saveSaleTransaction(sale, items) { return { success: false, isOffline: true, sale: { ...sale, saleId: sale.localId, items } }; }
+        export const saveSaleDraftTransaction = async () => { throw Error('No draft save expected in the Plan07 online scenario'); };
         export const verifyPendingSaleTransaction = async () => {};
         export const subscribeSaleAcknowledgement = (_id, callback) => { window.__saleAck = callback; return () => { delete window.__saleAck; }; };`,
     },

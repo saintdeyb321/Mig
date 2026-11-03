@@ -1,111 +1,30 @@
-import { Card, Button, Badge, cn } from '../../shared/ui';
+import { Card, Button, Badge } from '../../shared/ui';
 import { runtimeCapabilities } from '../../config/runtimeCapabilities.js';
-export function SaleHistoryCard({
-  s,
-  user,
-  businessBranches,
-  formatDate,
-  isProcessing,
-  verificarPendiente,
-  verificarAnulacion,
-  setSaleToCancel
-}) {
-  const isAnulada = s.voided === true;
-  const branchName = businessBranches?.find(b => b.id === s.branchId)?.name || 'Sede Local';
-  const tipoPago = String(s.payment || 'efectivo').toLowerCase();
-  const isEfectivo = tipoPago === 'efectivo';
-  const isYape = tipoPago === 'yape' || tipoPago === 'plin';
-  const isMixto = tipoPago === 'mixto';
 
-  if (s.isOffline) {
-    const rejected = s.queueStatus === 'failed';
-    return <Card className="space-y-3"><div className="flex flex-wrap justify-between gap-2"><Badge variant={rejected ? 'danger' : 'warning'}>{rejected ? 'Intento rechazado' : s.receiptState === 'uncertain' ? 'Resultado remoto incierto' : 'Venta aún no confirmada'}</Badge><span className="text-xs text-muted">{formatDate(s.createdAt)}</span></div>
-      <p className="text-sm">{rejected ? 'No se confirmó esta venta. El intento se conserva para revisión.' : 'Consulta el comprobante antes de volver a cobrar. No repitas la devolución ni el cobro.'}</p>
-      <p className="text-xs text-muted">{branchName}</p>
-      {!rejected&&<Button disabled={isProcessing} onClick={()=>verificarPendiente(s)} variant="secondary">Consultar confirmación</Button>}
-      <details className="text-xs text-muted"><summary className="min-h-8 cursor-pointer">Detalle del intento</summary><p className="break-all">ID: {s.id}</p><p>Importe intentado: S/ {Number(s.total).toFixed(2)}</p>{s.lastError&&<p className="break-words">{s.lastError}</p>}</details>
-    </Card>;
-  }
-
-  // Definimos el color del borde de la cabecera
-  let borderClass = '';
-  if (isAnulada) borderClass = "border-t-line";else if (isEfectivo) borderClass = "border-t-success";else if (isYape) borderClass = "border-t-accent";else if (isMixto) borderClass = "border-t-primary";
-  return <Card key={s.id} className={cn(`flex min-w-0 flex-col overflow-hidden p-0 sm:p-0 animate-enter motion-reduce:animate-none ${isAnulada ? "border-dashed opacity-65" : ''} `)} as="div">
-
-                {/* CABECERA DE LA TARJETA MEJORADA */}
-                <div className={cn(`flex flex-wrap items-start justify-between gap-3 border-t-4 p-4 ${borderClass} `)}>
-                  <div className="grid min-w-0 gap-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold">{formatDate(s.createdAt || s.date)}</span>
-                      {s.isOffline && !isAnulada && <span className="rounded-md border border-line bg-subtle px-2 py-1 text-xs text-muted">{s.queueStatus === 'failed' ? 'FALLIDA' : 'PENDIENTE'}</span>}
-                    </div>
-                    <span className="break-all font-mono text-xs text-muted">ID: {s.id.substring(0, 8).toUpperCase()} • 🏢 {branchName}</span>
-                    {s.lastError && <span role="alert">{s.lastError || 'La venta no pudo sincronizarse.'}</span>}
-                  </div>
-
-                  <div className="grid gap-2 text-right">
-                    <span className="text-2xl font-extrabold text-brand-deep tabular-nums">S/ {Number(s.total).toFixed(2)}</span>
-                    {isAnulada ? <Badge className="inline-flex items-center justify-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold bg-danger-soft text-danger">❌ ANULADA</Badge> : <Badge className={cn(`inline-flex items-center justify-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${isEfectivo ? "bg-success-soft text-success" : isYape ? "bg-accent-soft text-accent" : isMixto ? "bg-primary-soft text-primary" : ''} `)}>
-                        {isEfectivo ? '💵 EFECTIVO' : isYape ? '📲 YAPE' : isMixto ? '🔄 MIXTO' : s.payment}
-                      </Badge>}
-                  </div>
-                </div>
-
-                {/* DETALLE COMPRA */}
-                <div className="grid flex-1 gap-3 border-t border-dashed border-line bg-primary-soft/25 p-4">
-                  <p className="text-xs font-semibold text-muted">Detalle del Ticket</p>
-
-                  <div className="grid divide-y divide-line">
-                    {s.items && s.items.map((i, index) => <div key={i.id || index} className="flex min-w-0 items-center justify-between gap-3 py-2">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <div className="shrink-0 rounded-md border border-line bg-panel px-2 py-1 text-xs font-semibold">{i.qty}x</div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="break-words text-sm font-medium">{i.name}</span>
-                            {i.category && <span className="rounded-md bg-primary-soft px-2 py-1 text-xs text-primary">
-                                {i.category}
-                              </span>}
-                          </div>
-                        </div>
-                        <span className="shrink-0 text-sm font-semibold">
-                          S/ {(i.price * i.qty).toFixed(2)}
-                        </span>
-                      </div>)}
-                  </div>
-
-                  {!isAnulada && <>
-                      {/* Resumen de Vuelto (Para Efectivo puro) */}
-                      {isEfectivo && s.amountPaid && s.change > 0 && <div className="flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-line pt-3 text-sm text-muted">
-                          <span>Recibido: <strong>S/ {Number(s.amountPaid).toFixed(2)}</strong></span>
-                          <span>Vuelto: <span className="rounded-md bg-success-soft px-2 py-1 font-semibold text-success">S/ {Number(s.change).toFixed(2)}</span></span>
-                        </div>}
-
-                      {isMixto && s.splitPayments && <div className="flex flex-wrap gap-2 animate-enter motion-reduce:animate-none">
-                          <div className="flex flex-1 flex-wrap justify-center gap-1 rounded-xl bg-success-soft p-3 text-xs font-semibold text-success">
-                            <span>💵 Ef:</span>
-                            <span>S/ {Number(s.splitPayments.efectivo).toFixed(2)}</span>
-                          </div>
-                          <div className="flex flex-1 flex-wrap justify-center gap-1 rounded-xl bg-accent-soft p-3 text-xs font-semibold text-accent">
-                            <span>📲 Yp:</span>
-                            <span>S/ {Number(s.splitPayments.yape).toFixed(2)}</span>
-                          </div>
-                        </div>}
-                    </>}
-                </div>
-
-                {/* FOOTER */}
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line p-4">
-                  <div className="flex min-w-0 items-center gap-2 text-xs text-muted">
-                    <span>👤</span>
-                    <span className="break-words">
-                      {s.cashierName?.includes('@') ? 'Cajero de Turno' : s.cashierName}
-                    </span>
-                  </div>
-
-                  {!isAnulada && s.voidCheckPending && <div className="space-y-2"><p role="status" className="text-sm text-warning">Anulación pendiente de comprobar. Conserva ID y motivo; no repitas la compensación ni la entrega física.</p><Button variant="secondary" disabled={isProcessing} onClick={() => verificarAnulacion(s)}>Verificar anulación</Button></div>}
-                  {!isAnulada && !s.voidCheckPending && ['dueño', 'cajero'].includes(user?.role) && (user.role !== 'cajero'||s.branchId===user.branchId) && <Button onClick={() => setSaleToCancel(s)} disabled={isProcessing || !runtimeCapabilities.saleVoid || s.atomicProtocol !== 2} title={s.atomicProtocol === 2 ? 'Requiere tu caja activa en la sede de origen; compensación única, sin certificar entrega física.' : 'Ticket histórico: requiere revisión; se conserva sin modificar.'} type="button" variant="danger">
-                      {isProcessing ? '...' : 'Anular Ticket'}
-                    </Button>}
-                </div>
-
-              </Card>;
+export function SaleHistoryCard({ s, user, businessBranches, formatDate, isProcessing, canOperate = true,
+  verificarPendiente, verificarAnulacion, setSaleToCancel, onReviewDraft, activeBranchId }) {
+  const rejected = s.financialState === 'rejected' || s.queueStatus === 'failed';
+  const draft = !rejected && s.financialState === 'draft_offline';
+  const uncertain = s.isOffline && !draft && !rejected;
+  const voidPending = !s.voided && s.voidCheckPending;
+  const state = s.voided ? 'Venta anulada' : rejected ? 'Venta no realizada' : draft ? 'Sin cobrar' : uncertain ? 'Por comprobar' : voidPending ? 'Comprobando anulación' : 'Venta registrada';
+  const branch = businessBranches?.find(row => row.id === s.branchId)?.name ?? 'Sucursal';
+  const payment = ({ efectivo: 'Efectivo', yape: 'Yape / Plin', plin: 'Yape / Plin', mixto: 'Pago mixto' })[s.payment] ?? 'Pago por revisar';
+  return <Card className="flex min-w-0 flex-col gap-4">
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-semibold">{formatDate(s.createdAt ?? s.date)}</p><p className="text-xs text-muted">{branch} · {payment}</p></div><Badge variant={s.voided || rejected ? 'neutral' : draft || uncertain || voidPending ? 'warning' : 'success'}>{state}</Badge></div>
+    <div className="flex items-baseline justify-between gap-3"><span className="text-xs text-muted">{draft ? 'Importe guardado' : uncertain || rejected ? 'Importe del ticket' : 'Total del ticket'}</span><strong className="text-2xl tabular-nums">S/ {Number(s.total).toFixed(2)}</strong></div>
+    <ul className="divide-y divide-line text-sm">{s.items?.map((item, index) => <li key={item.id ?? index} className="flex justify-between gap-3 py-2"><span className="break-words">{item.qty} × {item.name}</span><span className="shrink-0 tabular-nums">S/ {(item.price * item.qty).toFixed(2)}</span></li>)}</ul>
+    {s.payment === 'mixto' && s.splitPayments && <p className="text-xs text-muted">Efectivo S/ {Number(s.splitPayments.efectivo).toFixed(2)} · Yape / Plin S/ {Number(s.splitPayments.yape).toFixed(2)}</p>}
+    {draft && <p className="text-sm text-muted">Guardado en este dispositivo. Aún no se ha cobrado.</p>}
+    {uncertain && <p className="text-sm text-muted">Comprueba el resultado antes de cobrar otra vez.</p>}
+    {voidPending && <p className="text-sm text-muted">Solo falta comprobar la anulación. No repitas la operación.</p>}
+    {s.voided && <p className="text-sm text-muted">{s.voidReason} · La entrega física del dinero debe revisarse por separado.</p>}
+    {draft && <Button variant="secondary" onClick={() => onReviewDraft(s)} disabled={isProcessing || activeBranchId !== s.branchId || s.userId !== user.uid}>Revisar y confirmar</Button>}
+    {draft && activeBranchId !== s.branchId && <p className="text-xs text-muted">Selecciona la sede del ticket para revisarlo.</p>}
+    {uncertain && <Button variant="secondary" disabled={isProcessing} onClick={() => verificarPendiente(s)}>Verificar venta</Button>}
+    {voidPending && <Button variant="secondary" disabled={isProcessing} onClick={() => verificarAnulacion(s)}>Verificar anulación</Button>}
+    {!s.isOffline && !s.voided && !voidPending && ['dueño', 'cajero'].includes(user?.role) && (user.role !== 'cajero' || s.branchId === user.branchId)
+      && <Button variant="danger" onClick={() => setSaleToCancel(s)} disabled={isProcessing || !canOperate || !runtimeCapabilities.saleVoid || s.atomicProtocol !== 2}>Anular ticket</Button>}
+    <details className="mt-auto text-xs text-muted"><summary className="min-h-8 cursor-pointer">Ver detalle del registro</summary><p className="break-all">Ticket: {s.saleId ?? s.id}</p>{s.lastError && <p className="break-words">{s.lastError}</p>}</details>
+  </Card>;
 }

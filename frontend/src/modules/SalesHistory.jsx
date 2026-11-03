@@ -1,96 +1,72 @@
-import FirestoreQueryError from '../components/FirestoreQueryError';
+import { useState, useEffect, useRef } from 'react';
 import { History } from 'lucide-react';
+import toast from 'react-hot-toast';
+import FirestoreQueryError from '../components/FirestoreQueryError';
 import { useSessionScroll } from '../core/session/sessionResourceHooks.js';
 import { useTenantData } from '../features/branches/context/TenantContext';
-import { SaleHistoryCard } from "./sales-history/SaleHistoryCard";
-import { Dialog, LoadingState, PageHeader, Input, Button, Textarea, FormField, EmptyState } from "../shared/ui";
-import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
-// src/modules/SalesHistory.jsx
-import { useState } from 'react';
 import { useSalesHistory } from '../features/sales/hooks/useSalesHistory';
-import toast from 'react-hot-toast';
-function SalesHistory({
-  user
-}) {
-  const {
-    pendingOnly,
-    setPendingOnly,
-    sales,
-    localCount, rejectedCount, uncertainCount,
-    error, isStale, updatedAt, retry,
-    isLoading,
-    formatDate,
-    anularVentaConfirmada,
-    verificarPendiente,
-    verificarAnulacion,
-    isProcessing,
-    businessBranches
-  } = useSalesHistory(user);
+import { SaleHistoryCard } from './sales-history/SaleHistoryCard';
+import { Dialog, LoadingState, PageHeader, Button, Textarea, FormField, EmptyState, Alert } from '../shared/ui';
+import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
+import { DraftSaleReview } from './sales-history/DraftSaleReview.jsx';
+
+export default function SalesHistory({ user }) {
+  const { sales, rejected, error, isStale, updatedAt, retry, isLoading, formatDate, anularVentaConfirmada,
+    verificarPendiente, verificarAnulacion, isProcessing, businessBranches, voidResult, confirmedVoid } = useSalesHistory(user);
   const { activeBranchId } = useTenantData();
   useSessionScroll(`sales:${activeBranchId}`, !isLoading);
-  const [saleToCancel, setSaleToCancel] = useState(null);
-  const [voidReason, setVoidReason] = useState('');
-  if (isLoading) {
-    return <LoadingState>Cargando historial de ventas...</LoadingState>;
-  }
-  return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5">
-
-      <PageHeader title="Historial de ventas" icon={History} eyebrow="Control de operaciones" description={pendingOnly ? 'Intentos locales conservados para revisión. No representan ventas confirmadas.' : 'Ventas confirmadas y sus devoluciones.'} actions={<><span className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted cursor-default pointer-events-none">
-          Últimos 50 tickets
-        </span></>} />
-
-      <div className="flex flex-wrap items-center gap-3 text-sm text-muted"><label className="inline-flex min-h-11 items-center gap-3 rounded-xl border border-line bg-panel px-4"><Input type="checkbox" checked={pendingOnly} onChange={event => setPendingOnly(event.target.checked)} /> Solo pendientes</label>
-        {!!localCount&&<span role="status">{uncertainCount} sin confirmar · {rejectedCount} rechazados locales</span>}
-        <span>{isStale ? 'Lectura local; actualización pendiente.' : updatedAt ? `Actualizado ${new Date(updatedAt).toLocaleTimeString('es-PE')}` : ''}</span></div>
-      <FirestoreQueryError error={error} area="sales-recent" user={user} onRetry={retry} commercial />
-      {sales.length === 0 && error ? null : sales.length === 0 ? <EmptyState title={pendingOnly ? 'Sin pendientes locales' : 'Sin ventas confirmadas'} description={pendingOnly ? 'No hay intentos locales para revisar en esta vista.' : 'Las ventas confirmadas aparecerán aquí.'} /> : <div className="grid min-w-0 gap-4 xl:grid-cols-2 3xl:grid-cols-3">
-          {sales.map(s => <SaleHistoryCard key={s.id} s={s} user={user} businessBranches={businessBranches} formatDate={formatDate} isProcessing={isProcessing||isStale||!!error} verificarPendiente={verificarPendiente} verificarAnulacion={verificarAnulacion} setSaleToCancel={setSaleToCancel} />)}
-        </div>}
-
-      {saleToCancel && <Dialog title={<><span>⚠️</span> ¿Anular esta venta?</>} busy={isProcessing} className="max-w-lg" onClose={() => {
-      setSaleToCancel(null);
-      setVoidReason('');
-    }}>
-
-            <p className="text-muted text-sm mb-5">
-              Estás a punto de registrar una compensación contable de <strong>S/ {Number(saleToCancel.total).toFixed(2)}</strong> por los medios originales y reintegrar el stock. El ticket original se conserva. Esta operación no acredita un desembolso físico. Si el resultado es incierto, verifica el mismo ID y conserva el motivo.
-            </p>
-
-            <form onSubmit={async e => {
-        e.preventDefault();
-        if (voidReason.trim().length < 5) {
-          toast.error("Por favor, explica detalladamente el motivo.");
-          return;
-        }
-        const current = sales.find(sale => sale.id === saleToCancel.id);
-        const pendingVoid = current?.voidCheckPending || current?.voided;
-        const confirmed = pendingVoid ? await verificarAnulacion(saleToCancel) : await anularVentaConfirmada(saleToCancel, voidReason);
-        if (!confirmed) return;
-        setSaleToCancel(null);
-        setVoidReason('');
-      }}>
-
-              <FormField className="mb-6" label={<>
-                  MOTIVO DE LA ANULACIÓN (Obligatorio):
-                </>}>
-
-                <Textarea required minLength="5" maxLength="1000" value={voidReason} disabled={isProcessing || !!sales.find(sale => sale.id === saleToCancel.id && (sale.voidCheckPending || sale.voided))} onChange={e => setVoidReason(e.target.value)} placeholder="Ej: El cliente se arrepintió, error de cobro, etc." autoFocus className="w-full p-3 rounded-xl border-2 border-warning min-h-20 resize-y font-sans" />
-              </FormField>
-
-              <div className="mt-5 flex-wrap justify-end flex gap-2.5">
-                <Button type="button" className="min-w-0 flex-1 p-3 rounded-xl border-2 border-line bg-transparent text-ink font-bold cursor-pointer" onClick={() => {
-            setSaleToCancel(null);
-            setVoidReason('');
-          }} disabled={isProcessing} variant="secondary">
-                  Cancelar
-                </Button>
-                <Button type="submit" className="min-w-0 flex-1 p-3 border-0 rounded-xl font-bold cursor-pointer" disabled={isProcessing || !runtimeCapabilities.saleVoid} variant="danger">
-                  {isProcessing ? 'Comprobando...' : sales.find(sale => sale.id === saleToCancel.id && (sale.voidCheckPending || sale.voided)) ? 'Verificar anulación' : 'Sí, anular venta'}
-                </Button>
-              </div>
-            </form>
-          </Dialog>}
-
-    </div>;
+  const [selected, setSelected] = useState(null);
+  const [reason, setReason] = useState('');
+  const [draft, setDraft] = useState(null);
+  const submitting = useRef(false);
+  const scopeKey = JSON.stringify([user.uid, user.businessId, activeBranchId]);
+  const previousScope = useRef(scopeKey);
+  useEffect(() => {
+    if (previousScope.current === scopeKey) return;
+    previousScope.current = scopeKey; setSelected(null); setReason(''); setDraft(null);
+  }, [scopeKey]);
+  const selectedSale = selected?.scopeKey === scopeKey ? selected.sale : null;
+  const receipt = selectedSale && confirmedVoid(selectedSale.id, reason);
+  const phase = selectedSale && voidResult?.id === selectedSale.id ? voidResult.phase : null;
+  const current = sales.find(sale => sale.id === selectedSale?.id);
+  const remotelyVoided = current?.voidServerConfirmed === true;
+  const checking = phase === 'uncertain' || current?.voidCheckPending || current?.voided;
+  const close = () => { setSelected(null); setReason(''); };
+  useEffect(() => {
+    if (receipt || remotelyVoided || phase === 'confirmed') { setSelected(null); setReason(''); }
+  }, [receipt, remotelyVoided, phase]);
+  const cancelSale = async event => {
+    event.preventDefault();
+    if (submitting.current || !selectedSale) return;
+    if (!checking && reason.trim().length < 5) { toast.error('Explica el motivo con al menos 5 caracteres.'); return; }
+    submitting.current = true;
+    const selectedAtStart = selected;
+    try {
+      const confirmed = checking ? await verificarAnulacion(selectedSale) : await anularVentaConfirmada(selectedSale, reason);
+      if (confirmed) { setSelected(value => value === selectedAtStart ? null : value); setReason(''); }
+    } finally { submitting.current = false; }
+  };
+  const card = sale => <SaleHistoryCard key={sale.id} s={sale} user={user} businessBranches={businessBranches} formatDate={formatDate}
+    isProcessing={isProcessing} canOperate={!isStale && !error} verificarPendiente={verificarPendiente} verificarAnulacion={verificarAnulacion}
+    onReviewDraft={setDraft} activeBranchId={activeBranchId} setSaleToCancel={sale => { setReason(''); setSelected({ sale, scopeKey }); }} />;
+  if (isLoading) return <LoadingState>Cargando movimientos…</LoadingState>;
+  return <div className="mx-auto w-full min-w-0 max-w-7xl space-y-5">
+    <PageHeader title="Historial de ventas" icon={History} eyebrow="Movimientos recientes" description="Ventas registradas y tickets guardados en este dispositivo." />
+    <p className="text-sm text-muted">{isStale ? 'Actualizando con el servidor…' : updatedAt ? `Actualizado ${new Date(updatedAt).toLocaleTimeString('es-PE')}` : ''} Los tickets sin cobrar no suman ingresos.</p>
+    <FirestoreQueryError error={error} area="sales-recent" user={user} onRetry={retry} commercial />
+    {sales.length ? <div className="grid min-w-0 gap-4 xl:grid-cols-2 3xl:grid-cols-3">{sales.map(card)}</div>
+      : !error && <EmptyState title="Sin movimientos recientes" description="Aquí aparecerán las ventas y los tickets guardados." />}
+    {rejected.length > 0 && <details className="rounded-2xl border border-line bg-panel p-4"><summary className="min-h-10 cursor-pointer font-semibold">Revisión local · {rejected.length}</summary><p className="mb-4 text-sm text-muted">Estos intentos no se realizaron. Se conservan para revisión y no suman ingresos.</p><div className="grid gap-4 xl:grid-cols-2">{rejected.map(card)}</div></details>}
+    {selectedSale && <Dialog title={checking ? 'Comprobar anulación' : '¿Anular este ticket?'} onClose={close} busy={isProcessing && !receipt}>
+      {checking ? <Alert variant="warning">La operación ya se intentó. Solo comprobaremos el mismo ticket; no volveremos a registrar la anulación ni a mover inventario. Puedes cerrar esta ventana y verificar después.</Alert>
+        : <p className="text-sm text-muted">Se anulará el ticket de <strong>S/ {Number(selectedSale.total).toFixed(2)}</strong> y se restituirán sus productos. El registro se conserva. Esta acción no acredita una entrega física de dinero.</p>}
+      <form onSubmit={cancelSale} className="space-y-4">
+        {!checking ? <FormField label="Motivo de la anulación"><Textarea required minLength={5} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} autoFocus disabled={isProcessing} /></FormField>
+          : reason && <p className="text-sm text-muted">Motivo conservado: {reason}</p>}
+        {phase === 'rejected' && <Alert variant="danger">{voidResult.message || 'La anulación fue rechazada. Revisa tu caja y los permisos antes de continuar.'}</Alert>}
+        <div className="flex flex-wrap justify-end gap-2"><Button variant="secondary" onClick={close} disabled={isProcessing}>Cerrar</Button><Button type="submit" variant={checking ? 'secondary' : 'danger'} loading={isProcessing} disabled={isProcessing || !runtimeCapabilities.saleVoid}>{checking ? 'Verificar anulación' : 'Confirmar anulación'}</Button></div>
+      </form>
+    </Dialog>}
+    {draft?.branchId === activeBranchId && draft.userId === user.uid && <DraftSaleReview key={`${scopeKey}:${draft.id}`} sale={draft} user={user} activeBranchId={activeBranchId} onClose={() => setDraft(null)} onResult={() => setDraft(null)} />}
+  </div>;
 }
-export default SalesHistory;

@@ -10,12 +10,12 @@ const server = { fromCache: false, hasPendingWrites: false };
 const cached = { fromCache: true, hasPendingWrites: false };
 const owner = { role: 'dueño', businessId: 'tenant', status: 'activo' };
 
-it('Plan06 keeps confirmed history separate from rejected and uncertain local attempts', () => {
+it('Plan08 integrates confirmed and uncertain history while preserving rejections in secondary review', () => {
   const pending=Array.from({length:50},(_,i)=>({id:`local-${i}`,isOffline:true,queueStatus:i%2?'failed':'pending',createdAt:'2026-10-29T12:00:00Z'}));
   const remote=[{id:'confirmed',createdAt:'2026-10-28T12:00:00Z'}];
   const normal=salesHistoryPresentation(pending,remote);
-  assert.deepEqual(normal.rows,remote);assert.equal(normal.rejectedCount,25);assert.equal(normal.uncertainCount,25);
-  assert.equal(salesHistoryPresentation(pending,remote,true).rows.length,50);
+  assert.equal(normal.rows.length,26);assert.ok(normal.rows.some(row=>row.id==='confirmed'));assert.equal(normal.rejectedCount,25);assert.equal(normal.uncertainCount,25);
+  assert.equal(normal.rejected.length,25);assert.ok(normal.rows.every(row=>row.queueStatus!=='failed'));
   assert.equal(salesHistoryPresentation([{...pending[0],id:'confirmed'}],remote).localCount,0);
 });
 
@@ -28,7 +28,7 @@ it('Plan06 projects confirmed refunds and estimated close differences without cl
   assert.equal(projectFinancialNotice('pos-void',{...refund,amount:NaN},'tenant','owner'),null);
   const close={id:'shift',businessId:'tenant',branchId:'branch',userId:'cashier',closedBy:'manager',runtime:'spark',status:'closed_with_discrepancy',
     closedAt:'2026-10-29T12:00:00Z',reconciliationPending:true};
-  for(const [difference,title] of [[-2,'Faltante'],[2,'Sobrante'],[0,'Cierre']]) {
+  for(const [difference,title] of [[-2,'Diferencia negativa estimada'],[2,'Diferencia positiva estimada'],[0,'Cierre']]) {
     const item=projectFinancialNotice('cash-close',{...close,closeEstimate:{authority:'client-estimate',difference}},'tenant','owner');
     assert.ok(item.title.startsWith(title));assert.equal(item.metadata.responsibleId,'cashier');assert.equal(item.metadata.actorId,'manager');assert.match(item.message,/conciliación pendiente/);
   }

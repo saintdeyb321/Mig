@@ -8,11 +8,13 @@ const sparkVoids = createPosVoidRepository(db, { currentUser: () => auth.current
 import { syncLocalSession, reconcilePendingSessions } from '../../cash-register/infrastructure/cashRegisterRepository.js';
 import offlineDB from '../../../offlineDB';
 import { encrypt, decrypt } from '../../../crypto';
-import { SaleError } from '../domain/saleModel.js';
+import { SaleError, canonicalSale } from '../domain/saleModel.js';
+import { decodeQueuedSale } from '../domain/queueState.js';
 import { createSaleQueue } from '../application/saleQueue.js';
 import { dexieSaleStore, createQueueLock } from './saleQueueStore.js';
 import { liveQuery } from 'dexie';
 import { createVoidRecovery } from '../application/voidRecovery.js';
+import { createDraftCheckout } from '../application/draftCheckout.js';
 
 async function syncCashSessions(identity) {
   const pending = await offlineDB.cash_sessions.filter(record => record.sync === false).toArray();
@@ -39,6 +41,7 @@ async function syncCashSessions(identity) {
   return blockedSessions;
 }
 export const saleQueue = createSaleQueue({
+  receiptOnlyRetries: true,
   store: dexieSaleStore(offlineDB), encrypt, decrypt, withLock: createQueueLock(offlineDB),
   online: () => navigator.onLine, syncSessions: syncCashSessions,
   afterFlush: reconcilePendingSessions,
@@ -61,6 +64,18 @@ export const saveSaleTransaction = confirmedWrite((sale, cartItems, products, us
   saleQueue.submit({ ...sale, items: cartItems, queuedAt: new Date().toISOString(),
     origin: navigator.onLine ? 'online' : 'offline' }, user, { isolated: true, products }));
 
+// Local-only draft storage does not grant financial authority or schedule a write.
+export async function saveSaleDraftTransaction(sale, cartItems, products, user) {
+  if (auth.currentUser?.uid !== user.uid || !['dueño', 'cajero'].includes(user.role) || !sale.branchId || sale.branchId === 'global') throw new SaleError('identity-mismatch', 'La cuenta o sede cambió.');
+  const saved = await saleQueue.enqueue({ ...sale, items: cartItems, queuedAt: new Date().toISOString(), origin: 'offline' }, user, products);
+  return { success: false, pending: false, isOffline: true, financialState: 'draft_offline', sale: saved };
+}
+const draftCheckout = createDraftCheckout({ store: dexieSaleStore(offlineDB), encrypt, decrypt,
+  prepare: sparkSales.prepareDraft, apply: sparkSales.submit, verifyReceipt: sparkSales.verify,
+  withLock: createQueueLock(offlineDB), currentIdentity: identity => auth.currentUser?.uid === identity.uid });
+export const reviewDraftSaleTransaction = (sale, identity, isCurrent) => draftCheckout.review(sale.saleId ?? sale.localId ?? sale.id, identity, isCurrent);
+export const confirmDraftSaleTransaction = confirmedWrite((reviewed, payment, identity, isCurrent) => draftCheckout.confirm(reviewed, payment, identity, isCurrent));
+
 // Read-only remote verification can recover a lost local acknowledgment; it never submits a sale.
 export async function verifyPendingSaleTransaction(sale, user, isCurrent = () => true) {
   const identity = { ...user, branchId: sale.branchId };
@@ -76,7 +91,12 @@ export const voidRecovery = createVoidRecovery({ store: {
 }, encrypt, decrypt, repository: sparkVoids, currentIdentity: identity => auth.currentUser?.uid === identity.uid });
 
 export const subscribeSaleAcknowledgement = (saleId, onData, onError) => {
-  const subscription = liveQuery(() => offlineDB.sales.get(saleId)).subscribe({ next: onData, error: onError });
+  const subscription = liveQuery(async () => {
+    const record = await offlineDB.sales.get(saleId);
+    if (!record || record.userId !== auth.currentUser?.uid) return record;
+    const verifiedPayload = canonicalSale(await decodeQueuedSale(record, { uid: record.userId, businessId: record.businessId }, decrypt));
+    return { ...record, verifiedPayload };
+  }).subscribe({ next: onData, error: onError });
   return () => subscription.unsubscribe();
 };
 export const subscribeVoidAttempts = (identity, onData, onError) => {

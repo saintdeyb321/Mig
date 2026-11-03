@@ -1,0 +1,100 @@
+<!doctype html><meta charset="utf-8"><title>Plan 08 history races</title><div id="root"></div>
+<script type="module">
+import React, { useState, useEffect, useMemo } from 'react';
+import { createRoot } from 'react-dom/client';
+import SalesHistory from '/src/modules/SalesHistory.jsx';
+import { SessionResourcesContext } from '/src/core/session/sessionResourceHooks.js';
+import { createSessionResources } from '/src/core/session/sessionResources.js';
+import { TenantContext } from '/src/features/branches/context/TenantContext.js';
+import { canonicalSale } from '/src/features/sales/domain/saleModel.js';
+
+const checks = [], check = (ok, name) => { if (!ok) throw Error(name); checks.push(name); };
+const pause = () => new Promise(resolve => setTimeout(resolve, 25));
+const wait = async predicate => { for (let i = 0; i < 150; i++) { if (predicate()) return; await pause(); } throw Error('History state timed out'); };
+const rootElement = document.getElementById('root');
+const text = () => [rootElement, ...document.querySelectorAll('[role="dialog"]')].map(el => el.innerText).join('\n');
+const button = (label, parent = document) => [...parent.querySelectorAll('button')].find(el => el.textContent.trim() === label);
+const stamp = () => ({ toDate: () => new Date('2026-11-02T18:00:00Z') });
+const user = { uid: 'p08-browser-cashier', businessId: 'p08-browser-tenant', branchId: 'p08-browser-branch', role: 'cajero' };
+const sale = id => canonicalSale({ localId: id, userId: user.uid, businessId: user.businessId, branchId: user.branchId, sessionId: 'cash-session',
+  items: [{ id: 'ui-product', name: 'Producto del ticket', category: '', qty: 1, price: 70, cost: 3 }], total: 70, amountPaid: 70, change: 0, payment: 'efectivo', createdAt: '2026-11-02T18:00:00Z' });
+const remote = id => ({ ...sale(id), id, atomicProtocol: 2, status: 'confirmed', confirmedAt: stamp(), isOffline: false, stockVersions: { 'ui-product': 1 } });
+window.__p08Actor = user;
+window.__p08History = { remote: [remote('p08-browser-void-one')], local: [
+  { ...sale('p08-browser-draft'), id: 'p08-browser-draft', isOffline: true, financialState: 'draft_offline', queueStatus: 'pending' },
+  { ...sale('p08-browser-uncertain'), id: 'p08-browser-uncertain', isOffline: true, financialState: 'submitted_uncertain', queueStatus: 'pending' },
+  { ...sale('p08-browser-rejected'), id: 'p08-browser-rejected', isOffline: true, financialState: 'rejected', queueStatus: 'failed' },
+], receipts: [], attempts: [], writes: 0, verifications: 0 };
+const model = window.__p08History;
+const receipt = (id, reason, serverConfirmed) => ({ ...remote(id), id, saleId: id, authority: 'pos-compensation', protocol: 1,
+  reason, amount: -70, cashAmount: -70, digitalAmount: 0, occurredAt: stamp(), serverConfirmed, stockVersions: { 'ui-product': 2 } });
+let switchUser;
+function Fixture() {
+  const [actor, setActor] = useState(user); switchUser = next => { window.__p08Actor = next; setActor(next); };
+  const resources = useMemo(() => createSessionResources({ idleMs: 0 }), [actor.uid, actor.businessId]);
+  useEffect(() => () => resources.close(), [resources]);
+  return React.createElement(SessionResourcesContext.Provider, { value: resources }, React.createElement(TenantContext.Provider,
+    { value: { identityKey: JSON.stringify([actor.uid, actor.businessId, actor.branchId]), activeBranchId: actor.branchId,
+      businessBranches: [{ id: actor.branchId, name: 'Sede Centro', status: 'activo' }] } }, React.createElement(SalesHistory, { key: actor.uid, user: actor })));
+}
+let root = createRoot(rootElement), result;
+root.render(React.createElement(Fixture));
+const fillReason = async value => {
+  const input = document.querySelector('[role="dialog"] textarea');
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true })); await pause();
+};
+try {
+  await wait(() => button('Anular ticket') && text().includes('Sin cobrar'));
+  check(!text().includes('Solo pendientes') && text().includes('Por comprobar') && text().includes('Venta registrada'), 'one history shows coherent confirmed, draft and uncertain cards without the checkbox');
+  const review = [...rootElement.querySelectorAll('details')].find(el => el.querySelector('summary')?.textContent.includes('Revisión local'));
+  check(review && !review.open && review.textContent.includes('Venta no realizada'), 'rejected attempts remain in a secondary review section');
+  button('Anular ticket').click(); await wait(() => document.querySelector('[role="dialog"] textarea'));
+  await fillReason('Motivo original del ticket uno');
+  const form = document.querySelector('[role="dialog"] form');
+  form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await wait(() => model.writes === 1 && model.reject);
+  check(model.writes === 1, 'duplicate submissions start exactly one financial operation');
+  const first = receipt('p08-browser-void-one', 'Motivo original del ticket uno', false);
+  model.receipts = [first]; model.emitVoids(model.receipts, { fromCache: true }); await pause();
+  check(Boolean(document.querySelector('[role="dialog"]')), 'a cached compensation cannot close the form as confirmed');
+  model.receipts = [{ ...first, serverConfirmed: true }]; model.emitVoids(model.receipts, { fromCache: false });
+  await wait(() => !document.querySelector('[role="dialog"]'));
+  check(text().includes('Venta anulada') && model.writes === 1, 'server-confirmed compensation closes the modal and updates history before the delayed response');
+  model.reject(Object.assign(Error('Late lost receipt response'), { code: 'void-unverified' })); await pause(); await pause();
+  check(!document.querySelector('[role="dialog"]') && model.writes === 1, 'a delayed error cannot reopen the modal or repeat inventory restitution');
+
+  model.remote = [...model.remote, remote('p08-browser-void-two')]; model.emitSales(model.remote, { fromCache: false });
+  await wait(() => button('Anular ticket') && !button('Anular ticket').disabled);
+  button('Anular ticket').click(); await wait(() => document.querySelector('[role="dialog"] textarea'));
+  await fillReason('Motivo original del ticket dos');
+  document.querySelector('[role="dialog"] form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await wait(() => model.writes === 2);
+  model.reject(Object.assign(Error('Lost commit acknowledgement'), { code: 'void-unverified' }));
+  await wait(() => button('Verificar anulación', document.querySelector('[role="dialog"]')) && !button('Cerrar', document.querySelector('[role="dialog"]')).disabled);
+  check(!document.querySelector('[role="dialog"] textarea'), 'uncertainty replaces the financial submit form with a closeable verification view');
+  model.verifyReceipt = receipt('p08-browser-void-two', 'Motivo original del ticket dos', true);
+  button('Verificar anulación', document.querySelector('[role="dialog"]')).click();
+  await wait(() => !document.querySelector('[role="dialog"]'));
+  check(model.verifications === 1 && model.writes === 2, 'manual verification closes the view without another financial operation');
+
+  model.remote = [...model.remote, remote('p08-browser-void-other-actor')]; model.emitSales(model.remote, { fromCache: false });
+  await wait(() => button('Anular ticket') && !button('Anular ticket').disabled);
+  button('Anular ticket').click(); await wait(() => document.querySelector('[role="dialog"] textarea'));
+  model.receipts = [...model.receipts, { ...receipt('p08-browser-void-other-actor', 'Anulación autorizada por otro responsable', true), userId: 'p08-another-cashier' }];
+  model.emitVoids(model.receipts, { fromCache: false }); await wait(() => !document.querySelector('[role="dialog"]'));
+  check(model.writes === 2 && text().includes('Anulación autorizada por otro responsable'), 'an independently verified void by another authorized actor closes the form without claiming another compensation');
+
+  root.unmount(); await pause(); root = createRoot(rootElement); root.render(React.createElement(Fixture));
+  await wait(() => text().includes('Venta anulada'));
+  check(!button('Anular ticket') && model.writes === 2, 'remounting preserves confirmed cancellations without offering another restitution');
+  const late = model.emitSales;
+  switchUser({ ...user, uid: 'other-user', businessId: 'other-tenant', branchId: 'other-branch' }); await pause();
+  late(model.remote, { fromCache: false }); await pause();
+  check(!text().includes('Producto del ticket') && !document.querySelector('[role="dialog"]'), 'late callbacks from a previous identity cannot expose its history or reopen a dialog');
+  result = { ok: true, checks, financialOperations: model.writes, readOnlyVerifications: model.verifications };
+} catch (error) { result = { ok: false, checks, error: error.stack }; }
+root.unmount();
+await fetch('/__phase4-report', { method: 'POST', body: JSON.stringify(result) });
+</script>
