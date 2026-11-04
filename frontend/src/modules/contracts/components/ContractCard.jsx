@@ -156,7 +156,7 @@ const ContractCard = memo(({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-subtle px-2 py-1 font-mono text-xs text-muted">{contract.contractId}</span>
+          <span className="max-w-full rounded-md bg-subtle px-2 py-1 font-mono text-xs text-muted wrap-anywhere">{contract.contractId}</span>
           <span className="text-xs text-muted">Creado: {formatDateOnly(contract.createdAt)}</span>
         </div>
       </div>
@@ -191,7 +191,7 @@ const ContractCard = memo(({
           </div>
           <div className="grid gap-1">
             <span className="text-xs text-muted">Abonado</span>
-            <span className="text-base font-bold text-success">S/ {(contract.total - contract.balance).toFixed(2)}</span>
+            <span className="text-base font-bold text-success tabular-nums">S/ {(contract.total - contract.balance).toFixed(2)}</span>
           </div>
           <div className={cn(`grid gap-1 rounded-xl px-3 py-2 ${isCancelled ? "bg-subtle text-muted" : isPaid ? "bg-success-soft text-success" : "bg-danger-soft text-danger"} `, criticalDebt ? "bg-danger-soft border-danger-soft" : "")}>
             <span className={cn("text-xs text-muted", criticalDebt ? "text-danger" : "text-inherit")}>

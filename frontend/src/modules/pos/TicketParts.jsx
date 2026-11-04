@@ -37,10 +37,15 @@ export function SaleStatus({ sale, onPrint, onNew, onVerify, onReview, isProcess
   </Card>;
 }
 export function Ticket({ cart, total, onQty, onRemove, isProcessing, children, action, drawer = false, catalogChanges = {}, onAcceptChange }) {
-  return <Card className={cn("flex min-h-0 flex-col overflow-hidden p-0 sm:p-0", drawer ? "flex-1" : "max-h-[calc(100dvh-3rem)]")}><div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-linear-to-br from-brand-deep to-primary p-4 text-white sm:p-5"><h2 className="flex items-center gap-2 font-bold"><ReceiptText aria-hidden="true" className="size-5" />Ticket de venta</h2><Badge className="bg-white/15 text-white">{cart.length} de {VERIFIED_ATOMIC_LINE_LIMIT} productos diferentes</Badge><details className="text-xs"><summary className="flex min-h-8 cursor-pointer items-center gap-1"><Info className="size-4" />Límite por ticket</summary><p>Máximo {VERIFIED_ATOMIC_LINE_LIMIT} productos diferentes por operación atómica verificada. Puedes aumentar sus cantidades dentro de los límites.</p></details></div>
-    {cart.length >= VERIFIED_ATOMIC_LINE_LIMIT && <p role="status" className="bg-warning-soft px-4 py-2 text-sm">Carrito lleno. Finaliza este ticket antes de continuar con otra venta.</p>}
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><div className="px-4 sm:px-5">{cart.length?cart.map(item=><CartItem key={item.id} item={item} onQty={onQty} onRemove={onRemove} disabled={isProcessing} change={catalogChanges[item.id]} onAcceptChange={onAcceptChange} />):<EmptyState icon={ShoppingBag} title="Tu ticket está vacío" description="Selecciona productos del catálogo para comenzar." className="my-4 border-0 py-6" />}</div>
-    <CartSummary total={total}>{children}</CartSummary></div>
-    <div className="shrink-0 border-t border-line bg-panel p-4 sm:p-5">{action}</div>
+  return <Card className={cn('pos-ticket flex min-h-0 flex-col overflow-hidden p-0 sm:p-0', drawer && 'pos-ticket-drawer')}>
+    <div className="pos-ticket-heading nebula-brand flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 text-white"><h2 className="flex items-center gap-2 font-bold"><ReceiptText aria-hidden="true" className="size-5" />Ticket de venta</h2><Badge className="bg-white/15 text-white">{cart.length} de {VERIFIED_ATOMIC_LINE_LIMIT} productos diferentes</Badge></div>
+    {cart.length >= VERIFIED_ATOMIC_LINE_LIMIT && <p role="status" className="shrink-0 border-b border-line bg-warning-soft px-4 py-1.5 text-xs text-warning">Carrito lleno. Finaliza este ticket.</p>}
+    <div className="pos-ticket-items ui-scroll px-4" role="region" aria-label="Productos del ticket" tabIndex={0}>{cart.length?cart.map(item=><CartItem key={item.id} item={item} onQty={onQty} onRemove={onRemove} disabled={isProcessing} change={catalogChanges[item.id]} onAcceptChange={onAcceptChange} />):<EmptyState icon={ShoppingBag} title="Tu ticket está vacío" description="Selecciona productos del catálogo para comenzar." className="my-3 border-0 py-5" />}</div>
+    <div className="pos-ticket-total flex flex-wrap items-center justify-between gap-2 border-y border-finance-line bg-success-soft px-4 py-3 text-success"><span className="text-sm font-semibold">Total a cobrar</span><strong className="text-2xl font-extrabold tabular-nums">S/ {total.toFixed(2)}</strong></div>
+    <div className="pos-ticket-payment ui-scroll space-y-3 bg-panel p-4" role="region" aria-label="Pago y validación" tabIndex={0}>
+      {children}
+      <details className="text-xs text-muted"><summary className="flex min-h-8 cursor-pointer items-center gap-1"><Info aria-hidden="true" className="size-4" />Límite por ticket</summary><p>Máximo {VERIFIED_ATOMIC_LINE_LIMIT} productos diferentes por operación atómica verificada. Puedes aumentar sus cantidades dentro de los límites.</p></details>
+    </div>
+    <div className="pos-ticket-actions border-t border-line bg-panel p-4">{action}</div>
   </Card>;
 }

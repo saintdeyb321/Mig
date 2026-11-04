@@ -1,3 +1,4 @@
+import { Download, FileSpreadsheet } from 'lucide-react';
 import FirestoreQueryError from '../components/FirestoreQueryError';
 import { Select, Button, Card, Input, FormField } from "../shared/ui";
 // src/modules/ExportSales.jsx
@@ -21,7 +22,7 @@ function ExportSales({
   return <Card className="animate-enter motion-reduce:animate-none grid gap-4 border-l-4 border-l-success" tone="finance" as="div">
       <div className="grid gap-2">
         <h3 className="flex items-center gap-2 text-base font-semibold">
-          <span>📊</span>
+          <FileSpreadsheet aria-hidden="true" className="size-5 text-success" />
           Exportar Reportes Contables
         </h3>
         {/* 🚀 Ajuste de texto: Agregamos "Sucursales" para presumir la nueva función */}
@@ -47,7 +48,7 @@ function ExportSales({
 
         <div className="sm:shrink-0">
           <Button onClick={handleExport} disabled={isExporting || !consent} className="w-full" type="button" variant="success" loading={isExporting}>
-            {isExporting ? "⏳ Generando Excel..." : "📥 Descargar Excel"}
+            <Download aria-hidden="true" />{isExporting ? "Generando Excel…" : "Descargar Excel"}
           </Button>
         </div>
       </div>

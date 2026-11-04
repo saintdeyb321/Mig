@@ -21,7 +21,7 @@ export function NotificationBell({ user, alerts, notificationError, isAdmin, can
       {alerts.length>0&&markAllAsRead&&<Button variant="secondary" size="sm" onClick={markAllAsRead} loading={isMarkingRead}>Marcar visibles como leídas</Button>}
       {alerts.map(notification=>{
         const metadata=notification.metadata??{};
-        return <Card key={notification.id} className="space-y-2 p-4 sm:p-4"><div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-semibold">{notification.title}</h3><Badge>{toDateSafe(notification.createdAt)?.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</Badge></div>
+        return <Card key={notification.id} className="space-y-3 border-l-2 border-l-primary/40 p-4 sm:p-4"><div className="flex flex-wrap items-start justify-between gap-2"><h3 className="font-semibold">{notification.title}</h3><Badge>{toDateSafe(notification.createdAt)?.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</Badge></div>
           <p className="text-sm text-muted">{notification.message}</p>
           <p className="text-xs text-muted">{businessBranches.find(branch=>branch.id===notification.branchId)?.name??'Sucursal'} · {notification.actorDisplayName ?? 'Responsable del negocio'}</p>
           {metadata.ticketId&&<p className="break-all text-xs">Ticket: {metadata.ticketId} · Anulación confirmada</p>}

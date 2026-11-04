@@ -1,5 +1,5 @@
 import FirestoreQueryError from '../components/FirestoreQueryError';
-import { Package } from 'lucide-react';
+import { Package, Plus, Pencil, Camera } from 'lucide-react';
 import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Select, SearchField, Card, DialogFooter, cn, EmptyState } from "../shared/ui";
 // src/modules/ProductCatalog.jsx
 import React, { useCallback, memo } from 'react';
@@ -52,7 +52,7 @@ const ProductCard = memo(({
 
       <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 sm:col-span-1 sm:border-0 sm:pt-0">
         <span className="text-lg font-bold text-primary">S/ {Number(p.price).toFixed(2)}</span>
-        <Button onClick={() => openEditForm(p)} disabled={isLoading} className="size-11 shrink-0 p-2" title="Editar" type="button" variant="ghost" aria-label="Editar">✏️</Button>
+        <Button onClick={() => openEditForm(p)} disabled={isLoading} className="size-11 shrink-0 p-2" title="Editar" type="button" variant="ghost" aria-label="Editar"><Pencil aria-hidden="true" /></Button>
       </div>
     </Card>;
 });
@@ -135,14 +135,14 @@ function ProductCatalog({
   if (isLoading && !showFormModal) {
     return <LoadingState>Cargando inventario...</LoadingState>;
   }
-  return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
+  return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
 
       <PageHeader title="Productos" icon={Package} eyebrow="Catálogo e inventario" description="Precios, existencias y referencias de cada sede." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
-          ➕ Nuevo Producto
+          <Plus aria-hidden="true" /> Nuevo producto
         </Button></>} />
 
       <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="view-toolbar">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar producto..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
         <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted">
@@ -169,14 +169,14 @@ function ProductCatalog({
 
               <div className="flex flex-wrap items-center gap-4 rounded-xl border border-dashed border-line bg-subtle p-4">
                 <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-panel">
-                  {imageUrl ? <img src={imageUrl} alt="Preview" className="size-full object-cover" /> : <span className="text-3xl text-muted">📷</span>}
+                  {imageUrl ? <img src={imageUrl} alt="Preview" className="size-full object-cover" /> : <Camera aria-hidden="true" className="size-8 text-muted" />}
                 </div>
 
                 <FormField className="grid min-w-0 flex-1 gap-2" label={<>FOTO DEL PRODUCTO (Opcional)</>}>
 
-                  <Input type="file" id="product-img" accept="image/*" onChange={handleImageUpload} disabled={isLoading} className="hidden" />
+                  <Input type="file" id="product-img" accept="image/*" onChange={handleImageUpload} disabled={isLoading} className="peer sr-only" />
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 peer-focus-visible:[&_label]:outline-2 peer-focus-visible:[&_label]:outline-focus">
                     <label htmlFor="product-img" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium hover:bg-subtle">
                        {imageUrl ? '🔄 Cambiar' : '📁 Seleccionar archivo'}
                     </label>

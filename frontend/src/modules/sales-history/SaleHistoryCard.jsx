@@ -10,7 +10,7 @@ export function SaleHistoryCard({ s, user, businessBranches, formatDate, isProce
   const state = s.voided ? 'Venta anulada' : rejected ? 'Venta no realizada' : draft ? 'Sin cobrar' : uncertain ? 'Por comprobar' : voidPending ? 'Comprobando anulación' : 'Venta registrada';
   const branch = businessBranches?.find(row => row.id === s.branchId)?.name ?? 'Sucursal';
   const payment = ({ efectivo: 'Efectivo', yape: 'Yape / Plin', plin: 'Yape / Plin', mixto: 'Pago mixto' })[s.payment] ?? 'Pago por revisar';
-  return <Card className="flex min-w-0 flex-col gap-4">
+  return <Card className="flex min-w-0 flex-col gap-4 border-t-2 border-t-primary/30">
     <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-semibold">{formatDate(s.createdAt ?? s.date)}</p><p className="text-xs text-muted">{branch} · {payment}</p></div><Badge variant={s.voided || rejected ? 'neutral' : draft || uncertain || voidPending ? 'warning' : 'success'}>{state}</Badge></div>
     <div className="flex items-baseline justify-between gap-3"><span className="text-xs text-muted">{draft ? 'Importe guardado' : uncertain || rejected ? 'Importe del ticket' : 'Total del ticket'}</span><strong className="text-2xl tabular-nums">S/ {Number(s.total).toFixed(2)}</strong></div>
     <ul className="divide-y divide-line text-sm">{s.items?.map((item, index) => <li key={item.id ?? index} className="flex justify-between gap-3 py-2"><span className="break-words">{item.qty} × {item.name}</span><span className="shrink-0 tabular-nums">S/ {(item.price * item.qty).toFixed(2)}</span></li>)}</ul>

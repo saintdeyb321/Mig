@@ -15,10 +15,10 @@ const QRPaymentCard = memo(({
         Sube la imagen del código QR de Yape/Plin para esta sede. El sistema la optimizará automáticamente.
       </p>
 
-      <div className="grid justify-items-center gap-4 rounded-xl border border-dashed border-line bg-subtle p-4">
+      <div className="grid justify-items-center gap-4 rounded-xl border border-dashed border-control bg-subtle p-4">
 
         <div className="flex aspect-square w-full max-w-52 items-center justify-center overflow-hidden rounded-xl border border-line bg-panel p-2">
-          {qrImageBase64 ? <img src={qrImageBase64} alt="Vista previa QR" className="size-full object-contain animate-enter motion-reduce:animate-none" /> : <span className="text-4xl text-muted">📲</span>}
+          {qrImageBase64 ? <img src={qrImageBase64} alt="Vista previa QR" className="size-full object-contain animate-enter motion-reduce:animate-none" /> : <span aria-hidden="true" className="text-4xl text-muted">📲</span>}
         </div>
 
         <div className="grid w-full gap-2">

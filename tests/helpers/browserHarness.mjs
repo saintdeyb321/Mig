@@ -46,7 +46,7 @@ async function connectCDP(url, onEvent) {
   }) };
 }
 
-export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, mockPng, verifyDownload, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
+export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, inspectPage, mockPng, verifyDownload, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
   const browser = findBrowser();
   const root = fileURLToPath(new URL('../../frontend/', import.meta.url));
   const workspace = fileURLToPath(new URL('../../', import.meta.url));
@@ -137,6 +137,7 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
     }
     const result = await report;
     assert.equal(result.ok, true, result.error);
+    if (inspectPage) await inspectPage(page, result);
     if (mockPng) {
       let workbook;
       for (let attempt = 0; attempt < 20; attempt++) {

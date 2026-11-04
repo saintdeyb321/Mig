@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { resolve, dirname, extname } from 'node:path';
 import { escapeHtml, escapeAttribute, multilineHtml, safeImageUrl } from '../frontend/src/shared/security/html.js';
 import { brand, configuredHttpsUrl } from '../frontend/src/config/brand.js';
@@ -216,9 +215,13 @@ describe('Hosting policy and conservative cleanup', () => {
       }
     }
     for (const path of ['frontend/src/firebase.js', 'frontend/src/utils/adminExcelStyles.js', 'frontend/src/utils/backupAdmin/adminDataProcessor.js', 'backend/src/index.js', 'shared/README.md']) assert.ok(!existsSync(path), path);
-    const markdown = execFileSync('git', ['ls-files', '*.md'], { encoding: 'utf8' }).trim().split(/\r?\n/).filter(existsSync);
+    // Inspect local product documentation without requiring version-control commands.
+    const markdown = [...walk('docs'), ...readdirSync('.').filter(name => name.endsWith('.md'))]
+      .filter(path => path.endsWith('.md')).map(path => path.replaceAll('\\', '/').replace(resolve('.') .replaceAll('\\', '/') + '/', ''));
     assert.ok(markdown.includes('docs/MASTER-PLAN.md'));
     assert.ok(markdown.every(path => ['docs/MASTER-PLAN.md', 'docs/PLAN-REFAC-SPARK-MIGAPOS.md', 'docs/PLAN-REFAC-FRONTEND-UX-MIGAPOS.md', 'docs/PLAN-03-CORRECCION-FLUJOS-OPERATIVOS-MIGAPOS.md', 'docs/INDICES-FIRESTORE-MIGAPOS.md',
-      'docs/PLAN-01-RESCATE-UX-IX-MIGAPOS.md', 'docs/PLAN-02-RECUPERACION-SPARK-FLUJOS-DATOS-MIGAPOS.md', 'docs/PLAN-04-CIERRE-MVP-MIGAPOS.md', 'docs/PLAN-05-CORRECCION-AUDITORIA-PREPRODUCCION-MIGAPOS.md'].includes(path)));
+      'docs/PLAN-01-RESCATE-UX-IX-MIGAPOS.md', 'docs/PLAN-02-RECUPERACION-SPARK-FLUJOS-DATOS-MIGAPOS.md', 'docs/PLAN-04-CIERRE-MVP-MIGAPOS.md', 'docs/PLAN-05-CORRECCION-AUDITORIA-PREPRODUCCION-MIGAPOS.md',
+      'docs/PLAN-08-CORRECCION-FLUJOS-MIGAPOS.md', 'docs/PROMPT-CODEX-PLAN-08-MIGAPOS.md',
+      'docs/PLAN-09-REFAC-UX-GALAXIA-MIGAPOS.md', 'docs/PROMPT-CODEX-PLAN-09-MIGAPOS.md', 'docs/PLAN-09-DESIGN-SYSTEM-MIGAPOS.md'].includes(path)));
   });
 });

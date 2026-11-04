@@ -1,4 +1,4 @@
-import { Building2 } from 'lucide-react';
+import { Building2, Plus, Pencil } from 'lucide-react';
 import { Alert, Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, DialogFooter, SearchField, EmptyState } from "../shared/ui";
 // src/modules/BranchManager.jsx
 import React, { memo, useState } from 'react';
@@ -14,7 +14,7 @@ const BranchCard = memo(({
   return <Card className={cn(`flex min-w-0 flex-wrap items-center justify-between gap-4       p-4 sm:p-4 animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65" : ''} `)} as="div">
       <div className="flex min-w-0 flex-[1_1_15rem] items-center gap-3">
         <div className="flex size-12 shrink-0 items-center justify-center rounded-xl text-2xl bg-subtle relative">
-          <span className={cn(isInactive ? "opacity-50" : "opacity-100")}>🏢</span>
+          <Building2 aria-hidden="true" className="size-6 text-primary" />
         </div>
 
         <div className="grid min-w-0 flex-1 gap-1">
@@ -27,7 +27,7 @@ const BranchCard = memo(({
                   📱 QR Activo
                 </Badge>}
               <Badge className={cn(isInactive ? "bg-danger-soft" : "bg-success-soft", isInactive ? "text-danger" : "text-success")}>
-                {isInactive ? '🔴 INACTIVA' : '🟢 ACTIVA'}
+                {isInactive ? 'Inactiva' : 'Activa'}
               </Badge>
             </div>
           </div>
@@ -47,7 +47,7 @@ const BranchCard = memo(({
 
       <div className="flex w-full flex-wrap items-center gap-2 border-t border-line pt-3 sm:w-auto sm:border-0 sm:pt-0">
         <Button onClick={() => openEditForm(b)} disabled={isProcessing} className="flex-1 sm:flex-none" type="button" variant="secondary">
-          <span>✏️</span> Editar
+          <Pencil aria-hidden="true" /> Editar
         </Button>
       </div>
     </Card>;
@@ -91,14 +91,14 @@ function BranchManager({
         <p className="text-sm text-muted">Cargando sucursales...</p>
       </div>;
   }
-  return <div className={cn(isEmbedded ? "animate-enter motion-reduce:animate-none" : "animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6", isEmbedded ? "" : "w-full max-w-6xl m-[0_auto]")}>
+  return <div className={cn(isEmbedded ? "animate-enter motion-reduce:animate-none" : "workspace-page max-w-7xl animate-enter motion-reduce:animate-none", isEmbedded ? "" : "w-full max-w-6xl m-[0_auto]")}>
 
       {!isEmbedded && <PageHeader title="Mis sucursales" icon={Building2} eyebrow="Tus locales" description="Organiza las sedes y sus métodos de pago." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
-            ➕ Nueva Sede
+            <Plus aria-hidden="true" /> Nueva sede
           </Button></>} />}
 
       <Alert variant={branchQuota?.registeredBranchQuotaVersion === 1 ? 'info' : 'warning'}>{branchQuota?.registeredBranchQuotaVersion === 1 ? `Sedes activas: ${branchQuota.activeBranchIds.length} / ${branchQuota.maxActiveBranches}. Registradas: ${branchQuota.registeredBranchIds.length} / ${branchQuota.maxRegisteredBranches}. Inactivar libera solo cupo activo; el historial conserva su plaza registrada.` : 'Inventario registrado sin regularizar: conserva sus operaciones; SuperAdmin debe inventariar y regularizar antes de nuevas altas o cambios de estado.'}</Alert>
-      <div className="flex flex-wrap gap-3 items-center mb-5">
+      <div className="view-toolbar mb-5">
 
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre..." onClear={() => setSearchTerm('')} />
 
@@ -108,7 +108,7 @@ function BranchManager({
         </label>
 
         {isEmbedded && <Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
-            ➕ Nueva Sede
+            <Plus aria-hidden="true" /> Nueva sede
           </Button>}
       </div>
 
@@ -124,7 +124,7 @@ function BranchManager({
 
       {/* MODAL FORMULARIO */}
       {showFormModal && <Dialog title={<>
-              {editingBranch ? '✏️ Editar Sede' : '➕ Nueva Sede'}
+              {editingBranch ? '✏️ Editar Sede' : '<Plus aria-hidden="true" /> Nueva sede'}
             </>} busy={isProcessing} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
             <form onSubmit={handleSave} className="grid gap-4">

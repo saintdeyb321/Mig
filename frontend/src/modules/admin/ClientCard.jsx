@@ -28,10 +28,10 @@ export const ClientCard = memo(({
       {/* Cabecera de Tarjeta */}
       <div className="p-5 flex flex-col gap-2">
         <div className="flex flex-wrap justify-between items-start gap-3">
-          <h3 className="m-0 text-brand-deep text-lg font-bold break-words">
+          <h3 className="min-w-0 flex-1 text-brand-deep text-lg font-bold wrap-anywhere">
             {license.businessName}
           </h3>
-          <div className="flex gap-3 items-center">
+          <div className="flex flex-wrap gap-3 items-center">
             <span className={cn("text-xs font-bold uppercase py-1 px-2 rounded-lg", hasProblem ? "bg-danger-soft" : "bg-success-soft", hasProblem ? "text-danger" : "text-success")}>
               {isExpired ? 'VENCIDA' : isInactive ? 'SUSPENDIDA' : 'ACTIVA'}
             </span>

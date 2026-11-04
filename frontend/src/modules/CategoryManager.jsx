@@ -1,6 +1,6 @@
 import FirestoreQueryError from '../components/FirestoreQueryError';
 import { useCatalogData } from '../features/catalog/context/CatalogContext';
-import { Tags } from 'lucide-react';
+import { Tags, Plus, Pencil } from 'lucide-react';
 import { Dialog, cn, Button, LoadingState, PageHeader, Input, FormField, Select, Badge, SearchField, Card, DialogFooter, EmptyState } from "../shared/ui";
 // src/modules/CategoryManager.jsx
 import React, { memo } from 'react';
@@ -20,7 +20,7 @@ const CategoryCard = memo(({
 
       {/* 1. ICONO */}
       <div className={cn("flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-primary-soft [&>img]:size-full [&>img]:object-cover sm:size-14", isInactive ? "bg-subtle" : "bg-primary-soft")}>
-        <span className={cn("text-2xl", isInactive ? "opacity-40" : "opacity-100")}>🏷️</span>
+        <Tags aria-hidden="true" className="size-6 text-primary" />
       </div>
 
       {/* 2. INFO (Nombre y Estado) */}
@@ -30,7 +30,7 @@ const CategoryCard = memo(({
         </h3>
         <div className="flex flex-wrap items-center gap-2">
           <Badge className={cn(isInactive ? "bg-danger-soft" : "bg-success-soft", isInactive ? "text-danger" : "text-success")}>
-            {isInactive ? '🔴 INACTIVA' : '🟢 ACTIVA'}
+            {isInactive ? 'Inactiva' : 'Activa'}
           </Badge>
         </div>
       </div>
@@ -38,7 +38,7 @@ const CategoryCard = memo(({
       {/* 3. ACCIÓN (Botón Editar) */}
       <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 sm:col-span-1 sm:border-0 sm:pt-0">
         <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-subtle min-h-11 min-w-11 flex items-center justify-center" title="Editar" type="button" variant="ghost" aria-label="Editar">
-          ✏️
+          <Pencil aria-hidden="true" />
         </Button>
       </div>
 
@@ -71,16 +71,16 @@ function CategoryManager({
   if (isLoading && !showFormModal) {
     return <LoadingState>Organizando categorías...</LoadingState>;
   }
-  return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
+  return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
 
       {/* HEADER REFACTORIZADO */}
       <PageHeader title="Categorías" icon={Tags} eyebrow="Organización" description="Un catálogo claro para encontrar cada producto." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
-          ➕ Nueva Categoria
+          <Plus aria-hidden="true" /> Nueva categoría
         </Button></>} />
 
       {/* BARRA DE BÚSQUEDA Y TOGGLE */}
       <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="view-toolbar">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar categoría por nombre..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
         <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted">

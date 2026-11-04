@@ -1,5 +1,5 @@
 import FirestoreQueryError from '../components/FirestoreQueryError';
-import { ContactRound } from 'lucide-react';
+import { ContactRound, Plus, Pencil, Trash2 } from 'lucide-react';
 import { useConfirmDialog } from '../shared/ui/useConfirmDialog';
 import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Badge, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
 // src/modules/agenda/AgendaManager.jsx
@@ -30,8 +30,8 @@ const ContactCard = memo(({
 
       {/* 3. ACCIÓN (Botón Editar y Eliminar) */}
       <div className="col-span-2 flex flex-wrap items-center justify-between border-t border-line pt-3 sm:col-span-1 sm:border-0 sm:pt-0 flex-row gap-1">
-        <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-subtle min-h-11 min-w-11" title="Editar" type="button" variant="ghost" aria-label="Editar">✏️</Button>
-        <Button onClick={() => handleDelete(c.id)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-danger-soft text-danger min-h-11 min-w-11" title="Eliminar" type="button" variant="ghost" aria-label="Eliminar">🗑️</Button>
+        <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-subtle min-h-11 min-w-11" title="Editar" type="button" variant="ghost" aria-label="Editar"><Pencil aria-hidden="true" /></Button>
+        <Button onClick={() => handleDelete(c.id)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-danger-soft text-danger min-h-11 min-w-11" title="Eliminar" type="button" variant="ghost" aria-label="Eliminar"><Trash2 aria-hidden="true" /></Button>
       </div>
 
     </Card>;
@@ -65,16 +65,16 @@ function AgendaManager({
   if (isLoading && filteredContacts.length === 0 && !showFormModal) {
     return <LoadingState>Abriendo Agenda...</LoadingState>;
   }
-  return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
+  return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
       {confirmation}
       <FirestoreQueryError error={error} area="customers" user={user} onRetry={retry} />
       {isStale && <p role="status" className="text-sm text-muted">Contactos en caché; pendiente de validar con el servidor.</p>}
 
       <PageHeader title="Agenda VIP" icon={ContactRound} eyebrow="Relaciones con clientes" description="Tus contactos frecuentes, siempre a mano." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
-          ➕ Nuevo Contacto
+          <Plus aria-hidden="true" /> Nuevo contacto
         </Button></>} />
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="view-toolbar">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar contacto por nombre o celular..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
       </div>
 
@@ -89,7 +89,7 @@ function AgendaManager({
       </div>
 
       {showFormModal && <Dialog title={<>
-              {editing ? '✏️ Editar Contacto' : '➕ Nuevo Contacto'}
+              {editing ? '✏️ Editar Contacto' : '<Plus aria-hidden="true" /> Nuevo contacto'}
             </>} busy={isLoading} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
             <form onSubmit={handleSave} className="grid gap-4">

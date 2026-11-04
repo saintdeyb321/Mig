@@ -16,7 +16,7 @@ export default function BackupPanel({ user, businessId = user?.businessId, onClo
     } finally { setPassword(''); setRepeat(''); }
   };
   const valid = consent && (!encrypted || password.length >= 12 && password.length <= 1024 && password === repeat);
-  return <Card className="grid gap-4 border-t-4 border-t-primary text-sm leading-relaxed" aria-label="Backup local Spark">
+  return <Card className="grid min-w-0 gap-5 border-t-2 border-t-primary text-sm leading-relaxed [&>label]:space-y-2" aria-label="Backup local Spark">
     <h3 className="break-all text-lg font-bold text-brand-deep">Exportación local · {businessId}</h3>
     <p>Lee solo lo permitido por Firestore Rules. SuperAdmin recibe acceso de lectura temporal exclusivamente al negocio elegido (10 minutos), revocado al terminar cuando la sesión lo permite. Esto escribe un permiso de acceso, nunca registros de negocio. No es un backup integral de Firebase ni un snapshot atómico; evita cambios concurrentes durante la lectura.</p>
     <p>No incluye cuentas Authentication, credenciales ni objetos Storage. No hay restauración a Firebase, purga, scheduler ni jobs. Las fotografías solo existen en su dispositivo/cuenta.</p>

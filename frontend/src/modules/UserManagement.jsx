@@ -1,5 +1,5 @@
 import FirestoreQueryError from '../components/FirestoreQueryError';
-import { UsersRound } from 'lucide-react';
+import { UsersRound, UserPlus, Pencil, Mail, ShieldCheck, UserRound } from 'lucide-react';
 import { useConfirmDialog } from '../shared/ui/useConfirmDialog';
 import { Alert, LoadingState, Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, SearchField, DialogFooter, EmptyState } from "../shared/ui";
 import React, { memo } from 'react';
@@ -22,7 +22,7 @@ const UserCard = memo(({
 
       <div className="flex min-w-0 flex-[1_1_15rem] items-center gap-3">
         <div className={cn(`flex size-12 shrink-0 items-center justify-center rounded-xl text-2xl ${isDueño || isSuperAdmin ? "bg-warning-soft" : "bg-subtle"} `, isInvite ? "bg-warning-soft border-warning-soft" : "")}>
-          {isInvite ? '✉️' : isDueño || isSuperAdmin ? '👑' : '👨‍🍳'}
+          {isInvite ? <Mail aria-hidden="true" className="size-6" /> : isDueño || isSuperAdmin ? <ShieldCheck aria-hidden="true" className="size-6" /> : <UserRound aria-hidden="true" className="size-6" />}
         </div>
 
         <div className="grid min-w-0 flex-1 gap-1">
@@ -56,7 +56,7 @@ const UserCard = memo(({
             <span>❌</span> Cancelar invitación
           </Button> : <>
             <Button onClick={() => openEditForm(u)} disabled={isLoading || isInactive} className="flex-1 sm:flex-none" type="button" variant="secondary">
-              <span>✏️</span> Editar
+              <Pencil aria-hidden="true" /> Editar
             </Button>
 
             {u.email !== user.email && !isSuperAdmin && <Button onClick={() => toggleStatus(u.id, u.status || 'activo')} disabled={isLoading} className="flex-1 sm:flex-none" type="button" variant={isInactive ? "success" : "danger"}>
@@ -127,16 +127,16 @@ function UserManagement({
     const nameB = (b.firstName || '').toLowerCase();
     return nameA.localeCompare(nameB);
   });
-  return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
+  return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
       {confirmation}
 
       <PageHeader title="Personal" icon={UsersRound} eyebrow="Tu equipo" description="Administra los accesos y las sedes asignadas." actions={<><Button onClick={openAddForm} className="shrink-0" disabled={!canManage || isLoading} type="button" variant="primary">
-          ➕ Nuevo Empleado
+          <UserPlus aria-hidden="true" /> Nuevo empleado
         </Button></>} />
 
       <FirestoreQueryError error={error} area="personnel" user={user} onRetry={retry} />
       {isStale && sortedUsers.length > 0 && <Alert variant="warning">Datos de esta sesión pendientes de confirmar. La edición está bloqueada hasta verificar los permisos.</Alert>}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="view-toolbar">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre o correo..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
         <label className="min-h-11 rounded-xl border border-line bg-panel px-3 font-medium cursor-pointer flex items-center gap-2 text-sm text-muted">

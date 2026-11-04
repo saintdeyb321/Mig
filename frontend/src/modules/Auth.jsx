@@ -35,15 +35,15 @@ const Auth = memo(({
       setIsLoading(false);
     }
   }, [onLogin]);
-  return <div className="flex min-h-dvh items-center justify-center bg-linear-to-br from-brand-deep via-sidebar to-primary px-4 py-8 sm:px-6">
+  return <div className="nebula-brand flex min-h-dvh items-center justify-center px-4 py-8 sm:px-6">
     <div className="grid w-full max-w-5xl items-center gap-10 lg:grid-cols-[minmax(0,1fr)_25rem] lg:gap-16">
       <section className="hidden space-y-8 text-white lg:block">
         <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold text-white/85"><Sparkles aria-hidden="true" className="size-4" />Tu negocio, en orden</div>
-        <h2 className="max-w-lg text-5xl font-extrabold leading-tight tracking-tight">Más tiempo para<br /><span className="text-violet-300">lo que creas.</span></h2>
-        <p className="max-w-md text-base leading-relaxed text-white/75">Ventas, pedidos y equipo en un solo espacio. Empieza tu jornada con todo a mano.</p>
+        <h2 className="max-w-lg text-5xl font-extrabold leading-tight tracking-tight">Más tiempo para<br /><span className="text-sidebar-glow">lo que creas.</span></h2>
+        <p className="max-w-md text-base leading-relaxed text-sidebar-muted">Ventas, pedidos y equipo en un solo espacio. Empieza tu jornada con todo a mano.</p>
         <div className="grid gap-3 text-sm">
-          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><ShoppingBag aria-hidden="true" className="size-5 text-violet-300" /><span>Punto de venta y control por sede</span></div>
-          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><CakeSlice aria-hidden="true" className="size-5 text-violet-300" /><span>Pedidos, anticipos y entregas</span></div>
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><ShoppingBag aria-hidden="true" className="size-5 text-sidebar-glow" /><span>Punto de venta y control por sede</span></div>
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><CakeSlice aria-hidden="true" className="size-5 text-sidebar-glow" /><span>Pedidos, anticipos y entregas</span></div>
         </div>
       </section>
       <Card className="animate-enter grid w-full max-w-md justify-self-center gap-7 rounded-3xl border-white/20 p-6 text-center shadow-float motion-reduce:animate-none sm:p-9" as="div">

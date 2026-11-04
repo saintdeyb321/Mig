@@ -11,14 +11,56 @@
   :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
   input, select, textarea { scroll-margin-block: 5rem; }
   img { max-width: 100%; }
+  h1, h2, h3, h4 { overflow-wrap: anywhere; text-wrap: balance; }
+  p, dd, label { overflow-wrap: anywhere; }
+  input, textarea, select { scroll-margin-block: 1rem 5rem; }
+  summary { border-radius: 0.5rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after { animation: none; transition: none; scroll-behavior: auto; }
 }
 
 /* Sidebar scroll remains native for touch, wheel and keyboard, in all engines. */
-.sidebar-scroll { scrollbar-width: thin; scrollbar-color: #dad5e9 #211a43; }
+.sidebar-scroll { scrollbar-width: thin; scrollbar-color: var(--color-sidebar-muted) var(--color-sidebar); }
 .sidebar-scroll::-webkit-scrollbar { width: 6px; }
-.sidebar-scroll::-webkit-scrollbar-track { background: #211a43; border-radius: 999px; }
-.sidebar-scroll::-webkit-scrollbar-thumb { background: #dad5e9; border: 1px solid #211a43; border-radius: 999px; }
-.sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #eeeaff; }
+.sidebar-scroll::-webkit-scrollbar-track { background: var(--color-sidebar); border-radius: 999px; }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: var(--color-sidebar-muted); border: 1px solid var(--color-sidebar); border-radius: 999px; }
+.sidebar-scroll::-webkit-scrollbar-thumb:hover { background: var(--color-sidebar-glow); }
+
+@layer components {
+  .nebula-brand {
+    background-color: var(--color-sidebar);
+    background-image: radial-gradient(ellipse at 95% 0%, rgb(95 183 215 / 0.12), transparent 48%), linear-gradient(155deg, var(--color-sidebar), var(--color-brand-deep) 60%, #332765);
+  }
+  .workspace-page { width: 100%; min-width: 0; margin-inline: auto; display: grid; gap: 1.25rem; padding-bottom: 1.5rem; }
+  .view-toolbar { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.875rem; border: 1px solid var(--color-line); border-radius: 1rem; background: var(--color-panel); }
+  .segmented-control { display: flex; max-width: 100%; flex-wrap: wrap; gap: 0.375rem; border: 1px solid var(--color-line); border-radius: 1rem; padding: 0.375rem; background: var(--color-subtle); }
+  .ui-scroll { scrollbar-width: thin; scrollbar-color: var(--color-control) transparent; scroll-padding-block: 1rem 5rem; }
+  .dialog-surface { max-height: calc(var(--ui-viewport-height, 100dvh) - max(0.75rem, env(safe-area-inset-top)) - max(0.75rem, env(safe-area-inset-bottom))); }
+  .dialog-centered { top: calc(var(--ui-viewport-top, 0px) + var(--ui-viewport-height, 100dvh) / 2); }
+  .dialog-drawer { bottom: var(--ui-keyboard-inset, 0px); height: calc(var(--ui-viewport-height, 100dvh) - max(0.75rem, env(safe-area-inset-top))); }
+  .dialog-form-surface { height: min(52rem, calc(var(--ui-viewport-height, 100dvh) - 1.5rem)); }
+  .dialog-form-surface > div:last-child > fieldset { height: 100%; }
+  .pos-ticket { height: 100%; max-height: calc(var(--ui-viewport-height, 100dvh) - 3rem); }
+  .pos-ticket-items { min-height: 3.5rem; flex: 1 1 35%; overflow-y: auto; overscroll-behavior: contain; }
+  .pos-ticket-payment { min-height: 0; flex: 0 1 auto; max-height: 42%; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 0.25rem; }
+  .pos-ticket-payment :is(input, select, textarea, button) { scroll-margin-block: 0.25rem; }
+  .pos-ticket-total, .pos-ticket-actions { flex: 0 0 auto; }
+  .pos-ticket-desktop { position: sticky; top: 1.5rem; height: calc(var(--ui-viewport-height, 100dvh) - 3rem); }
+  .pos-ticket-drawer { flex: 1; max-height: 100%; min-height: 0; }
+  .pos-cart-launcher { bottom: calc(4.5rem + env(safe-area-inset-bottom) + 0.75rem); }
+  .app-bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* These viewport adaptations must also override per-view utility padding. */
+.nebula-brand :focus-visible { outline-color: var(--color-sidebar-glow); }
+@media (max-height: 600px) {
+  .dialog-heading { padding-block: 0.5rem; }
+  .dialog-heading-icon { display: none; }
+  .pos-ticket-heading { padding: 0.5rem 0.75rem; }
+  .pos-ticket-items { min-height: 1.75rem; }
+  .pos-ticket-payment { max-height: 38%; padding: 0.5rem 0.75rem; }
+  .pos-ticket-total { padding: 0.375rem 0.75rem; }
+  .pos-ticket-total strong { font-size: 1.25rem; line-height: 1.75rem; }
+  .pos-ticket-actions { padding: 0.5rem 0.75rem; }
+}

@@ -173,7 +173,7 @@ const ContractFormModal = ({
     onSubmit(finalData, null, isEditing ? contractToEdit.id : null);
   };
   return <>
-      <Dialog title={isEditing ? 'Editar Pedido' : 'Registro de Nuevo Pedido'} description="Cada detalle, listo para una entrega especial." icon={NotebookPen} busy={isProcessing} className="max-w-[850px]" bodyClassName="flex flex-col space-y-0 overflow-hidden p-0 sm:p-0" onClose={onClose}>
+      <Dialog title={isEditing ? 'Editar Pedido' : 'Registro de Nuevo Pedido'} description="Cada detalle, listo para una entrega especial." icon={NotebookPen} busy={isProcessing} className="dialog-form-surface max-w-[850px]" bodyClassName="flex flex-col space-y-0 overflow-hidden p-0 sm:p-0" onClose={onClose}>
         <form onSubmit={handleFormSubmit} className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
             <SectionCard number="1" title="Datos del cliente" icon={UserRound}>

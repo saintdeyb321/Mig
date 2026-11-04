@@ -1,4 +1,4 @@
-import { Settings2 } from 'lucide-react';
+import { Settings2, Building2, ReceiptText } from 'lucide-react';
 import { PageHeader, cn, Button, Input, FormField, Card, HelpDisclosure } from "../shared/ui";
 import CapabilitiesPanel from '../components/CapabilitiesPanel';
 // src/modules/Settings.jsx
@@ -20,7 +20,7 @@ function Settings({
   const handleSaveCompany = async () => {
     if (await saveCompanyData()) setIsEditingCompany(false);
   };
-  return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl">
+  return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
 
       {/* HEADER SIMÉTRICO NATIVO */}
       <PageHeader title="Configuración global" icon={Settings2} eyebrow="Tu negocio" description="Datos comerciales y preferencias del sistema." />
@@ -31,11 +31,11 @@ function Settings({
       <Card className="space-y-5" tone="accent">
         <div className="flex flex-wrap justify-between items-center gap-3 border-b border-line pb-4">
           <div>
-            <h3 className="m-0 text-base font-bold text-brand-deep">🏢 Sucursales</h3>
+            <h3 className="flex items-center gap-2 text-base font-bold text-brand-deep"><Building2 aria-hidden="true" className="size-5" />Sucursales</h3>
             <p className="m-0 text-sm text-muted">Administra tus locales físicos y sus métodos de pago.</p>
           </div>
 
-          <Button type="button" onClick={() => setShowBranches(!showBranches)} variant="secondary" className={cn("flex items-center gap-2 py-1.5 px-3.5 rounded-xl border border-line cursor-pointer text-sm font-semibold text-ink transition-colors motion-reduce:transition-none", showBranches ? "bg-subtle" : "bg-panel", showBranches ? "shadow-none" : "shadow-card")}>
+          <Button type="button" onClick={() => setShowBranches(!showBranches)} aria-expanded={showBranches} aria-controls="settings-branches" variant="secondary" className={cn("flex items-center gap-2 py-1.5 px-3.5 rounded-xl border border-line cursor-pointer text-sm font-semibold text-ink transition-colors motion-reduce:transition-none", showBranches ? "bg-subtle" : "bg-panel", showBranches ? "shadow-none" : "shadow-card")}>
             <span>{showBranches ? 'Ocultar Sucursales' : 'Mostrar Sucursales'}</span>
             <span className={cn("inline-block text-sm transition-colors motion-reduce:transition-none", showBranches ? "rotate-180" : "rotate-0")}>
               ▼
@@ -43,7 +43,7 @@ function Settings({
           </Button>
         </div>
 
-        {showBranches && <Card className="animate-enter motion-reduce:animate-none" as="div">
+        {showBranches && <Card id="settings-branches" className="animate-enter motion-reduce:animate-none" as="div">
             <BranchManager user={user} isEmbedded={true} />
           </Card>}
       </Card>
@@ -54,7 +54,7 @@ function Settings({
       <Card className="space-y-5" tone="accent">
         <div className="flex flex-wrap justify-between items-center gap-3 border-b border-line pb-4">
           <div>
-            <h3 className="m-0 text-base font-bold text-brand-deep">🧾 Datos para Boletas / Facturas</h3>
+            <h3 className="flex items-center gap-2 text-base font-bold text-brand-deep"><ReceiptText aria-hidden="true" className="size-5" />Datos para boletas y facturas</h3>
             <p className="m-0 text-sm text-muted">Información para los tickets y facturas.</p>
           </div>
           {hasCompanyData && !isEditingCompany && <Button onClick={() => setIsEditingCompany(true)} type="button" variant="secondary" className="py-1.5 px-3 rounded-lg border border-line bg-warning-soft cursor-pointer text-sm font-semibold">

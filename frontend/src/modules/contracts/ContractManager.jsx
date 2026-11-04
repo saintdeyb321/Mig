@@ -144,14 +144,14 @@ function ContractManager({
     return success;
   }, [addPayment, canCollect]);
   if (isLoading) {
-    return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6 flex justify-center items-center min-h-64">
+    return <div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none flex justify-center items-center min-h-64">
         <div className="text-center text-muted">
           <div className="size-8 animate-spin rounded-full border-3 border-line border-t-primary motion-reduce:animate-none m-[0_auto_15px]"></div>
           <p>Cargando agenda de pedidos...</p>
         </div>
       </div>;
   }
-  return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6">
+  return <div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none">
       <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." actions={<>
         {canManageCash && <CashStatus readOnly={false} session={cash.currentSession} isExpired={cash.isExpired} expiresAt={cash.expiresAt} remainingMinutes={cash.remainingMinutes} />}
         {canManageCash && !cash.currentSession && !cash.readError && <Button variant="secondary" disabled={cash.isLoadingSession} onClick={() => setOpenCashBranch(activeBranchId)}>Abrir caja</Button>}
@@ -182,10 +182,10 @@ function ContractManager({
       </div>
 
       <div className="flex justify-between items-center mb-5 flex-wrap gap-2.5">
-        <div className="flex w-full flex-wrap gap-1 rounded-xl p-1 sm:w-auto bg-subtle border border-line">
-          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'activos' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'activos' ? "bg-primary text-panel" : "")} onClick={() => setViewFilter('activos')} type="button" variant="secondary">📦 Pedidos en Curso</Button>
-          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'deudas' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'deudas' ? "bg-danger text-panel" : "")} onClick={() => setViewFilter('deudas')} type="button" variant="secondary">⚠️ Cuentas por Cobrar</Button>
-          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'historial' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'historial' ? "bg-muted text-panel" : "")} onClick={() => setViewFilter('historial')} type="button" variant="secondary">📜 Historial Cerrados</Button>
+        <div className="segmented-control w-full sm:w-auto" role="group" aria-label="Estado de los pedidos">
+          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'activos' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'activos' ? "bg-primary text-panel" : "")} aria-pressed={viewFilter === 'activos'} onClick={() => setViewFilter('activos')} type="button" variant="secondary">📦 Pedidos en Curso</Button>
+          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'deudas' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'deudas' ? "bg-danger text-panel" : "")} aria-pressed={viewFilter === 'deudas'} onClick={() => setViewFilter('deudas')} type="button" variant="secondary">⚠️ Cuentas por Cobrar</Button>
+          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'historial' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'historial' ? "bg-muted text-panel" : "")} aria-pressed={viewFilter === 'historial'} onClick={() => setViewFilter('historial')} type="button" variant="secondary">📜 Historial Cerrados</Button>
         </div>
         <span className="text-sm text-muted font-semibold bg-panel py-1.5 px-3 rounded-2xl border border-line">
           Mostrando {filteredContracts.length} pedidos cargados

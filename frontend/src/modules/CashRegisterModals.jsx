@@ -22,7 +22,7 @@ export function CashCountSummary({ summary }) {
   const result = provisional ? 'Por revisar con el dueño' : summary.difference === 0 ? 'Coincide con lo registrado'
     : summary.difference > 0 ? `Sobran ${amount(summary.difference)}` : `Faltan ${amount(-summary.difference)}`;
   return <>
-    <dl className="space-y-3 rounded-2xl border border-finance-line bg-success-soft p-4 text-sm">
+    <dl className="space-y-3 rounded-2xl border border-finance-line bg-panel p-4 text-sm">
       {[['Dinero con que abriste', summary.openingAmount], ['Cobros en efectivo registrados', collected],
         [`Tickets anulados registrados${summary.posCompensationCount ? ` · ${summary.posCompensationCount}` : ''}`, Math.abs(summary.posCompensationTotal ?? summary.posCompensationCash ?? 0)],
         ['Dinero que contaste', summary.declaredAmount]].map(([label, value]) => <div key={label} className="flex flex-wrap justify-between gap-2"><dt>{label}</dt><dd className="font-semibold tabular-nums">{amount(value)}</dd></div>)}

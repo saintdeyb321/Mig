@@ -2,7 +2,7 @@ import { DEFAULT_MAX_REGISTERED_BRANCHES, MAX_REGISTERED_BRANCHES } from '../fea
 import FirestoreQueryError from '../components/FirestoreQueryError';
 import { BusinessDetailsDialog } from './admin/BusinessDetailsDialog';
 import { BranchQuotaModal } from './admin/BranchQuotaModal';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, Plus } from 'lucide-react';
 import { ClientCard } from "./admin/ClientCard.jsx";
 import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Select, Card, SearchField, DialogFooter, EmptyState, HelpDisclosure } from "../shared/ui";
 import { brand } from '../config/brand';
@@ -43,12 +43,12 @@ function SuperAdmin({
   const [maxRegisteredBranches, setMaxRegisteredBranches] = useState(DEFAULT_MAX_REGISTERED_BRANCHES);
   const [extendMonths, setExtendMonths] = useState(1);
   if (user?.role !== 'superadmin') {
-    return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6 text-center pt-12.5">
+    return <div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none text-center pt-12.5">
         <h2 className="text-ink text-2xl mb-2.5">⛔ Acceso Denegado</h2>
         <p className="text-muted">Esta área es exclusiva para el CEO de {brand.name}.</p>
       </div>;
   }
-  if (!runtimeCapabilities.tenantAdministration) return <section className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6" aria-label="Administración de plataforma">
+  if (!runtimeCapabilities.tenantAdministration) return <section className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none" aria-label="Administración de plataforma">
       <h2>Clientes SaaS · Firebase Spark</h2>
       <p>Contexto de plataforma: SuperAdmin.</p>
       <Card role="status" as="div">
@@ -82,17 +82,17 @@ function SuperAdmin({
   if (isActuallyLoading && !showAddModal && !extendModalInfo) {
     return <LoadingState>Cargando Clientes de {brand.name}...</LoadingState>;
   }
-  return <div className="animate-enter motion-reduce:animate-none mx-auto min-w-0 space-y-5 pb-6 w-full max-w-6xl" aria-label="Administración de plataforma">
+  return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none" aria-label="Administración de plataforma">
 
       <PageHeader title="Clientes SaaS" icon={ShieldCheck} eyebrow="Administración de plataforma" description="Negocios, accesos y vigencia de licencias." actions={<><Button className="shrink-0" onClick={() => setShowAddModal(true)} type="button" variant="primary">
-          ➕ Nuevo Cliente
+          <Plus aria-hidden="true" /> Nuevo cliente
         </Button></>} />
       <HelpDisclosure title="Alcance de la administración">Firebase Spark. Exportación empresarial disponible solo en plataforma, bajo demanda y por negocio. Purga, restauración privilegiada y jobs backend deshabilitados. Las solicitudes de baja se coordinan externamente con el propietario.</HelpDisclosure>
       <FirestoreQueryError error={error} area="administration" user={user} onRetry={refresh} />
       <Button disabled={isLoading} onClick={refresh} type="button" variant="secondary">Actualizar clientes</Button>
       {backupBusinessId && <BackupPanel key={`${user.uid}:${backupBusinessId}`} user={user} businessId={backupBusinessId} onClose={() => setBackupBusinessId(null)} />}
 
-      <div className="flex flex-wrap items-center gap-3 mb-5">
+      <div className="view-toolbar">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar entre clientes cargados por negocio, dueño, correo o ID..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
       </div>
 
@@ -149,7 +149,7 @@ function SuperAdmin({
               <FormField label="Máximo de sedes registradas (activas e inactivas)" hint="Política inicial: 5 registradas. Inactivar libera solo cupo activo; el historial conserva su plaza. Debe ser igual o mayor al cupo activo, hasta 200."><Input type="number" min={Number(maxActiveBranches) || 1} max={MAX_REGISTERED_BRANCHES} step="1" value={maxRegisteredBranches} onChange={event => setMaxRegisteredBranches(event.target.value)} required disabled={isProcessing} /></FormField>
               <DialogFooter>
                 <Button type="button" onClick={() => setShowAddModal(false)} disabled={isProcessing} variant="secondary">Cancelar</Button>
-                <Button type="submit" disabled={isProcessing} className="flex-1" variant="primary">{isProcessing ? 'Creando...' : 'Crear Inquilino'}</Button>
+                <Button type="submit" disabled={isProcessing} className="flex-1" variant="primary">{isProcessing ? 'Creando...' : 'Crear negocio'}</Button>
               </DialogFooter>
             </form>
           </Dialog>}

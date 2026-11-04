@@ -1,16 +1,19 @@
 import { memo } from 'react';
 import { Card, cn } from '../../shared/ui';
+import { Banknote, ReceiptText, Smartphone, WalletCards } from 'lucide-react';
+const metricIcons = { '💰': WalletCards, '🧾': ReceiptText, '💵': Banknote, '📲': Smartphone };
+function MetricIcon({ name }) { const Icon = metricIcons[name] ?? WalletCards; return <Icon aria-hidden="true" className="size-5" />; }
 const MEDALS_CONFIG = [{
   medalClass: "bg-warning-soft text-warning",
-  icon: '🥇',
+  icon: '1',
   barClass: "bg-primary"
 }, {
   medalClass: "bg-subtle text-muted",
-  icon: '🥈',
+  icon: '2',
   barClass: "bg-accent"
 }, {
   medalClass: "bg-accent-soft text-accent",
-  icon: '🥉',
+  icon: '3',
   barClass: "bg-primary/70"
 }];
 const formatChartMoney = (amount = 0) => Math.round(Number(amount)).toLocaleString('en-US');
@@ -24,10 +27,10 @@ export const MetricCard = memo(({
   valueColor
 }) => <Card className={cn(`flex min-w-0 items-start gap-3 border-t-4 ${borderColor} `)} as="div">
     <div className={cn(`flex size-10 shrink-0 items-center justify-center rounded-2xl ${bgColor} `)}>
-      <span className="text-xl">{emoji}</span>
+      <MetricIcon name={emoji} />
     </div>
     <div className="grid min-w-0 flex-1 gap-1.5">
-      <h4 className="text-xs font-medium text-muted">{title}</h4>
+      <h2 className="text-xs font-medium text-muted">{title}</h2>
       <p className={cn(`break-words text-2xl font-extrabold tracking-tight tabular-nums ${valueColor || ''} `)}>{value}</p>
       {subtext && <span className="text-xs leading-relaxed text-muted">{subtext}</span>}
     </div>
@@ -41,13 +44,13 @@ export const ChartColumn = memo(({
   const heightPercentage = Math.max(Math.abs(numVentas) / maxChartValue * 100, 2);
   const isZero = numVentas === 0;
   return <div className="flex h-full w-12 shrink-0 flex-col items-center justify-end gap-2">
-      <span className={cn(`rounded-md bg-success-soft px-1.5 py-1 text-xs font-semibold text-success ${isZero ? "bg-subtle text-muted" : ''} `)}>
+      <span className={cn('rounded-md px-1.5 py-1 text-xs font-semibold', isZero ? 'bg-subtle text-muted' : numVentas < 0 ? 'bg-danger-soft text-danger' : 'bg-success-soft text-success')}>
         <span>S/ </span>
         <span>{formatChartMoney(numVentas)}</span>
       </span>
 
       <div className="flex w-full flex-1 items-end overflow-hidden rounded-t-lg bg-subtle">
-        <div className={cn(numVentas < 0 ? 'w-full rounded-t-lg bg-danger' : 'w-full rounded-t-lg bg-gradient-to-t from-primary to-accent')} style={{
+        <div className={cn(numVentas < 0 ? 'w-full rounded-t-lg bg-danger' : 'w-full rounded-t-lg bg-primary')} style={{
         height: `${heightPercentage}%`
       }} />
       </div>

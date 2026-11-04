@@ -7,7 +7,7 @@ export function LoadingState({ children = 'Cargando…', className }) {
 }
 export function EmptyState({ title = 'No hay registros', description, icon = Inbox, children, className }) {
   const Icon = icon;
-  return <div className={cn('col-span-full flex flex-col items-center justify-center gap-3 rounded-card border border-dashed border-primary/20 bg-linear-to-b from-panel to-primary-soft/30 px-5 py-12 text-center', className)}>
+  return <div className={cn('col-span-full flex min-w-0 flex-col items-center justify-center gap-3 rounded-card border border-dashed border-control bg-panel px-5 py-10 text-center', className)}>
     <span className="rounded-2xl bg-primary-soft p-4 text-primary"><Icon aria-hidden="true" className="size-6" /></span><h3 className="font-bold text-brand-deep">{title}</h3>
     {description && <p className="max-w-md text-sm text-muted">{description}</p>}{children}
   </div>;

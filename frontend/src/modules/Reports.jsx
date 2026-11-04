@@ -47,11 +47,11 @@ export default function Reports({
     return <LoadingState>Generando Reportes...</LoadingState>;
   }
   if (error && !hasData) return <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />;
-  return <div className="animate-enter motion-reduce:animate-none mx-auto w-full min-w-0 max-w-7xl space-y-5 pb-6">
+  return <div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none">
 
 
-      <PageHeader title="Dashboard gerencial" icon={ChartNoAxesCombined} eyebrow="Resumen del negocio" description="Consulta los movimientos confirmados del período." actions={<><div className="flex flex-wrap gap-1 rounded-xl border border-line bg-panel p-1">
-          {Object.entries(TIME_FILTERS).map(([key, label]) => <Button key={key} onClick={() => setTimeFilter(key)} className={cn(`text-xs sm:text-sm ${timeFilter === key ? "bg-primary-soft text-primary" : ''} `)} type="button" variant="secondary">
+      <PageHeader title="Dashboard gerencial" icon={ChartNoAxesCombined} eyebrow="Resumen del negocio" description="Consulta los movimientos confirmados del período." actions={<><div className="segmented-control" role="group" aria-label="Período del reporte">
+          {Object.entries(TIME_FILTERS).map(([key, label]) => <Button key={key} onClick={() => setTimeFilter(key)} aria-pressed={timeFilter === key} className={cn(`text-xs sm:text-sm ${timeFilter === key ? "bg-primary-soft text-primary" : ''} `)} type="button" variant="secondary">
               {label}
             </Button>)}
         </div></>} />
@@ -59,7 +59,7 @@ export default function Reports({
       {error && <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />}
       {isRefreshing && <p role="status" className="text-sm text-muted">Actualizando el período… Los resultados anteriores siguen visibles.</p>}
       <p role="status" className="text-sm text-muted">Lectura del reporte: {updatedAt ? new Date(updatedAt).toLocaleString('es-PE') : 'pendiente'}. Informe histórico, no saldo en tiempo real. <Button onClick={refreshReport} variant="secondary">Actualizar período</Button></p>
-      <p>Pedidos creados en el período: {contractCounts.pending} pendientes · {contractCounts.delivered} entregados · {contractCounts.cancelled} cancelados · {contractCounts.withDebt} con saldo.</p>
+      <p className="rounded-xl border border-line bg-panel p-4 text-sm text-muted">Pedidos creados en el período: {contractCounts.pending} pendientes · {contractCounts.delivered} entregados · {contractCounts.cancelled} cancelados · {contractCounts.withDebt} con saldo.</p>
 
       <HelpDisclosure title="Alcance de este informe">Movimientos contables confirmados; excluye pendientes locales. Las compensaciones POS se descuentan una sola vez por el método original y no acreditan desembolso físico de efectivo ni Yape. Lectura limitada a 10000 movimientos y 500 contratos por negocio. Los cierres operativos conservan conciliación pendiente.</HelpDisclosure>
 

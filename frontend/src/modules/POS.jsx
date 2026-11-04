@@ -137,7 +137,7 @@ function POS({ user }) {
     </>} />
     {branchStatus.isReadOnly&&<Alert variant="warning" title="Modo lectura">{branchStatus.reason==='global'?'Estás en la vista global. Selecciona una sucursal específica en el menú.':`La sucursal ${branchStatus.name} está inactiva.`}</Alert>}
     {currentSession?.needsForceClose&&!branchStatus.isReadOnly&&<Alert variant="warning" title="Caja a cargo de otro responsable"><p>{businessBranches?.find(branch=>branch.id===currentSession.branchId)?.name??'Esta sede'} · {currentSession.cashierName||'Responsable'} · UID: {currentSession.userId}</p><p>{currentSession.canForceClose?'Revisa los movimientos y realiza el arqueo antes de cerrar este turno.':'Solicita al dueño que realice el arqueo y cierre el turno anterior. Te avisaremos al quedar disponible; también puedes comprobarlo aquí.'}</p></Alert>}
-    <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
+    <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
       <section aria-label="Catálogo de productos" className="min-w-0 space-y-4 pb-20 lg:pb-0">
         <ProductSearch value={search} onChange={setSearch} />
         <CategoryFilters categories={activeCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
@@ -145,9 +145,9 @@ function POS({ user }) {
           {displayedProducts.length?displayedProducts.map(product=><ProductCard key={product.id} product={product} stock={getSafeStock(product,activeBranchId)} disabled={isGlobalDisabled||isProcessing||!canAddDistinctProduct(cart,product.id)} onAdd={addToCart} />):catalogError?null:<EmptyState title="No hay productos" description={search?`No se encontraron productos para “${search}”.`:'No hay productos registrados en esta selección.'} />}
         </div>
       </section>
-      <aside aria-label="Ticket" className="sticky top-6 hidden min-w-0 lg:block">{ticket}</aside>
+      <aside aria-label="Ticket" className="pos-ticket-desktop hidden min-w-0 lg:block">{ticket}</aside>
     </div>
-    <Button className="fixed inset-x-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 min-h-14 justify-between rounded-2xl border-white/20 shadow-float sm:inset-x-6 lg:hidden" onClick={()=>setIsCartOpen(true)}><span className="flex items-center gap-2"><ShoppingBag />Ver ticket ({cart.length})</span><span>S/ {total.toFixed(2)}</span></Button>
+    <Button className="pos-cart-launcher fixed inset-x-4 z-20 min-h-14 justify-between rounded-2xl border-white/20 shadow-float sm:inset-x-6 lg:hidden" onClick={()=>setIsCartOpen(true)}><span className="flex items-center gap-2"><ShoppingBag />Ver ticket ({cart.length})</span><span className="tabular-nums">S/ {total.toFixed(2)}</span></Button>
     {isCartOpen&&<Drawer bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4" title="Tu ticket" description="Revisa los productos y el método de pago." icon={ShoppingBag} onClose={()=>setIsCartOpen(false)} busy={isProcessing}>{ticket}</Drawer>}
     {showQrModal&&<Dialog title="Escanea para pagar" description="Verifica en tu celular que el abono se haya realizado." onClose={()=>setShowQrModal(false)} busy={isProcessing} className="max-w-sm">
       <p className="text-center text-3xl font-bold text-accent">S/ {payment==='mixto'?Number(splitYape).toFixed(2):total.toFixed(2)}</p>
