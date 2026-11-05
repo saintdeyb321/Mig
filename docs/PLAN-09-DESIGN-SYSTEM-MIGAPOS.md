@@ -168,3 +168,33 @@ Validación local P09-07:
 - CI remoto pendiente de comprobación por el propietario. Los tests P09 todavía
   no están integrados en el workflow; esa deuda requiere autorización aparte.
   No se modificaron workflows, scripts de release, dependencias ni skills.
+
+## Corrección P09-08 · 2026-11-04
+
+- Reproducido el fallo de IndexedDB: el mock de `apply` omitía `status` y
+  `saleId`. Se añadieron `APPLIED` y el ID original de la venta, conservando
+  versiones, fecha y todas las aserciones, incluidos históricos sin reproceso.
+  No se cambió el contrato de recibo ni código de producción.
+- `verify.yml` incorpora Node y Chromium P09 después de lint/build y antes de
+  la attestación, con fallos bloqueantes y Chromium existente. El cotejo YAML
+  confirmó que todos los pasos, permisos y ajustes anteriores siguen intactos.
+- La lista estricta de Markdown admite por nombre exacto la auditoría P09-07
+  y el prompt P09-08 entregados por el propietario; no se amplió con comodines.
+- PASS: `npm run test:offline-db` (22 comprobaciones reales en IndexedDB de un
+  perfil aislado), lint frontend y build/PWA en modo emulador (2.80 MiB de
+  precache verificado por `scripts/check-build.mjs`).
+- PASS: `node --test --test-concurrency=1 tests/plan09.test.mjs
+  tests/plan09.browser.test.mjs`: dos pruebas Node y 199 comprobaciones UX
+  Chromium, sin cambios en el frontend Galaxy Nebula.
+- PASS: 76 pruebas Spark locales, ejecutando las ocho entradas de `test:spark`
+  con Node y `--test-skip-pattern='^generates production-only Spark resources'`.
+  Esa única prueba de `backups.test.mjs` quedó SIN EJECUTAR porque lanza release;
+  el filtro fue solo local, sin modificar sus aserciones ni el workflow.
+- PASS: validadores locales `scripts/check-ci.mjs` y `scripts/check-build.mjs`,
+  cotejo de hashes y espacios/conflictos sin Git. Skills y frontend intactos.
+- SIN EJECUTAR: Rules (sin emulador local activo) y workflow completo/release.
+  GitHub Actions debe comprobarse después del nuevo commit que publique el dueño;
+  estos resultados locales no equivalen a CI verde. No se ejecutó Git/GitHub.
+- Pendientes: aceptación humana, flujos reales y la corrección financiera aislada
+  del abono `step="0.50"`. Sin despliegues, instalaciones ni cambios de Firebase,
+  dependencias, persistencia o dominio financiero.
