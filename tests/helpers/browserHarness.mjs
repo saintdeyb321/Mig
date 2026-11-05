@@ -99,7 +99,7 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
     // Edge may exit its launcher successfully and hand the isolated profile to a new process.
     child.on('exit', code => { if (!finished && code !== 0) complete({ ok: false, error: `Browser exited before reporting (${code}). ${stderr.slice(-1200)}` }); });
     let debug;
-    const startup = Date.now() + 10000;
+    const startup = Date.now() + 20000;
     while (!finished && Date.now() < startup) {
       try { debug = (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).trim().split(/\r?\n/); break; } catch { await delay(100); }
     }
