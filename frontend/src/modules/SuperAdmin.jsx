@@ -85,7 +85,7 @@ function SuperAdmin({
   return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none" aria-label="Administración de plataforma">
 
       <PageHeader title="Clientes SaaS" icon={ShieldCheck} eyebrow="Administración de plataforma" description="Negocios, accesos y vigencia de licencias." actions={<><Button className="shrink-0" onClick={() => setShowAddModal(true)} type="button" variant="primary">
-          <Plus aria-hidden="true" /> Nuevo cliente
+          <Plus aria-hidden="true" /> Nuevo Cliente
         </Button></>} />
       <HelpDisclosure title="Alcance de la administración">Firebase Spark. Exportación empresarial disponible solo en plataforma, bajo demanda y por negocio. Purga, restauración privilegiada y jobs backend deshabilitados. Las solicitudes de baja se coordinan externamente con el propietario.</HelpDisclosure>
       <FirestoreQueryError error={error} area="administration" user={user} onRetry={refresh} />

@@ -18,6 +18,12 @@ import History from '/src/modules/SalesHistory.jsx';
 import SuperAdmin from '/src/modules/SuperAdmin.jsx';
 import BackupPanel from '/src/features/backups/components/BackupPanel.jsx';
 import ContractFormModal from '/src/modules/contracts/components/ContractFormModal.jsx';
+import ContractDetailsModal from '/src/modules/contracts/components/ContractDetailsModal.jsx';
+import ContractCancelModal from '/src/modules/contracts/components/ContractCancelModal.jsx';
+import { ContractPhotoViewer } from '/src/modules/contracts/components/ContractPhotoViewer.jsx';
+import { CashRegisterModals, CashCountSummary } from '/src/modules/CashRegisterModals.jsx';
+import { BranchQuotaModal } from '/src/modules/admin/BranchQuotaModal.jsx';
+import { BusinessDetailsDialog } from '/src/modules/admin/BusinessDetailsDialog.jsx';
 import { Dialog, DialogFooter, ConfirmDialog, Button, FormField, Input, Alert, EmptyState, LoadingState } from '/src/shared/ui/index.js';
 import { TenantContext } from '/src/features/branches/context/TenantContext.js';
 import { CatalogContext } from '/src/features/catalog/context/CatalogContext.js';
@@ -35,7 +41,7 @@ const base = { isLoading: false, isProcessing: false, error: null, retry: noop, 
 window.__p09 = {
   cash: { currentSession: { id: 'p09-session', userId: owner.uid, runtime: 'spark', serverConfirmed: true }, isExpired: false, expiresAt: null, remainingMinutes: 300, isLoadingSession: false, checkSession: noop, openRegister: forbidden, calculateClose: forbidden, confirmClose: forbidden },
   categories: { ...base, filteredCategories: [{ id: 'category', name: 'Categoría de simulación', status: 'activo' }] },
-  products: { ...base, filteredProducts: products.slice(0, 4), branchStocks: {}, setBranchStocks: noop, setImageUrl: noop, imageUrl: '', price: 5, setPrice: noop, category: 'Panes', setCategory: noop },
+  products: { ...base, categories: [{id:'pan',name:'Panes',status:'activo'}], businessBranches: [branch], filteredProducts: products.slice(0, 4), branchStocks: {}, setBranchStocks: noop, setImageUrl: noop, imageUrl: '', price: 5, setPrice: noop, category: 'Panes', setCategory: noop },
   agenda: { ...base, filteredContacts: [{ id: 'contact', name: 'Contacto de prueba', phone: '000000000' }], phone: '', setPhone: noop, handleDelete: forbidden },
   settings: { companyData: { razonSocial: 'Negocio de simulación', ruc: '00000000000', direccion: 'Dirección de prueba', telefono: '000000000' }, handleCompanyDataChange: noop, saveCompanyData: forbidden, isSavingData: false },
   branches: { ...base, branches: [branch], branchQuota: { registeredBranchQuotaVersion: 1, activeBranchIds: [branch.id], registeredBranchIds: [branch.id], maxActiveBranches: 2, maxRegisteredBranches: 5 }, address: '', setAddress: noop, phone: '', setPhone: noop, handleImageChange: noop, removeQrImage: noop },
@@ -47,6 +53,22 @@ window.__p09 = {
   backup: { busy: false, exportBackup: forbidden, checkBackup: forbidden, cancel: noop },
   forbidden, calls: 0,
 };
+const model = window.__p09, watchers = new Map();
+model.revisions = {};
+model.watch = (key, callback) => { if (!watchers.has(key)) watchers.set(key, new Set()); watchers.get(key).add(callback); return () => watchers.get(key).delete(callback); };
+model.notify = key => { model.revisions[key] = (model.revisions[key] ?? 0) + 1; watchers.get(key)?.forEach(next => next()); };
+for (const key of ['agenda', 'branches', 'products', 'categories', 'users']) {
+  const state = model[key];
+  state.setShowFormModal = value => { state.showFormModal = value; model.notify(key); };
+  state.openAddForm = () => { state.showFormModal = true; state.editing = null; state.editingBranch = null; model.notify(key); };
+  state.openEditForm = row => { Object.assign(state, row, { editing: row.id, editingBranch: row, showFormModal: true }); model.notify(key); };
+  for (const field of ['name', 'phone', 'address', 'status', 'firstName', 'lastName', 'emailPrefix', 'role', 'shiftStart', 'shiftEnd', 'branchId']) {
+    state['set' + field[0].toUpperCase() + field.slice(1)] = value => { state[field] = value; model.notify(key); };
+  }
+}
+model.ledger = [{id:'p0907-payment',method:'efectivo',type:'advance',amount:20,occurredAt:'2026-11-04T13:00:00Z',cashierName:'Responsable de simulación'}];
+model.platformDetail = { complete: true, branches: [branch], warnings: [], licenses: model.admin.filteredLicenses[0], tenants: {businessName:'Negocio de simulación',status:'active'},
+  sections: [{name:'users',status:'complete',count:1},{name:'invites',status:'complete',count:0}], people: {users:[owner],invites:[]}, inventory:[{name:'contracts',status:'sample-only',count:1}] };
 const resources = createSessionResources();
 let control;
 const frames = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -72,12 +94,26 @@ function DialogProbe() {
     {nested && <ConfirmDialog title="Confirmación anidada" description="Una prueba visual sin operaciones financieras." onClose={() => setNested(false)} onConfirm={async () => { window.__p09.calls++; await new Promise((resolve, reject) => { window.__p09.confirmResolve = resolve; window.__p09.confirmReject = reject; }); }} />}
   </>;
 }
+function SpecializedModal({ kind, user }) {
+  const [open, setOpen] = useState(true), [busy, setBusy] = useState(false);
+  model.specialized = { setBusy };
+  const close = () => setOpen(false), current = { ...contract, sparkContractVersion: 1, contractId: 'P09-' + 'IDENTIFICADOR'.repeat(9) };
+  const props = { contract: current, user, onClose: close, isProcessing: busy, onConfirm: forbidden, onAddPayment: forbidden, onEditRequest: forbidden, onCancelRequest: forbidden, onMarkDelivered: forbidden };
+  return <><Button onClick={() => setOpen(true)}>Abrir modal especializado</Button>{open && (kind === 'details' ? <ContractDetailsModal {...props} />
+    : kind === 'cancel' ? <ContractCancelModal {...props} />
+    : kind === 'photo' ? <ContractPhotoViewer images={['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6F8kAAAAASUVORK5CYII=']} index={0} busy={busy} onClose={close} />
+    : kind === 'quota' ? <BranchQuotaModal user={user} license={model.admin.filteredLicenses[0]} onClose={close} onSave={forbidden} busy={busy} />
+    : kind === 'business' ? <BusinessDetailsDialog user={user} license={model.admin.filteredLicenses[0]} onClose={close} onQuota={forbidden} />
+    : kind === 'cash-summary' ? <Dialog title="Revisa el conteo" onClose={close} busy={busy}><CashCountSummary summary={{openingAmount:11,posCash:106.3,contractCash:0,posCompensationCount:1,posCompensationCash:-106.3,posCompensationDigital:0,posCompensationTotal:-106.3,expectedAmount:11,declaredAmount:11,difference:0,hasUnverifiedDisbursements:true}} /></Dialog>
+    : <CashRegisterModals showOpenModal={kind === 'cash-open'} showCloseModal={kind === 'cash-close'} setShowOpenModal={close} setShowCloseModal={close} isLoadingSession={busy} openRegister={forbidden} calculateClose={forbidden} confirmClose={forbidden} />)}</>;
+}
 function Fixture() {
   const [view, setView] = useState('pos'), [role, setRole] = useState('dueño'), [revision, update] = useState(0), [branchId, setBranchId] = useState(branch.id);
   const user = role === 'superadmin' ? { ...owner, role, businessId: null } : { ...owner, role };
   control = { show: async (name, nextRole = role) => { window.__p09.renderError = null; setView(name); setRole(nextRole); update(n => n + 1); await frames(); }, setBranchId };
   const views = { pos: POS, auth: Auth, categories: Categories, products: Products, agenda: Agenda, reports: Reports, export: ExportSales, settings: Settings, users: Users, branches: Branches, contracts: Contracts, history: History, superadmin: SuperAdmin, backup: BackupPanel, dialogs: DialogProbe,
     contractform: () => <ContractFormModal activeLocations={[branch]} onClose={() => setView('contracts')} onSubmit={forbidden} isProcessing={false} /> };
+  for (const kind of ['details','cancel','photo','quota','business','cash-open','cash-close','cash-summary']) views[kind] = props => <SpecializedModal {...props} kind={kind} />;
   const View = views[view];
   const page = <RenderBoundary key={view + ':' + role + ':' + (view === 'pos' ? '' : revision)}><View user={user} businessId="p09-tenant" /></RenderBoundary>;
   return <SessionResourcesContext.Provider value={resources}><TenantContext.Provider value={{ user, identityKey: user.uid + role, activeBranchId: branchId, setActiveBranchId: setBranchId, businessBranches: [branch], settings: {}, branchesLoading: false }}><CatalogContext.Provider value={{ products, categories: [{ id: 'pan', name: 'Panes', status: 'activo' }], isLoading: false }}>

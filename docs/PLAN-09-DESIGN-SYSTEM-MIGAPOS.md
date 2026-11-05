@@ -44,8 +44,18 @@ SKILL.md se leyó directamente y sus búsquedas Python se ejecutaron en esta ses
 La búsqueda de sistema para retail sugirió una dirección genérica de tienda,
 no adecuada a la identidad pedida. Se usaron las pautas verificadas de foco,
 contraste, formularios y React, y la paleta Galaxy del Plan 09. No se copiaron
-assets o snippets de la skill al producto. Su README declara CC-BY-NC-4.0 y su
-package.json MIT: esa discrepancia debe revisarse antes de distribuir su paquete.
+assets o snippets de la skill al producto.
+
+Licencias y procedencia diferenciadas: la auditoría independiente del 2026-11-04
+documenta MIT para el repositorio upstream UI/UX Pro Max (LICENSE y README).
+Eso no equivale a atribuir otros términos al upstream. El artefacto npm
+`ui-ux-pro-max-cli@2.15.0` conservado localmente en `.release/p09-skill/package/`
+contiene un README que declara CC-BY-NC-4.0 y un package.json que declara MIT.
+Es una inconsistencia de ese material empaquetado, no una comprobación de cambio
+de licencia upstream. No se volvió a consultar GitHub en P09-07.
+Las siete skills locales son herramientas de desarrollo; no se borraron ni se
+alteraron. El propietario decide su versionado y revisa los términos precisos de
+cada material antes de distribuirlo.
 
 ## Cobertura y validación
 
@@ -109,3 +119,52 @@ del propietario. AC09-12: pendiente de autorización y revisión comercial.
   de dependencias ni cambios de infraestructura en este plan.
 - Pruebas de Rules, teclado móvil físico, zoom real 200 %, lector de pantalla,
   impresión/exportaciones reales y aceptación del propietario siguen pendientes.
+
+## Corrección P09-07 · 2026-11-04
+
+- Agenda y Sucursales: títulos legibles de alta/edición e iconos como nodos JSX,
+  conservando handlers, campos, busy, cierre y foco. El análisis de strings de
+  todo `frontend/src` encontró únicamente los dos casos confirmados.
+- SuperAdmin: etiqueta original `Nuevo Cliente` restaurada. La prueba Spark
+  original de arranque y alta volvió a aprobar sus 10 comprobaciones sin cambiar
+  sus aserciones ni invocar Firebase real.
+- Detalle/anulación de contratos: identificadores largos desbordaban a 320 px.
+  Se ajustaron solo clases de ancho y salto de línea. El abono `step="0.50"`
+  queda intacto para una corrección financiera independiente.
+- La captura inicial del POS mostró el CTA debajo del viewport antes de hacer
+  scroll. El layout desktop ahora descuenta cabecera, avisos del shell y padding;
+  el catálogo tiene scroll propio. Solo CSS/clases, sin cambios a `usePOS`.
+- Revisión de caja, catálogo, sucursal, personal, administración, QR/fotografía y
+  confirmaciones con componentes reales y datos sintéticos. Personal se midió
+  expresamente: su pie cabe; no se aplicó una corrección funcional especulativa.
+- Regresiones nuevas: cadenas JSX accidentales, títulos de alta/edición,
+  apertura de Nuevo Cliente, foco/retorno, desbordamiento de modales y CTA inicial
+  y offline. Se mantienen las aserciones anteriores.
+- Se reconocen por nombre exacto los dos documentos de auditoría/corrección
+  entregados por el propietario en la lista de Markdown permitida; continúa
+  rechazándose documentación inesperada.
+
+Validación local P09-07:
+
+- PASS: lint frontend y build/PWA.
+- PASS: cotejo local de hashes y comprobación de espacios/conflictos sin Git;
+  sin cambios en dominio, repositorios, persistencia ni configuración protegida.
+- PASS: 27 pruebas Node (`plan09.test.mjs` y `ui-security.test.mjs`).
+- PASS: 199 comprobaciones UX en Chromium aislado. Se conservaron las
+  aserciones anteriores y se verificaron layouts de 320 a 1440 px.
+- Capturas finales: 88 PNG en `.release/p0907-visual/`, con POS, contratos,
+  administración, caja, formularios y modales en escritorio y móvil. Son
+  componentes reales con datos sintéticos; no certifican operaciones financieras
+  end-to-end ni sustituyen la revisión manual en dispositivos físicos.
+- PASS: 76 pruebas de las entradas Spark locales, incluida la prueba original
+  de SuperAdmin. Se ejecutaron directamente con Node, no con el script npm
+  completo, por la prohibición de ejecutar release.
+- NO EJECUTADA: `generates production-only Spark resources and refuses additional
+  resources, endpoints and altered guards`, de `tests/backups.test.mjs`, porque
+  inicia `scripts/release.mjs guard`. Se excluyó solo de esta ejecución local;
+  su código y todas sus aserciones se conservan para CI bajo control del dueño.
+- NO EJECUTADAS: Rules, al no haber emulador activo en `127.0.0.1:8080`.
+  No se instaló Java ni se intentó acceder a Firebase real.
+- CI remoto pendiente de comprobación por el propietario. Los tests P09 todavía
+  no están integrados en el workflow; esa deuda requiere autorización aparte.
+  No se modificaron workflows, scripts de release, dependencias ni skills.

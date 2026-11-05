@@ -12,12 +12,15 @@ const mockHooks = Object.fromEntries([
   ['features/reports/hooks/useReports.js', 'useReports', 'reports'], ['features/contracts/hooks/useContracts.js', 'useContracts', 'contracts'],
   ['features/sales/hooks/useSalesHistory.js', 'useSalesHistory', 'history'], ['hooks/useSuperAdmin.js', 'useSuperAdmin', 'admin'],
   ['features/cash-register/hooks/useCashRegister.js', 'useCashRegister', 'cash'], ['features/backups/hooks/useLocalBackup.js', 'useLocalBackup', 'backup'],
-].map(([file, name, key]) => [path(file), `export function ${name}(){return window.__p09.${key};}`]));
+].map(([file, name, key]) => [path(file), `import {useSyncExternalStore} from 'react';
+  export function ${name}(){useSyncExternalStore(next=>window.__p09.watch('${key}',next),()=>window.__p09.revisions['${key}']??0);return window.__p09.${key};}`]));
 const moduleMocks = { ...mockHooks,
   [path('core/firebase/client.js')]: 'export const auth={currentUser:{uid:"p09-user"}};export const db={};',
   [path('features/notifications/hooks/useAlerts.js')]: 'export function useAlerts(){return {alerts:[],canViewNotifications:true};}',
   [path('features/reports/hooks/useExportSales.js')]: 'export function useExportSales(){return {isExporting:false,exportData:()=>window.__p09.forbidden()};}',
   [path('features/contracts/hooks/useContractImageUrls.js')]: 'export function useContractImageUrls(){return {urls:[],isLoading:false,error:null};}',
+  [path('features/payments/infrastructure/paymentRepository.js')]: 'export const getPaymentsByContract=async()=>window.__p09.ledger;',
+  [path('features/licenses/infrastructure/platformBusinessRepository.js')]: 'export const readPlatformBusiness=async()=>window.__p09.platformDetail;',
   [path('features/sales/infrastructure/saleTransactions.js')]: `export const saveSaleTransaction=()=>window.__p09.forbidden();
     export const saveSaleDraftTransaction=()=>window.__p09.forbidden();export const verifyPendingSaleTransaction=async()=>{};
     export const subscribeSaleAcknowledgement=()=>()=>{};export const reviewDraftSaleTransaction=()=>window.__p09.forbidden();export const confirmDraftSaleTransaction=()=>window.__p09.forbidden();`,
@@ -45,16 +48,45 @@ it('P09 verifies actual views, viewport-bound checkout, dialog focus/busy, role 
         const failure = await evaluate(async (name, role) => { await window.__p09.show(name, role); window.scrollTo(0, 0); await window.__p09.frames(); return window.__p09.renderError; }, name, role);
         assert.ok(!failure, `Render ${name}: ${failure}`);
       };
-      const capture = async name => { await new Promise(resolve => setTimeout(resolve, 220)); const result = await page.send('Page.captureScreenshot', { format: 'png' }); await mkdir('.release/plan09-visual', { recursive: true }); await writeFile('.release/plan09-visual/' + name + '.png', Buffer.from(result.data, 'base64')); screenshots.push(name); };
+      const capture = async name => { await new Promise(resolve => setTimeout(resolve, 220)); const result = await page.send('Page.captureScreenshot', { format: 'png' }); const directory = name.startsWith('p0907-') ? '.release/p0907-visual' : '.release/plan09-visual'; await mkdir(directory, { recursive: true }); await writeFile(directory + '/' + name + '.png', Buffer.from(result.data, 'base64')); screenshots.push(name); };
       const check = (condition, name) => { assert.ok(condition, name); checks.push(name); };
+
+      await viewport(390,740); await show('users');
+      await evaluate(async () => { [...document.querySelectorAll('header button')].find(el=>el.textContent.trim()==='Nuevo empleado').click(); await window.__p09.frames(); });
+      const personnel = await evaluate(() => { const d=document.querySelector('[role="dialog"]'); return {footer:d.querySelector('button[type="submit"]').parentElement.getBoundingClientRect().bottom,panel:d.getBoundingClientRect().bottom,viewport:innerHeight}; });
+      await capture('p0907-form-users-mobile');
+      check(personnel.footer <= personnel.panel + 1 && personnel.panel <= personnel.viewport + 1, 'personnel form actions fit in mobile: '+JSON.stringify(personnel));
+      await page.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape'}); await frames();
+      await viewport(1280,800); await show('pos');
+
+      for (const [view, label, title, editingKey, editTitle] of [
+        ['agenda', 'Nuevo contacto', 'Nuevo contacto', 'editing', 'Editar contacto'],
+        ['branches', 'Nueva sede', 'Nueva sede', 'editingBranch', 'Editar sede'],
+      ]) {
+        await show(view);
+        await evaluate(async label => { const button = [...document.querySelectorAll('#main-content button')].find(el => el.textContent.trim() === label); button.focus(); button.click(); await window.__p09.frames(); }, label);
+        check(await evaluate(title => { const d = document.querySelector('[role="dialog"]'); return d.querySelector('h2').textContent.trim() === title && !d.innerText.includes('<Plus') && d.contains(document.activeElement) && !d.querySelector('input').matches(':disabled'); }, title), `${view} opens a readable title, enabled form and initial focus`);
+        await evaluate(async () => { document.querySelector('[role="dialog"] button[aria-label="Cerrar diálogo"]').click(); await window.__p09.frames(); });
+        check(await evaluate(label => document.activeElement.textContent.trim() === label && !document.querySelector('[role="dialog"]'), label), `${view} returns focus to its unchanged create button`);
+        await evaluate(async (view, key) => { window.__p09[view][key] = key === 'editing' ? 'existing' : {id:'existing'}; window.__p09[view].setShowFormModal(true); await window.__p09.frames(); }, view, editingKey);
+        check(await evaluate(title => document.querySelector('[role="dialog"] h2').textContent.trim() === title, editTitle), `${view} editing title is also plain readable text`);
+        await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' }); await frames();
+      }
+      await show('superadmin', 'superadmin');
+      check(await evaluate(() => [...document.querySelectorAll('header button')].some(el => el.textContent.trim() === 'Nuevo Cliente')), 'SuperAdmin preserves the exact existing Spark create-button label');
+      await evaluate(async () => { [...document.querySelectorAll('header button')].find(el => el.textContent.trim() === 'Nuevo Cliente').click(); await window.__p09.frames(); });
+      check(await evaluate(() => document.querySelector('[role="dialog"] h2').textContent.includes('Alta de Nuevo Cliente') && Boolean(document.querySelector('[role="dialog"] form'))), 'the original SuperAdmin button still opens its create form');
+      await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' }); await frames();
+      await show('pos');
 
       await evaluate(async () => { const buttons = [...document.querySelectorAll('[aria-label="Catálogo de productos"] button')].filter(el => el.title.startsWith('Producto')); for (const button of buttons.slice(0, 8)) { button.click(); await window.__p09.frames(); } });
       const ticketBounds = () => evaluate(() => {
         const root = document.querySelector('aside[aria-label="Ticket"]'), card = root.querySelector('.pos-ticket'), action = card.querySelector('.pos-ticket-actions'), total = card.querySelector('.pos-ticket-total'), list = card.querySelector('.pos-ticket-items');
         return { height: card.getBoundingClientRect().height, bottom: card.getBoundingClientRect().bottom, actionBottom: action.getBoundingClientRect().bottom, totalBottom: total.getBoundingClientRect().bottom, scroll: list.scrollHeight > list.clientHeight, count: list.querySelectorAll('button[aria-label^="Quitar"]').length };
       });
-      let bounds = await ticketBounds(); check(bounds.count === 8 && bounds.scroll && bounds.height <= 752, 'eight actual cart lines scroll inside a fixed-height ticket');
-      await evaluate(async () => { window.scrollTo(0, 650); await window.__p09.frames(); });
+      let bounds = await ticketBounds(); check(bounds.actionBottom <= 800, 'checkout is visible immediately below the POS header before any page scroll'); check(bounds.count === 8 && bounds.scroll && bounds.height <= 752, 'eight actual cart lines scroll inside a fixed-height ticket');
+      await evaluate(async () => { window.scrollTo(0, 650); document.querySelector('[aria-label="Catálogo de productos"]').scrollTop = 650; await window.__p09.frames(); });
+      check(await evaluate(() => document.querySelector('[aria-label="Catálogo de productos"]').scrollTop > 0), 'the catalogue has its own scroll without moving checkout');
       bounds = await ticketBounds(); check(bounds.actionBottom <= 800 && bounds.totalBottom <= 800, 'catalogue scroll keeps total and checkout action inside the viewport');
       await capture('pos-desktop');
       await viewport(1280, 480); bounds = await ticketBounds(); check(bounds.bottom <= 480 && bounds.actionBottom <= 480, 'low-height desktop preserves checkout action');
@@ -112,6 +144,7 @@ it('P09 verifies actual views, viewport-bound checkout, dialog focus/busy, role 
       check(await evaluate(() => document.getElementById('main-content').innerText.includes('Reintentar')), 'query failure retains a recovery action');
       await show('pos'); await evaluate(async () => { Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }); window.dispatchEvent(new Event('offline')); await window.__p09.frames(); });
       check(await evaluate(() => document.getElementById('main-content').innerText.includes('Guardar sin cobrar') && !document.getElementById('main-content').innerText.includes('Venta registrada')), 'offline presentation does not turn an unsent ticket into revenue');
+      check(await evaluate(() => document.querySelector('aside[aria-label="Ticket"] .pos-ticket-actions').getBoundingClientRect().bottom <= innerHeight), 'offline shell notices do not push the ticket action below the viewport');
       await evaluate(async () => { Object.defineProperty(navigator, 'onLine', { configurable: true, value: true }); window.dispatchEvent(new Event('online')); window.__p09.setBranch('global'); await window.__p09.frames(); });
       check(await evaluate(() => document.getElementById('main-content').innerText.includes('Modo lectura')), 'global branch preserves the read-only presentation');
       await evaluate(async () => { window.__p09.setBranch('p09-branch'); window.__p09.cash.isExpired = true; await window.__p09.frames(); }); await show('pos');
@@ -140,6 +173,37 @@ it('P09 verifies actual views, viewport-bound checkout, dialog focus/busy, role 
       check(await evaluate(() => document.activeElement.id === 'p09-trigger'), 'closing the parent returns focus to its trigger');
       await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
       check(await evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), 'reduced motion is available without changing semantic state');
+
+      const modalFailures = [];
+      for (const width of [320, 360, 390, 768, 1024, 1280, 1440]) {
+        await viewport(width, width < 768 ? 740 : 900);
+        for (const name of ['details', 'cancel', 'photo', 'quota', 'business', 'cash-open', 'cash-close', 'cash-summary']) {
+          await show(name, ['quota', 'business'].includes(name) ? 'superadmin' : 'dueño');
+          const metrics = await evaluate(() => { const d = document.querySelector('[role="dialog"], [role="alertdialog"]'), body = d.lastElementChild, rect = d.getBoundingClientRect(); return {top:rect.top,bottom:rect.bottom,viewport:innerHeight,scroll:body.scrollWidth,width:body.clientWidth,overflow:[...body.querySelectorAll('*')].filter(el=>el.clientWidth>0&&el.scrollWidth>el.clientWidth+1&&getComputedStyle(el).overflowX==='visible').slice(0,5).map(el=>[el.tagName,el.className,el.scrollWidth,el.clientWidth])}; });
+          const fits = metrics.top >= -1 && metrics.bottom <= metrics.viewport + 1 && metrics.scroll <= metrics.width + 1;
+          if (!fits) modalFailures.push({name,width,...metrics});
+          else check(true, `${name} specialized modal fits without clipped horizontal content at ${width}px`);
+          await capture(`p0907-${name}-${width}`);
+        }
+      }
+      check(modalFailures.length === 0, 'specialized modal layout: '+JSON.stringify(modalFailures));
+      for (const [kind, width, height] of [['desktop',1440,900],['mobile',390,740]]) {
+        await viewport(width,height);
+        for (const [view, role] of [['pos','dueño'],['contracts','dueño'],['superadmin','superadmin'],['contractform','dueño'],['details','dueño'],['cancel','dueño'],['photo','dueño'],['quota','superadmin'],['business','superadmin'],['cash-open','dueño'],['cash-close','dueño'],['cash-summary','dueño']]) {
+          await show(view,role);
+          if (view === 'pos') {
+            await evaluate(async () => { document.querySelector('[aria-label="Catálogo de productos"] button[title="Producto de prueba 0"]').click(); await window.__p09.frames(); if(innerWidth < 1024){document.querySelector('.pos-cart-launcher').click();await window.__p09.frames();} });
+          }
+          await capture(`p0907-${view}-${kind}`);
+        }
+        for (const [view,label] of [['agenda','Nuevo contacto'],['branches','Nueva sede'],['products','Nuevo producto'],['users','Nuevo empleado']]) {
+          await show(view); await evaluate(async label => { [...document.querySelectorAll('header button')].find(el => el.textContent.trim() === label).click(); await window.__p09.frames(); },label);
+          const formMetrics = await evaluate(() => {const d=document.querySelector('[role="dialog"]');return {exists:Boolean(d),error:window.__p09.renderError,scroll:d?.lastElementChild.scrollWidth,width:d?.lastElementChild.clientWidth,literal:d?.innerText.includes('<Plus'),footer:d?.querySelector('button[type="submit"]')?.getBoundingClientRect().bottom,panel:d?.getBoundingClientRect().bottom,viewport:innerHeight};});
+          check(formMetrics.exists && !formMetrics.literal && formMetrics.scroll <= formMetrics.width + 1, `${view} form stays readable in ${kind}: `+JSON.stringify(formMetrics));
+          await capture(`p0907-form-${view}-${kind}`);
+          await page.send('Input.dispatchKeyEvent', {type:'keyDown',key:'Escape',code:'Escape'}); await frames();
+        }
+      }
       await evaluate(() => window.__p09.stop());
     },
   });

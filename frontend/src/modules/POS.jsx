@@ -126,7 +126,7 @@ function POS({ user }) {
       <PaymentSelector payment={payment} onSelect={selectPayment} disabled={branchStatus.isReadOnly||isProcessing} />
       <PaymentFields payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} validation={paymentValidation} disabled={branchStatus.isReadOnly||isProcessing} />
     </Ticket>;
-  return <div className="min-w-0 space-y-5">
+  return <div className="pos-workspace min-w-0 space-y-5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-5 lg:space-y-0">
     {!isOnline && <Alert variant="info">Sin conexión: puedes guardar un ticket sin cobrar. No se moverá inventario ni se enviará automáticamente al reconectar.</Alert>}
     {isExpired && <Alert variant="warning" title="Caja vencida">Cierra este turno y abre uno nuevo para cobrar. Los movimientos se conservan.</Alert>}
     <FirestoreQueryError error={readError} area="cash-open" user={user} onRetry={checkSession} />
@@ -137,8 +137,8 @@ function POS({ user }) {
     </>} />
     {branchStatus.isReadOnly&&<Alert variant="warning" title="Modo lectura">{branchStatus.reason==='global'?'Estás en la vista global. Selecciona una sucursal específica en el menú.':`La sucursal ${branchStatus.name} está inactiva.`}</Alert>}
     {currentSession?.needsForceClose&&!branchStatus.isReadOnly&&<Alert variant="warning" title="Caja a cargo de otro responsable"><p>{businessBranches?.find(branch=>branch.id===currentSession.branchId)?.name??'Esta sede'} · {currentSession.cashierName||'Responsable'} · UID: {currentSession.userId}</p><p>{currentSession.canForceClose?'Revisa los movimientos y realiza el arqueo antes de cerrar este turno.':'Solicita al dueño que realice el arqueo y cierre el turno anterior. Te avisaremos al quedar disponible; también puedes comprobarlo aquí.'}</p></Alert>}
-    <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
-      <section aria-label="Catálogo de productos" className="min-w-0 space-y-4 pb-20 lg:pb-0">
+    <div className="grid min-w-0 items-start gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <section aria-label="Catálogo de productos" className="min-w-0 space-y-4 pb-20 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-0">
         <ProductSearch value={search} onChange={setSearch} />
         <CategoryFilters categories={activeCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">

@@ -131,7 +131,7 @@ const ContractDetailsModal = ({
               <span className="text-2xl">{isCancelled ? '❌' : isDelivered ? '🔒' : '👁️'}</span>
               <div className="grid min-w-0 gap-1">
 
-                <span className="rounded-md bg-subtle px-2 py-1 font-mono text-xs text-muted">{contract.contractId}</span>
+                <span className="max-w-full rounded-md bg-subtle px-2 py-1 font-mono text-xs text-muted wrap-anywhere">{contract.contractId}</span>
               </div>
             </div>
 

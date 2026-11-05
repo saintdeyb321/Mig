@@ -123,9 +123,7 @@ function BranchManager({
       </div>
 
       {/* MODAL FORMULARIO */}
-      {showFormModal && <Dialog title={<>
-              {editingBranch ? '✏️ Editar Sede' : '<Plus aria-hidden="true" /> Nueva sede'}
-            </>} busy={isProcessing} className="max-w-lg" onClose={() => setShowFormModal(false)}>
+      {showFormModal && <Dialog title={editingBranch ? 'Editar sede' : 'Nueva sede'} icon={Building2} busy={isProcessing} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
             <form onSubmit={handleSave} className="grid gap-4">
               <FormField label={<>NOMBRE DE LA SEDE</>}>

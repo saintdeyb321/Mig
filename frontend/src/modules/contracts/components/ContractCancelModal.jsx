@@ -17,11 +17,11 @@ const ContractCancelModal = ({
   return <ConfirmDialog title={<>Anular Pedido Definitivamente</>} busy={isProcessing} className="max-w-lg" onClose={onClose}>
 
         {/* CABECERA */}
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="text-2xl text-danger">⚠️</div>
-          <div className="grid gap-1">
+          <div className="grid min-w-0 gap-1">
 
-            <span className="font-mono text-xs text-muted">{contract.contractId}</span>
+            <span className="font-mono text-xs text-muted wrap-anywhere">{contract.contractId}</span>
           </div>
         </div>
 

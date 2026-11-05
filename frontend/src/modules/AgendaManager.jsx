@@ -88,9 +88,7 @@ function AgendaManager({
             </>} /> : filteredContacts.map(c => <ContactCard key={c.id} c={c} openEditForm={openEditForm} handleDelete={handleDelete} isLoading={isLoading} />)}
       </div>
 
-      {showFormModal && <Dialog title={<>
-              {editing ? '✏️ Editar Contacto' : '<Plus aria-hidden="true" /> Nuevo contacto'}
-            </>} busy={isLoading} className="max-w-lg" onClose={() => setShowFormModal(false)}>
+      {showFormModal && <Dialog title={editing ? 'Editar contacto' : 'Nuevo contacto'} icon={ContactRound} busy={isLoading} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
             <form onSubmit={handleSave} className="grid gap-4">
               <FormField label={<>NOMBRE DEL CLIENTE</>}>
