@@ -30,7 +30,7 @@
 @layer components {
   .nebula-brand {
     background-color: var(--color-sidebar);
-    background-image: radial-gradient(ellipse at 95% 0%, rgb(95 183 215 / 0.12), transparent 48%), linear-gradient(155deg, var(--color-sidebar), var(--color-brand-deep) 60%, #332765);
+    background-image: radial-gradient(ellipse at 0% 25%, rgb(141 88 216 / 0.18), transparent 65%), radial-gradient(ellipse at 100% 100%, rgb(49 94 206 / 0.18), transparent 65%), linear-gradient(165deg, var(--color-sidebar), var(--color-brand-deep));
   }
   .workspace-page { width: 100%; min-width: 0; margin-inline: auto; display: grid; gap: 1.25rem; padding-bottom: 1.5rem; }
   .view-toolbar { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.875rem; border: 1px solid var(--color-line); border-radius: 1rem; background: var(--color-panel); }
@@ -41,6 +41,7 @@
   .dialog-drawer { bottom: var(--ui-keyboard-inset, 0px); height: calc(var(--ui-viewport-height, 100dvh) - max(0.75rem, env(safe-area-inset-top))); }
   .dialog-form-surface { height: min(52rem, calc(var(--ui-viewport-height, 100dvh) - 1.5rem)); }
   .dialog-form-surface > div:last-child > fieldset { height: 100%; }
+  .cash-confirm-dialog { height: min(42rem, calc(var(--ui-viewport-height, 100dvh) - 1.5rem)); }
   .pos-ticket { height: 100%; max-height: calc(var(--ui-viewport-height, 100dvh) - 3rem); }
   .pos-ticket-items { min-height: 3.5rem; flex: 1 1 35%; overflow-y: auto; overscroll-behavior: contain; }
   .pos-ticket-payment { min-height: 0; flex: 0 1 auto; max-height: 42%; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 0.25rem; }
@@ -50,13 +51,14 @@
   .pos-ticket-drawer { flex: 1; max-height: 100%; min-height: 0; }
   .pos-cart-launcher { bottom: calc(4.5rem + env(safe-area-inset-bottom) + 0.75rem); }
   .app-bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
+  .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 18.5rem), 1fr)); gap: 1rem; align-items: start; }
 }
 
 /* These viewport adaptations must also override per-view utility padding. */
 .nebula-brand :focus-visible { outline-color: var(--color-sidebar-glow); }
 @media (min-width: 64rem) {
   /* Include the real shell notices and padding, rather than assuming a header height. */
-  #main-content:has(> .pos-workspace) { display: flex; height: var(--ui-viewport-height, 100dvh); flex-direction: column; gap: 1.25rem; }
+  #main-content:has(> .pos-workspace) { display: flex; height: var(--ui-viewport-height, 100dvh); flex-direction: column; gap: 0.75rem; padding: 1.25rem; }
   #main-content:has(> .pos-workspace) > * { margin-block: 0; flex-shrink: 0; }
   #main-content > .pos-workspace { flex: 1 1 0%; min-height: 0; }
 }

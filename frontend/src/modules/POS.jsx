@@ -2,7 +2,7 @@ import FirestoreQueryError from '../components/FirestoreQueryError';
 import { useCatalogData } from '../features/catalog/context/CatalogContext';
 import { isBranchOperational } from '../features/branches/domain/branchPolicy';
 import { useState, useMemo } from 'react';
-import { LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
+import { Info, LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
 import { checkoutBlockReason } from '../features/sales/domain/checkoutPolicy.js';
 import { parsePaymentCents, saleAmountCents } from '../features/sales/domain/saleModel.js';
 import { canAddDistinctProduct } from '../features/sales/domain/cartCatalog.js';
@@ -12,7 +12,7 @@ import { useTenantData } from '../features/branches/context/TenantContext';
 import { useCashRegister } from '../features/cash-register/hooks/useCashRegister';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 import { CashRegisterModals } from './CashRegisterModals';
-import { Alert, Button, Dialog, Drawer, EmptyState, LoadingState, PageHeader } from '../shared/ui';
+import { Alert, Button, Dialog, Drawer, EmptyState, LoadingState } from '../shared/ui';
 import { ProductSearch, CategoryFilters, ProductCard } from './pos/CatalogParts';
 import { PaymentFields, PaymentSelector } from './pos/PaymentParts';
 import { CashStatus, SaleStatus, Ticket } from './pos/TicketParts';
@@ -126,21 +126,26 @@ function POS({ user }) {
       <PaymentSelector payment={payment} onSelect={selectPayment} disabled={branchStatus.isReadOnly||isProcessing} />
       <PaymentFields payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} validation={paymentValidation} disabled={branchStatus.isReadOnly||isProcessing} />
     </Ticket>;
-  return <div className="pos-workspace min-w-0 space-y-5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-5 lg:space-y-0">
+  return <div className="pos-workspace min-w-0 space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0">
     {!isOnline && <Alert variant="info">Sin conexión: puedes guardar un ticket sin cobrar. No se moverá inventario ni se enviará automáticamente al reconectar.</Alert>}
     {isExpired && <Alert variant="warning" title="Caja vencida">Cierra este turno y abre uno nuevo para cobrar. Los movimientos se conservan.</Alert>}
     <FirestoreQueryError error={readError} area="cash-open" user={user} onRetry={checkSession} />
     <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
-    <PageHeader title="Punto de venta" icon={ShoppingBag} eyebrow="Venta del día" description="Elige productos y prepara tu ticket." actions={<>
+    <header className="pos-toolbar flex shrink-0 flex-wrap items-center justify-between gap-2">
+      <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight"><ShoppingBag aria-hidden="true" className="size-5 text-primary" />Punto de venta</h1>
+      <div className="flex flex-wrap items-center gap-2">
       <CashStatus readOnly={branchStatus.isReadOnly} session={currentSession} isExpired={isExpired} expiresAt={expiresAt} remainingMinutes={remainingMinutes} />
       {currentSession&&!branchStatus.isReadOnly&&(!currentSession.needsForceClose||currentSession.canForceClose)&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={()=>setShowCloseModal(true)}><LockKeyhole />{currentSession.needsForceClose?'Revisar cierre anterior':'Cerrar caja'}</Button>}
-    </>} />
-    {branchStatus.isReadOnly&&<Alert variant="warning" title="Modo lectura">{branchStatus.reason==='global'?'Estás en la vista global. Selecciona una sucursal específica en el menú.':`La sucursal ${branchStatus.name} está inactiva.`}</Alert>}
+      </div>
+    </header>
+    {branchStatus.isReadOnly&&<p role="status" className="flex shrink-0 items-start gap-2 rounded-xl border border-warning/25 bg-warning-soft px-3 py-2 text-sm text-warning"><Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><span>{branchStatus.reason==='global'?<><strong>Vista global · Solo lectura.</strong> Elige una sucursal en el selector de sede para vender.</>:<><strong>Solo lectura.</strong> La sucursal {branchStatus.name} está inactiva.</>}</span></p>}
     {currentSession?.needsForceClose&&!branchStatus.isReadOnly&&<Alert variant="warning" title="Caja a cargo de otro responsable"><p>{businessBranches?.find(branch=>branch.id===currentSession.branchId)?.name??'Esta sede'} · {currentSession.cashierName||'Responsable'} · UID: {currentSession.userId}</p><p>{currentSession.canForceClose?'Revisa los movimientos y realiza el arqueo antes de cerrar este turno.':'Solicita al dueño que realice el arqueo y cierre el turno anterior. Te avisaremos al quedar disponible; también puedes comprobarlo aquí.'}</p></Alert>}
-    <div className="grid min-w-0 items-start gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
-      <section aria-label="Catálogo de productos" className="min-w-0 space-y-4 pb-20 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-0">
+    <div className="grid min-w-0 items-start gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <section aria-label="Catálogo de productos" className="pos-catalog min-w-0 space-y-3 pb-20 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-0">
+        <div className="pos-catalog-tools sticky top-0 z-10 space-y-1 bg-canvas pb-2">
         <ProductSearch value={search} onChange={setSearch} />
         <CategoryFilters categories={activeCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
+        </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {displayedProducts.length?displayedProducts.map(product=><ProductCard key={product.id} product={product} stock={getSafeStock(product,activeBranchId)} disabled={isGlobalDisabled||isProcessing||!canAddDistinctProduct(cart,product.id)} onAdd={addToCart} />):catalogError?null:<EmptyState title="No hay productos" description={search?`No se encontraron productos para “${search}”.`:'No hay productos registrados en esta selección.'} />}
         </div>

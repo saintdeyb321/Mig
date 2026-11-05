@@ -67,6 +67,9 @@ for (const key of ['agenda', 'branches', 'products', 'categories', 'users']) {
   }
 }
 model.ledger = [{id:'p0907-payment',method:'efectivo',type:'advance',amount:20,occurredAt:'2026-11-04T13:00:00Z',cashierName:'Responsable de simulación'}];
+model.exportCalls = [];
+model.export = {isExporting:false, queryError:null, exportData:async (...args) => {model.exportCalls.push(args);}};
+model.makeSale = sale;
 model.platformDetail = { complete: true, branches: [branch], warnings: [], licenses: model.admin.filteredLicenses[0], tenants: {businessName:'Negocio de simulación',status:'active'},
   sections: [{name:'users',status:'complete',count:1},{name:'invites',status:'complete',count:0}], people: {users:[owner],invites:[]}, inventory:[{name:'contracts',status:'sample-only',count:1}] };
 const resources = createSessionResources();
@@ -96,6 +99,7 @@ function DialogProbe() {
 }
 function SpecializedModal({ kind, user }) {
   const [open, setOpen] = useState(true), [busy, setBusy] = useState(false);
+  const [cashOpen, setCashOpen] = useState(kind === 'cash-open'), [cashClose, setCashClose] = useState(kind === 'cash-close');
   model.specialized = { setBusy };
   const close = () => setOpen(false), current = { ...contract, sparkContractVersion: 1, contractId: 'P09-' + 'IDENTIFICADOR'.repeat(9) };
   const props = { contract: current, user, onClose: close, isProcessing: busy, onConfirm: forbidden, onAddPayment: forbidden, onEditRequest: forbidden, onCancelRequest: forbidden, onMarkDelivered: forbidden };
@@ -104,20 +108,21 @@ function SpecializedModal({ kind, user }) {
     : kind === 'photo' ? <ContractPhotoViewer images={['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6F8kAAAAASUVORK5CYII=']} index={0} busy={busy} onClose={close} />
     : kind === 'quota' ? <BranchQuotaModal user={user} license={model.admin.filteredLicenses[0]} onClose={close} onSave={forbidden} busy={busy} />
     : kind === 'business' ? <BusinessDetailsDialog user={user} license={model.admin.filteredLicenses[0]} onClose={close} onQuota={forbidden} />
-    : kind === 'cash-summary' ? <Dialog title="Revisa el conteo" onClose={close} busy={busy}><CashCountSummary summary={{openingAmount:11,posCash:106.3,contractCash:0,posCompensationCount:1,posCompensationCash:-106.3,posCompensationDigital:0,posCompensationTotal:-106.3,expectedAmount:11,declaredAmount:11,difference:0,hasUnverifiedDisbursements:true}} /></Dialog>
-    : <CashRegisterModals showOpenModal={kind === 'cash-open'} showCloseModal={kind === 'cash-close'} setShowOpenModal={close} setShowCloseModal={close} isLoadingSession={busy} openRegister={forbidden} calculateClose={forbidden} confirmClose={forbidden} />)}</>;
+    : kind === 'cash-summary' ? <Dialog title="Revisa el conteo" onClose={close} busy={busy}><CashCountSummary summary={model.countSummary ?? {openingAmount:11,posCash:106.3,contractCash:0,posCompensationCount:1,posCompensationCash:-106.3,posCompensationDigital:0,posCompensationTotal:-106.3,expectedAmount:11,declaredAmount:11,difference:0,hasUnverifiedDisbursements:true}} /></Dialog>
+    : <CashRegisterModals showOpenModal={cashOpen} showCloseModal={cashClose} setShowOpenModal={setCashOpen} setShowCloseModal={setCashClose} isLoadingSession={busy} openRegister={model.openRegister ?? forbidden} calculateClose={model.calculateClose ?? forbidden} confirmClose={model.confirmClose ?? forbidden} />)}</>;
 }
 function Fixture() {
   const [view, setView] = useState('pos'), [role, setRole] = useState('dueño'), [revision, update] = useState(0), [branchId, setBranchId] = useState(branch.id);
   const user = role === 'superadmin' ? { ...owner, role, businessId: null } : { ...owner, role };
   control = { show: async (name, nextRole = role) => { window.__p09.renderError = null; setView(name); setRole(nextRole); update(n => n + 1); await frames(); }, setBranchId };
   const views = { pos: POS, auth: Auth, categories: Categories, products: Products, agenda: Agenda, reports: Reports, export: ExportSales, settings: Settings, users: Users, branches: Branches, contracts: Contracts, history: History, superadmin: SuperAdmin, backup: BackupPanel, dialogs: DialogProbe,
+    operationalHistory: () => <><ExportSales user={user} /><History user={user} /></>,
     contractform: () => <ContractFormModal activeLocations={[branch]} onClose={() => setView('contracts')} onSubmit={forbidden} isProcessing={false} /> };
   for (const kind of ['details','cancel','photo','quota','business','cash-open','cash-close','cash-summary']) views[kind] = props => <SpecializedModal {...props} kind={kind} />;
   const View = views[view];
   const page = <RenderBoundary key={view + ':' + role + ':' + (view === 'pos' ? '' : revision)}><View user={user} businessId="p09-tenant" /></RenderBoundary>;
   return <SessionResourcesContext.Provider value={resources}><TenantContext.Provider value={{ user, identityKey: user.uid + role, activeBranchId: branchId, setActiveBranchId: setBranchId, businessBranches: [branch], settings: {}, branchesLoading: false }}><CatalogContext.Provider value={{ products, categories: [{ id: 'pan', name: 'Panes', status: 'activo' }], isLoading: false }}>
-    {view === 'auth' ? page : <AppLayout user={user} tab={role === 'superadmin' ? 'superadmin' : view} setTab={setView} handleLogout={noop}>{page}</AppLayout>}
+    {view === 'auth' ? page : <AppLayout user={user} tab={role === 'superadmin' ? 'superadmin' : view === 'operationalHistory' ? 'history' : view} setTab={setView} handleLogout={noop}>{page}</AppLayout>}
   </CatalogContext.Provider></TenantContext.Provider></SessionResourcesContext.Provider>;
 }
 const root = createRoot(document.getElementById('root')); root.render(<Fixture />);

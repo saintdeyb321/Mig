@@ -26,17 +26,17 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
     <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-40 focus:rounded-xl focus:bg-panel focus:p-4 focus:text-primary focus:shadow-float">Ir al contenido</a>
     <aside className="nebula-brand fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/10 text-white shadow-xl shadow-sidebar/10 lg:flex xl:w-68" aria-label="Navegación de escritorio">
       <div className="sidebar-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
-      <div className="space-y-6 px-5 pb-6 pt-7">
-        <div className="flex items-center gap-3"><img src={brand.logo} alt="" className="size-10 rounded-xl bg-white object-contain p-1" /><div><p className="text-xl font-bold tracking-tight">{brand.name}</p></div></div>
-        <div className="flex min-h-11 items-center justify-between gap-3" aria-label="Conectividad y notificaciones"><NetworkBadge dark /><NotificationBell user={user} {...notifications} isDesktop /></div>
-        <div className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/7 p-4 shadow-sm">
+      <div className="space-y-3 px-4 pb-4 pt-5">
+        <div className="flex items-center gap-3"><img src={brand.logo} alt="" className="size-9 rounded-xl bg-white object-contain p-1" /><div><p className="text-lg font-bold tracking-tight">{brand.name}</p></div></div>
+        <div className="flex min-h-11 items-center justify-between gap-3 border-b border-white/10" aria-label="Conectividad y notificaciones"><NetworkBadge dark /><NotificationBell user={user} {...notifications} isDesktop /></div>
+        <div className="flex items-start gap-3 py-2">
           <span className="rounded-lg bg-white/10 p-2"><UserRound className="size-4" /></span>
           <div className="min-w-0"><p className="text-sm font-semibold wrap-anywhere">{fullName}</p><p className="mt-0.5 text-xs capitalize text-sidebar-muted">{user?.role}</p></div>
         </div>
         {canSelectBranch && <BranchSelector dark />}
         {assignedBranchName && <p className="flex items-center gap-2 text-xs text-sidebar-muted"><MapPin className="size-4 shrink-0" />{assignedBranchName}</p>}
       </div>
-      <div className="space-y-4 px-3 pb-6 focus-visible:outline-2 focus-visible:outline-focus" tabIndex={0} role="region" aria-label="Lista de módulos"><p className="px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-sidebar-muted">Espacio de trabajo</p><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop /></div>
+      <div className="space-y-2 px-3 pb-4 focus-visible:outline-2 focus-visible:outline-focus" tabIndex={0} role="region" aria-label="Lista de módulos"><p className="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-muted">Espacio de trabajo</p><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop /></div>
       </div>
       <div className="shrink-0 border-t border-white/10 p-4">
         <Button variant="ghost" className="w-full justify-start text-sidebar-muted hover:bg-white/10 hover:text-white" onClick={handleLogout}><LogOut />Cerrar sesión</Button>

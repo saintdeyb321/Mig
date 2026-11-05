@@ -1,57 +1,39 @@
-import { Download, FileSpreadsheet } from 'lucide-react';
+import { ChevronDown, Download, FileSpreadsheet } from 'lucide-react';
 import FirestoreQueryError from '../components/FirestoreQueryError';
-import { Select, Button, Card, Input, FormField } from "../shared/ui";
-// src/modules/ExportSales.jsx
-import React, { useState, memo } from "react";
-import { useExportSales } from "../features/reports/hooks/useExportSales";
-function ExportSales({
-  user
-}) {
-  // 🚀 FIX: Ahora controlamos el RANGO DE TIEMPO, no el tipo de reporte.
-  const [timeFilter, setTimeFilter] = useState("hoy");
-  const [consent, setConsent] = useState(false);
-  const {
-    isExporting, queryError,
-    exportData
-  } = useExportSales(user);
+import { Select, Button } from '../shared/ui';
+import { useState, useId, memo } from 'react';
+import { useExportSales } from '../features/reports/hooks/useExportSales';
+
+function ExportSales({ user }) {
+  const [timeFilter, setTimeFilter] = useState('hoy');
+  const periodId = useId();
+  const { isExporting, queryError, exportData } = useExportSales(user);
   const handleExport = async () => {
-    if (isExporting || !consent) return;
-    // Pasamos un string genérico 'all' (ya que el hook hace todo) y el filtro de tiempo
-    await exportData("all", timeFilter);
+    if (isExporting) return;
+    await exportData('all', timeFilter);
   };
-  return <Card className="animate-enter motion-reduce:animate-none grid gap-4 border-l-4 border-l-success" tone="finance" as="div">
-      <div className="grid gap-2">
-        <h3 className="flex items-center gap-2 text-base font-semibold">
-          <FileSpreadsheet aria-hidden="true" className="size-5 text-success" />
-          Exportar Reportes Contables
-        </h3>
-        {/* 🚀 Ajuste de texto: Agregamos "Sucursales" para presumir la nueva función */}
-        <p className="text-sm leading-relaxed text-muted">
-          Descarga un Excel con resumen, ventas, productos y sucursales para tu revisión operativa.
-        </p>
+  return <section aria-label="Exportación Excel" className="export-toolbar space-y-2 rounded-2xl border border-line bg-panel p-3">
+    <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+      <p className="flex items-center gap-2 text-sm font-bold"><FileSpreadsheet aria-hidden="true" className="size-5 text-success" />Excel</p>
+      <label className="sr-only" htmlFor={periodId}>Período de exportación</label>
+      <Select id={periodId} value={timeFilter} onChange={event => setTimeFilter(event.target.value)} disabled={isExporting} className="min-w-0">
+        <option value="hoy">Hoy · detalle de tickets</option>
+        <option value="semana">Semana · detalle de tickets</option>
+        <option value="mes">Mes · resumen diario</option>
+        <option value="todo">Año · resumen diario</option>
+      </Select>
+      <Button onClick={handleExport} disabled={isExporting} className="col-span-2 sm:col-span-1" type="button" variant="success" loading={isExporting}>
+        <Download aria-hidden="true" />{isExporting ? 'Generando Excel…' : 'Descargar Excel'}
+      </Button>
+    </div>
+    <p className="text-xs text-muted">La descarga consulta los movimientos del período seleccionado.</p>
+    <details className="group text-xs text-muted"><summary className="flex min-h-8 cursor-pointer items-center gap-2 font-semibold">Detalles de exportación<ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open:rotate-180" /></summary>
+      <div className="space-y-2 border-t border-line pt-2">
+        <p>Excel con resumen, ventas, productos y sucursales para revisión operativa. Incluye ventas, compensaciones POS y pagos del período. Una compensación contable no acredita entrega física de efectivo ni devolución digital.</p>
+        <p>Hoy y semana detallan cada movimiento; mes y año resumen por día. Máximo 10 000 movimientos y 500 contratos históricos. Si falta información o se excede el límite, se solicita reducir el período y no se descarga un Excel parcial.</p>
       </div>
-
-      <p className="text-sm text-muted">El archivo incluye ventas, compensaciones POS y pagos del período. Una compensación contable no acredita entrega física de efectivo ni devolución digital. Los reportes diarios y semanales detallan cada movimiento; mes y año resumen por día.</p>
-      <details className="text-xs text-muted"><summary className="min-h-8 cursor-pointer">Alcance y límites de la consulta</summary><p>Se consultan los movimientos del período elegido. Máximo 10 000 movimientos y 500 contratos históricos. Si falta información o se excede el límite, se solicita reducir el período y no se descarga un Excel parcial.</p></details>
-      <FirestoreQueryError error={queryError} area="reports" user={user} commercial />
-      <label className="flex min-h-11 items-center gap-3 rounded-xl border border-finance-line bg-panel p-3 text-sm"><Input type="checkbox" checked={consent} disabled={isExporting} onChange={event => setConsent(event.target.checked)} /> Autorizo consultar los movimientos del período seleccionado para generar el Excel.</label>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <FormField label="Período de exportación" className="min-w-0 flex-1">
-          {/* 🚀 Selector de Calendario Estricto */}
-          <Select value={timeFilter} onChange={e => { setTimeFilter(e.target.value); setConsent(false); }} disabled={isExporting}>
-            <option value="hoy">📅 Reporte Diario (Detallado por Ticket)</option>
-            <option value="semana">📅 Reporte Semanal (Detallado por Ticket)</option>
-            <option value="mes">📅 Reporte Mensual (Resumen por Día)</option>
-            <option value="todo">📅 Reporte Anual (Resumen por Día)</option>
-          </Select>
-        </FormField>
-
-        <div className="sm:shrink-0">
-          <Button onClick={handleExport} disabled={isExporting || !consent} className="w-full" type="button" variant="success" loading={isExporting}>
-            <Download aria-hidden="true" />{isExporting ? "Generando Excel…" : "Descargar Excel"}
-          </Button>
-        </div>
-      </div>
-    </Card>;
+    </details>
+    <FirestoreQueryError error={queryError} area="reports" user={user} commercial />
+  </section>;
 }
 export default memo(ExportSales);

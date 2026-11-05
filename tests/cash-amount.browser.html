@@ -16,7 +16,7 @@ let result;
 try {
   for (const mode of ['open', 'close']) {
     root.render(React.createElement(CashRegisterModals, { ...props, showOpenModal: mode === 'open', showCloseModal: mode === 'close' }));
-    await wait(() => document.querySelector('input[type="number"]') && document.querySelector('h2')?.textContent.includes(mode === 'open' ? 'Apertura' : '¿Cuánto'));
+    await wait(() => document.querySelector('input[type="number"]') && document.querySelector('h2')?.textContent.includes(mode === 'open' ? 'Abrir caja' : '¿Cuánto'));
     let input = document.querySelector('input[type="number"]');
     check(input.step === '0.01' && input.min === '0', `${mode}: native validation allows cents and bars negatives`);
     const enter = async text => {
