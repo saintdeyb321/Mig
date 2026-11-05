@@ -1,5 +1,6 @@
-import { Check, Clock3, Info, Minus, Plus, Printer, ReceiptText, ShoppingBag, Trash2 } from 'lucide-react';
-import { Alert, Badge, Button, Card, EmptyState, IconButton, cn } from '../../shared/ui';
+import { Check, Clock3, Minus, Plus, Printer, ReceiptText, ShoppingBag, Trash2 } from 'lucide-react';
+import { useLayoutEffect, useRef } from 'react';
+import { Alert, Badge, Button, Card, IconButton, cn } from '../../shared/ui';
 import { VERIFIED_ATOMIC_LINE_LIMIT } from '../../features/sales/domain/checkoutPolicy.js';
 
 export function CashStatus({ readOnly, session, isExpired = false, expiresAt = null, remainingMinutes = null }) {
@@ -36,15 +37,29 @@ export function SaleStatus({ sale, onPrint, onNew, onVerify, onReview, isProcess
       : pending&&!rejected&&<Button variant="secondary" onClick={onVerify} loading={isProcessing}>Verificar venta</Button>}<Button variant="secondary" disabled={isProcessing} onClick={()=>onPrint(sale)}><Printer />{draft?'Imprimir borrador':pending?'Imprimir registro sin confirmar':'Imprimir ticket'}</Button><Button disabled={isProcessing} onClick={onNew}><Plus />Nueva operación</Button></div>
   </Card>;
 }
+function revealPaymentFocus(pane) {
+  const active = document.activeElement;
+  if (!pane?.contains(active) || !active.matches('input, select, textarea, button')) return;
+  const field = active.getBoundingClientRect(), bounds = pane.getBoundingClientRect();
+  if (field.top < bounds.top + 4) pane.scrollTop -= bounds.top + 4 - field.top;
+  else if (field.bottom > bounds.bottom - 4) pane.scrollTop += field.bottom - bounds.bottom + 4;
+}
 export function Ticket({ cart, total, onQty, onRemove, isProcessing, children, action, drawer = false, catalogChanges = {}, onAcceptChange }) {
+  const paymentRef = useRef(null);
+  useLayoutEffect(() => {
+    // Reflow can move an already focused field without firing another focus event.
+    const observer = new ResizeObserver(() => revealPaymentFocus(paymentRef.current));
+    observer.observe(paymentRef.current);
+    return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => { revealPaymentFocus(paymentRef.current); });
   return <Card className={cn('pos-ticket flex min-h-0 flex-col overflow-hidden p-0 sm:p-0', drawer && 'pos-ticket-drawer')}>
-    <div className="pos-ticket-heading nebula-brand flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 text-white"><h2 className="flex items-center gap-2 font-bold"><ReceiptText aria-hidden="true" className="size-5" />Ticket de venta</h2><Badge className="bg-white/15 text-white">{cart.length} de {VERIFIED_ATOMIC_LINE_LIMIT} productos diferentes</Badge></div>
-    {cart.length >= VERIFIED_ATOMIC_LINE_LIMIT && <p role="status" className="shrink-0 border-b border-line bg-warning-soft px-4 py-1.5 text-xs text-warning">Carrito lleno. Finaliza este ticket.</p>}
-    <div className="pos-ticket-items ui-scroll px-4" role="region" aria-label="Productos del ticket" tabIndex={0}>{cart.length?cart.map(item=><CartItem key={item.id} item={item} onQty={onQty} onRemove={onRemove} disabled={isProcessing} change={catalogChanges[item.id]} onAcceptChange={onAcceptChange} />):<EmptyState icon={ShoppingBag} title="Tu ticket está vacío" description="Selecciona productos del catálogo para comenzar." className="my-3 border-0 py-5" />}</div>
+    <div className="pos-ticket-heading nebula-brand flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 text-white"><h2 className="flex items-center gap-2 font-bold"><ReceiptText aria-hidden="true" className="size-5" />Ticket de venta</h2><Badge className="bg-white/15 text-white">{cart.length} {cart.length === 1 ? 'producto' : 'productos'}</Badge></div>
+    {cart.length >= VERIFIED_ATOMIC_LINE_LIMIT && <p role="status" className="shrink-0 border-b border-line bg-warning-soft px-3 py-1 text-xs text-warning">Llegaste al límite de productos.</p>}
+    <div className="pos-ticket-items ui-scroll px-4" role="region" aria-label="Productos del ticket" tabIndex={0}>{cart.length?cart.map(item=><CartItem key={item.id} item={item} onQty={onQty} onRemove={onRemove} disabled={isProcessing} change={catalogChanges[item.id]} onAcceptChange={onAcceptChange} />):<p className="flex items-center justify-center gap-2 py-4 text-sm text-muted"><ShoppingBag aria-hidden="true" className="size-5 shrink-0" />Tu ticket está vacío</p>}</div>
     <div className="pos-ticket-total flex flex-wrap items-center justify-between gap-2 border-y border-finance-line bg-success-soft px-4 py-3 text-success"><span className="text-sm font-semibold">Total a cobrar</span><strong className="text-2xl font-extrabold tabular-nums">S/ {total.toFixed(2)}</strong></div>
-    <div className="pos-ticket-payment ui-scroll space-y-3 bg-panel p-4" role="region" aria-label="Pago y validación" tabIndex={0}>
+    <div ref={paymentRef} onFocusCapture={() => requestAnimationFrame(() => revealPaymentFocus(paymentRef.current))} className="pos-ticket-payment ui-scroll space-y-3 bg-panel p-4" role="region" aria-label="Pago y validación" tabIndex={0}>
       {children}
-      <details className="text-xs text-muted"><summary className="flex min-h-8 cursor-pointer items-center gap-1"><Info aria-hidden="true" className="size-4" />Límite por ticket</summary><p>Máximo {VERIFIED_ATOMIC_LINE_LIMIT} productos diferentes por operación atómica verificada. Puedes aumentar sus cantidades dentro de los límites.</p></details>
     </div>
     <div className="pos-ticket-actions border-t border-line bg-panel p-4">{action}</div>
   </Card>;

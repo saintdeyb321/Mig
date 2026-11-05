@@ -1,0 +1,120 @@
+import assert from 'node:assert/strict';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { it } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { runBrowserFixture } from './helpers/browserHarness.mjs';
+
+const path = name => fileURLToPath(new URL('../frontend/src/' + name, import.meta.url)).replaceAll('\\', '/');
+const mockHooks = Object.fromEntries([
+  ['features/catalog/hooks/useCategories.js', 'useCategories', 'categories'], ['features/catalog/hooks/useProducts.js', 'useProducts', 'products'],
+  ['features/customers/hooks/useAgenda.js', 'useAgenda', 'agenda'], ['features/settings/hooks/useSettings.js', 'useSettings', 'settings'],
+  ['features/branches/hooks/useBranches.js', 'useBranches', 'branches'], ['features/users/hooks/useUserManagement.js', 'useUserManagement', 'users'],
+  ['features/reports/hooks/useReports.js', 'useReports', 'reports'], ['features/contracts/hooks/useContracts.js', 'useContracts', 'contracts'],
+  ['features/sales/hooks/useSalesHistory.js', 'useSalesHistory', 'history'], ['hooks/useSuperAdmin.js', 'useSuperAdmin', 'admin'],
+  ['features/cash-register/hooks/useCashRegister.js', 'useCashRegister', 'cash'], ['features/backups/hooks/useLocalBackup.js', 'useLocalBackup', 'backup'],
+].map(([file, name, key]) => [path(file), `import {useSyncExternalStore} from 'react';
+  export function ${name}(){useSyncExternalStore(next=>window.__p09.watch('${key}',next),()=>window.__p09.revisions['${key}']??0);return window.__p09.${key};}`]));
+const moduleMocks = { ...mockHooks,
+  [path('core/firebase/client.js')]: 'export const auth={currentUser:{uid:"p09-user"}};export const db={};',
+  [path('features/notifications/hooks/useAlerts.js')]: 'export function useAlerts(){return {alerts:[],canViewNotifications:true};}',
+  [path('features/reports/hooks/useExportSales.js')]: 'import {useSyncExternalStore} from "react"; export function useExportSales(){useSyncExternalStore(next=>window.__p09.watch("export",next),()=>window.__p09.revisions.export??0);return window.__p09.export;}',
+  [path('features/contracts/hooks/useContractImageUrls.js')]: 'export function useContractImageUrls(){return {urls:[],isLoading:false,error:null};}',
+  [path('features/payments/infrastructure/paymentRepository.js')]: 'export const getPaymentsByContract=async()=>window.__p09.ledger;',
+  [path('features/licenses/infrastructure/platformBusinessRepository.js')]: 'export const readPlatformBusiness=async()=>window.__p09.platformDetail;',
+  [path('features/sales/infrastructure/saleTransactions.js')]: `export const saveSaleTransaction=()=>window.__p09.forbidden();
+    export const saveSaleDraftTransaction=()=>window.__p09.forbidden();export const verifyPendingSaleTransaction=async()=>{};
+    export const subscribeSaleAcknowledgement=()=>()=>{};export const reviewDraftSaleTransaction=()=>window.__p09.forbidden();export const confirmDraftSaleTransaction=()=>window.__p09.forbidden();`,
+};
+
+it('P10-06 preserves full payment focus, article space, fixed identity and compact sale cards', {timeout:180000}, async()=>{
+  const index=await readFile(new URL('../frontend/dist/index.html',import.meta.url),'utf8');
+  const css=await readFile(new URL('../frontend/dist'+index.match(/href="([^"]+\.css)"/)[1],import.meta.url),'utf8');
+  // Measured rejected P10 reference at 1440x900, eight fixture products, cash not entered.
+  const before={ticket:{items:327}};
+  const checks=[],metrics=[],captures=[];
+  await runBrowserFixture({htmlFile:new URL('./plan09.browser.html',import.meta.url),fixture:{css},moduleMocks,
+    setupPage:page=>page.send('Fetch.enable',{patterns:[{urlPattern:'https://*',requestStage:'Request'}]}),
+    inspectPage:async page=>{
+      const ev=async(fn,...args)=>{const r=await page.send('Runtime.evaluate',{expression:`(${fn.toString()})(...${JSON.stringify(args)})`,awaitPromise:true,returnByValue:true});assert.ok(!r.exceptionDetails,r.exceptionDetails?.exception?.description);return r.result.value;};
+      const check=(yes,label)=>{assert.ok(yes,label);checks.push(label);};
+      const frames=()=>ev(()=>window.__p09.frames());
+      const size=async(width,height)=>{await page.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<768});await frames();};
+      const key=async(key,code=key,virtual)=>{await page.send('Input.dispatchKeyEvent',{type:'keyDown',key,code,windowsVirtualKeyCode:virtual});await page.send('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode:virtual});await frames();};
+      const show=async(name,role='dueño')=>check(!await ev(async(name,role)=>{await window.__p09.show(name,role);window.scrollTo(0,0);await window.__p09.frames();return window.__p09.renderError;},name,role),'render '+name);
+      const shot=async(name)=>{await new Promise(r=>setTimeout(r,180));const p=await page.send('Page.captureScreenshot',{format:'png'});await mkdir('.release/p10-06-visual',{recursive:true});await writeFile('.release/p10-06-visual/after-'+name+'.png',Buffer.from(p.data,'base64'));captures.push(name);};
+      const cart=async count=>ev(async count=>{
+        const m=window.__p09;m.cash.currentSession={id:'p09-session',serverConfirmed:true,userId:'p09-user'};m.cash.isExpired=false;m.notify('cash');m.setBranch('p09-branch');await m.frames();
+        for(const b of document.querySelectorAll('aside[aria-label="Ticket"] button[aria-label^="Quitar"]')){b.click();await m.frames();}
+        const buttons=[...document.querySelectorAll('.pos-catalog button[title]')];for(const b of buttons.slice(0,count)){b.click();await m.frames();}
+      },count);
+      const openDrawer=async(width)=>{if(width<1024)await ev(async()=>{document.querySelector('.pos-cart-launcher').click();await window.__p09.frames();});};
+      const input=async(index,text)=>ev(async(index,text)=>{const root=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket');const i=root.querySelectorAll('input[inputmode="decimal"]')[index];Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,text);i.dispatchEvent(new Event('input',{bubbles:true}));await window.__p09.frames();},index,text);
+      const focused=async index=>ev(async index=>{
+        const root=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket'),i=root.querySelectorAll('input[inputmode="decimal"]')[index];i.focus();await window.__p09.frames();
+        const field=i.getBoundingClientRect(),p=root.querySelector('.pos-ticket-payment').getBoundingClientRect();return{field:[field.top,field.bottom],payment:[p.top,p.bottom],height:p.height,cta:root.querySelector('.pos-ticket-actions').getBoundingClientRect().bottom,total:root.querySelector('.pos-ticket-total').getBoundingClientRect().bottom,ticketBottom:root.getBoundingClientRect().bottom,viewport:innerHeight,active:document.activeElement===i};
+      },index);
+      const assertFocus=(m,label)=>check(m.active&&m.field[0]>=m.payment[0]-1&&m.field[1]<=m.payment[1]+1&&m.cta<=Math.min(m.viewport,m.ticketBottom)+1&&m.total<=Math.min(m.viewport,m.ticketBottom)+1,`${label}: ${JSON.stringify(m)}`);
+
+      for(const [width,height]of [[1440,900],[1024,768],[390,844],[320,560]]){
+        await size(width,height);await show('pos');
+        for(const count of [0,1,5,8]){
+          await cart(count);if(count===0&&width<1024)await shot('pos-page-'+width);await openDrawer(width);
+          for(const method of ['efectivo','yape','mixto']){
+            await ev(async method=>{const r=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket');const label={efectivo:'Efectivo',yape:'Yape / Plin',mixto:'Mixto'}[method];[...r.querySelectorAll('[aria-label="Método de pago"] button')].find(b=>b.textContent===label).click();await window.__p09.frames();},method);
+            const b=await ev(()=>{const r=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket');return{items:r.querySelector('.pos-ticket-items').clientHeight,payment:r.querySelector('.pos-ticket-payment').clientHeight,counter:r.querySelector('.pos-ticket-heading').textContent,body:r.textContent,scroll:document.documentElement.scrollWidth,viewport:innerWidth};});
+            check(b.counter.includes(`${count} ${count===1?'producto':'productos'}`)&&!b.body.includes('Límite por ticket')&&!b.body.includes('operación atómica verificada'),`simple counter and no permanent technical text ${width}/${count}/${method}`);
+            check(b.scroll<=b.viewport+1,`no horizontal overflow ${width}/${count}/${method}`);
+            if(width===1440&&count===8&&method==='efectivo'){
+              check(b.items>before.ticket.items+32&&b.items>b.payment,`article area grows over rejected P10: ${b.items} vs ${before.ticket.items}`);metrics.push({case:'full-desktop',...b});
+            }
+            if(method==='efectivo'){
+              if(count===0||count===8)await shot(`${count?'pos-full':'pos-open'}-${width}`);
+              await input(0,count?'100.00':'0.00');assertFocus(await focused(0),`cash full focus ${width}/${count}`);
+              check(await ev(()=>{const r=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket'),i=r.querySelector('input[inputmode="decimal"]');return i.getAttribute('aria-describedby').split(' ').some(id=>document.getElementById(id)?.textContent.includes('dos decimales'));}),'cash guidance remains accessible to assistive technology');
+            }else if(method==='mixto'){
+              await input(0,count?'1.00':'0.00');assertFocus(await focused(0),`mixed cash full focus ${width}/${count}`);assertFocus(await focused(1),`mixed digital full focus ${width}/${count}`);
+            }else check(await ev(()=>{const r=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket');return r.querySelector('.pos-ticket-actions').getBoundingClientRect().bottom<=innerHeight+1;}),'digital checkout remains reachable');
+          }
+          if(width<1024)await key('Escape','Escape',27);
+          if(count===8)check(await ev(()=>document.querySelector('button[title="Producto de prueba 8"]').disabled),'ninth distinct product remains blocked');
+        }
+        for(const mode of ['global','closed']){
+          await ev(async mode=>{const m=window.__p09;m.setBranch(mode==='global'?'global':'p09-branch');m.cash.currentSession=mode==='closed'?null:{id:'p09-session',serverConfirmed:true};m.notify('cash');await m.frames();},mode);await openDrawer(width);
+          check(await ev(mode=>{const r=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket');const b=[...r.querySelectorAll('.pos-ticket-actions button')][0];return b.getBoundingClientRect().bottom<=innerHeight+1&&(mode==='global'?b.disabled&&b.textContent==='Modo lectura':!b.disabled&&b.textContent.includes('Abrir caja'));},mode),'read-only/closed protections '+width+'/'+mode);await shot(`pos-${mode}-${width}`);
+          if(width<1024)await key('Escape','Escape',27);
+        }
+        await ev(async()=>{window.__p09.setBranch('p09-branch');window.__p09.cash.currentSession={id:'p09-session',serverConfirmed:true};window.__p09.notify('cash');await window.__p09.frames();});
+        for(const count of [1,3,10]){
+          await ev(count=>{const m=window.__p09;m.history.sales=Array.from({length:count},(_,i)=>({...m.makeSale('p1006-'+i,'confirmed'),cashierName:'Ana Pérez'}));},count);await show('operationalHistory');
+          check(await ev(()=>document.documentElement.scrollWidth<=innerWidth+1),'history fits '+width+'/'+count);
+          const card=await ev(()=>{const c=document.querySelector('article'),h=c.querySelector('header'),a=[...c.querySelectorAll('button')].find(b=>b.textContent==='Anular ticket');return{height:c.getBoundingClientRect().height,width:c.clientWidth,action:a.getBoundingClientRect().width,head:h.innerText,body:c.innerText,bg:getComputedStyle(c).backgroundColor,columns:getComputedStyle(document.querySelector('.history-grid')).gridTemplateColumns.split(' ').length,excel:document.querySelector('.export-toolbar').clientHeight};});
+          check(card.action<card.width*.65&&card.head.includes('S/ 5.00')&&card.head.includes('04 nov')&&card.head.includes('p1006-0')&&card.body.includes('Ana Pérez'),`date/amount/ID/responsible and discrete void action ${width}: ${JSON.stringify(card)}`);
+          check(card.bg==='rgb(255, 255, 255)'&&card.height<310,'neutral compact card rather than lavender header and oversized footer');
+          check(card.columns===(width>=1280?3:width>=1024?2:1),'legible columns '+width);
+          if(width===1440){check(card.excel<100,'Excel is a single compact desktop band');metrics.push({case:'history-'+count,...card});}
+          await shot(`history-${count}-${width}`);
+        }
+        await ev(()=>{const m=window.__p09;m.history.sales=[m.makeSale('draft','draft_offline'),m.makeSale('uncertain','submitted_uncertain'),{...m.makeSale('voided','confirmed'),voided:true,voidReason:'Motivo conservado'},{...m.makeSale('voidPending','confirmed'),voidCheckPending:true}];});await show('operationalHistory');
+        check(await ev(()=>['Sin cobrar','Por comprobar','Venta anulada','Comprobando anulación','Motivo conservado','Revisión local'].every(s=>document.querySelector('.sales-history').textContent.includes(s))),'financial exceptions and secondary rejection history intact');await shot(`history-exceptions-${width}`);
+      }
+      await size(1280,560);await show('pos');
+      const sidebar=await ev(async()=>{const a=document.querySelector('[aria-label="Navegación de escritorio"]'),head=a.querySelector('.sidebar-identity'),foot=a.querySelector('.sidebar-footer'),list=a.querySelector('.sidebar-scroll');const top=head.getBoundingClientRect().top,bottom=foot.getBoundingClientRect().bottom;list.scrollTop=500;await window.__p09.frames();return{start:top,end:head.getBoundingClientRect().top,footBefore:bottom,footAfter:foot.getBoundingClientRect().bottom,scroll:list.scrollTop,headInside:list.contains(head),footInside:list.contains(foot)};});
+      check(sidebar.start===sidebar.end&&sidebar.footBefore===sidebar.footAfter&&sidebar.scroll>0&&!sidebar.headInside&&!sidebar.footInside,'only modules scroll; identity and logout remain fixed: '+JSON.stringify(sidebar));metrics.push({case:'sidebar',...sidebar});await shot('sidebar-scroll-1280');
+      await ev(()=>{const nav=document.querySelector('.sidebar-scroll');nav.scrollTop=0;[...nav.querySelectorAll('button')].at(-1).focus();});
+      check(await ev(()=>{const a=document.querySelector('[aria-label="Navegación de escritorio"]'),r=document.activeElement.getBoundingClientRect(),n=a.querySelector('.sidebar-scroll').getBoundingClientRect();return r.top>=n.top-1&&r.bottom<=n.bottom+1&&a.querySelector('.sidebar-identity').getBoundingClientRect().top===0;}),'keyboard focus scrolls the module list without shifting identity');
+      await show('pos');await cart(8);
+      for(const height of [560,600,700,900]){
+        await size(1280,height);await input(0,'40.00');const m=await focused(0);assertFocus(m,'desktop payment focus at '+height);metrics.push({case:'desktop-focus-'+height,...m});await shot('desktop-focus-'+height);
+      }
+      await size(390,700);await openDrawer(390);await input(0,'40.00');
+      for(const [width,height]of [[390,390],[320,390],[768,360]]){
+        await size(width,height);const m=await focused(0);assertFocus(m,`keyboard-sized viewport ${width}/${height}`);metrics.push({case:'focus-'+width,...m});await shot('payment-focus-'+width);
+      }
+      await size(320,560);await input(0,'0.001');
+      check(await ev(()=>{const r=document.querySelector('[role="dialog"] .pos-ticket');return Boolean(r.querySelector('[role="alert"]'))&&r.querySelector('.pos-ticket-actions button').disabled;}),'monetary validation error still visible and charge blocked');await shot('invalid-payment-320');
+      await ev(()=>window.__p09.stop());
+    }});
+  await writeFile('.release/p10-06-visual/after-layout.json',JSON.stringify(metrics,null,2));
+  console.log(JSON.stringify({checks:checks.length,captures:captures.length}));
+});
+

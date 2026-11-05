@@ -50,7 +50,7 @@ export default function SalesHistory({ user }) {
     isProcessing={isProcessing} canOperate={!isStale && !error} verificarPendiente={verificarPendiente} verificarAnulacion={verificarAnulacion}
     onReviewDraft={setDraft} activeBranchId={activeBranchId} setSaleToCancel={sale => { setReason(''); setSelected({ sale, scopeKey }); }} />;
   if (isLoading) return <LoadingState>Cargando movimientos…</LoadingState>;
-  return <div className="sales-history mx-auto w-full min-w-0 max-w-7xl space-y-4">
+  return <div className="sales-history mx-auto w-full min-w-0 max-w-7xl space-y-3">
     <header className="flex flex-wrap items-center justify-between gap-2">
       <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight"><History aria-hidden="true" className="size-5 text-primary" />Historial de ventas</h1>
       <p className="text-xs text-muted" role="status">{isStale ? 'Actualizando con el servidor…' : updatedAt ? `Actualizado ${new Date(updatedAt).toLocaleTimeString('es-PE')}` : ''}</p>

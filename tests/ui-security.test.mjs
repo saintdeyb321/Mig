@@ -224,6 +224,7 @@ describe('Hosting policy and conservative cleanup', () => {
       'docs/PLAN-08-CORRECCION-FLUJOS-MIGAPOS.md', 'docs/PROMPT-CODEX-PLAN-08-MIGAPOS.md',
       'docs/PLAN-09-REFAC-UX-GALAXIA-MIGAPOS.md', 'docs/PROMPT-CODEX-PLAN-09-MIGAPOS.md', 'docs/PLAN-09-DESIGN-SYSTEM-MIGAPOS.md', 'docs/PROMPT-CODEX-CORRECCION-P09-07.md', 'docs/AUDITORIA-PLAN09-2026-11-04.md',
       'docs/AUDITORIA-P09-07-2026-11-04.md', 'docs/PROMPT-CODEX-P09-08.md',
-      'docs/PLAN-10-UX-OPERATIVA-POS-HISTORIAL.md', 'docs/PROMPT-CODEX-INICIO-PLAN-10.md', 'docs/PLAN-10-RESULTADOS.md'].includes(path)));
+      'docs/PLAN-10-UX-OPERATIVA-POS-HISTORIAL.md', 'docs/PROMPT-CODEX-INICIO-PLAN-10.md', 'docs/PLAN-10-RESULTADOS.md',
+      'docs/PLAN-10-P10-06-CORRECCION-UX-OPERATIVA.md', 'docs/PROMPT-CODEX-CORRECCION-P10-06.md', 'docs/PLAN-10-CORRECCION-P10-06-RESULTADOS.md'].includes(path)));
   });
 });

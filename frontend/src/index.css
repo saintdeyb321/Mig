@@ -43,15 +43,16 @@
   .dialog-form-surface > div:last-child > fieldset { height: 100%; }
   .cash-confirm-dialog { height: min(42rem, calc(var(--ui-viewport-height, 100dvh) - 1.5rem)); }
   .pos-ticket { height: 100%; max-height: calc(var(--ui-viewport-height, 100dvh) - 3rem); }
-  .pos-ticket-items { min-height: 3.5rem; flex: 1 1 35%; overflow-y: auto; overscroll-behavior: contain; }
-  .pos-ticket-payment { min-height: 0; flex: 0 1 auto; max-height: 42%; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 0.25rem; }
+  .pos-ticket-items { min-height: 1.75rem; flex: 1 1 0; overflow-y: auto; overscroll-behavior: contain; }
+  /* Reserve enough visible room for a complete focused control; articles yield first. */
+  .pos-ticket-payment { min-height: 5rem; flex: 0 1 auto; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 0.25rem; }
   .pos-ticket-payment :is(input, select, textarea, button) { scroll-margin-block: 0.25rem; }
   .pos-ticket-total, .pos-ticket-actions { flex: 0 0 auto; }
   .pos-ticket-desktop { position: sticky; top: 0; height: 100%; min-height: 0; }
   .pos-ticket-drawer { flex: 1; max-height: 100%; min-height: 0; }
   .pos-cart-launcher { bottom: calc(4.5rem + env(safe-area-inset-bottom) + 0.75rem); }
   .app-bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
-  .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 18.5rem), 1fr)); gap: 1rem; align-items: start; }
+  .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 18.5rem), 1fr)); gap: 0.75rem; align-items: start; }
 }
 
 /* These viewport adaptations must also override per-view utility padding. */
@@ -67,8 +68,17 @@
   .dialog-heading-icon { display: none; }
   .pos-ticket-heading { padding: 0.5rem 0.75rem; }
   .pos-ticket-items { min-height: 1.75rem; }
-  .pos-ticket-payment { max-height: 38%; padding: 0.5rem 0.75rem; }
+  .pos-ticket-payment { padding: 0.5rem 0.75rem; }
   .pos-ticket-total { padding: 0.375rem 0.75rem; }
   .pos-ticket-total strong { font-size: 1.25rem; line-height: 1.75rem; }
   .pos-ticket-actions { padding: 0.5rem 0.75rem; }
+}
+@media (max-height: 420px) {
+  /* Keep the drawer description available to assistive technology at keyboard height. */
+  .dialog-drawer:has(.pos-ticket) .dialog-heading p { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
+  .pos-ticket-heading { padding-block: 0.125rem; }
+  .pos-ticket > p[role="status"] { padding-block: 0.125rem; line-height: 1rem; }
+  .pos-ticket-items { min-height: 1rem; }
+  .pos-ticket-total { padding-block: 0.25rem; }
+  .pos-ticket-actions > button { min-height: 2.75rem; padding-block: 0.5rem; }
 }
