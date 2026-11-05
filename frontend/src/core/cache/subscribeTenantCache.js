@@ -1,21 +1,27 @@
+import { isServerSnapshot } from '../session/accessState.js';
 import { readTenantCache, syncTenantCache } from './tenantCache.js';
 import { createSubscriptionScope } from '../../shared/utils/subscriptionScope.js';
 
 export function subscribeTenantCache(database, tableName, businessId, subscribe, onData, onError, project = value => value) {
   const scope = createSubscriptionScope();
   let receivedSnapshot = false;
-  readTenantCache(database, tableName, businessId).then(records => {
-    if (!receivedSnapshot && records.length) scope.guard(onData)(records);
-  }).catch(error => console.warn('Error leyendo cache:', error));
+  const local = readTenantCache(database, tableName, businessId).then(records => {
+    if (!receivedSnapshot && records.length) scope.guard(onData)(records, { fromCache: true, hasPendingWrites: false });
+    return records;
+  }).catch(error => { console.warn('Error leyendo cache:', error); return []; });
 
-  const unsubscribe = subscribe(async records => {
-    receivedSnapshot = true;
+  const fail = error => { receivedSnapshot = true; scope.next(); scope.guard(onError)(error); };
+  const unsubscribe = subscribe(async (records, metadata) => {
+    const confirmed = isServerSnapshot(metadata);
+    if (confirmed || records.length) receivedSnapshot = true;
     const token = scope.next();
     if (!scope.isCurrent(token)) return;
     try {
-      const data = await project(records);
+      const cached = !confirmed && !records.length ? await local : [];
+      const data = await project(cached.length ? cached : records);
       if (!scope.isCurrent(token)) return;
-      onData(data);
+      onData(data, metadata);
+      if (!confirmed) return;
       await syncTenantCache(database, tableName, businessId, data)
         .catch(error => console.warn('Error guardando cache:', error));
     } catch (error) {
@@ -24,6 +30,6 @@ export function subscribeTenantCache(database, tableName, businessId, subscribe,
         onError(error);
       }
     }
-  }, scope.guard(onError));
+  }, fail);
   return () => { scope.close(); unsubscribe(); };
 }

@@ -1,122 +1,56 @@
+import { useAssistedAccess } from '../core/session/AssistedAccessContext';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { memo, useMemo } from 'react';
+import { LogOut, MapPin, UserRound } from 'lucide-react';
 import { brand } from '../config/brand';
-// src/layouts/AppLayout.jsx
-import React, { useMemo, memo } from 'react';
 import BottomNav from '../BottomNav';
 import NetworkBadge from '../components/NetworkBadge';
+import BranchSelector from '../components/BranchSelector';
 import { NotificationBell } from '../components/NotificationBell';
 import { useTenantData } from '../features/branches/context/TenantContext';
 import { useAlerts } from '../features/notifications/hooks/useAlerts';
 import { isBusinessSession } from '../core/session/context.js';
-import '../styles/layout.css';
+import { Badge, Button, IconButton } from '../shared/ui';
+import { useVisualViewport } from '../shared/ui/useVisualViewport';
 
 const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
-
-  // Extraemos las sedes del contexto
+  useVisualViewport();
   const { businessBranches = [] } = useTenantData() ?? {};
   const notifications = useAlerts(user);
-
-  const fullName = useMemo(() => {
-    if (!user) return 'Usuario del Sistema';
-    return (user.firstName && user.lastName)
-      ? `${user.firstName} ${user.lastName}`
-      : 'Usuario del Sistema';
-  }, [user]);
-
-  // Calculamos el nombre de la sede asignada al cajero
-  const assignedBranchName = useMemo(() => {
-    if (user?.role !== 'cajero' || !user?.branchId) return null;
-    const branch = businessBranches?.find(b => b.id === user.branchId);
-    return branch ? branch.name : 'Sede Desconocida';
-  }, [user, businessBranches]);
-
-  return (
-    <div className="app-layout">
-
-      {/* ============================== */}
-      {/* SIDEBAR (Solo Desktop)         */}
-      {/* ============================== */}
-      <aside className="app-sidebar">
-        <div className="brand-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
-            <h2
-              className="brand-title"
-              style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0, userSelect: 'none', fontSize: '1.4rem' }}
-            >
-              <span>{brand.symbol}</span> {brand.name}
-            </h2>
-            <NotificationBell {...notifications} isDesktop={true} />
-          </div>
-
-          <div className="user-info-sidebar">
-            <span className="user-icon">👤</span>
-            <div className="user-details" style={{ minWidth: 0 }}>
-              <p className="user-email" title={fullName}>
-                {fullName}
-              </p>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                <span className="user-badge" style={{ margin: 0 }}>{user?.role}</span>
-                <NetworkBadge />
-              </div>
-
-              {(user?.role === 'cajero' && assignedBranchName) && (
-                <div className="assigned-branch-desktop ">
-                  <span>📍</span> {assignedBranchName}
-                </div>
-              )}
-
-            </div>
-          </div>
+  const assisted = useAssistedAccess(), online = useNetworkStatus();
+  const fullName = useMemo(() => user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : 'Usuario del sistema', [user]);
+  const assignedBranchName = useMemo(() => user?.role === 'cajero' && user?.branchId
+    ? businessBranches.find(branch => branch.id === user.branchId)?.name || 'Sede desconocida' : null, [user, businessBranches]);
+  const canSelectBranch = isBusinessSession(user) && user?.role === 'dueño';
+  return <div className="min-h-dvh min-w-0 bg-canvas text-ink">
+    <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-40 focus:rounded-xl focus:bg-panel focus:p-4 focus:text-primary focus:shadow-float">Ir al contenido</a>
+    <aside className="nebula-brand fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/10 text-white shadow-xl shadow-sidebar/10 lg:flex xl:w-68" aria-label="Navegación de escritorio">
+      <div className="sidebar-identity shrink-0 space-y-3 px-4 pb-4 pt-5">
+        <div className="flex items-center gap-3"><img src={brand.logo} alt="" className="size-9 rounded-xl bg-white object-contain p-1" /><div><p className="text-lg font-bold tracking-tight">{brand.name}</p></div></div>
+        <div className="flex min-h-11 items-center justify-between gap-3 border-b border-white/10" aria-label="Conectividad y notificaciones"><NetworkBadge dark /><NotificationBell user={user} {...notifications} isDesktop /></div>
+        <div className="flex items-start gap-3 py-2">
+          <span className="rounded-lg bg-white/10 p-2"><UserRound className="size-4" /></span>
+          <div className="min-w-0"><p className="text-sm font-semibold wrap-anywhere">{fullName}</p><p className="mt-0.5 text-xs capitalize text-sidebar-muted">{user?.role}</p></div>
         </div>
-
-
-        <BottomNav current={tab} setCurrent={setTab} user={user} assignedBranchName={assignedBranchName} isDesktop={true} />
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '15px' }}>
-          <button onClick={handleLogout} className="btn-logout-sidebar" style={{ width: '100%' }}>
-            🚪 Cerrar Sesión
-          </button>
-        </div>
-      </aside>
-
-      {/* ============================== */}
-      {/* ÁREA DE CONTENIDO PRINCIPAL    */}
-      {/* ============================== */}
-      <div className="app-main-content">
-
-        <header className="mobile-header">
-          <h2 className="mobile-brand" style={{ display: 'flex', alignItems: 'center', gap: '8px', userSelect: 'none' }}>
-            <span>{brand.symbol}</span> {brand.name}
-          </h2>
-
-          <div className="mobile-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <NotificationBell {...notifications} isDesktop={false} />
-            <NetworkBadge />
-            <span className="user-badge mobile-badge">{user?.role}</span>
-            <button onClick={handleLogout} className="mobile-logout-btn">
-              🚪 <span>Salir</span>
-            </button>
-          </div>
-        </header>
-
-        <main className="content-area">
-          {isBusinessSession(user) && <p role="status" className="card">
-            Spark: ventas online (máximo 2 productos), contratos nuevos y cierre operativo. Cola cifrada conservada; sincronización offline y anulación POS pausadas. Cierres pendientes de conciliación.
-          </p>}
-          {children}
-        </main>
+        {canSelectBranch && <BranchSelector dark />}
+        {assignedBranchName && <p className="flex items-center gap-2 text-xs text-sidebar-muted"><MapPin className="size-4 shrink-0" />{assignedBranchName}</p>}
       </div>
-
-      {/* ============================== */}
-      {/* BOTTOM NAV (Solo Celular)      */}
-      {/* ============================== */}
-
-      <nav className="app-bottom-nav">
-        <BottomNav current={tab} setCurrent={setTab} user={user} assignedBranchName={assignedBranchName} isDesktop={false} />
-      </nav>
-
+      <div className="sidebar-scroll min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 pb-4 focus-visible:outline-2 focus-visible:outline-focus" tabIndex={0} role="region" aria-label="Lista de módulos"><p className="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-muted">Espacio de trabajo</p><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop /></div>
+      <div className="sidebar-footer shrink-0 border-t border-white/10 p-4">
+        <Button variant="ghost" className="w-full justify-start text-sidebar-muted hover:bg-white/10 hover:text-white" onClick={handleLogout}><LogOut />Cerrar sesión</Button>
+      </div>
+    </aside>
+    <div className="min-w-0 lg:pl-64 xl:pl-68">
+      <header className="sticky top-0 z-20 space-y-3 border-b border-line bg-panel px-4 py-3 shadow-xs lg:hidden">
+        <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2"><img src={brand.logo} alt="" className="size-8 rounded-lg object-contain" /><span className="font-bold tracking-tight">{brand.name}</span></div>
+          <div className="flex shrink-0 items-center gap-1"><NetworkBadge /><NotificationBell user={user} {...notifications} /><IconButton label="Cerrar sesión" onClick={handleLogout}><LogOut /></IconButton></div>
+        </div>
+        {canSelectBranch && <BranchSelector />}
+        {assignedBranchName && <Badge><MapPin className="size-3" />{assignedBranchName}</Badge>}
+      </header>
+      <main id="main-content" tabIndex={-1} className="mx-auto min-w-0 max-w-[1680px] space-y-6 px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:p-6 xl:p-8">{(!online || assisted) && <p role="status" className="rounded-xl border border-warning/20 bg-warning-soft px-4 py-3 text-sm text-warning">{!online ? 'Trabajando sin conexión. Los pendientes del dispositivo se conservan. Puedes consultar datos locales; las operaciones online siguen bloqueadas.' : 'Confirmando el acceso. Puedes consultar datos locales; espera la verificación para registrar operaciones.'}</p>}{children}</main>
     </div>
-  );
+    <div className="app-bottom-nav fixed inset-x-0 bottom-0 z-30 border-t border-line bg-panel shadow-[0_-4px_24px_rgb(33_26_67/0.06)] lg:hidden"><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop={false} /></div>
+  </div>;
 });
-
 export default AppLayout;

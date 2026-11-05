@@ -1,59 +1,41 @@
-// src/modules/ExportSales.jsx
-import React, { useState, memo } from "react"
-import { useExportSales } from "../features/reports/hooks/useExportSales"
+import { ChevronDown, Download, FileSpreadsheet } from 'lucide-react';
+import FirestoreQueryError from '../components/FirestoreQueryError';
+import { Select, Button } from '../shared/ui';
+import { useState, useId, memo } from 'react';
+import { useExportSales } from '../features/reports/hooks/useExportSales';
 
 function ExportSales({ user }) {
-  // 🚀 FIX: Ahora controlamos el RANGO DE TIEMPO, no el tipo de reporte.
-  const [timeFilter, setTimeFilter] = useState("mes")
-  const { isExporting, exportData } = useExportSales(user)
-
+  const [timeFilter, setTimeFilter] = useState('hoy');
+  const periodId = useId();
+  const noticeId = useId();
+  const { isExporting, queryError, exportData } = useExportSales(user);
   const handleExport = async () => {
-    if (isExporting) return
-    // Pasamos un string genérico 'all' (ya que el hook hace todo) y el filtro de tiempo
-    await exportData("all", timeFilter)
-  }
-
-  return (
-    <div className="card fade-in export-card">
-      <div className="export-header">
-        <h3 className="export-title">
-          <span>📊</span>
-          Exportar Reportes Contables
-        </h3>
-        {/* 🚀 Ajuste de texto: Agregamos "Sucursales" para presumir la nueva función */}
-        <p className="export-description">
-          Descarga un Excel multi-hoja (Resumen, Ventas, Productos y Sucursales) listo para auditoría.
-        </p>
-      </div>
-
-      <div className="export-controls">
-        <div className="export-select-wrapper">
-          {/* 🚀 Selector de Calendario Estricto */}
-          <select
-            className="export-select"
-            value={timeFilter}
-            onChange={(e) => setTimeFilter(e.target.value)}
-            disabled={isExporting}
-          >
-            <option value="hoy">📅 Reporte Diario (Detallado por Ticket)</option>
-            <option value="semana">📅 Reporte Semanal (Detallado por Ticket)</option>
-            <option value="mes">📅 Reporte Mensual (Resumen por Día)</option>
-            <option value="todo">📅 Reporte Anual (Resumen por Día)</option>
-          </select>
-        </div>
-
-        <div className="export-button-wrapper">
-          <button
-            onClick={handleExport}
-            disabled={isExporting}
-            className={`export-button ${isExporting ? "disabled" : ""}`}
-          >
-            {isExporting ? "⏳ Generando Excel..." : "📥 Descargar Excel"}
-          </button>
-        </div>
-      </div>
+    if (isExporting) return;
+    await exportData('all', timeFilter);
+  };
+  return <section aria-label="Exportación Excel" className="export-toolbar flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-panel p-3">
+    <div className="grid min-w-0 flex-1 basis-96 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+      <p className="flex items-center gap-2 text-sm font-bold"><FileSpreadsheet aria-hidden="true" className="size-5 text-success" />Excel</p>
+      <label className="sr-only" htmlFor={periodId}>Período de exportación</label>
+      <Select id={periodId} value={timeFilter} onChange={event => setTimeFilter(event.target.value)} disabled={isExporting} className="min-w-0">
+        <option value="hoy">Hoy · detalle de tickets</option>
+        <option value="semana">Semana · detalle de tickets</option>
+        <option value="mes">Mes · resumen diario</option>
+        <option value="todo">Año · resumen diario</option>
+      </Select>
+      <Button onClick={handleExport} disabled={isExporting} aria-describedby={noticeId} className="col-span-2 sm:col-span-1" type="button" variant="success" loading={isExporting}>
+        <Download aria-hidden="true" />{isExporting ? 'Generando Excel…' : 'Descargar Excel'}
+      </Button>
     </div>
-  )
+    <p id={noticeId} className="sr-only">La descarga consulta los movimientos del período seleccionado.</p>
+    <details className="group text-xs text-muted open:basis-full"><summary className="flex min-h-8 cursor-pointer items-center gap-2 font-semibold">Detalles de exportación<ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open:rotate-180" /></summary>
+      <div className="space-y-2 border-t border-line pt-2">
+        <p>La descarga consulta los movimientos del período seleccionado.</p>
+        <p>Excel con resumen, ventas, productos y sucursales para revisión operativa. Incluye ventas, compensaciones POS y pagos del período. Una compensación contable no acredita entrega física de efectivo ni devolución digital.</p>
+        <p>Hoy y semana detallan cada movimiento; mes y año resumen por día. Máximo 10 000 movimientos y 500 contratos históricos. Si falta información o se excede el límite, se solicita reducir el período y no se descarga un Excel parcial.</p>
+      </div>
+    </details>
+    {queryError && <div className="basis-full"><FirestoreQueryError error={queryError} area="reports" user={user} commercial /></div>}
+  </section>;
 }
-
-export default memo(ExportSales)
+export default memo(ExportSales);

@@ -46,7 +46,7 @@ async function connectCDP(url, onEvent) {
   }) };
 }
 
-export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, mockPng, verifyDownload, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
+export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, inspectPage, mockPng, verifyDownload, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
   const browser = findBrowser();
   const root = fileURLToPath(new URL('../../frontend/', import.meta.url));
   const workspace = fileURLToPath(new URL('../../', import.meta.url));
@@ -57,7 +57,9 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
   const server = await createServer({ root, configFile: false, envFile: false, clearScreen: false, logLevel: 'error',
     esbuild: { jsx: 'automatic' },
     resolve: { alias: { react: resolve(root, 'node_modules/react'), 'react-dom': resolve(root, 'node_modules/react-dom'), 'xlsx-js-style': resolve(root, 'node_modules/xlsx-js-style'), firebase: resolve(root, 'node_modules/firebase') } },
-    optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom/client', ...(mockPng || firebaseSdk ? ['xlsx-js-style'] : []), ...(firebaseSdk ? ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'] : [])] },
+    // Discovery is disabled for isolated/mocked fixtures. Radix also imports the CJS
+    // react-dom root (portals/flushSync), so prebundle it alongside react-dom/client.
+    optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom', 'react-dom/client', ...(mockPng || firebaseSdk ? ['xlsx-js-style'] : []), ...(firebaseSdk ? ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'] : [])] },
     // saleModel imports the shared Functions domain outside frontend/. Default Vite fs policy denies it.
     server: { host: '127.0.0.1', port: 0, hmr: false, headers, fs: { allow: [workspace] } }, plugins: [{ name: 'isolated-indexeddb-test',
       resolveId: id => id === 'virtual:browser-fixture' ? '\0browser-fixture' : Object.hasOwn(moduleMocks, id) ? id : undefined,
@@ -97,7 +99,7 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
     // Edge may exit its launcher successfully and hand the isolated profile to a new process.
     child.on('exit', code => { if (!finished && code !== 0) complete({ ok: false, error: `Browser exited before reporting (${code}). ${stderr.slice(-1200)}` }); });
     let debug;
-    const startup = Date.now() + 10000;
+    const startup = Date.now() + 20000;
     while (!finished && Date.now() < startup) {
       try { debug = (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).trim().split(/\r?\n/); break; } catch { await delay(100); }
     }
@@ -135,6 +137,7 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
     }
     const result = await report;
     assert.equal(result.ok, true, result.error);
+    if (inspectPage) await inspectPage(page, result);
     if (mockPng) {
       let workbook;
       for (let attempt = 0; attempt < 20; attempt++) {

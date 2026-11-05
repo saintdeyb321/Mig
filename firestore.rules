@@ -45,6 +45,18 @@ service cloud.firestore {
       return activeUser() && currentRole() == 'superadmin';
     }
 
+    // Explicit platform data access: one tenant, read-only, ten minutes of server time.
+    function platformDataScope(businessId) {
+      let access = get(/databases/$(database)/documents/platform_data_access/$(request.auth.uid));
+      return superadmin() && access != null && access.data.businessId != 'platform-admin'
+        && access.data.actorId == request.auth.uid && access.data.businessId == businessId
+        && access.data.purpose in ['export', 'inventory'] && access.data.createdAt is timestamp
+        && access.data.createdAt <= request.time && request.time < access.data.createdAt + duration.value(10, 'm');
+    }
+    function platformDataReader() {
+      return superadmin() && platformDataScope(resource.data.businessId);
+    }
+
     function hasTenant(data) {
       return data.get('businessId', null) is string && data.businessId.size() > 0;
     }
@@ -85,7 +97,8 @@ service cloud.firestore {
     function branchBelongsTo(businessId, branchId) {
       return branchId is string && branchId.size() > 0 && branchId != 'global'
         && exists(/databases/$(database)/documents/branches/$(branchId))
-        && get(/databases/$(database)/documents/branches/$(branchId)).data.businessId == businessId;
+        && get(/databases/$(database)/documents/branches/$(branchId)).data.businessId == businessId
+        && get(/databases/$(database)/documents/branches/$(branchId)).data.get('status', null) == 'activo';
     }
 
     function verifiedEmail() {
@@ -181,18 +194,24 @@ service cloud.firestore {
 
     function validProduct() {
       let data = request.resource.data;
+      let costValue = data.get('cost', 0);
       return data.keys().hasAll(['businessId', 'name', 'price', 'stock'])
         && hasTenant(data) && data.name is string && data.name.size() > 0
         && data.name.size() <= 200 && data.price is number && data.price >= 0 && data.price <= 1000000000
         && data.price == math.round(data.price * 100) / 100.0
-        && data.get('cost', 0) is number && data.get('cost', 0) >= 0 && data.get('cost', 0) <= 1000000000
-        && data.get('cost', 0) == math.round(data.get('cost', 0) * 100) / 100.0
+        && costValue is number && costValue >= 0 && costValue <= 1000000000
+        && costValue == math.round(costValue * 100) / 100.0
         && data.get('status', 'activo') in ['activo', 'inactivo'] && data.stock is map;
     }
 
     function stockValue(stock, key, businessId) {
-      return stock[key] is int && stock[key] >= 0 && stock[key] <= 1000000000
-        && get(/databases/$(database)/documents/branches/$(key)).data.businessId == businessId;
+      let value = stock[key];
+      return value is int && value >= 0 && value <= 1000000000
+        && ((resource != null && resource.data.stock.get(key, -1) == value) || activeStockBranch(key, businessId));
+    }
+    function activeStockBranch(key, businessId) {
+      let branch = get(/databases/$(database)/documents/branches/$(key));
+      return branch != null && branch.data.businessId == businessId && branch.data.get('status', null) == 'activo';
     }
     function stockSlot(stock, keys, index, businessId) {
       return keys.size() <= index || stockValue(stock, keys[index], businessId);
@@ -219,7 +238,7 @@ service cloud.firestore {
     }
 
     function permittedFinancialResource() {
-      return superadmin() || (sameTenantResource() && branchAccess(resource.data.get('branchId', null)));
+      return superadmin() ? platformDataReader() : (sameTenantResource() && branchAccess(resource.data.get('branchId', null)));
     }
 
     function protectedFinancialAlert(data, alertId) {
@@ -244,7 +263,7 @@ service cloud.firestore {
     function validProvisionReceipt(id) {
       let d = request.resource.data;
       return superadmin() && d.operation == 'createTenant' && d.keys().hasOnly(['operationId', 'actorId', 'operation', 'businessId', 'branchId',
-          'ownerEmail', 'businessName', 'firstName', 'lastName', 'months', 'expiry', 'createdAt'])
+          'ownerEmail', 'businessName', 'firstName', 'lastName', 'months', 'maxActiveBranches', 'maxRegisteredBranches', 'expiry', 'createdAt'])
         && d.actorId == request.auth.uid && id == request.auth.uid + '_' + d.operationId
         && d.operationId.matches('^[A-Za-z0-9_-]{16,100}$') && d.businessId == d.operationId
         && d.branchId == 'main_' + d.businessId && d.businessId != 'platform-admin'
@@ -255,6 +274,7 @@ service cloud.firestore {
         && d.ownerEmail.matches('^[^ /@]+@[^ /@]+[.][^ /@]+$') && d.ownerEmail == d.ownerEmail.lower()
         && d.ownerEmail != currentUser().email && d.ownerEmail != request.auth.token.get('email', '')
         && d.months is int && d.months >= 1 && d.months <= 120
+        && validBranchLimits(d)
         && d.createdAt == request.time && d.expiry is timestamp && d.expiry > request.time
         && d.expiry <= request.time + duration.value(d.months * 32, 'd')
         && !exists(/databases/$(database)/documents/tenants/$(d.businessId))
@@ -277,14 +297,16 @@ service cloud.firestore {
       let op = provisioning(d);
       return newProvision(d) && id == op.businessId
         && d == { 'businessId': id, 'businessName': op.businessName, 'status': 'activa', 'tenantStatus': 'active',
-          'expiry': op.expiry, 'operationId': op.operationId, 'createdAt': request.time };
+          'expiry': op.expiry, 'maxActiveBranches': op.maxActiveBranches, 'maxRegisteredBranches': op.maxRegisteredBranches,
+          'activeBranchIds': [op.branchId], 'registeredBranchIds': [op.branchId],
+          'branchQuotaVersion': 1, 'registeredBranchQuotaVersion': 1, 'operationId': op.operationId, 'createdAt': request.time };
     }
     function provisionBranch(id) {
       let d = request.resource.data;
       let op = provisioning(d);
       return newProvision(d) && id == op.branchId
         && d == { 'businessId': op.businessId, 'name': 'Sede Principal', 'address': 'Dirección por definir',
-          'phone': '', 'status': 'activo', 'sparkCashVersion': 1, 'operationId': op.operationId, 'createdAt': request.time };
+          'phone': '', 'status': 'activo', 'sparkCashVersion': 1, 'branchLifecycleVersion': 1, 'operationId': op.operationId, 'createdAt': request.time };
     }
     function provisionSettings(id) {
       let d = request.resource.data;
@@ -343,13 +365,104 @@ service cloud.firestore {
             && d.keys().hasOnly(['operationId', 'actorId', 'operation', 'businessId', 'newStatus', 'createdAt'])));
     }
 
+    function validBranchLimits(data) {
+      return data.maxActiveBranches is int && data.maxActiveBranches >= 1 && data.maxActiveBranches <= 100
+        && data.maxRegisteredBranches is int && data.maxRegisteredBranches >= data.maxActiveBranches
+        && data.maxRegisteredBranches <= 200;
+    }
+    function configuredQuota(license) {
+      let active = license.activeBranchIds;
+      let registered = license.registeredBranchIds;
+      return license.get('branchQuotaVersion', 0) == 1 && license.get('registeredBranchQuotaVersion', 0) == 1
+        && validBranchLimits(license)
+        && active is list && active.size() >= 1 && active.size() <= license.maxActiveBranches
+        && active.toSet().size() == active.size()
+        && registered is list && registered.size() >= 1 && registered.size() <= license.maxRegisteredBranches
+        && registered.toSet().size() == registered.size() && registered.hasAll(active);
+    }
+    // Only SuperAdmin may set limits or attest a first historical inventory.
+    // Registered IDs are permanent: neither owners nor later quota edits release them.
+    function quotaLicenseChange(id) {
+      let d = request.resource.data;
+      let op = getAfter(/databases/$(database)/documents/platform_operations/$(request.auth.uid + '_' + d.quotaOperationId)).data;
+      return superadmin() && businessUnchanged() && id == d.businessId && configuredQuota(d)
+        && d.diff(resource.data).affectedKeys().hasOnly(['maxActiveBranches', 'maxRegisteredBranches', 'activeBranchIds', 'registeredBranchIds',
+          'branchQuotaVersion', 'registeredBranchQuotaVersion', 'quotaOperationId', 'branchQuotaUpdatedAt'])
+        && (resource.data.get('branchQuotaVersion', 0) != 1 || d.activeBranchIds == resource.data.activeBranchIds)
+        && (resource.data.get('registeredBranchQuotaVersion', 0) != 1 || d.registeredBranchIds == resource.data.registeredBranchIds)
+        && op.regularization == (resource.data.get('branchQuotaVersion', 0) != 1 || resource.data.get('registeredBranchQuotaVersion', 0) != 1)
+        && d.branchQuotaUpdatedAt == request.time && op.createdAt == request.time
+        && op.operation == 'setTenantBranchQuota' && op.actorId == request.auth.uid && op.businessId == id
+        && op.maxActiveBranches == d.maxActiveBranches && op.maxRegisteredBranches == d.maxRegisteredBranches
+        && op.activeBranchIds == d.activeBranchIds && op.registeredBranchIds == d.registeredBranchIds
+        && !exists(/databases/$(database)/documents/platform_operations/$(request.auth.uid + '_' + d.quotaOperationId));
+    }
+    function quotaReceipt(id) {
+      let d = request.resource.data;
+      let license = getAfter(/databases/$(database)/documents/licenses/$(d.businessId)).data;
+      return superadmin() && id == request.auth.uid + '_' + d.operationId && d.actorId == request.auth.uid
+        && d.operationId.matches('^[A-Za-z0-9_-]{16,100}$') && d.operation == 'setTenantBranchQuota'
+        && d.keys().hasOnly(['actorId', 'businessId', 'operationId', 'operation', 'maxActiveBranches', 'maxRegisteredBranches',
+          'activeBranchIds', 'registeredBranchIds', 'regularization', 'createdAt'])
+        && d.createdAt == request.time && d.regularization is bool && configuredQuota(license)
+        && license.quotaOperationId == d.operationId && license.branchQuotaUpdatedAt == request.time
+        && license.maxActiveBranches == d.maxActiveBranches && license.maxRegisteredBranches == d.maxRegisteredBranches
+        && license.activeBranchIds == d.activeBranchIds && license.registeredBranchIds == d.registeredBranchIds;
+    }
+    function branchInventoryChange(id, data, wasActive, creating) {
+      let before = get(/databases/$(database)/documents/licenses/$(data.businessId)).data;
+      let after = getAfter(/databases/$(database)/documents/licenses/$(data.businessId)).data;
+      return configuredQuota(before) && configuredQuota(after)
+        && after.branchQuotaBranchId == id && after.branchQuotaUpdatedAt == request.time
+        && (creating ? (!before.registeredBranchIds.hasAny([id])
+            && after.registeredBranchIds == before.registeredBranchIds.concat([id])
+            && (data.status == 'activo' ? after.activeBranchIds == before.activeBranchIds.concat([id])
+              : (data.status == 'inactivo' && after.activeBranchIds == before.activeBranchIds)))
+          : (before.registeredBranchIds.hasAny([id]) && after.registeredBranchIds == before.registeredBranchIds
+            && (wasActive ? (before.activeBranchIds.hasAny([id]) && data.status == 'inactivo'
+                && after.activeBranchIds == before.activeBranchIds.removeAll([id]))
+              : (!before.activeBranchIds.hasAny([id]) && data.status == 'activo'
+                && after.activeBranchIds == before.activeBranchIds.concat([id])))));
+    }
+    function branchQuotaChange(id) {
+      let d = request.resource.data;
+      let key = d.branchQuotaBranchId;
+      let before = get(/databases/$(database)/documents/branches/$(key));
+      let after = getAfter(/databases/$(database)/documents/branches/$(key));
+      return tenantManager() && id == currentBusiness()
+        && d.diff(resource.data).affectedKeys().hasOnly(['activeBranchIds', 'registeredBranchIds', 'branchQuotaBranchId', 'branchQuotaUpdatedAt'])
+        && after != null && after.data.businessId == id
+        && (before == null || before.data.businessId == id)
+        && branchInventoryChange(key, after.data, before != null && before.data.get('status', null) == 'activo', before == null);
+    }
+    function branchCreation(id) {
+      let d = request.resource.data;
+      return tenantCreator() && validNamedRecord()
+        && d.sparkCashVersion == 1 && d.branchLifecycleVersion == 1
+        && d.keys().hasOnly(['businessId', 'name', 'address', 'phone', 'status', 'yapeQrUrl', 'createdAt', 'updatedAt', 'sparkCashVersion', 'branchLifecycleVersion'])
+        && branchInventoryChange(id, d, false, true);
+    }
+    function branchUpdate(id) {
+      let d = request.resource.data;
+      return tenantManager() && businessUnchanged() && validNamedRecord()
+        && d.diff(resource.data).affectedKeys().hasOnly(['name', 'address', 'phone', 'status', 'yapeQrUrl', 'updatedAt'])
+        && (d.status == resource.data.get('status', null) ||
+          (d.status == 'activo' ? branchInventoryChange(id, d, false, false) :
+            (d.status == 'inactivo' && resource.data.get('branchLifecycleVersion', 0) == 1
+              && !exists(/databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, id)))
+              && branchInventoryChange(id, d, true, false))));
+    }
+
     function cashLockId(businessId, branchId) {
       return hashing.sha256('["' + businessId + '","' + branchId + '"]').toHexString().lower();
     }
     function withinCashShift(profile) {
+      return profile.role == 'dueño' || assignedCashShift(profile);
+    }
+    function assignedCashShift(profile) {
       let start = profile.get('shiftStart', null);
       let end = profile.get('shiftEnd', null);
-      return profile.role == 'dueño' || start == null || end == null || cashShiftHours(start, end);
+      return start == null || end == null || cashShiftHours(start, end);
     }
     function cashShiftHours(start, end) {
       let first = int(start.split(':')[0]) * 60 + int(start.split(':')[1]);
@@ -361,9 +474,9 @@ service cloud.firestore {
       let profile = currentUser();
       let branch = get(/databases/$(database)/documents/branches/$(branchId)).data;
       return activeUser() && profile.role in ['dueño', 'cajero'] && profile.businessId == businessId
-        && businessId != 'platform-admin' && businessId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && businessId != 'platform-admin' && branchId != 'global' && businessId.matches('^[A-Za-z0-9_-]{1,128}$')
         && branchId.matches('^[A-Za-z0-9_-]{1,128}$') && tenantEnabled(businessId)
-        && branch.businessId == businessId && branch.get('status', 'activo') == 'activo'
+        && branch.businessId == businessId && branch.get('status', null) == 'activo'
         && branch.get('sparkCashVersion', null) == 1 && withinCashShift(profile)
         && (profile.role == 'dueño' || profile.branchId == branchId);
     }
@@ -371,8 +484,9 @@ service cloud.firestore {
       let d = request.resource.data;
       let lock = getAfter(/databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, d.branchId))).data;
       return cashActor(d.businessId, d.branchId) && sessionId.matches('^[A-Za-z0-9_-]{16,100}$')
-        && d.keys().hasOnly(['businessId', 'branchId', 'userId', 'cashierName', 'status', 'openingAmount', 'openingNote', 'openedAt', 'syncedAt', 'runtime'])
+        && d.keys().hasOnly(['businessId', 'branchId', 'userId', 'cashierName', 'status', 'openingAmount', 'openingNote', 'openedAt', 'syncedAt', 'runtime', 'durationHours'])
         && d.userId == request.auth.uid && d.status == 'open' && d.runtime == 'spark'
+        && d.durationHours is int && d.durationHours == 10
         && d.openingAmount is number && d.openingAmount >= 0 && d.openingAmount <= 1000000000
         && d.openingAmount == math.round(d.openingAmount * 100) / 100.0
         && d.openingNote is string && d.openingNote.size() <= 2000 && d.cashierName is string && d.cashierName.size() <= 250
@@ -388,7 +502,8 @@ service cloud.firestore {
         && d.userId == request.auth.uid && d.status == 'open' && d.runtime == 'spark' && d.updatedAt == request.time
         && !exists(/databases/$(database)/documents/cash_sessions/$(d.sessionId))
         && session.businessId == d.businessId && session.branchId == d.branchId && session.userId == d.userId
-        && session.status == 'open' && session.openedAt == request.time && session.runtime == 'spark';
+        && session.status == 'open' && session.openedAt == request.time && session.syncedAt == request.time && session.runtime == 'spark'
+        && session.durationHours is int && session.durationHours == 10;
     }
 
     function cashClosing(sessionId) {
@@ -424,15 +539,18 @@ service cloud.firestore {
       let session = getAfter(/databases/$(database)/documents/cash_sessions/$(d.sessionId)).data;
       let lock = getAfter(/databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, d.branchId))).data;
       return authenticated() && user.get('status', 'activo') == 'activo' && user.role in ['dueño', 'cajero']
-        && user.businessId == d.businessId && d.userId == request.auth.uid && d.businessId != 'platform-admin'
+        && user.businessId == d.businessId && d.userId == request.auth.uid && d.businessId != 'platform-admin' && d.branchId != 'global'
         && (user.role == 'dueño' || user.branchId == d.branchId) && withinCashShift(user)
         && d.businessId.matches('^[A-Za-z0-9_-]{1,128}$') && d.branchId.matches('^[A-Za-z0-9_-]{1,128}$')
         && license.businessId == d.businessId && license.status == 'activa' && license.expiry > request.time
         && license.get('tenantStatus', 'active') == 'active' && license.get('maintenanceJobId', null) == null
         && (tenant == null || (tenant.data.status == 'active' && tenant.data.get('maintenanceJobId', null) == null))
-        && branch.businessId == d.businessId && branch.get('status', 'activo') == 'activo' && branch.sparkCashVersion == 1
+        && branch.businessId == d.businessId && branch.get('status', null) == 'activo' && branch.sparkCashVersion == 1
         && session.userId == d.userId && session.businessId == d.businessId && session.branchId == d.branchId
         && session.status == 'open' && session.runtime == 'spark' && session.openedAt <= request.time
+        // Only historical sessions may lack durationHours. A client timestamp never extends a new session.
+        && (!session.keys().hasAny(['durationHours']) || (session.durationHours is int && session.durationHours == 10
+          && request.time < session.openedAt + duration.value(10, 'h')))
         && lock.sessionId == d.sessionId && lock.userId == d.userId && lock.status == 'open';
     }
     function line(d, index) {
@@ -440,7 +558,7 @@ service cloud.firestore {
       let product = getAfter(/databases/$(database)/documents/products/$(item.id)).data;
       return item == {'id': d.productIds[index], 'name': product.name, 'category': product.get('category', ''),
           'qty': item.qty, 'price': product.price, 'cost': product.get('cost', 0)}
-        && item.qty is int && item.qty > 0 && item.qty <= 1000000
+        && item.qty is int && item.qty > 0 && item.qty <= 1000
         && product.businessId == d.businessId && product.get('status', 'activo') == 'activo'
         && product.price >= 0 && product.get('cost', 0) >= 0
         && product.posLastSaleId == d.saleId && d.stockVersions[item.id] == product.posStockVersion[d.branchId];
@@ -450,9 +568,12 @@ service cloud.firestore {
     function cost(d, index) { return d.items.size() <= index ? 0 : math.round(d.items[index].cost * 100) * d.items[index].qty; }
     function cents(value) { return value is number && value >= 0 && value <= 1000000000 && value == math.round(value * 100) / 100.0; }
     function validPayment(d) {
-      return d.payment == 'efectivo'
-        ? cents(d.amountPaid) && d.amountPaid >= d.total && d.change == (math.round(d.amountPaid * 100) - math.round(d.total * 100)) / 100.0
-        : d.amountPaid == d.total && d.change == 0 && (d.payment == 'yape' || (d.payment == 'mixto' && mixedPayment(d)));
+      // New-sale commercial limits only; receipt reads and compensations keep their historical policy.
+      let paid = d.amountPaid;
+      // Exact nonnegative cash difference (or zero digitally) also bounds change by the received amount.
+      return paid <= 50000 && (d.payment == 'efectivo'
+        ? cents(paid) && paid >= d.total && d.change == (math.round(paid * 100) - math.round(d.total * 100)) / 100.0
+        : paid == d.total && d.change == 0 && (d.payment == 'yape' || (d.payment == 'mixto' && mixedPayment(d))));
     }
     function mixedPayment(d) {
       let split = d.splitPayments;
@@ -462,8 +583,29 @@ service cloud.firestore {
     }
     function sale(id) {
       let d = request.resource.data;
-      let total = price(d, 0) + price(d, 1);
-      let totalCost = cost(d, 0) + cost(d, 1);
+      return d.get('atomicProtocol', 1) == 2 ? groupedSaleReceipt(d, id) : legacySale(id);
+    }
+    function groupedSaleReceipt(d, id) {
+      return saleContext(d) && d.keys().hasOnly(['saleId', 'localId', 'idempotencyKey', 'version', 'businessId', 'branchId', 'userId', 'sessionId',
+          'items', 'total', 'totalCost', 'grossProfit', 'payment', 'amountPaid', 'change', 'splitPayments', 'createdAt', 'queuedAt', 'origin', 'cashierName', 'productIds', 'stockVersions', 'confirmedAt', 'status', 'atomicProtocol'])
+        && d.saleId == id && d.localId == id && d.idempotencyKey == id && d.version == 1
+        && d.origin == 'online' && d.status == 'confirmed' && d.confirmedAt == request.time
+        && d.createdAt is string && d.createdAt.size() <= 40 && d.queuedAt is string && d.queuedAt.size() <= 40
+        && d.cashierName is string && d.cashierName.size() <= 250
+        && d.items is list && d.items.size() >= 1 && d.items.size() <= 8
+        && d.stockVersions is map && d.stockVersions.keys().hasOnly(d.productIds)
+        && d.productIds is list && d.productIds.size() == d.items.size() && d.productIds.toSet().size() == d.items.size()
+        && d.total > 0 && d.total <= 50000 && d.totalCost <= 1000000000
+        && d.grossProfit == (math.round(d.total * 100) - math.round(d.totalCost * 100)) / 100.0 && validPayment(d)
+        && groupedSale(d);
+    }
+    function legacySale(id) {
+      let d = request.resource.data;
+      // Identical canonical sums; avoid evaluating four optional-slot helpers on every legacy ticket.
+      let first = d.items[0];
+      let second = d.items.size() > 1 ? d.items[1] : {'price': 0, 'cost': 0, 'qty': 0};
+      let total = math.round(first.price * 100) * first.qty + math.round(second.price * 100) * second.qty;
+      let totalCost = math.round(first.cost * 100) * first.qty + math.round(second.cost * 100) * second.qty;
       return saleContext(d) && d.keys().hasOnly(['saleId', 'localId', 'idempotencyKey', 'version', 'businessId', 'branchId', 'userId', 'sessionId',
           'items', 'total', 'totalCost', 'grossProfit', 'payment', 'amountPaid', 'change', 'splitPayments', 'createdAt', 'queuedAt', 'origin', 'cashierName', 'productIds', 'stockVersions', 'confirmedAt', 'status'])
         && d.saleId == id && d.localId == id && d.idempotencyKey == id && d.version == 1
@@ -473,10 +615,29 @@ service cloud.firestore {
         && d.items is list && d.items.size() >= 1 && d.items.size() <= 2
         && d.stockVersions is map && d.stockVersions.keys().hasOnly(d.productIds)
         && d.productIds is list && d.productIds.size() == d.items.size() && d.productIds.toSet().size() == d.items.size()
-        && slot(d, 0) && slot(d, 1)
-        && d.total > 0 && d.total <= 1000000000 && d.total == total / 100.0
+        && line(d, 0) && slot(d, 1)
+        && d.total > 0 && d.total <= 50000 && d.total == total / 100.0
         && d.totalCost <= 1000000000 && d.totalCost == totalCost / 100.0
         && d.grossProfit == (total - totalCost) / 100.0 && validPayment(d);
+    }
+    function groupedSale(d) {
+      let first = getAfter(/databases/$(database)/documents/pos_sale_groups/$(d.saleId + '_0')).data;
+      let second = d.items.size() > 4 ? getAfter(/databases/$(database)/documents/pos_sale_groups/$(d.saleId + '_1')).data : {'totalCents': 0, 'costCents': 0, 'createdAt': request.time};
+      return first.createdAt == request.time && second.createdAt == request.time
+        && d.total == (first.totalCents + second.totalCents) / 100.0 && d.totalCost == (first.costCents + second.costCents) / 100.0;
+    }
+    function saleGroup(id) {
+      let g = request.resource.data;
+      let d = getAfter(/databases/$(database)/documents/sales/$(g.saleId)).data;
+      let start = g.index * 4;
+      return authenticated() && g.index in [0, 1] && id == g.saleId + (g.index == 0 ? '_0' : '_1')
+        && g.keys().hasOnly(['businessId', 'branchId', 'userId', 'saleId', 'index', 'totalCents', 'costCents', 'createdAt'])
+        && g.userId == request.auth.uid && g.userId == d.userId && g.businessId == d.businessId && g.branchId == d.branchId
+        && d.atomicProtocol == 2 && d.confirmedAt == request.time && g.createdAt == request.time && d.items.size() > start
+        && !exists(/databases/$(database)/documents/sales/$(g.saleId))
+        && slot(d, start) && slot(d, start + 1) && slot(d, start + 2) && slot(d, start + 3)
+        && g.totalCents == price(d, start) + price(d, start + 1) + price(d, start + 2) + price(d, start + 3)
+        && g.costCents == cost(d, start) + cost(d, start + 1) + cost(d, start + 2) + cost(d, start + 3);
     }
     function debitAt(d, productId, index) {
       return d.items.size() > index && d.items[index].id == productId
@@ -486,7 +647,7 @@ service cloud.firestore {
       let d = getAfter(/databases/$(database)/documents/sales/$(request.resource.data.posLastSaleId)).data;
       return request.auth != null && d.userId == request.auth.uid && d.businessId == resource.data.businessId
         && d.confirmedAt == request.time && !exists(/databases/$(database)/documents/sales/$(d.saleId))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastSaleId'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastSaleId', 'posSaleLineIndex'])
         && request.resource.data.posStockVersion is map
         && request.resource.data.posStockVersion.diff(resource.data.get('posStockVersion', {})).affectedKeys().hasOnly([d.branchId])
         && request.resource.data.posStockVersion[d.branchId] is int
@@ -494,9 +655,62 @@ service cloud.firestore {
         && request.resource.data.posStockVersion[d.branchId] == resource.data.get('posStockVersion', {}).get(d.branchId, 0) + 1
         && request.resource.data.stock.diff(resource.data.stock).affectedKeys().hasOnly([d.branchId])
         && request.resource.data.stock[d.branchId] is int && request.resource.data.stock[d.branchId] >= 0
-        && (debitAt(d, productId, 0) || debitAt(d, productId, 1));
+        && (debitAt(d, productId, 0) || debitAt(d, productId, 1)
+          || (d.get('atomicProtocol', 1) == 2 && request.resource.data.posSaleLineIndex is int
+            && request.resource.data.posSaleLineIndex >= 2 && request.resource.data.posSaleLineIndex < d.items.size()
+            && debitAt(d, productId, request.resource.data.posSaleLineIndex)));
     }
 
+    function voidGroupPresent(v, source) {
+      return getAfter(/databases/$(database)/documents/pos_void_groups/$(v.saleId + '_0')).data.createdAt == request.time
+        && (source.items.size() <= 4 || getAfter(/databases/$(database)/documents/pos_void_groups/$(v.saleId + '_1')).data.createdAt == request.time);
+    }
+    function saleVoid(id) {
+      let v = request.resource.data;
+      let source = get(/databases/$(database)/documents/sales/$(id)).data;
+      let cash = source.payment == 'efectivo' ? source.total : source.payment == 'mixto' ? source.splitPayments.efectivo : 0;
+      // saleContext binds the current owner/cashier, assigned branch, own live cash and server clock.
+      return saleContext(v) && id == v.saleId
+        && source.atomicProtocol == 2 && source.status == 'confirmed' && source.businessId == v.businessId && source.branchId == v.branchId
+        && source.items.size() >= 1 && source.items.size() <= 8
+        && v.keys().hasOnly(['businessId', 'branchId', 'userId', 'sessionId', 'saleId', 'reason', 'amount', 'cashAmount', 'digitalAmount', 'items', 'stockVersions', 'protocol', 'authority', 'occurredAt'])
+        && v.items == source.items
+        && v.reason is string && v.reason.size() >= 5 && v.reason.size() <= 1000
+        && v.amount == -source.total && v.cashAmount == -cash && v.digitalAmount == -(math.round(source.total * 100) - math.round(cash * 100)) / 100.0
+        && v.protocol == 1 && v.authority == 'pos-compensation' && v.occurredAt == request.time
+        && v.stockVersions is map && v.stockVersions.keys().hasOnly(source.productIds) && voidGroupPresent(v, source);
+    }
+    function voidSlot(v, source, index) {
+      let product = source.items.size() <= index ? {} : getAfter(/databases/$(database)/documents/products/$(source.items[index].id)).data;
+      return source.items.size() <= index || (product.posLastVoidSaleId == v.saleId
+        && product.businessId == v.businessId && v.stockVersions[source.items[index].id] == product.posStockVersion[v.branchId]);
+    }
+    function voidGroup(id) {
+      let g = request.resource.data;
+      let v = getAfter(/databases/$(database)/documents/pos_voids/$(g.saleId)).data;
+      let source = get(/databases/$(database)/documents/sales/$(g.saleId)).data;
+      let start = g.index * 4;
+      return authenticated() && g.index is int && g.index in [0, 1] && id == g.saleId + (g.index == 0 ? '_0' : '_1')
+        && g == {'businessId': v.businessId, 'branchId': v.branchId, 'userId': request.auth.uid, 'saleId': v.saleId, 'index': g.index, 'createdAt': request.time}
+        && v.userId == request.auth.uid && v.occurredAt == request.time && source.items.size() > start
+        && !exists(/databases/$(database)/documents/pos_voids/$(g.saleId))
+        && voidSlot(v, source, start) && voidSlot(v, source, start + 1) && voidSlot(v, source, start + 2) && voidSlot(v, source, start + 3);
+    }
+    function credit(productId) {
+      let v = getAfter(/databases/$(database)/documents/pos_voids/$(request.resource.data.posLastVoidSaleId)).data;
+      let source = get(/databases/$(database)/documents/sales/$(v.saleId)).data;
+      let index = request.resource.data.posVoidLineIndex;
+      return authenticated() && v.userId == request.auth.uid && v.businessId == resource.data.businessId && v.occurredAt == request.time
+        && !exists(/databases/$(database)/documents/pos_voids/$(v.saleId))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastVoidSaleId', 'posVoidLineIndex'])
+        && index is int && index >= 0 && index < source.items.size() && source.items[index].id == productId
+        && request.resource.data.stock.diff(resource.data.stock).affectedKeys().hasOnly([v.branchId])
+        && request.resource.data.stock[v.branchId] is int && request.resource.data.stock[v.branchId] >= 0 && request.resource.data.stock[v.branchId] <= 9007199254740991
+        && request.resource.data.stock[v.branchId] == resource.data.stock[v.branchId] + source.items[index].qty
+        && request.resource.data.posStockVersion.diff(resource.data.get('posStockVersion', {})).affectedKeys().hasOnly([v.branchId])
+        && request.resource.data.posStockVersion[v.branchId] is int && request.resource.data.posStockVersion[v.branchId] > 0 && request.resource.data.posStockVersion[v.branchId] <= 9007199254740991
+        && request.resource.data.posStockVersion[v.branchId] == resource.data.get('posStockVersion', {}).get(v.branchId, 0) + 1;
+    }
     function projectedContractStatus(balance, previous) {
       return previous in ['entregado', 'entregado_con_deuda']
         ? (balance == 0 ? 'entregado' : 'entregado_con_deuda')
@@ -614,23 +828,23 @@ service cloud.firestore {
     match /licenses/{licenseId} {
       allow read: if superadmin() || (activeUser() && licenseId == currentBusiness());
       allow create: if provisionLicense(licenseId);
-      allow update: if licenseChange(licenseId);
+      // Dispatch by authority to avoid evaluating administrative receipts for owner reservations.
+      allow update: if superadmin() ? (licenseChange(licenseId) || quotaLicenseChange(licenseId)) : branchQuotaChange(licenseId);
       allow delete: if false;
     }
 
     match /branches/{branchId} {
-      allow read: if tenantReader();
-      allow create: if (tenantCreator() && validNamedRecord()
-        && request.resource.data.sparkCashVersion == 1
-        && request.resource.data.keys().hasOnly(['businessId', 'name', 'address', 'phone', 'status', 'yapeQrUrl', 'createdAt', 'updatedAt', 'sparkCashVersion'])) || provisionBranch(branchId);
-      allow update: if tenantManager() && businessUnchanged() && validNamedRecord()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'address', 'phone', 'status', 'yapeQrUrl', 'updatedAt']);
+      allow get: if (resource == null && owner() && tenantEnabled(currentBusiness()))
+        || (superadmin() ? platformDataReader() : tenantReader());
+      allow list: if superadmin() ? platformDataReader() : tenantReader();
+      allow create: if branchCreation(branchId) || provisionBranch(branchId);
+      allow update: if branchUpdate(branchId);
       // Inactivate instead: financial history may reference this branch forever.
       allow delete: if false;
     }
 
     match /categories/{categoryId} {
-      allow read: if tenantReader();
+      allow read: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if tenantCreator() && validNamedRecord() && request.resource.data.keys().hasOnly(['businessId', 'name', 'status']);
       allow update: if tenantManager() && businessUnchanged() && validNamedRecord()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'status']);
@@ -638,11 +852,13 @@ service cloud.firestore {
     }
 
     match /products/{productId} {
-      allow read: if tenantReader();
+      allow read: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if tenantCreator() && validProduct() && validStock(request.resource.data.stock)
         && request.resource.data.keys().hasOnly(['businessId', 'name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'createdAt', 'updatedAt']);
-      allow update: if debit(productId) || (businessUnchanged() && tenantManager() && validProduct()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'updatedAt'])
+      allow update: if (request.resource.data.diff(resource.data).affectedKeys().hasAny(['posLastSaleId']) && debit(productId))
+        || (request.resource.data.diff(resource.data).affectedKeys().hasAny(['posLastVoidSaleId']) && credit(productId))
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'updatedAt'])
+        && businessUnchanged() && tenantManager() && validProduct()
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['stock']) || validStock(request.resource.data.stock)));
       allow delete: if tenantManager() && resource.data.get('posStockVersion', {}).size() == 0;
     }
@@ -652,6 +868,22 @@ service cloud.firestore {
       allow get: if activeUser() && (resource == null || permittedFinancialResource());
       allow list: if permittedFinancialResource();
       allow create: if sale(saleId);
+      allow update, delete: if false;
+    }
+    match /pos_sale_groups/{groupId} {
+      allow read: if permittedFinancialResource();
+      allow create: if saleGroup(groupId);
+      allow update, delete: if false;
+    }
+    match /pos_voids/{saleId} {
+      allow get: if activeUser() && (resource == null || permittedFinancialResource());
+      allow list: if permittedFinancialResource();
+      allow create: if saleVoid(saleId);
+      allow update, delete: if false;
+    }
+    match /pos_void_groups/{groupId} {
+      allow read: if permittedFinancialResource();
+      allow create: if voidGroup(groupId);
       allow update, delete: if false;
     }
 
@@ -670,8 +902,8 @@ service cloud.firestore {
     }
     match /contracts/{contractId} {
       // Cleanup can confirm an absent new contract; existing documents remain tenant scoped.
-      allow get: if activeUser() && (resource == null || tenantReader());
-      allow list: if tenantReader();
+      allow get: if activeUser() && (resource == null || tenantReader() || platformDataReader());
+      allow list: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if createSparkContract(contractId);
       allow update: if updateSparkContract(contractId);
       allow delete: if false;
@@ -685,7 +917,7 @@ service cloud.firestore {
     }
 
     match /customers/{customerId} {
-      allow read: if tenantReader();
+      allow read: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if tenantCreator() && validNamedRecord()
         && request.resource.data.phone is string && request.resource.data.phone.size() <= 50
         && request.resource.data.keys().hasOnly(['businessId', 'name', 'phone', 'createdAt', 'updatedAt']);
@@ -753,21 +985,35 @@ service cloud.firestore {
         ? getAfter(/databases/$(database)/documents/sales/$(n.sourceId)).data
         : getAfter(/databases/$(database)/documents/payments/$(n.sourceId)).data;
       return authenticated() && n.sourceType in ['sale', 'payment'] && id == n.sourceType + '_' + n.sourceId
-        && n.keys().hasOnly(['businessId', 'branchId', 'userId', 'sourceType', 'sourceId', 'authority', 'readAt', 'title', 'message', 'actorName', 'createdAt'])
-        && n.businessId == source.businessId && n.branchId == source.branchId && n.userId == request.auth.uid && source.userId == n.userId
-        && n.createdAt == request.time && n.readAt == null && n.authority == 'informational'
-        && n.actorName == source.cashierName && n.title == 'Operación registrada'
-        && n.message == 'Aviso informativo. Consulta el movimiento confirmado; este aviso no certifica importes.'
+        // Exact equality retains every field/value check with a smaller expression budget.
+        && source.userId == request.auth.uid && n == {'businessId': source.businessId, 'branchId': source.branchId,
+          'userId': request.auth.uid, 'sourceType': n.sourceType, 'sourceId': n.sourceId,
+          'authority': 'informational', 'readAt': null, 'actorName': source.cashierName, 'createdAt': request.time,
+          'title': 'Operación registrada', 'message': 'Aviso informativo. Consulta el movimiento confirmado; este aviso no certifica importes.'}
         && (n.sourceType == 'sale' ? source.confirmedAt == request.time && !exists(/databases/$(database)/documents/sales/$(n.sourceId))
           : source.createdAt == request.time && !exists(/databases/$(database)/documents/payments/$(n.sourceId)));
     }
+    function financialNoticeRead(id) {
+      let n = request.resource.data;
+      let source = n.sourceType == 'pos-void' ? get(/databases/$(database)/documents/pos_voids/$(n.sourceId)).data
+        : get(/databases/$(database)/documents/cash_sessions/$(n.sourceId)).data;
+      return owner() && tenantEnabled(currentBusiness()) && n.sourceType in ['pos-void', 'cash-close']
+        && id == 'read_' + n.sourceType + '_' + n.sourceId + '_' + request.auth.uid
+        && n == {'businessId': currentBusiness(), 'userId': request.auth.uid, 'sourceType': n.sourceType,
+          'sourceId': n.sourceId, 'authority': 'read-marker', 'readAt': request.time}
+        && source.businessId == currentBusiness()
+        && (n.sourceType == 'pos-void' ? source.authority == 'pos-compensation' && source.protocol == 1 && source.saleId == n.sourceId && source.occurredAt is timestamp
+          : source.runtime == 'spark' && source.status in ['closed','closed_with_discrepancy'] && source.closedAt is timestamp);
+    }
     match /notifications/{notificationId} {
-      allow read: if activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid && tenantEnabled(currentBusiness());
+      // An absent per-owner acknowledgement discloses no financial document.
+      allow get: if owner() && tenantEnabled(currentBusiness()) && resource == null;
+      allow read: if (activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid && tenantEnabled(currentBusiness())) || platformDataReader();
       allow update: if activeUser() && sameTenantResource() && resource.data.userId == request.auth.uid
         && tenantEnabled(currentBusiness())
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
         && request.resource.data.readAt is timestamp && request.resource.data.readAt == request.time;
-      allow create: if operationNotice(notificationId);
+      allow create: if request.resource.data.get('authority', '') == 'read-marker' ? financialNoticeRead(notificationId) : operationNotice(notificationId);
       allow delete: if false;
     }
 
@@ -781,13 +1027,28 @@ service cloud.firestore {
       allow create: if provisionTenant(businessId);
       allow update, delete: if false;
     }
-    match /platform_jobs/{jobId}/{document=**} {
-      allow read: if superadmin();
+    match /platform_data_access/{actorId} {
+      allow read, delete: if superadmin() && actorId == request.auth.uid;
+      allow create, update: if superadmin() && actorId == request.auth.uid
+        && request.resource.data.keys().hasOnly(['actorId', 'businessId', 'purpose', 'accessId', 'createdAt'])
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.businessId is string && request.resource.data.businessId.size() > 0
+        && request.resource.data.businessId.size() <= 128 && request.resource.data.businessId != 'platform-admin'
+        && request.resource.data.purpose in ['export', 'inventory']
+        && request.resource.data.accessId.matches('^[A-Za-z0-9_-]{16,100}$')
+        && request.resource.data.createdAt == request.time;
+    }
+    match /platform_jobs/{jobId} {
+      allow read: if platformDataReader();
       allow write: if false;
+      match /{document=**} {
+        allow read: if superadmin() && platformDataScope(get(/databases/$(database)/documents/platform_jobs/$(jobId)).data.businessId);
+        allow write: if false;
+      }
     }
     match /platform_operations/{id} {
       allow read: if superadmin();
-      allow create: if validProvisionReceipt(id) || licenseReceipt(id);
+      allow create: if validProvisionReceipt(id) || licenseReceipt(id) || quotaReceipt(id);
       allow update, delete: if false;
     }
     match /owner_email_claims/{email} {

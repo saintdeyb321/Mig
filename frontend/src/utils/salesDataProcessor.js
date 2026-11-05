@@ -33,6 +33,14 @@ export function processSales(sales, branchesMap = {}, payments = [], scope = {})
     groups.push({ branchId: sale.branchId, timestamp: toMillisSafe(sale.createdAt), id: sale.id ?? sale.saleId, rows });
   }
   const uniquePayments = new Map(reportRows(payments, scope).map(payment => [payment.id, payment]));
+  for (const row of new Map(reportRows(scope.voids ?? [], scope).map(value => [value.id, value])).values()) {
+    const lines = row.items.map((item, index) => detail({ Fecha: index ? '' : visibleDay(reportDay(row.occurredAt)), Hora: index ? '' : reportTime(row.occurredAt),
+      Ticket: index ? '' : `DEVOLUCIÓN POS: ${row.saleId}`, Estado: index ? '' : 'COMPENSACIÓN POS',
+      Pago: index ? '' : `Efectivo ${-row.cashAmount} · Yape ${-row.digitalAmount}`, Producto: item.name, Cantidad: -item.qty,
+      'Precio Unit.': item.price, Subtotal: -amount(item.qty * item.price), Observaciones: index ? '' : `${row.reason} · UID: ${row.userId}` }));
+    lines.push(detail({ 'Precio Unit.': 'TOTAL DEVOLUCIÓN ➔', 'Total movimiento (S/)': row.amount }));
+    groups.push({ branchId: row.branchId, timestamp: toMillisSafe(row.occurredAt), id: `void:${row.id}`, rows: lines });
+  }
   for (const payment of uniquePayments.values()) groups.push({ branchId: payment.branchId, timestamp: toMillisSafe(payment.occurredAt), id: payment.id,
     rows: [detail({ Fecha: visibleDay(reportDay(payment.occurredAt)), Hora: reportTime(payment.occurredAt),
       Ticket: `PEDIDO: ${payment.contractNumber ?? payment.sourceId}`, Estado: payment.type === 'refund' ? 'REEMBOLSO' : 'PAGO PEDIDO',

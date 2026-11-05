@@ -29,7 +29,7 @@ try {
   const applied = [], identity = { uid, businessId, role: 'cajero', branchId: 'branch' };
   const queue = createSaleQueue({ store: dexieSaleStore(db), encrypt, decrypt, withLock: createQueueLock(db), online: () => true,
     syncSessions: () => { throw Error('Legacy cash flush must remain paused'); }, afterFlush: () => { throw Error('Reconciliation must remain paused'); },
-    apply: async sale => { applied.push(sale.saleId); return { stockVersions: { p: 1 }, syncedAt: new Date().toISOString() }; } });
+    apply: async sale => {applied.push(sale.saleId);return {status: 'APPLIED',saleId: sale.saleId,stockVersions: { p: 1 },syncedAt: new Date().toISOString()};} });
   const sale = id => ({ localId: id, businessId, branchId: 'branch', userId: uid, sessionId: 'session', items: [{ id: 'p', name: 'Pan', qty: 1, price: 1, cost: 0 }], total: 1, payment: 'efectivo', amountPaid: 1, change: 0, createdAt: '2026-10-23T12:00:00.000Z' });
   await queue.enqueue({ ...sale('preserved-offline'), origin: 'offline' }, identity);
   const before = (await db.sales.get('preserved-offline')).data;

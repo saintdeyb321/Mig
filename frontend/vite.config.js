@@ -3,6 +3,7 @@ import { defineConfig, loadEnv } from 'vite'
 import process from 'node:process'
 import { validateWebEnvironment } from './src/config/environments.js'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path' 
 import { brand } from './src/config/brand.js'
@@ -15,6 +16,7 @@ export default defineConfig(({ mode }) => {
     { name: 'global-brand', transformIndexHtml: html => html
       .replaceAll('__BRAND_NAME__', brand.name).replaceAll('__BRAND_LOGO__', brand.logo).replaceAll('__THEME_COLOR__', brand.themeColor) },
     react(),
+    tailwindcss(),
     VitePWA({
       registerType: 'prompt', 
       injectRegister: 'auto',

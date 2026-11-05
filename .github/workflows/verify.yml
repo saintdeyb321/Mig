@@ -73,6 +73,12 @@ jobs:
           fi
           npm run check:build
           node scripts/release.mjs prepare --env emulator
+      - name: PLAN 09 Node and Chromium UX regressions
+        timeout-minutes: 3
+        run: |
+          browser="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$browser" || { echo 'Chromium is missing from the runner'; exit 1; }
+          MIGAPOS_TEST_BROWSER="$browser" node --test --test-concurrency=1 tests/plan09.test.mjs tests/plan09.browser.test.mjs
       - run: git diff --check
       - name: Attest successful checks for this exact source
         run: node scripts/release.mjs attest --env emulator

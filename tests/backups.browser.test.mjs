@@ -11,7 +11,7 @@ it('downloads a real encrypted backup in isolated Chromium and preserves Indexed
   const module = path => fileURLToPath(new URL(`../frontend/src/${path}`,import.meta.url)).replaceAll('\\','/');
   const result = await runBrowserFixture({htmlFile:new URL('./backups.browser.html',import.meta.url),route:'/backups-test',
     moduleMocks:{[module('core/firebase/client.js')]:'export const auth={currentUser:null}; export const db={};',
-      [module('features/backups/infrastructure/backupRepository.js')]:`export function createBackupRepository(){return async options=>{globalThis.__remoteReads++;if(!globalThis.__pendingRemote)throw Error('Remote reads must be explicit');return new Promise(resolve=>globalThis.__pendingRemote.push({resolve,options}));};}`},
+      [module('features/backups/infrastructure/remoteBackup.js')]:`export async function readRemoteBackup(options){globalThis.__remoteReads++;if(!globalThis.__pendingRemote)throw Error('Remote reads must be explicit');return new Promise(resolve=>globalThis.__pendingRemote.push({resolve,options}));}`},
     setupPage:page=>page.send('Fetch.enable',{patterns:[{urlPattern:'https://*',requestStage:'Request'}]}),
     verifyDownload:async (directory,report) => {
       let text;
@@ -21,5 +21,5 @@ it('downloads a real encrypted backup in isolated Chromium and preserves Indexed
       const verified = await verifyBackupFile(text,'fixture-password-123','backup-tenant');
       assert.equal(verified.writes,0); assert.equal(verified.records,3);
     }});
-  assert.equal(result.checks.length,10);
+  assert.equal(result.checks.length,11);
 });

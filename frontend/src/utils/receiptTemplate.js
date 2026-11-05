@@ -91,7 +91,7 @@ export const generateReceiptHTML = (saleData, settings, currentBranch = null) =>
     </head>
     <body>
       <div class="ticket">
-        ${saleData.isOffline || saleData.status === 'pending' ? '<div class="center bold">PENDIENTE LOCAL — SIN CONFIRMACIÓN REMOTA</div>' : ''}
+        ${saleData.financialState === 'draft_offline' ? '<div class="center bold">BORRADOR — SIN COBRAR — NO ES UNA VENTA REGISTRADA</div>' : saleData.isOffline || saleData.status === 'pending' ? '<div class="center bold">PENDIENTE LOCAL — SIN CONFIRMACIÓN REMOTA</div>' : ''}
         
         <div class="center bold" style="font-size: 15px; margin-bottom: 4px; text-transform: uppercase;">
           ${escapeHtml(razonSocial)}

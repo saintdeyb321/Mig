@@ -1,6 +1,45 @@
-import React, { useState } from 'react';
+import { Banknote, ChevronDown, ClipboardCheck, WalletCards } from 'lucide-react';
+import React, { useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import { Button, Dialog, DialogFooter, FormField, Input, Textarea } from '../shared/ui';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
+import { saleAmountCents } from '../features/sales/domain/saleModel.js';
+
+function cashAmount(text) {
+  if (!/^(?:\d+(?:\.\d{1,2})?|\.\d{1,2})$/.test(text)) {
+    throw new Error('Ingresa un importe no negativo con máximo dos decimales, sin redondear.');
+  }
+  const value = Number(text);
+  // Keep the existing cash/Rules ceiling; the POS text parser has a lower sale-only cap.
+  saleAmountCents(value, 'El importe de caja', 1000000000);
+  return value;
+}
+
+export function CashCountSummary({ summary }) {
+  const provisional = summary.hasUnverifiedDisbursements || summary.expectedAmount < 0;
+  const amount = value => `S/ ${Number(value ?? 0).toFixed(2)}`;
+  const collected = summary.posCash + (summary.contractCashCollected ?? summary.contractCash);
+  const result = provisional ? 'Por revisar' : summary.difference === 0 ? 'Coincide'
+    : summary.difference > 0 ? `Sobran ${amount(summary.difference)}` : `Faltan ${amount(-summary.difference)}`;
+  return <>
+    <dl className="grid grid-cols-2 gap-3 text-sm">
+      {[[provisional ? 'Referencia calculada' : 'Dinero esperado', summary.expectedAmount], ['Dinero contado', summary.declaredAmount]].map(([label, value]) => <div key={label} className="rounded-2xl border border-line bg-subtle/50 p-3"><dt className="text-xs text-muted">{label}</dt><dd className="mt-1 text-xl font-extrabold tabular-nums">{amount(value)}</dd></div>)}
+      <div className={`col-span-2 rounded-2xl border p-4 ${provisional || summary.difference > 0 ? 'border-warning/25 bg-warning-soft text-warning' : summary.difference < 0 ? 'border-danger/25 bg-danger-soft text-danger' : 'border-finance-line bg-success-soft text-success'}`}>
+        <dt className="text-sm font-semibold">Resultado del conteo</dt><dd className="mt-1 text-2xl font-extrabold tabular-nums">{result}</dd>
+        <dd className="mt-1 text-sm">{provisional ? 'Cuadre provisional: hay anulaciones o devoluciones por verificar. Revísalo con el dueño.' : summary.difference === 0 ? 'El conteo coincide con los movimientos registrados.' : 'Deja una observación para revisar la diferencia.'}</dd>
+      </div>
+    </dl>
+    <details className="group rounded-xl border border-line bg-panel p-3 text-xs text-muted"><summary className="flex min-h-11 cursor-pointer items-center justify-between gap-2 font-semibold">Ver detalle del cuadre<ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open:rotate-180" /></summary>
+      <dl className="mt-2 space-y-2">{[['Fondo inicial', summary.openingAmount], ['Cobros en efectivo registrados', collected], ['Ventas POS en efectivo', summary.posCash], ['Contratos en efectivo (neto)', summary.contractCash],
+        ['Anulaciones en efectivo', summary.posCompensationCash], ['Anulaciones Yape / Plin', summary.posCompensationDigital],
+        ['Tickets anulados (importe registrado)', summary.posCompensationTotal], ['Referencia de caja', summary.expectedAmount], ['Diferencia declarada', summary.difference]].filter(([, value]) => value != null).map(([label, value]) => <div key={label} className="flex flex-wrap justify-between gap-2"><dt>{label}</dt><dd className="tabular-nums">{amount(value)}</dd></div>)}</dl>
+      {summary.posCompensationCount > 0 && <p className="mt-3">{summary.posCompensationCount} tickets anulados. Las compensaciones registradas no acreditan una entrega física de efectivo ni una devolución digital.</p>}
+      {summary.expectedAmount < 0 && <p className="mt-3">La referencia negativa de {amount(summary.expectedAmount)} no es un saldo físico ni un sobrante.</p>}
+      <p className="mt-3">Los gastos o entregas de dinero no registrados no forman parte de esta referencia; indícalos en observaciones.</p>
+      <p className="mt-3">Cierre operativo con conciliación pendiente. La referencia del navegador no certifica el saldo físico ni la entrega de dinero.</p>
+    </details>
+  </>;
+}
 
 export const CashRegisterModals = ({
   showOpenModal, setShowOpenModal,
@@ -16,9 +55,10 @@ export const CashRegisterModals = ({
 
   const handleOpen = async (e) => {
     e.preventDefault();
-    const amount = Number(openingAmount);
-    if (isNaN(amount) || amount < 0) {
-      toast.error("Ingresa un monto válido", { id: MODAL_TOAST_ID });
+    let amount;
+    try { amount = cashAmount(openingAmount); }
+    catch (error) {
+      toast.error(error.message, { id: MODAL_TOAST_ID });
       return;
     }
     const success = await openRegister(amount);
@@ -30,180 +70,74 @@ export const CashRegisterModals = ({
 
   const handleCalculate = async (e) => {
     e.preventDefault();
-    const amount = Number(declaredAmount);
-    if (isNaN(amount) || amount < 0) {
-      toast.error("Ingresa un monto válido", { id: MODAL_TOAST_ID });
+    let amount;
+    try { amount = cashAmount(declaredAmount); }
+    catch (error) {
+      toast.error(error.message, { id: MODAL_TOAST_ID });
       return;
     }
     const result = await calculateClose(amount);
     if (result && typeof result === 'object') {
       setTempSummary(result);
-      setShowCloseModal(false); 
+      setShowCloseModal(false);
     }
   };
 
   const handleFinalSave = async (e) => {
     e.preventDefault(); // 🚀 FIX: Prevenimos recarga de página al ser un formulario
     if (!tempSummary) return;
-    
+
     if (tempSummary.difference !== 0 && closeNotes.trim().length < 5) {
-      toast.error("Por favor, explica brevemente qué pasó con el dinero.", { id: MODAL_TOAST_ID });
+      toast.error('Agrega una observación de al menos 5 caracteres para revisar la diferencia.', { id: MODAL_TOAST_ID });
       return;
     }
-    
+
     const success = await confirmClose(tempSummary, closeNotes);
-    
+
     if (success) {
       setTempSummary(null);
       setDeclaredAmount('');
       setCloseNotes('');
-      setShowCloseModal(false); 
+      setShowCloseModal(false);
     }
   };
 
-  return (
-    <>
-      {/* MODAL 1: APERTURA DE CAJA */}
-      {showOpenModal && !tempSummary && (
-        // 🚀 FIX: Bajamos el zIndex de 10001 a 999 para que los Toasts (9999) queden por encima
-        <div className="fade-in" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center', padding: '30px', borderTop: '8px solid var(--primary)' }}>
-            <span style={{ fontSize: '3rem', display: 'block', marginBottom: '10px' }}>🔐</span>
-            <h3 style={{ margin: '0 0 5px 0', fontSize: '1.4rem', color: 'var(--text-main)' }}>Apertura de Caja</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>
-              Registra el efectivo inicial con confirmación de Firestore. Tickets online de hasta 2 productos; cierre operativo con conciliación pendiente.
-            </p>
-            <form onSubmit={handleOpen}>
-              <div style={{ marginBottom: '20px', textAlign: 'left' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '0.85rem', color: 'var(--text-main)' }}>MONTO INICIAL (S/)</label>
-                <input 
-                  type="number" 
-                  step="0.10"
-                  required
-                  value={openingAmount}
-                  onChange={(e) => setOpeningAmount(e.target.value)}
-                  style={{ width: '100%', padding: '12px', fontSize: '1.5rem', textAlign: 'center', borderRadius: '8px', border: '2px solid var(--border)', fontWeight: 'bold' }}
-                  placeholder="0.00"
-                  autoFocus
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" onClick={() => setShowOpenModal(false)} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '2px solid var(--border)', background: 'transparent', color: 'var(--text-main)', fontWeight: 'bold', cursor: 'pointer' }}>
-                  Cancelar
-                </button>
-                <button type="submit" disabled={isLoadingSession} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer' }}>
-                  {isLoadingSession ? '...' : 'Abrir'}
-                </button>
-              </div>
-            </form>
-            <button type="button" onClick={authorizeOffline} disabled={!runtimeCapabilities.offlineSync || isLoadingSession || !navigator.onLine} className="btn-secondary">
-              Autorizar apertura offline (15 min)
-            </button>
-          </div>
+  const submitting = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const busy = isLoadingSession || isSubmitting;
+  const submit = handler => async event => {
+    event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
+    setIsSubmitting(true);
+    try { await handler(event); }
+    finally { submitting.current = false; setIsSubmitting(false); }
+  };
+
+  return <>
+    {showOpenModal && !tempSummary && <Dialog icon={WalletCards} title="Abrir caja" onClose={() => setShowOpenModal(false)} busy={busy} description="Escribe el fondo inicial disponible. Turno máximo: 10 horas.">
+      <form onSubmit={submit(handleOpen)}>
+        <fieldset disabled={busy} className="space-y-4">
+          <FormField label="Fondo inicial (S/)"><Input type="number" min="0" step="0.01" required value={openingAmount} onChange={e => setOpeningAmount(e.target.value)} placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" /></FormField>
+          <DialogFooter><Button variant="secondary" onClick={() => setShowOpenModal(false)}>Cancelar</Button><Button type="submit" loading={busy}>Abrir caja</Button></DialogFooter>
+        </fieldset>
+      </form>
+      {runtimeCapabilities.offlineSync && <Button variant="secondary" onClick={authorizeOffline} disabled={busy || !navigator.onLine}>Autorizar apertura offline (15 min)</Button>}
+    </Dialog>}
+    {showCloseModal && !tempSummary && <Dialog icon={Banknote} title="¿Cuánto efectivo contaste?" onClose={() => setShowCloseModal(false)} busy={busy} description="Cuenta billetes y monedas; escribe el total.">
+      <form onSubmit={submit(handleCalculate)}><fieldset disabled={busy} className="space-y-4">
+        <FormField label="Dinero contado (S/)"><Input type="number" min="0" step="0.01" required value={declaredAmount} onChange={e => setDeclaredAmount(e.target.value)} placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" /></FormField>
+        <DialogFooter><Button variant="secondary" onClick={() => setShowCloseModal(false)}>Volver</Button><Button type="submit" loading={busy}>Siguiente</Button></DialogFooter>
+      </fieldset></form>
+    </Dialog>}
+    {tempSummary && <Dialog icon={ClipboardCheck} title="Revisa el conteo" onClose={() => setTempSummary(null)} busy={busy} description="Compara el dinero contado con los movimientos registrados." className="cash-confirm-dialog" bodyClassName="overflow-hidden">
+      <form onSubmit={submit(handleFinalSave)} className="flex min-h-0 flex-1 flex-col"><fieldset disabled={busy} className="flex min-h-0 flex-1 flex-col">
+        <div className="ui-scroll min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pb-3">
+        <CashCountSummary summary={tempSummary} />
+        {(tempSummary.difference !== 0 || tempSummary.hasUnverifiedDisbursements) && <FormField label="Observaciones para el dueño"><Textarea value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder="Indica si hubo entrega de dinero o movimientos de otro turno." required={tempSummary.difference !== 0} /><p className="text-xs text-muted">Si devolviste dinero de una venta de otro turno, indícalo aquí. No registres otro ticket para compensar.</p></FormField>}
         </div>
-      )}
-
-      {/* MODAL 2: CIERRE DE CAJA */}
-      {showCloseModal && !tempSummary && (
-        <div className="fade-in" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'left', padding: '30px', borderTop: '8px solid #ef4444' }}>
-            <h3 style={{ margin: '0 0 5px 0', fontSize: '1.4rem', color: 'var(--text-main)' }}>🔒 ¿Cuánto dinero tienes en la caja?</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>
-              Cierre operativo: el resumen es una estimación del navegador, sin conciliación certificada. Cuenta toda la plata que tienes físicamente (billetes y monedas) y escribe el total abajo.
-            </p>
-            <form onSubmit={handleCalculate}>
-              <div style={{ marginBottom: '25px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '0.85rem', color: 'var(--text-main)' }}>TODA LA PLATA QUE CONTASTE (S/)</label>
-                <input 
-                  type="number" 
-                  step="0.10"
-                  required
-                  value={declaredAmount}
-                  onChange={(e) => setDeclaredAmount(e.target.value)}
-                  style={{ width: '100%', padding: '15px', fontSize: '2rem', textAlign: 'center', borderRadius: '8px', border: '2px solid var(--border)', fontWeight: 'bold', color: 'var(--primary)' }}
-                  placeholder="0.00"
-                  autoFocus
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" onClick={() => setShowCloseModal(false)} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '2px solid var(--border)', background: 'transparent', color: 'var(--text-main)', fontWeight: 'bold', cursor: 'pointer' }}>
-                  Aún no cerrar
-                </button>
-                <button type="submit" style={{ flex: 1, padding: '12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
-                  Siguiente ➔
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 3: RESUMEN FINAL Y JUSTIFICACIÓN */}
-      {tempSummary && (
-        <div className="fade-in" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflowY: 'auto' }}>
-          <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center', padding: '30px', borderTop: '8px solid var(--text-main)', margin: 'auto' }}>
-            <h3 style={{ margin: '0 0 5px 0', fontSize: '1.4rem', color: 'var(--text-main)' }}>Confirmar Cierre</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>Estimación del navegador. El cierre será operativo y quedará pendiente de conciliación; no certifica el libro completo.</p>
-            
-            <div style={{ background: 'var(--bg-app)', padding: '20px', borderRadius: '12px', textAlign: 'left', marginBottom: '20px', border: '1px solid var(--border)', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '0.95rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Efectivo esperado (estimación):</span>
-                <strong>S/ {tempSummary.expectedAmount.toFixed(2)}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', fontSize: '1.1rem' }}>
-                <span style={{ color: 'var(--text-main)', fontWeight: '800' }}>Dinero que dejaste:</span> 
-                <strong style={{ color: 'var(--primary)' }}>S/ {tempSummary.declaredAmount.toFixed(2)}</strong>
-              </div>
-              <hr style={{ border: 'none', borderTop: '2px dashed var(--border)', margin: '15px 0' }}/>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '800', letterSpacing: '0.5px' }}>DIFERENCIA FRENTE A LA ESTIMACIÓN:</span>
-                <div style={{ fontSize: '1.2rem', fontWeight: '900', color: tempSummary.difference < 0 ? '#dc2626' : (tempSummary.difference > 0 ? '#d97706' : '#16a34a'), display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {tempSummary.difference === 0 && <><span style={{fontSize:'1.4rem'}}>✅</span> Conteo sin diferencia estimada</>}
-                  {tempSummary.difference > 0 && <><span style={{fontSize:'1.4rem'}}>⚠️</span> Sobran S/ {tempSummary.difference.toFixed(2)}</>}
-                  {tempSummary.difference < 0 && <><span style={{fontSize:'1.4rem'}}>❌</span> Faltan S/ {Math.abs(tempSummary.difference).toFixed(2)}</>}
-                </div>
-              </div>
-            </div>
-
-            <p>Fondo: S/ {Number(tempSummary.openingAmount).toFixed(2)} · POS efectivo (incluye mixtos): S/ {Number(tempSummary.posCash).toFixed(2)} · Contratos efectivo: S/ {Number(tempSummary.contractCash).toFixed(2)} · Digital (incluye mixtos): S/ {Number(tempSummary.digitalTotal).toFixed(2)}</p>
-            {/* La declaración es real; los totales permanecen pendientes de conciliación. */}
-            <form onSubmit={handleFinalSave}>
-              {tempSummary.difference !== 0 && (
-                <div className="fade-in" style={{ marginBottom: '20px', textAlign: 'left', background: '#fffbeb', border: '1px solid #fcd34d', padding: '15px', borderRadius: '8px' }}>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#b45309', marginBottom: '8px' }}>
-                    ⚠️ ¿QUÉ PASÓ? JUSTIFICA EL ERROR:
-                  </label>
-                  <textarea 
-                    value={closeNotes}
-                    onChange={(e) => setCloseNotes(e.target.value)}
-                    placeholder="Explica por qué faltó o sobró dinero..."
-                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #f59e0b', resize: 'vertical', minHeight: '65px' }}
-                    required // 👈 ¡Ahora sí funcionará el tooltip del navegador!
-                  />
-                </div>
-              )}
-              
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button 
-                  type="button" // Evita que este botón envíe el formulario
-                  onClick={() => setTempSummary(null)} 
-                  style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '2px solid var(--border)', background: 'transparent', color: 'var(--text-main)', fontWeight: 'bold', cursor: 'pointer' }}
-                >
-                  Volver a contar
-                </button>
-                <button 
-                  type="submit" // 🚀 FIX: Este botón activa la validación nativa HTML5
-                  style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}
-                >
-                  Cerrar Turno
-                </button>
-              </div>
-            </form>
-
-          </div>
-        </div>
-      )}
-    </>
-  );
+        <DialogFooter className="static mt-0"><Button variant="secondary" onClick={() => setTempSummary(null)}>Volver a contar</Button><Button type="submit" loading={busy}>Cerrar turno</Button></DialogFooter>
+      </fieldset></form>
+    </Dialog>}
+  </>;
 };

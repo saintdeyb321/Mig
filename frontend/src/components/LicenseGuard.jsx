@@ -1,29 +1,26 @@
+import { AssistedAccessContext } from '../core/session/AssistedAccessContext';
+import { FullscreenState } from '../shared/ui';
+import { LicenseContext } from '../features/licenses/context/LicenseContext';
 import React, { useEffect } from 'react';
 import { reportDiagnostic } from '../core/errors/diagnostics.js';
 import { useLicenseAccess } from '../features/licenses/hooks/useLicenseAccess';
 import RestrictedAccess from './RestrictedAccess';
-
-export default function LicenseGuard({ user, children }) {
-  const { licenseState, expirationDateStr } = useLicenseAccess(user);
+export default function LicenseGuard({
+  user, handleLogout,
+  children
+}) {
+  const {
+    licenseState,
+    expirationDateStr, retry, licenseData
+  } = useLicenseAccess(user);
   useEffect(() => {
-    if (!['active', 'loading'].includes(licenseState)) reportDiagnostic('license', { code: 'tenant-restricted' }, 'restricted');
+    if (!['active', 'offline-assisted', 'loading'].includes(licenseState)) reportDiagnostic('license', {
+      code: 'tenant-restricted'
+    }, 'restricted');
   }, [licenseState]);
-
   if (licenseState === 'loading') {
-    return (
-      <div style={{ height: '100dvh', width: '100vw', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'var(--bg-app)' }}>
-        <div className="spinner"></div>
-      </div>
-    );
+    return <FullscreenState loading title="Verificando acceso…" />;
   }
-
-  if (licenseState === 'active') return children;
-
-  return (
-    <RestrictedAccess
-      licenseState={licenseState}
-      expirationDateStr={expirationDateStr}
-      user={user}
-    />
-  );
+  if (['active', 'offline-assisted'].includes(licenseState)) return <AssistedAccessContext.Provider value={licenseState === 'offline-assisted' || user.accessVerified === false}><LicenseContext.Provider value={licenseData}>{children}</LicenseContext.Provider></AssistedAccessContext.Provider>;
+  return <RestrictedAccess licenseState={licenseState} expirationDateStr={expirationDateStr} user={user} onRetry={retry} onLogout={handleLogout} />;
 }

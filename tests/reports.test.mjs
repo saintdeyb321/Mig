@@ -3,10 +3,11 @@ import { describe, it } from 'node:test';
 import { createRequire } from 'node:module';
 import { aggregateReport } from '../frontend/src/features/reports/domain/reportTotals.js';
 import { reportPeriod, reportDay } from '../frontend/src/features/reports/domain/reportPeriod.js';
-import { createReportCache, reportCacheKey, createReportResource } from '../frontend/src/features/reports/application/reportResource.js';
+import { createReportCache, reportCacheKey, createReportResource, invalidateReportScope } from '../frontend/src/features/reports/application/reportResource.js';
 import { processDailyStats, processSales, DETAIL_HEADERS } from '../frontend/src/utils/salesDataProcessor.js';
 import { buildContractLedgerReport } from '../frontend/src/features/reports/application/contractLedgerReport.js';
 import { buildSalesWorkbook } from '../frontend/src/features/reports/application/salesWorkbook.js';
+import { createCashPeriodReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
 import { createSalesPeriodReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
 import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
 import { createSheet } from '../frontend/src/utils/excelHelpers.js';
@@ -29,6 +30,28 @@ const branchesMap = { b1: 'Centro', b2: 'Taller' };
 const build = options => buildSalesWorkbook(XLSX, { ...scope, stats, sales, payments, branchesMap, ...options });
 const rows = (wb, name) => XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
 const tick = () => new Promise(resolve => setImmediate(resolve));
+
+it('Plan05 keeps stale presentation for prefixed network errors and withdraws figures after permission denial', async () => {
+  let state, failure;
+  const resource = createReportResource({ ...scope, key: 'plan05-prefixed-errors', cache: createReportCache(), readStats: async () => stats,
+    readPayments: async () => { if (failure) throw Object.assign(Error('Read failed'), { code: failure }); return []; }, onState: value => { state = value; } });
+  await resource.ready; assert.ok(state.model);
+  failure = 'firestore/unavailable'; await resource.refresh(true); assert.ok(state.model); assert.ok(state.queryError);
+  failure = 'firestore/permission-denied'; await resource.refresh(true); assert.equal(state.model, null); resource.close();
+});
+
+it('Plan05 accounts an immutable POS refund once with negative detailed items and reconciled net totals', () => {
+  const original = sales[0], refund = { ...base, id: original.id, saleId: original.id, userId: 'owner', reason: 'Devolución comprobada',
+    authority: 'pos-compensation', amount: -40, cashAmount: -15, digitalAmount: -25, items: original.items, occurredAt: date('12') };
+  const { workbook, model } = build({ sales: [original], stats: [], payments: [], voids: [refund, refund] });
+  assert.equal(model.summary.netRevenue, 0); assert.equal(model.summary.contractRevenue, 0); assert.equal(model.summary.refundCount, 1);
+  assert.ok(model.products.every(row => row.qty === 0 && row.revenue === 0));
+  const copy = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
+  const details = rows(copy, copy.SheetNames.find(name => name.startsWith('Detalle_')));
+  assert.equal(details.filter(row => row.Cantidad === -2).length, 1);
+  assert.equal(details.reduce((sum, row) => sum + (Number(row['Total movimiento (S/)']) || 0), 0), 0);
+  assert.throws(() => build({ voids: [{ ...refund, items: [{ ...item, qty: 1 }] }] }), /no verificable/);
+});
 
 describe('Phase 7 canonical financial reports', () => {
   it('normal POS sale records one net ticket', () => {
@@ -175,7 +198,7 @@ describe('Phase 7 bounded data and lifecycle', () => {
     let requests = 0, downloaded = 0;
     const options = (...args) => args;
     const sdk = { collection: options, where: options, orderBy: options, documentId: () => 'id', startAfter: options,
-      query: (...constraints) => constraints, limit: value => ({ limit: value }), getDocs: async constraints => {
+      Timestamp: { fromDate: value => value }, query: (...constraints) => constraints, limit: value => ({ limit: value }), getDocsFromServer: async constraints => {
         requests++; const n = constraints.find(value => value?.limit).limit; downloaded += n;
         const docs = Array.from({ length: n }, (_, index) => ({ id: String(index), data: () => ({ businessId: 'tenant-a' }) }));
         return { docs, size: docs.length };
@@ -202,7 +225,7 @@ describe('Phase 7 bounded data and lifecycle', () => {
       subscribeStats: onData => { snapshot = onData; return () => {}; }, onState: next => { state = next; } });
     await resource.ready; snapshot(stats); snapshot(stats); snapshot(stats);
     assert.equal(reads, 1); assert.equal(state.model.summary.netRevenue, 90);
-    now = 30001; await resource.refresh(); assert.equal(reads, 2);
+    now = 120001; await resource.refresh(); assert.equal(reads, 2);
     resource.close();
   });
   for (const filter of ['mes', 'todo']) it(`${filter} does not reload its historical ledger every 30s; focus/manual refresh deduplicates pending reads`, async () => {
@@ -244,4 +267,52 @@ describe('Phase 7 bounded data and lifecycle', () => {
     await resource.refresh(true); assert.equal(reads, 2); assert.equal(state.model.summary.netRevenue, 90);
     resource.close();
   });
+});
+
+describe('Plan04 cash export cursor limits', () => {
+  for (const count of [0, 1, 5]) it('reads ' + count + ' ISO/Timestamp sessions in small pages, once by ID', async () => {
+    let reads = 0;
+    const options = (...args) => args;
+    const sdk = { collection: options, where: options, orderBy: options, documentId: () => 'id', startAfter: row => ({ cursor: row }),
+      Timestamp: { fromDate: value => value }, query: (...constraints) => constraints, limit: n => ({ limit: n }),
+      getDocsFromServer: async constraints => {
+        reads++; const size = constraints.find(c => c?.limit).limit;
+        assert.ok(size > 0 && size <= 2);
+        const offset = constraints.find(c => c?.cursor)?.cursor.offset ?? 0;
+        const docs = Array.from({ length: Math.min(size, Math.max(0, count - offset)) }, (_, i) => ({ id: 's' + (offset + i), offset: offset + i + 1, data: () => ({ businessId: 'tenant-a' }) }));
+        return { docs, size: docs.length };
+      } };
+    const reader = createCashPeriodReader({}, { sdk });
+    const result = await reader('openedAt', 'tenant-a', period.startDate, period.endDate, 'b1', { pageSize: 2 });
+    assert.equal(result.length, count); assert.ok(reads <= 2 * (Math.floor(count / 2) + 1));
+    if (count > 2) await assert.rejects(reader('openedAt', 'tenant-a', period.startDate, period.endDate, 'b1', { pageSize: 2, maxRows: 2 }), /no se exportó.*parcial/);
+  });
+});
+
+it('Plan04 retains an expired report only as presentation while a single refresh is pending', async () => {
+  let now = 0, calls = 0, release, state;
+  const cache = createReportCache({ now: () => now });
+  const first = createReportResource({ ...scope, key: 'display', cache, now: () => now, readStats: async () => stats,
+    readPayments: async () => [], onState: next => { state = next; } });
+  await first.ready; first.close(); now = 120001;
+  const second = createReportResource({ ...scope, key: 'display', cache, now: () => now, readStats: async () => stats,
+    readPayments: () => { calls++; return new Promise(resolve => { release = resolve; }); }, onState: next => { state = next; } });
+  assert.ok(state.model); assert.equal(state.isLoading, false); assert.equal(state.isRefreshing, true);
+  const pending = second.refresh(); assert.equal(calls, 1);
+  release([]); await pending; assert.equal(state.isRefreshing, false); second.close();
+});
+it('Plan04 invalidates only the affected branch and its global summaries', async () => {
+  const { createSessionResources } = await import('../frontend/src/core/session/sessionResources.js');
+  const resources = createSessionResources();
+  const cache = resources.value('report:cache', createReportCache);
+  const key = branchId => reportCacheKey({ ...scope, identityKey: 'u1', branchId });
+  for (const branch of ['b1', 'b2', 'global']) {
+    cache.set(key(branch), { loadedAt: Date.now() });
+    await resources.read('report:sales:' + JSON.stringify([scope.businessId, branch, period.start, period.end]), async () => branch);
+  }
+  invalidateReportScope(resources, scope.businessId, 'b1');
+  assert.equal(cache.peek(key('b1')), null); assert.equal(cache.peek(key('global')), null); assert.ok(cache.peek(key('b2')));
+  let loads = 0;
+  const read = branch => resources.read('report:sales:' + JSON.stringify([scope.businessId, branch, period.start, period.end]), async () => { loads++; return branch; });
+  await read('b2'); assert.equal(loads, 0); await read('b1'); assert.equal(loads, 1); resources.close();
 });

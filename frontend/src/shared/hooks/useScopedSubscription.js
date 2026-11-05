@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createSubscriptionScope } from '../utils/subscriptionScope';
 
 export const EMPTY_LIST = [];
 
-export function useScopedSubscription(scopeKey, subscribe, initialData = EMPTY_LIST) {
+export function useScopedSubscription(scopeKey, subscribe, initialData = EMPTY_LIST, { preserveOnError = false, allowCachedData = false } = {}) {
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt(value => value + 1), []);
   const [snapshot, setSnapshot] = useState(() => ({
     scopeKey, data: initialData, isLoading: Boolean(scopeKey), error: null,
   }));
@@ -15,18 +17,29 @@ export function useScopedSubscription(scopeKey, subscribe, initialData = EMPTY_L
   useEffect(() => {
     if (!scopeKey) return;
     const scope = createSubscriptionScope();
+    let serverSeen = false, timedOut = false;
+    let timer = setTimeout(scope.guard(() => { timer = null; timedOut = true; setSnapshot(previous => ({ ...previous, isLoading: false, isStale: true,
+      error: Object.assign(new Error('No se confirmó la lectura con el servidor. Comprueba la conexión y reintenta.'), { code: 'unavailable' }) })); }), 10000);
+    const done = () => { clearTimeout(timer); timer = null; };
     const unsubscribe = subscribe(
-      scope.guard(data => setSnapshot({ scopeKey, data, isLoading: false, error: null })),
-      scope.guard(error => setSnapshot({ scopeKey, data: initialData, isLoading: false, error })),
+      scope.guard((data, metadata) => {
+        const isStale = metadata?.fromCache === true || metadata?.hasPendingWrites === true;
+        if (!isStale) { serverSeen = true; timedOut = false; }
+        if (!isStale || allowCachedData) done();
+        setSnapshot(previous => ({ scopeKey,
+          data: preserveOnError && isStale && serverSeen && previous.scopeKey === scopeKey ? previous.data : data,
+          isLoading: !allowCachedData && isStale && !serverSeen && !timedOut, isStale,
+          error: !allowCachedData && isStale && timedOut ? Object.assign(new Error('Lectura local pendiente de confirmar con el servidor.'), { code: 'unavailable' }) : null }));
+      }),
+      scope.guard(error => { done(); setSnapshot(previous => ({ scopeKey,
+        data: preserveOnError && previous.scopeKey === scopeKey ? previous.data : initialData,
+        isLoading: false, isStale: true, error })); }),
     );
-    return () => {
-      scope.close();
-      unsubscribe();
-    };
-  }, [scopeKey, subscribe, initialData]);
+    return () => { scope.close(); done(); unsubscribe(); };
+  }, [scopeKey, subscribe, initialData, attempt, preserveOnError, allowCachedData]);
 
   // Hide the old result during the render that precedes effect cleanup.
   return scopeKey && snapshot.scopeKey === scopeKey
-    ? snapshot
-    : { data: initialData, isLoading: Boolean(scopeKey), error: null };
+    ? { ...snapshot, retry }
+    : { data: initialData, isLoading: Boolean(scopeKey), isStale: true, error: null, retry };
 }

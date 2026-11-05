@@ -1,3 +1,4 @@
+import { operationalBranches } from '../../branches/domain/branchPolicy';
 import { useCatalogData } from '../context/CatalogContext';
 import { useTenantData } from '../../branches/context/TenantContext';
 import { createProduct, updateProduct } from '../infrastructure/catalogRepository';
@@ -7,7 +8,8 @@ import toast from 'react-hot-toast';
 
 export const useProducts = (user) => {
   const { products: globalProducts, categories: globalCategories, isLoading: isGlobalLoading } = useCatalogData();
-  const { businessBranches } = useTenantData();
+  const { businessBranches: allBranches } = useTenantData();
+  const businessBranches = useMemo(() => operationalBranches(allBranches), [allBranches]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -77,6 +79,7 @@ export const useProducts = (user) => {
       return;
     }
 
+    if (!businessBranches.length) return toast.error('No hay sedes operativas para asignar stock. Los saldos históricos se conservan.');
     const normalizedName = cleanName.toLowerCase();
     const safeProducts = globalProducts || [];
     const isDuplicate = safeProducts.some(p => p.name.toLowerCase() === normalizedName && p.id !== editing);
@@ -101,9 +104,7 @@ export const useProducts = (user) => {
         } else if (typeof currentProduct.rawStock === 'object' && currentProduct.rawStock !== null) {
           stockViejo = currentProduct.rawStock;
         } else if (typeof currentProduct.stock === 'number' || typeof currentProduct.rawStock === 'number') {
-          const oldNum = Number(currentProduct.stock || currentProduct.rawStock || 0);
-          const defaultBranch = businessBranches.length > 0 ? businessBranches[0].id : 'global';
-          stockViejo = { [defaultBranch]: oldNum };
+          throw new Error('Stock histórico numérico: requiere revisión administrativa. No se migra ni reasigna desde este formulario.');
         }
       }
 

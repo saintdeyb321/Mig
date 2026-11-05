@@ -1,0 +1,69 @@
+<!doctype html><meta charset="utf-8"><title>Plan 07 focused checks</title><div id="root"></div>
+<script type="module">
+import React, { useState, useCallback } from 'react';
+import { createRoot } from 'react-dom/client';
+import { usePOS } from '/src/features/sales/hooks/usePOS.js';
+import { CatalogContext } from '/src/features/catalog/context/CatalogContext.js';
+import { TenantContext } from '/src/features/branches/context/TenantContext.js';
+import { SessionResourcesContext } from '/src/core/session/sessionResourceHooks.js';
+import { createSessionResources } from '/src/core/session/sessionResources.js';
+import { useScopedSubscription } from '/src/shared/hooks/useScopedSubscription.js';
+import { Ticket, SaleStatus } from '/src/modules/pos/TicketParts.jsx';
+const checks = [], check = (ok, name) => { if (!ok) throw Error(name); checks.push(name); };
+const wait = async predicate => { for (let i = 0; i < 100; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)); } throw Error('Timed out waiting for React'); };
+const resources = createSessionResources(), user = { uid: 'cashier', businessId: 'tenant', role: 'cajero', branchId: 'branch' };
+const products = Array.from({ length: 9 }, (_, i) => ({ id: `p${i}`, businessId: 'tenant', name: `Pan ${i}`, category: '', price: 5, cost: 1, status: 'activo', stock: { branch: 100 } }));
+let api, setCatalog, publish, subscription;
+function Probe() {
+  api = usePOS(user, { id: 'session', userId: 'cashier' });
+  const subscribe = useCallback(onData => { publish = onData; return () => {}; }, []);
+  subscription = useScopedSubscription('notifications', subscribe, undefined, { preserveOnError: true });
+  return api.lastSale ? React.createElement(SaleStatus, { sale: api.lastSale, onPrint: () => {}, onNew: api.clearLastSale, onVerify: api.verifyLastSale })
+    : React.createElement(Ticket, { cart: api.cart, total: api.total, catalogChanges: api.catalogChanges, onAcceptChange: api.acceptCatalogChange, onQty: api.updateQty, onRemove: api.removeFromCart });
+}
+function Fixture() {
+  const [catalog, update] = useState(products); setCatalog = update;
+  return React.createElement(SessionResourcesContext.Provider, { value: resources },
+    React.createElement(TenantContext.Provider, { value: { activeBranchId: 'branch', businessBranches: [{ id: 'branch', status: 'activo' }], settings: {} } },
+      React.createElement(CatalogContext.Provider, { value: { products: catalog, categories: [] } }, React.createElement(Probe))));
+}
+let result;
+const root = createRoot(document.getElementById('root')); root.render(React.createElement(Fixture));
+try {
+  await wait(() => api && publish);
+  api.addToCart(products[0]); await wait(() => api.cart.length === 1);
+  api.setAmountPaid('5.00'); await wait(() => api.isPaymentValid);
+  setCatalog(products.map(row => row.id === 'p0' ? { ...row, price: 6, cost: 2 } : row));
+  await wait(() => api.catalogBlocked);
+  check(api.cart[0].price === 5 && api.total === 5, 'remote catalogue change preserves the unaccepted draft');
+  await api.processSale(); check(!api.lastSale && api.cart.length === 1, 'catalogue conflict is blocked before creating a financial pending');
+  check(document.getElementById('root').innerText.includes('Precio del carrito: S/ 5.00') && document.getElementById('root').innerText.includes('Vigente: S/ 6.00'), 'UI explains old and new prices');
+  api.acceptCatalogChange('p0'); await wait(() => api.total === 6 && !api.catalogBlocked);
+  check(api.amountPaid === '' && api.splitEfectivo === '' && api.splitYape === '', 'accepting a change invalidates the previous payment');
+  setCatalog(products.map(row => row.id === 'p0' ? { ...row, status: 'inactivo' } : row)); await wait(() => api.catalogBlocked);
+  check(api.cart.length === 1 && document.getElementById('root').innerText.includes('Producto no disponible'), 'inactive item stays visible with an explicit removal action');
+  api.removeFromCart('p0'); await wait(() => api.cart.length === 0);
+  setCatalog(products); await wait(() => !api.catalogBlocked);
+  for (const product of products.slice(0, 8)) api.addToCart(product);
+  await wait(() => api.cart.length === 8); api.addToCart(products[8]); await new Promise(resolve => setTimeout(resolve, 50));
+  check(api.cart.length === 8 && document.getElementById('root').innerText.includes('8 de 8 productos diferentes') && document.getElementById('root').innerText.includes('Carrito lleno'), 'ninth distinct item is blocked with a coherent counter');
+  api.addToCart(products[0]); await wait(() => api.cart[0].qty === 2);
+  check(api.cart.length === 8, 'existing quantities can increase in a full cart');
+  publish([{ id: 'confirmed-notice' }], { fromCache: false, hasPendingWrites: false }); await wait(() => subscription.data.length === 1);
+  publish([], { fromCache: true, hasPendingWrites: true }); await wait(() => subscription.isStale);
+  check(subscription.error === null && subscription.data.length === 1, 'transient cached notification snapshot preserves data without a false failure');
+  publish([], { fromCache: false, hasPendingWrites: false }); await wait(() => subscription.data.length === 0 && !subscription.isStale);
+  check(subscription.error === null, 'authoritative acknowledgement clears the notification view');
+  for (const item of [...api.cart]) api.removeFromCart(item.id); await wait(() => api.cart.length === 0);
+  api.addToCart(products[0]); await wait(() => api.cart.length === 1);
+  api.setAmountPaid('5.00'); await wait(() => api.isPaymentValid);
+  await api.processSale(); await wait(() => api.lastSale?.isOffline);
+  check(document.getElementById('root').innerText.includes('Verificar venta') && document.getElementById('root').innerText.includes('Por comprobar'), 'uncertain ticket offers server verification and no definitive receipt');
+  window.__saleAck({ status: 'synced', financialAck: true, userId: 'cashier', businessId: 'tenant', branchId: 'branch', stockVersions: { p0: 1 }, syncedAt: new Date().toISOString() });
+  await wait(() => api.lastSale?.isOffline === false);
+  check(document.getElementById('root').innerText.includes('Venta registrada'), 'durable recovered acknowledgement refreshes the visible ticket');
+  result = { ok: true, checks };
+} catch (error) { result = { ok: false, checks, error: error.stack }; }
+root.unmount(); resources.close();
+await fetch('/__phase4-report', { method: 'POST', body: JSON.stringify(result) });
+</script>

@@ -1,3 +1,4 @@
+import { operationalBranches } from '../../branches/domain/branchPolicy';
 import { useTenantData } from '../../branches/context/TenantContext';
 import { useUsersData } from './useUsersData';
 import { updateUser, createInvite, deleteInvite } from '../infrastructure/userRepository';
@@ -6,9 +7,13 @@ import { isPermissionDenied } from '../../../core/errors/firebaseErrors';
 import { useState, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
 
-export const useUserManagement = (user) => {
-  const { users: globalUsers, invites: globalInvites, isLoading: isGlobalLoading } = useUsersData(user);
-  const { businessBranches } = useTenantData();
+const confirmInBrowser = message => window.confirm(message);
+
+export const useUserManagement = (user, { confirm = confirmInBrowser } = {}) => {
+  const { users: globalUsers, invites: globalInvites, isLoading: isGlobalLoading, error, isStale, retry } = useUsersData(user);
+  const canManage = !isGlobalLoading && !error && !isStale;
+  const { businessBranches: allBranches } = useTenantData();
+  const businessBranches = useMemo(() => operationalBranches(allBranches), [allBranches]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,7 +39,6 @@ export const useUserManagement = (user) => {
   }, [globalUsers, globalInvites]);
 
   const filteredUsers = useMemo(() => {
-    if (isGlobalLoading) return [];
     const term = searchTerm.toLowerCase();
 
     return allUsers.filter(u => {
@@ -49,9 +53,10 @@ export const useUserManagement = (user) => {
       if (!showInactive && isInactive) return false;
       return matchesSearch;
     });
-  }, [allUsers, searchTerm, showInactive, isGlobalLoading, user?.role]);
+  }, [allUsers, searchTerm, showInactive, user?.role]);
 
   const openAddForm = useCallback(() => {
+    if (!canManage) return toast.error('Espera a verificar Personal con el servidor.');
     setFirstName('');
     setLastName('');
     setEmailPrefix('');
@@ -61,9 +66,10 @@ export const useUserManagement = (user) => {
     setBranchId('');
     setEditing(null);
     setShowFormModal(true);
-  }, []);
+  }, [canManage]);
 
   const openEditForm = useCallback((u) => {
+    if (!canManage) return toast.error('Espera a verificar Personal con el servidor.');
     if (u.isInvite) {
       return toast.error('No puedes editar una invitación pendiente. Cáncelala y crea una nueva.');
     }
@@ -79,10 +85,11 @@ export const useUserManagement = (user) => {
     setBranchId(u.branchId || '');
     setEditing(u.id);
     setShowFormModal(true);
-  }, [user?.role]);
+  }, [user?.role, canManage]);
 
   const cancelInvite = useCallback(async (inviteEmail) => {
-    if (!window.confirm('¿Estás seguro de cancelar esta invitación? El usuario no podrá registrarse.')) return;
+    if (!canManage) return toast.error('Personal sin confirmar; reintenta la lectura.');
+    if (!await confirm('¿Estás seguro de cancelar esta invitación? El usuario no podrá registrarse.')) return;
     setIsLoading(true);
     const toastId = toast.loading('Cancelando invitación...');
     try {
@@ -94,15 +101,16 @@ export const useUserManagement = (user) => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [confirm, canManage]);
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (!canManage) return toast.error('Personal sin confirmar; reintenta la lectura.');
 
     if (!firstName || !lastName || !emailPrefix || !user?.businessId) {
       return toast.error('Completa todos los campos');
     }
-    if (role === 'cajero' && !branchId) {
+    if (role === 'cajero' && !businessBranches.some(branch => branch.id === branchId)) {
       return toast.error('Debes asignar una sede válida al cajero');
     }
     if (emailPrefix.includes('@')) {
@@ -166,6 +174,7 @@ export const useUserManagement = (user) => {
   };
 
   const toggleStatus = async (userId, currentStatus) => {
+    if (!canManage) return toast.error('Personal sin confirmar; reintenta la lectura.');
     const targetUser = (globalUsers || []).find(u => u.id === userId);
     if (targetUser?.role === 'superadmin' && user?.role !== 'superadmin') {
       return toast.error('Acceso denegado: No puedes bloquear esta cuenta.');
@@ -182,7 +191,7 @@ export const useUserManagement = (user) => {
   };
 
   return {
-    isLoading, isGlobalLoading, filteredUsers, searchTerm, setSearchTerm,
+    isLoading, isGlobalLoading, error, isStale, retry, canManage, filteredUsers, searchTerm, setSearchTerm,
     showFormModal, setShowFormModal, showInactive, setShowInactive,
     firstName, setFirstName, lastName, setLastName, emailPrefix, setEmailPrefix,
     role, setRole, shiftStart, setShiftStart, shiftEnd, setShiftEnd,

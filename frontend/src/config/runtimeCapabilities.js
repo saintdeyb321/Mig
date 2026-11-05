@@ -15,7 +15,7 @@ export const runtimeCapabilities = Object.freeze({
   licenseAdministration: true,
   cashOpening: true,
   saleOnline: true,
-  saleVoid: false,
+  saleVoid: true,
   contractPayments: true,
   cashClosing: true,
   cashReconciliation: false,

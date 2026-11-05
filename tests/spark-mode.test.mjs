@@ -23,9 +23,14 @@ it('retains historical product names and totals without inventing absent cost or
 it('fixes Spark capabilities independently of account, environment or browser flags', () => {
   assert.equal(runtimeCapabilities.mode, 'spark');
   assert.equal(runtimeCapabilities.repositoryStrategy, 'spark');
-  for (const name of ['cloudFunctions', 'cloudStorage', 'saleVoid', 'cashReconciliation', 'offlineSync', 'platformJobs']) assert.equal(runtimeCapabilities[name], false, name);
-  for (const name of ['authentication', 'firestore', 'hosting', 'localPersistence', 'localExports', 'tenantAdministration', 'tenantProvisioning', 'licenseAdministration', 'cashOpening', 'saleOnline', 'contractPayments', 'cashClosing']) assert.equal(runtimeCapabilities[name], true, name);
+  for (const name of ['cloudFunctions', 'cloudStorage', 'cashReconciliation', 'offlineSync', 'platformJobs']) assert.equal(runtimeCapabilities[name], false, name);
+  for (const name of ['authentication', 'firestore', 'hosting', 'localPersistence', 'localExports', 'tenantAdministration', 'tenantProvisioning', 'licenseAdministration', 'cashOpening', 'saleOnline', 'saleVoid', 'contractPayments', 'cashClosing']) assert.equal(runtimeCapabilities[name], true, name);
   assert.throws(() => { runtimeCapabilities.cloudFunctions = true; }, TypeError);
+});
+it('Plan05 refuses global cash opening before invoking any SDK operation', async () => {
+  const { createSparkCashRepository } = await import('../frontend/src/features/cash-register/infrastructure/sparkCashRepository.js');
+  const repository = createSparkCashRepository({}, { sdk: {}, currentUser: () => ({ uid: 'cashier' }) });
+  await assert.rejects(repository.open({ sessionId: 'global-opening-123456789', businessId: 'tenant', branchId: 'global', openingAmount: 0 }), /sede física/);
 });
 
 it('keeps platform profiles outside business modules even with stale navigation or a tenant ID', () => {
@@ -90,4 +95,32 @@ it('serves valid local branding/PWA PNGs and retains persistent caches without a
   const sw = readFileSync('frontend/src/components/ReloadPrompt.jsx', 'utf8');
   assert.match(sw, /updateServiceWorker\(true\)/);
   assert.doesNotMatch(sw + client, /deleteDatabase|clearIndexedDbPersistence|indexedDB\.delete|offlineDB\.delete/);
+});
+
+
+it('preserves larger drafts but refuses checkout above the verified eight-line bound before any transaction', async () => {
+  const { canonicalSale } = await import('../functions/src/sales/domain/saleModel.js');
+  const { checkoutBlockReason } = await import('../frontend/src/features/sales/domain/checkoutPolicy.js');
+  const { createSparkSalesRepository } = await import('../frontend/src/features/sales/infrastructure/sparkSalesRepository.js');
+  const items = Array.from({ length: 20 }, (_, i) => ({ id: `p${i}`, name: `Product ${i}`, category: '', qty: 1, price: 1.25, cost: 0.25 }));
+  const sale = canonicalSale({ localId: 'multi-product-draft', userId: 'cashier', businessId: 'tenant', branchId: 'branch', sessionId: 'session', items, total: 25, payment: 'mixto', splitPayments: { efectivo: 10, yape: 15 }, amountPaid: 25, change: 0, createdAt: new Date() });
+  assert.equal(sale.items.length, 20); assert.equal(sale.total, 25); assert.equal(sale.totalCost, 5);
+  assert.match(checkoutBlockReason(sale.items), /sin cobrar/); assert.equal(checkoutBlockReason(items.slice(0, 8)), null);
+  let writes = 0;
+  const repository = createSparkSalesRepository({}, { currentUser: () => ({ uid: 'cashier' }), sdk: { runTransaction: () => { writes++; } } });
+  await assert.rejects(repository.submit(sale), /no se divide el ticket/i); assert.equal(writes, 0);
+});
+
+it('Plan04 removes Agenda VIP navigation and contract lookups while retaining historical customer administration', () => {
+  for (const role of ['dueño', 'cajero', 'superadmin']) {
+    const user = { uid: 'person', role, businessId: 'tenant' };
+    assert.equal(getSessionModules(user).includes('agenda'), false);
+    assert.notEqual(getSessionTab(user, 'agenda'), 'agenda');
+  }
+  const form = readFileSync('frontend/src/modules/contracts/components/ContractFormModal.jsx', 'utf8');
+  assert.doesNotMatch(form, /useCustomers|showAgendaModal|Buscar en agenda/);
+  for (const field of ['clientName', 'clientPhone', 'deliveryAddress']) assert.ok(form.includes('name="' + field + '"'));
+  for (const path of ['frontend/src/features/backups/infrastructure/backupRepository.js', 'frontend/src/features/backups/domain/cleanupPlan.js']) {
+    assert.match(readFileSync(path, 'utf8'), /'customers'/);
+  }
 });

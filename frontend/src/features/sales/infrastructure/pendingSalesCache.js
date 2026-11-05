@@ -2,7 +2,7 @@ import { liveQuery } from 'dexie';
 import offlineDB from '../../../offlineDB';
 import { decrypt } from '../../../crypto';
 import { canonicalSale } from '../domain/saleModel.js';
-import { decodeQueuedSale, migrateSaleRecord, pendingStockDeltas } from '../domain/queueState.js';
+import { decodeQueuedSale, migrateSaleRecord, pendingStockDeltas, saleFinancialState } from '../domain/queueState.js';
 
 export async function readPendingSales(identity, branchId = 'global', projection = false) {
   const source = projection ? offlineDB.sales.where('projectionState').equals('pending')
@@ -17,6 +17,8 @@ export async function readPendingSales(identity, branchId = 'global', projection
     try {
       const sale = canonicalSale(await decodeQueuedSale(record, identity, decrypt));
       return { ...sale, id: record.localId, isOffline: true, queueStatus: migrateSaleRecord(record).status,
+        financialState: saleFinancialState(record, sale),
+        receiptState: migrateSaleRecord(record).status === 'failed' ? 'rejected' : record.lastErrorCode === 'receipt-not-found' || !record.attempted ? 'unconfirmed' : 'uncertain',
         lastError: record.lastError, attempted: record.attempted, projectionBase: record.projectionBase,
         financialAck: record.financialAck, stockVersions: record.stockVersions };
     } catch { return null; }
@@ -26,7 +28,7 @@ export async function readPendingSales(identity, branchId = 'global', projection
 
 export async function getPendingStockDeltas(identity) {
   const sales = await readPendingSales(identity);
-  return pendingStockDeltas(sales.filter(sale => sale.queueStatus !== 'failed'), identity.businessId);
+  return pendingStockDeltas(sales.filter(sale => sale.queueStatus !== 'failed' && sale.financialState !== 'draft_offline'), identity.businessId);
 }
 
 export function subscribePendingSales(identity, branchId, onData, onError) {

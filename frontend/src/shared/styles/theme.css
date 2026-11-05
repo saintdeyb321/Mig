@@ -1,0 +1,55 @@
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --color-canvas: #f3f2fa;
+  --color-panel: #fcfbff;
+  --color-subtle: #e9e7f3;
+  --color-ink: #1b1b38;
+  --color-muted: #555f7d;
+  --color-line: #dadbed;
+  --color-control: #777d99;
+  --color-primary: #6543ce;
+  --color-primary-hover: #5231b4;
+  --color-primary-soft: #e8e1fa;
+  --color-accent: #7142d1;
+  --color-accent-soft: #eee7fa;
+  --color-stellar: #315ece;
+  --color-nebula: #8d58d8;
+  --color-cyan: #5fb7d7;
+  --color-sidebar: #1d163c;
+  --color-sidebar-muted: #d0c4ea;
+  --color-sidebar-glow: #d9cbff;
+  --color-success: #167454;
+  --color-success-soft: #e9f8f0;
+  --color-warning: #895710;
+  --color-warning-soft: #fff6df;
+  --color-danger: #bd3345;
+  --color-danger-soft: #fff0f2;
+  --color-focus: #6950ca;
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 3px rgb(24 22 61 / 0.035), 0 6px 24px rgb(43 36 107 / 0.045);
+  --shadow-float: 0 20px 64px rgb(24 22 61 / 0.24);
+  --color-brand-deep: #35215d;
+  --color-finance-line: #b6dfcb;
+  --breakpoint-xs: 24rem;
+  --breakpoint-3xl: 108rem;
+  --animate-enter: enter 180ms ease-out;
+  @keyframes enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+}
+
+:root {
+  color-scheme: light;
+  /* Compatibility for dynamic chart/print integrations that read CSS variables. */
+  --primary: var(--color-primary);
+  --primary-hover: var(--color-primary-hover);
+  --primary-light: var(--color-primary-soft);
+  --success: var(--color-success);
+  --danger: var(--color-danger);
+  --warning: var(--color-warning);
+  --bg-app: var(--color-canvas);
+  --header-bg: var(--color-panel);
+  --card-bg: var(--color-panel);
+  --text-main: var(--color-ink);
+  --text-muted: var(--color-muted);
+  --border: var(--color-line);
+  --radius: var(--radius-card);
+}

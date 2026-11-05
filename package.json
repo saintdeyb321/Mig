@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "npm run test:spark && npm run test:spark:rules",
-    "test:spark": "node --test --test-concurrency=1 tests/spark-mode.test.mjs tests/spark-tooling.test.mjs tests/ui-security.test.mjs tests/spark-startup.browser.test.mjs tests/spark-local.browser.test.mjs tests/backups.test.mjs tests/backups.browser.test.mjs",
+    "test:spark": "node --test --test-concurrency=1 tests/session-recovery.test.mjs tests/spark-mode.test.mjs tests/spark-tooling.test.mjs tests/ui-security.test.mjs tests/spark-startup.browser.test.mjs tests/spark-local.browser.test.mjs tests/backups.test.mjs tests/backups.browser.test.mjs",
     "test:spark:rules": "firebase emulators:exec --only firestore --project demo-migapos \"node scripts/spark-emulator-guard.mjs && node --test --test-concurrency=1 tests/spark.rules.test.mjs tests/spark-financial.rules.test.mjs tests/backups.rules.test.mjs\"",
     "test:legacy": "npm run test:release && npm run test:architecture && npm run test:sales && npm run test:functions && npm run test:reports && npm run test:ui && npm run test:legacy:rules",
     "test:reports": "node --test tests/reports.test.mjs",
@@ -24,7 +24,9 @@
     "audit:security": "node scripts/audit-security.mjs",
     "check:build": "node scripts/check-build.mjs",
     "test:backups": "node --test --test-concurrency=1 tests/backups.test.mjs tests/backups.browser.test.mjs",
-    "test:backups:rules": "firebase emulators:exec --only firestore --project demo-migapos \"node scripts/spark-emulator-guard.mjs && node --test tests/backups.rules.test.mjs\""
+    "test:backups:rules": "firebase emulators:exec --only firestore --project demo-migapos \"node scripts/spark-emulator-guard.mjs && node --test tests/backups.rules.test.mjs\"",
+    "indexes:inventory": "node scripts/firestore-index-inventory.mjs",
+    "indexes:check": "node scripts/firestore-index-inventory.mjs --check"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.2",
@@ -40,6 +42,9 @@
     },
     "body-parser@^1.0.0": "1.20.9",
     "body-parser@^2.0.0": "2.4.0",
-    "fast-uri@^3.0.0": "3.1.9"
+    "fast-uri@^3.0.0": "3.1.9",
+    "glob": "14.0.3",
+    "readdir-glob": { "minimatch": "11.0.3" },
+    "re2js@^2.0.0": "2.8.7"
   }
 }

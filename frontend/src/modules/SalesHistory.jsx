@@ -1,219 +1,75 @@
-import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
-// src/modules/SalesHistory.jsx
-import React, { useState } from 'react';
-import { useSalesHistory } from '../features/sales/hooks/useSalesHistory';
+import { useState, useEffect, useRef } from 'react';
+import { History } from 'lucide-react';
 import toast from 'react-hot-toast';
+import FirestoreQueryError from '../components/FirestoreQueryError';
+import { useSessionScroll } from '../core/session/sessionResourceHooks.js';
+import { useTenantData } from '../features/branches/context/TenantContext';
+import { useSalesHistory } from '../features/sales/hooks/useSalesHistory';
+import { SaleHistoryCard } from './sales-history/SaleHistoryCard';
+import { Dialog, LoadingState, Button, Textarea, FormField, EmptyState, Alert } from '../shared/ui';
+import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
+import { DraftSaleReview } from './sales-history/DraftSaleReview.jsx';
 
-function SalesHistory({ user }) {
-  const { pendingOnly, setPendingOnly, sales, error, isLoading, formatDate, anularVentaConfirmada, verificarPendiente, isProcessing, businessBranches } = useSalesHistory(user);
-  const [saleToCancel, setSaleToCancel] = useState(null);
-  const [voidReason, setVoidReason] = useState('');
-
-  if (isLoading) {
-    return (
-      <div className="module-loader fade-in">
-        <div className="spinner"></div>
-        <p className="loader-text">Cargando historial de ventas...</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fade-in max-container">
-
-      <header className="module-header">
-        <h2 className="module-title">
-          <span className="module-title-icon">📜</span>
-          <span className="module-title-text">Historial de Ventas</span>
-        </h2>
-        <span className="toggle-label" style={{ cursor: 'default', pointerEvents: 'none' }}>
-          Últimos 50 tickets
-        </span>
-      </header>
-
-      <p role="status">Pendientes locales: revisa ID, sede e importe con el libro remoto antes de volver a cobrar. Se conservan cifrados; sincronización offline deshabilitada. La anulación POS sigue restringida: falta validar la compensación de stock junto al reembolso y su sesión de caja.</p>
-      <label><input type="checkbox" checked={pendingOnly} onChange={event => setPendingOnly(event.target.checked)} /> Revisar únicamente pendientes locales (últimos 50, sin sincronizarlos)</label>
-      {error && <p role="alert">No se pudo cargar el historial. Revisa la conexión y los permisos.</p>}
-      {sales.length === 0 ? (
-        <div className="card fade-in empty-state">
-          <span className="empty-icon-lg">🏷️</span>
-          <p className="empty-text">Aún no hay ventas registradas.</p>
-        </div>
-      ) : (
-        <div className="history-grid">
-          {sales.map(s => {
-            const isAnulada = s.voided === true;
-            const branchName = businessBranches?.find(b => b.id === s.branchId)?.name || 'Sede Local';
-            const tipoPago = String(s.payment || 'efectivo').toLowerCase();
-            const isEfectivo = tipoPago === 'efectivo';
-            const isYape = tipoPago === 'yape' || tipoPago === 'plin';
-            const isMixto = tipoPago === 'mixto';
-
-            // Definimos el color del borde de la cabecera
-            let borderClass = '';
-            if (isAnulada) borderClass = 'border-anulada';
-            else if (isEfectivo) borderClass = 'border-efectivo';
-            else if (isYape) borderClass = 'border-yape';
-            else if (isMixto) borderClass = 'border-mixto';
-
-            return (
-              <div key={s.id} className={`card history-card fade-in ${isAnulada ? 'card-anulada' : ''}`}>
-
-                {/* CABECERA DE LA TARJETA MEJORADA */}
-                <div className={`ticket-header ${borderClass}`}>
-                  <div className="ticket-info">
-                    <div className="ticket-date-row">
-                      <span className="ticket-date">{formatDate(s.createdAt || s.date)}</span>
-                      {s.isOffline && !isAnulada && (
-                        <span className="badge-offline">{s.queueStatus === 'failed' ? 'FALLIDA' : 'PENDIENTE'}</span>
-                      )}
-                    </div>
-                    <span className="ticket-id">ID: {s.id.substring(0, 8).toUpperCase()} • 🏢 {branchName}</span>
-                    {s.lastError && <span role="alert">{s.lastError || 'La venta no pudo sincronizarse.'}</span>}
-                  </div>
-
-                  <div className="ticket-amount">
-                    <span className="ticket-total">S/ {Number(s.total).toFixed(2)}</span>
-                    {isAnulada ? (
-                       <div className="badge-payment badge-anulada">❌ ANULADA</div>
-                    ) : (
-                      <div className={`badge-payment ${isEfectivo ? 'badge-efectivo' : isYape ? 'badge-yape' : isMixto ? 'badge-mixto' : ''}`}>
-                        {isEfectivo ? '💵 EFECTIVO' : isYape ? '📲 YAPE' : isMixto ? '🔄 MIXTO' : s.payment}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* DETALLE COMPRA */}
-                <div className="ticket-body">
-                  <p className="ticket-section-title">Detalle del Ticket</p>
-
-                  <div className="ticket-items-list">
-                    {s.items && s.items.map((i, index) => (
-                      <div key={i.id || index} className="ticket-item-row">
-                        <div className="ticket-item-left">
-                          <div className="item-qty-box">{i.qty}x</div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <span className="item-name-text">{i.name}</span>
-                            {i.category && (
-                              <span className="history-item-category">
-                                {i.category}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <span className="item-subtotal">
-                          S/ {(i.price * i.qty).toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {!isAnulada && (
-                    <>
-                      {/* Resumen de Vuelto (Para Efectivo puro) */}
-                      {isEfectivo && s.amountPaid && s.change > 0 && (
-                        <div className="ticket-change-row">
-                          <span>Recibido: <strong>S/ {Number(s.amountPaid).toFixed(2)}</strong></span>
-                          <span>Vuelto: <span className="change-highlight">S/ {Number(s.change).toFixed(2)}</span></span>
-                        </div>
-                      )}
-
-
-                      {isMixto && s.splitPayments && (
-                        <div className="ticket-split-row fade-in">
-                          <div className="split-efectivo-box">
-                            <span>💵 Ef:</span>
-                            <span>S/ {Number(s.splitPayments.efectivo).toFixed(2)}</span>
-                          </div>
-                          <div className="split-yape-box">
-                            <span>📲 Yp:</span>
-                            <span>S/ {Number(s.splitPayments.yape).toFixed(2)}</span>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* FOOTER */}
-                <div className="ticket-footer">
-                  <div className="ticket-cashier">
-                    <span>👤</span>
-                    <span className="cashier-name">
-                      {s.cashierName?.includes('@') ? 'Cajero de Turno' : s.cashierName}
-                    </span>
-                  </div>
-
-
-                  {s.isOffline && <button disabled={isProcessing} onClick={() => verificarPendiente(s)}>Consultar receipt remoto (sin cobrar)</button>}
-                  {!isAnulada && !s.isOffline && (user?.role === 'dueño' || user?.role === 'superadmin' || user?.role === 'cajero') && (
-                    <button
-                      className="btn-danger-solid"
-                      onClick={() => setSaleToCancel(s)}
-                      disabled={isProcessing || !runtimeCapabilities.saleVoid} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado"
-                    >
-                      {isProcessing ? '...' : 'Anular Ticket'}
-                    </button>
-                  )}
-                </div>
-
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-
-      {saleToCancel && (
-        <div className="modal-overlay fade-in" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="card modal-danger" style={{ maxWidth: '400px', width: '100%', textAlign: 'left', padding: '30px', borderTop: '8px solid #ef4444' }}>
-            <h3 className="modal-title-danger" style={{ margin: '0 0 5px 0', fontSize: '1.4rem' }}><span>⚠️</span> ¿Anular esta venta?</h3>
-            <p className="modal-desc" style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '20px' }}>
-              Estás a punto de anular una venta de <strong>S/ {Number(saleToCancel.total).toFixed(2)}</strong>. El dinero se restará de la caja y se devolverá el stock.
-            </p>
-
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              if (voidReason.trim().length < 5) {
-                toast.error("Por favor, explica detalladamente el motivo.");
-                return;
-              }
-              anularVentaConfirmada(saleToCancel, voidReason);
-              setSaleToCancel(null);
-              setVoidReason('');
-            }}>
-
-              <div style={{ marginBottom: '25px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '0.85rem', color: '#b45309' }}>
-                  MOTIVO DE LA ANULACIÓN (Obligatorio):
-                </label>
-                <textarea
-                  required
-                  minLength="5"
-                  value={voidReason}
-                  onChange={(e) => setVoidReason(e.target.value)}
-                  placeholder="Ej: El cliente se arrepintió, error de cobro, etc."
-                  style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #f59e0b', minHeight: '80px', resize: 'vertical', fontFamily: 'inherit' }}
-                  autoFocus
-                />
-              </div>
-
-              <div className="modal-actions" style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" className="btn-cancel" onClick={() => { setSaleToCancel(null); setVoidReason(''); }} disabled={isProcessing || !runtimeCapabilities.saleVoid} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado" style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '2px solid var(--border)', background: 'transparent', color: 'var(--text-main)', fontWeight: 'bold', cursor: 'pointer' }}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn-danger" disabled={isProcessing || !runtimeCapabilities.saleVoid} title="Anulación POS restringida: compensación de stock y reembolso aún sin protocolo validado" style={{ flex: 1, padding: '12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-                  {isProcessing ? 'Anulando...' : 'Sí, anular venta'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-    </div>
-  );
+export default function SalesHistory({ user }) {
+  const { sales, rejected, error, isStale, updatedAt, retry, isLoading, formatDate, anularVentaConfirmada,
+    verificarPendiente, verificarAnulacion, isProcessing, businessBranches, voidResult, confirmedVoid } = useSalesHistory(user);
+  const { activeBranchId } = useTenantData();
+  useSessionScroll(`sales:${activeBranchId}`, !isLoading);
+  const [selected, setSelected] = useState(null);
+  const [reason, setReason] = useState('');
+  const [draft, setDraft] = useState(null);
+  const submitting = useRef(false);
+  const scopeKey = JSON.stringify([user.uid, user.businessId, activeBranchId]);
+  const previousScope = useRef(scopeKey);
+  useEffect(() => {
+    if (previousScope.current === scopeKey) return;
+    previousScope.current = scopeKey; setSelected(null); setReason(''); setDraft(null);
+  }, [scopeKey]);
+  const selectedSale = selected?.scopeKey === scopeKey ? selected.sale : null;
+  const receipt = selectedSale && confirmedVoid(selectedSale.id, reason);
+  const phase = selectedSale && voidResult?.id === selectedSale.id ? voidResult.phase : null;
+  const current = sales.find(sale => sale.id === selectedSale?.id);
+  const remotelyVoided = current?.voidServerConfirmed === true;
+  const checking = phase === 'uncertain' || current?.voidCheckPending || current?.voided;
+  const close = () => { setSelected(null); setReason(''); };
+  useEffect(() => {
+    if (receipt || remotelyVoided || phase === 'confirmed') { setSelected(null); setReason(''); }
+  }, [receipt, remotelyVoided, phase]);
+  const cancelSale = async event => {
+    event.preventDefault();
+    if (submitting.current || !selectedSale) return;
+    if (!checking && reason.trim().length < 5) { toast.error('Explica el motivo con al menos 5 caracteres.'); return; }
+    submitting.current = true;
+    const selectedAtStart = selected;
+    try {
+      const confirmed = checking ? await verificarAnulacion(selectedSale) : await anularVentaConfirmada(selectedSale, reason);
+      if (confirmed) { setSelected(value => value === selectedAtStart ? null : value); setReason(''); }
+    } finally { submitting.current = false; }
+  };
+  const card = sale => <SaleHistoryCard key={sale.id} s={sale} user={user} businessBranches={businessBranches} formatDate={formatDate}
+    isProcessing={isProcessing} canOperate={!isStale && !error} verificarPendiente={verificarPendiente} verificarAnulacion={verificarAnulacion}
+    onReviewDraft={setDraft} activeBranchId={activeBranchId} setSaleToCancel={sale => { setReason(''); setSelected({ sale, scopeKey }); }} />;
+  if (isLoading) return <LoadingState>Cargando movimientos…</LoadingState>;
+  return <div className="sales-history mx-auto w-full min-w-0 max-w-7xl space-y-3">
+    <header className="flex flex-wrap items-center justify-between gap-2">
+      <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight"><History aria-hidden="true" className="size-5 text-primary" />Historial de ventas</h1>
+      <p className="text-xs text-muted" role="status">{isStale ? 'Actualizando con el servidor…' : updatedAt ? `Actualizado ${new Date(updatedAt).toLocaleTimeString('es-PE')}` : ''}</p>
+    </header>
+    <p className="text-xs text-muted">Los tickets sin cobrar no suman ingresos.</p>
+    <FirestoreQueryError error={error} area="sales-recent" user={user} onRetry={retry} commercial />
+    {sales.length ? <div className="history-grid min-w-0">{sales.map(card)}</div>
+      : !error && <EmptyState title="Sin movimientos recientes" description="Aquí aparecerán las ventas y los tickets guardados." />}
+    {rejected.length > 0 && <details className="rounded-2xl border border-line bg-panel p-4"><summary className="flex min-h-11 cursor-pointer items-center font-semibold">Revisión local · {rejected.length}</summary><p className="mb-4 text-sm text-muted">Estos intentos no se realizaron. Se conservan para revisión y no suman ingresos.</p><div className="history-grid">{rejected.map(card)}</div></details>}
+    {selectedSale && <Dialog title={checking ? 'Comprobar anulación' : '¿Anular este ticket?'} onClose={close} busy={isProcessing && !receipt}>
+      {checking ? <Alert variant="warning">La operación ya se intentó. Solo comprobaremos el mismo ticket; no volveremos a registrar la anulación ni a mover inventario. Puedes cerrar esta ventana y verificar después.</Alert>
+        : <p className="text-sm text-muted">Se anulará el ticket de <strong>S/ {Number(selectedSale.total).toFixed(2)}</strong> y se restituirán sus productos. El registro se conserva. Esta acción no acredita una entrega física de dinero.</p>}
+      <form onSubmit={cancelSale} className="space-y-4">
+        {!checking ? <FormField label="Motivo de la anulación"><Textarea required minLength={5} maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} autoFocus disabled={isProcessing} /></FormField>
+          : reason && <p className="text-sm text-muted">Motivo conservado: {reason}</p>}
+        {phase === 'rejected' && <Alert variant="danger">{voidResult.message || 'La anulación fue rechazada. Revisa tu caja y los permisos antes de continuar.'}</Alert>}
+        <div className="flex flex-wrap justify-end gap-2"><Button variant="secondary" onClick={close} disabled={isProcessing}>Cerrar</Button><Button type="submit" variant={checking ? 'secondary' : 'danger'} loading={isProcessing} disabled={isProcessing || !runtimeCapabilities.saleVoid}>{checking ? 'Verificar anulación' : 'Confirmar anulación'}</Button></div>
+      </form>
+    </Dialog>}
+    {draft?.branchId === activeBranchId && draft.userId === user.uid && <DraftSaleReview key={`${scopeKey}:${draft.id}`} sale={draft} user={user} activeBranchId={activeBranchId} onClose={() => setDraft(null)} onResult={() => setDraft(null)} />}
+  </div>;
 }
-
-export default SalesHistory;

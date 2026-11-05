@@ -22,7 +22,7 @@ export const useSuperAdmin = user => {
       if (version !== revision.current.value) return;
       setLicenses(previous => nextCursor ? [...new Map([...previous, ...page.rows].map(row => [row.id, row])).values()] : page.rows);
       setCursor(page.cursor); setError(null);
-    } catch (failure) { if (version === revision.current.value) setError(failure.message || 'No se pudo cargar la administración.'); }
+    } catch (failure) { if (version === revision.current.value) setError(failure); }
     finally { if (version === revision.current.value) setIsLoading(false); }
   }, [user?.role]);
   useEffect(() => {
@@ -54,7 +54,8 @@ export const useSuperAdmin = user => {
   }, [licenses, searchTerm]);
   return { licenses, isLoading, isProcessing, searchTerm, setSearchTerm, filteredLicenses, error, hasMore: !!cursor,
     refresh: () => fetchLicenses(), loadMore: () => !isLoading && fetchLicenses(cursor),
-    handleCreateClient: (businessName, ownerEmail, firstName, lastName, months) => operate('createTenant', { businessName, ownerEmail, firstName, lastName, months: Number(months) }, 'Provisionando tenant…'),
+    handleCreateClient: (businessName, ownerEmail, firstName, lastName, months, maxActiveBranches = 1, maxRegisteredBranches = 5) => operate('createTenant', { businessName, ownerEmail, firstName, lastName, months: Number(months), maxActiveBranches: Number(maxActiveBranches), maxRegisteredBranches: Number(maxRegisteredBranches) }, 'Provisionando tenant…'),
+    handleSetBranchQuota: data => operate('setTenantBranchQuota', data, 'Actualizando cupo…'),
     handleExtendLicense: (businessId, months) => operate('extendTenantLicense', { businessId, months: Number(months) }, 'Renovando licencia…'),
     handleToggleStatus: (businessId, status) => operate('setTenantLicenseStatus', { businessId, status: status === 'activa' ? 'inactiva' : 'activa' }, 'Actualizando licencia…'),
   };

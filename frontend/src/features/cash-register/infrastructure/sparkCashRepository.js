@@ -1,3 +1,4 @@
+import { isBranchOperational } from '../../branches/domain/branchPolicy.js';
 import * as firestore from 'firebase/firestore';
 
 export async function cashLockId(businessId, branchId) {
@@ -12,6 +13,7 @@ export function createSparkCashRepository(database, { currentUser, sdk = firesto
     async open({ sessionId, businessId, branchId, openingAmount, openingNote = '' }) {
       const userId = currentUser()?.uid;
       if (!userId) throw new Error('Inicia sesión de nuevo.');
+      if (branchId === 'global') throw new Error('Selecciona una sede física; la vista global es de solo lectura.');
       if (typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(sessionId)) throw new Error('ID de apertura inválido.');
       if (!Number.isFinite(openingAmount) || openingAmount < 0 || openingAmount > 1000000000 || Math.round(openingAmount * 100) / 100 !== openingAmount) throw new Error('El fondo inicial debe ser un importe válido con máximo dos decimales.');
       if (typeof openingNote !== 'string' || openingNote.length > 2000) throw new Error('La nota de apertura supera el límite permitido.');
@@ -25,11 +27,14 @@ export function createSparkCashRepository(database, { currentUser, sdk = firesto
             || saved.openingAmount !== openingAmount || saved.openingNote !== openingNote || saved.status !== 'open') throw new Error('El ID corresponde a una apertura distinta.');
           return;
         }
+        if (!isBranchOperational(branch.data())) throw new Error('Sede inactiva o no verificada.');
         if (branch.data()?.sparkCashVersion !== 1) throw new Error('Sede histórica: requiere revisar cajas y pendientes antes de habilitar su apertura Spark. La lectura se conserva.');
         if (lock.exists()) throw new Error('Ya existe una caja activa o un candado histórico en esta sede. El cierre/mantenimiento sigue pendiente de migración.');
+        // New sessions have a fixed Rules-enforced duration; their clock starts on the server.
+        // Never add this field to historical sessions during reads or idempotent retries.
         const timestamp = serverTimestamp(), p = profile.data() ?? {};
         const cashierName = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim();
-        tx.set(ref, { businessId, branchId, userId, cashierName, status: 'open', openingAmount, openingNote, openedAt: timestamp, syncedAt: timestamp, runtime: 'spark' });
+        tx.set(ref, { businessId, branchId, userId, cashierName, status: 'open', openingAmount, openingNote, openedAt: timestamp, syncedAt: timestamp, runtime: 'spark', durationHours: 10 });
         tx.set(lockRef, { businessId, branchId, userId, sessionId, status: 'open', runtime: 'spark', updatedAt: timestamp });
       });
       // Never return a provisional serverTimestamp as confirmation.

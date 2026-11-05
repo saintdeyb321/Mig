@@ -1,3 +1,5 @@
+import { confirmedWrite } from '../../../core/firebase/confirmedWrite.js';
+import { checkedRead } from '../../../core/firebase/readDiagnostics.js';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db, auth } from '../../../core/firebase/client';
 import { mapDocuments } from '../../../core/firebase/documents';
@@ -5,12 +7,14 @@ import { callBackend } from '../../../core/firebase/callable.js';
 import offlineDB from '../../../offlineDB.js';
 import { encrypt, decrypt } from '../../../crypto.js';
 import { persistCashSession } from '../application/sessionCache.js';
-import { createCashStateReader, createCashPeriodReader } from './cashQueryRepository.js';
+import { createCashStateReader, createCashPeriodReader, createCashAvailabilityWatcher } from './cashQueryRepository.js';
 import { createSparkCashRepository } from './sparkCashRepository.js';
 import { createSparkCashClosingRepository } from './sparkCashClosingRepository.js';
 import { getSessionSales } from '../../sales/infrastructure/salesRepository.js';
 import { getPaymentsBySession } from '../../payments/infrastructure/paymentRepository.js';
 import { runtimeCapabilities, requireCapability } from '../../../config/runtimeCapabilities.js';
+import { createPosVoidReader, voidCashPayments } from '../../sales/infrastructure/posVoidQueryRepository.js';
+const posVoids = createPosVoidReader(db);
 
 const sparkCash = createSparkCashRepository(db, { currentUser: () => auth.currentUser });
 
@@ -36,15 +40,16 @@ export async function reserveOfflineSession(user, branchId) {
   return cacheSession(await callBackend('reserveOfflineCashSession', { sessionId: crypto.randomUUID(), branchId }), { preservePending: true });
 }
 const readOpenSession = createCashStateReader(db);
+export const watchCashAvailability = createCashAvailabilityWatcher(db);
 export const findOpenSession = async (...args) => {
   const session = await readOpenSession(...args);
   return session ? sessionDTO(session) : null;
 };
-export const findLastClosedSession = async (businessId, branchId) => mapDocuments(await getDocs(query(collection(db, 'cash_sessions'),
+export const findLastClosedSession = async (businessId, branchId) => mapDocuments(await checkedRead(getDocs, 'cash-last-closed')(query(collection(db, 'cash_sessions'),
   where('businessId', '==', businessId), where('branchId', '==', branchId),
   where('status', 'in', ['closed', 'closed_with_discrepancy']), orderBy('closedAt', 'desc'), limit(1))))[0] ?? null;
 // This is called only by the explicit opening action; checking state never acquires a lock.
-export async function createSession(data) {
+export const createSession = confirmedWrite(async data => {
   if (runtimeCapabilities.cashOpening) {
     if (auth.currentUser?.uid !== data.userId) throw new Error('La sesión cambió.');
     const historical = await findOpenSession(data.businessId, data.branchId);
@@ -55,11 +60,14 @@ export async function createSession(data) {
   if (reserved.status !== 'reserved') throw new Error('La caja anterior aún se está sincronizando.');
   return cacheSession(await callBackend('openCashSession', { sessionId: reserved.id, branchId: data.branchId,
     openingAmount: data.openingAmount, notes: data.openingNote }));
-}
+});
 const closing = createSparkCashClosingRepository(db, { currentUser: () => auth.currentUser,
-  readSales: getSessionSales, readPayments: session => getPaymentsBySession(session.businessId, session.id, session.branchId, { sparkOnly: session.runtime === 'spark' }) });
+  readSales: getSessionSales, readPayments: async session => {
+    const [payments, voids] = await Promise.all([getPaymentsBySession(session.businessId, session.id, session.branchId, { sparkOnly: session.runtime === 'spark' }), posVoids.bySession(session)]);
+    return [...payments, ...voidCashPayments(voids)];
+  } });
 export const previewSessionClose = (id, declaredAmount) => closing.preview(id, declaredAmount);
-export const updateSession = async (id, data) => sessionDTO(await closing.close(id, data.declaredAmount, data.closingNote));
+export const updateSession = confirmedWrite(async (id, data) => sessionDTO(await closing.close(id, data.declaredAmount, data.closingNote)));
 export async function syncLocalSession(id, session, acknowledgedData) {
   requireCapability('offlineSync', 'Sincronizar caja histórica');
   const saved = session.status === 'open'

@@ -1,3 +1,4 @@
+import { isBranchOperational } from '../../branches/domain/branchPolicy.js';
 import { writeOperationNotice } from '../../notifications/infrastructure/sparkOperationNotice.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { commercialFields, contractAmount, paymentMethod, operationId, financialProjection } from '../../../../../functions/src/contracts/domain/contractModel.js';
@@ -17,6 +18,8 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
   async function actor(tx, branchId, { cashRequired = true } = {}) {
     const uid = who(), profile = (await tx.get(doc(database, 'users', uid))).data();
     if (!profile || !['dueño', 'cajero'].includes(profile.role)) fail('Perfil operativo requerido.');
+    const branch = (await tx.get(doc(database, 'branches', branchId))).data();
+    if (!isBranchOperational(branch) || branch.businessId !== profile.businessId) fail('Sede inactiva o no verificada.');
     const lock = cashRequired ? (await tx.get(doc(database, 'active_cash_sessions', await cashLockId(profile.businessId, branchId)))).data() : null;
     if (cashRequired && (!lock || lock.userId !== uid || lock.runtime !== 'spark')) fail('Abre tu caja Spark en la sede antes de registrar cobros/devoluciones.');
     return { businessId: profile.businessId, branchId, userId: uid, sessionId: lock?.sessionId ?? null,

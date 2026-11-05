@@ -1,175 +1,126 @@
-import BackupPanel from '../features/backups/components/BackupPanel.jsx';
+import { Settings2, Building2, ReceiptText } from 'lucide-react';
+import { PageHeader, cn, Button, Input, FormField, Card, HelpDisclosure } from "../shared/ui";
+import CapabilitiesPanel from '../components/CapabilitiesPanel';
 // src/modules/Settings.jsx
 import React, { useState } from 'react';
 import { useSettings } from '../features/settings/hooks/useSettings';
 import BranchManager from './BranchManager';
-
-function Settings({ user }) {
+function Settings({
+  user
+}) {
   const {
-    companyData, handleCompanyDataChange, saveCompanyData, isSavingData
+    companyData,
+    handleCompanyDataChange,
+    saveCompanyData,
+    isSavingData
   } = useSettings(user);
-
   const [showBranches, setShowBranches] = useState(false);
   const [isEditingCompany, setIsEditingCompany] = useState(false);
-
   const hasCompanyData = Boolean(companyData?.ruc || companyData?.razonSocial);
-
   const handleSaveCompany = async () => {
-    await saveCompanyData();
-    setIsEditingCompany(false);
+    if (await saveCompanyData()) setIsEditingCompany(false);
   };
-
-  return (
-    <div className="fade-in max-container padding-bottom-lg" style={{ maxWidth: '900px' }}>
+  return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
 
       {/* HEADER SIMÉTRICO NATIVO */}
-      <header className="module-header">
-        <h2 className="module-title">
-          <span className="module-title-icon">⚙️</span>
-          <span className="module-title-text">Configuración Global</span>
-        </h2>
-      </header>
+      <PageHeader title="Configuración global" icon={Settings2} eyebrow="Tu negocio" description="Datos comerciales y preferencias del sistema." />
 
       {/* =========================================
           🚀 1. GESTIÓN DE SEDES
-      ========================================= */}
-      <section style={{ marginBottom: '32px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '10px', marginBottom: '16px' }}>
+       ========================================= */}
+      <Card className="space-y-5" tone="accent">
+        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-line pb-4">
           <div>
-            <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)' }}>🏢 Sucursales</h3>
-            <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>Administra tus locales físicos y sus métodos de pago.</p>
+            <h3 className="flex items-center gap-2 text-base font-bold text-brand-deep"><Building2 aria-hidden="true" className="size-5" />Sucursales</h3>
+            <p className="m-0 text-sm text-muted">Administra tus locales físicos y sus métodos de pago.</p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowBranches(!showBranches)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '6px 14px',
-              borderRadius: '8px',
-              border: '1px solid var(--border)',
-              background: showBranches ? 'var(--bg-app)' : 'var(--bg-card)',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-              fontWeight: '600',
-              color: 'var(--text-main)',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              boxShadow: showBranches ? 'inset 0 2px 4px rgba(0,0,0,0.05)' : '0 2px 4px rgba(0,0,0,0.05)'
-            }}
-          >
+          <Button type="button" onClick={() => setShowBranches(!showBranches)} aria-expanded={showBranches} aria-controls="settings-branches" variant="secondary" className={cn("flex items-center gap-2 py-1.5 px-3.5 rounded-xl border border-line cursor-pointer text-sm font-semibold text-ink transition-colors motion-reduce:transition-none", showBranches ? "bg-subtle" : "bg-panel", showBranches ? "shadow-none" : "shadow-card")}>
             <span>{showBranches ? 'Ocultar Sucursales' : 'Mostrar Sucursales'}</span>
-            <span style={{
-              display: 'inline-block',
-              fontSize: '0.8rem',
-              transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              transform: showBranches ? 'rotate(-180deg)' : 'rotate(0deg)'
-            }}>
+            <span className={cn("inline-block text-sm transition-colors motion-reduce:transition-none", showBranches ? "rotate-180" : "rotate-0")}>
               ▼
             </span>
-          </button>
+          </Button>
         </div>
 
-        {showBranches && (
-          <div
-            className="card fade-in"
-            style={{
-              padding: '16px',
-              animation: 'fadeInDown 0.3s ease-out'
-            }}
-          >
+        {showBranches && <Card id="settings-branches" className="animate-enter motion-reduce:animate-none" as="div">
             <BranchManager user={user} isEmbedded={true} />
-          </div>
-        )}
-      </section>
+          </Card>}
+      </Card>
 
       {/* =========================================
           🚀 2. DATOS FISCALES
-      ========================================= */}
-      <section style={{ marginBottom: '32px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '10px', marginBottom: '16px' }}>
+       ========================================= */}
+      <Card className="space-y-5" tone="accent">
+        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-line pb-4">
           <div>
-            <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)' }}>🧾 Datos para Boletas / Facturas</h3>
-            <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>Información para los tickets y facturas.</p>
+            <h3 className="flex items-center gap-2 text-base font-bold text-brand-deep"><ReceiptText aria-hidden="true" className="size-5" />Datos para boletas y facturas</h3>
+            <p className="m-0 text-sm text-muted">Información para los tickets y facturas.</p>
           </div>
-          {hasCompanyData && !isEditingCompany && (
-            <button
-              onClick={() => setIsEditingCompany(true)}
-              style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', background: '#f5be87', cursor: 'pointer', fontSize: '0.9rem', fontWeight: '600' }}
-            >
+          {hasCompanyData && !isEditingCompany && <Button onClick={() => setIsEditingCompany(true)} type="button" variant="secondary" className="py-1.5 px-3 rounded-lg border border-line bg-warning-soft cursor-pointer text-sm font-semibold">
               ✏️ Editar
-            </button>
-          )}
+            </Button>}
         </div>
 
-        {(!hasCompanyData || isEditingCompany) ? (
-          <div className="card fade-in">
-            <div className="smart-form">
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">RAZÓN SOCIAL</label>
-                  <input type="text" name="razonSocial" value={companyData.razonSocial} onChange={handleCompanyDataChange} placeholder="Mi Empresa S.A.C." />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">RUC</label>
-                  <input type="text" name="ruc" value={companyData.ruc} onChange={handleCompanyDataChange} placeholder="Ej. 20123456789" />
-                </div>
+        {!hasCompanyData || isEditingCompany ? <Card className="animate-enter motion-reduce:animate-none" as="div">
+            <div className="grid gap-4">
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <FormField label={<>RAZÓN SOCIAL</>}>
+
+                  <Input type="text" name="razonSocial" value={companyData.razonSocial} onChange={handleCompanyDataChange} placeholder="Mi Empresa S.A.C." />
+                </FormField>
+                <FormField label={<>RUC</>}>
+
+                  <Input type="text" name="ruc" value={companyData.ruc} onChange={handleCompanyDataChange} placeholder="Ej. 20123456789" />
+                </FormField>
               </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label className="form-label">DIRECCIÓN FISCAL</label>
-                  <input type="text" name="direccion" value={companyData.direccion} onChange={handleCompanyDataChange} placeholder="Av. Principal 123" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">TELÉFONO GENERAL</label>
-                  <input type="text" name="telefono" value={companyData.telefono} onChange={handleCompanyDataChange} placeholder="987 654 321" />
-                </div>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <FormField label={<>DIRECCIÓN FISCAL</>}>
+
+                  <Input type="text" name="direccion" value={companyData.direccion} onChange={handleCompanyDataChange} placeholder="Av. Principal 123" />
+                </FormField>
+                <FormField label={<>TELÉFONO GENERAL</>}>
+
+                  <Input type="text" name="telefono" value={companyData.telefono} onChange={handleCompanyDataChange} placeholder="987 654 321" />
+                </FormField>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
-                {hasCompanyData && (
-                  <button type="button" className="btn-cancel" onClick={() => setIsEditingCompany(false)} disabled={isSavingData}>
+              <div className="flex justify-end gap-2.5 mt-4">
+                {hasCompanyData && <Button type="button" onClick={() => setIsEditingCompany(false)} disabled={isSavingData} variant="secondary">
                     Cancelar
-                  </button>
-                )}
-                <button className="btn-primary" onClick={handleSaveCompany} disabled={isSavingData} style={{ padding: '8px 20px' }}>
+                  </Button>}
+                <Button className="py-2 px-5" onClick={handleSaveCompany} disabled={isSavingData} type="button" variant="primary">
                   {isSavingData ? 'Guardando...' : 'Guardar Datos'}
-                </button>
+                </Button>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="card fade-in" style={{ borderLeft: '4px solid var(--primary)', padding: '20px' }}>
-            <div className="smart-form">
-              <div className="form-row">
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">RAZÓN SOCIAL</label>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{companyData.razonSocial || '-'}</div>
+          </Card> : <Card className="animate-enter motion-reduce:animate-none border-l-4 border-l-primary p-5" as="div">
+            <div className="grid gap-4">
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <div className="grid min-w-0 gap-1.5 mb-0">
+                  <label className="text-sm font-medium text-muted">RAZÓN SOCIAL</label>
+                  <div className="text-lg font-bold text-ink">{companyData.razonSocial || '-'}</div>
                 </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">RUC</label>
-                  <div style={{ fontSize: '1rem', color: 'var(--text-main)' }}>{companyData.ruc || '-'}</div>
+                <div className="grid min-w-0 gap-1.5 mb-0">
+                  <label className="text-sm font-medium text-muted">RUC</label>
+                  <div className="text-base text-ink">{companyData.ruc || '-'}</div>
                 </div>
               </div>
-              <div className="form-row" style={{ marginTop: '16px' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">DIRECCIÓN FISCAL</label>
-                  <div style={{ fontSize: '1rem', color: 'var(--text-main)' }}>{companyData.direccion || '-'}</div>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2 mt-4">
+                <div className="grid min-w-0 gap-1.5 mb-0">
+                  <label className="text-sm font-medium text-muted">DIRECCIÓN FISCAL</label>
+                  <div className="text-base text-ink">{companyData.direccion || '-'}</div>
                 </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">TELÉFONO GENERAL</label>
-                  <div style={{ fontSize: '1rem', color: 'var(--text-main)' }}>{companyData.telefono || '-'}</div>
+                <div className="grid min-w-0 gap-1.5 mb-0">
+                  <label className="text-sm font-medium text-muted">TELÉFONO GENERAL</label>
+                  <div className="text-base text-ink">{companyData.telefono || '-'}</div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-      </section>
+          </Card>}
+      </Card>
 
-      {user?.role === 'dueño' && <BackupPanel key={`${user.uid}:${user.businessId}`} user={user} />}
-    </div>
-  );
+      <HelpDisclosure title="Disponibilidad de funciones del sistema"><CapabilitiesPanel /></HelpDisclosure>
+    </div>;
 }
-
 export default Settings;

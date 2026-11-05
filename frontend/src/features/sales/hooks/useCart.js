@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { getSafeStock } from '../domain/cartStock';
-import { money } from '../domain/saleModel';
+import { money, saleAmountCents, SALE_LIMITS } from '../domain/saleModel';
+import { cartCatalogChanges, acceptCartCatalogChange, canAddDistinctProduct } from '../domain/cartCatalog.js';
 
 export const useCart = (products, activeBranchId) => {
   const [cart, setCart] = useState([]);
@@ -11,9 +12,9 @@ export const useCart = (products, activeBranchId) => {
   }, [cart]);
 
   const addToCart = useCallback((product) => {
-    if (typeof product.price !== 'number' || !Number.isFinite(product.price) || product.price < 0
-      || product.price > Number.MAX_SAFE_INTEGER / 100) {
-      toast.error('El producto tiene un precio inválido.', { id: 'cart-price-error' });
+    try { saleAmountCents(product.price, 'El precio'); }
+    catch (error) {
+      toast.error(error.message, { id: 'cart-price-error' });
       return;
     }
     const stockDisponible = getSafeStock(product, activeBranchId);
@@ -21,7 +22,14 @@ export const useCart = (products, activeBranchId) => {
 
     setCart(prev => {
       const found = prev.find(p => p.id === product.id);
-      if (!found && prev.length >= 2) { toast.error('Máximo 2 productos distintos por ticket Spark.'); return prev; }
+      if (!canAddDistinctProduct(prev, product.id)) {
+        toast.error(`Carrito lleno: máximo ${SALE_LIMITS.maxDistinctProducts} productos diferentes. Finaliza este ticket antes de iniciar otra venta.`, { id: TOAST_ID });
+        return prev;
+      }
+      if (found && found.qty >= SALE_LIMITS.maxQuantity) {
+        toast.error('Máximo 1 000 unidades por producto.', { id: TOAST_ID });
+        return prev;
+      }
 
       if (stockDisponible <= 0) {
         toast.error(`${product.name} agotado en esta sucursal`, { id: TOAST_ID });
@@ -41,6 +49,7 @@ export const useCart = (products, activeBranchId) => {
 
   const updateQty = useCallback((id, qty) => {
     if (!Number.isSafeInteger(qty) || qty < 1) return;
+    if (qty > SALE_LIMITS.maxQuantity) { toast.error('Máximo 1 000 unidades por producto.', { id: 'cart-stock-error' }); return; }
     const product = products.find(p => p.id === id);
     if (!product) return;
     const stockDisponible = getSafeStock(product, activeBranchId);
@@ -57,6 +66,8 @@ export const useCart = (products, activeBranchId) => {
   }, []);
 
   const clearCart = useCallback(() => setCart([]), []);
+  const catalogChanges = useMemo(() => cartCatalogChanges(cart, products, activeBranchId), [cart, products, activeBranchId]);
+  const acceptCatalogChange = useCallback(id => setCart(previous => acceptCartCatalogChange(previous, id, products)), [products]);
 
-  return { cart, setCart, total, addToCart, updateQty, removeFromCart, clearCart };
+  return { cart, setCart, total, addToCart, updateQty, removeFromCart, clearCart, catalogChanges, acceptCatalogChange };
 };

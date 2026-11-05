@@ -1,5 +1,7 @@
 {
   "indexes": [
+    {"collectionGroup":"contracts","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"deliveryDate","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},
+    {"collectionGroup":"contracts","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"createdAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}]},
     {"collectionGroup":"platform_jobs","queryScope":"COLLECTION","fields":[{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"leaseUntil","order":"ASCENDING"}]},
     {"collectionGroup":"invites","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"role","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},
     {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"closedAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}]},
@@ -295,7 +297,13 @@
     {"collectionGroup":"sales","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"confirmedAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}],"density":"SPARSE_ALL"},
     {"collectionGroup":"sales","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"confirmedAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}],"density":"SPARSE_ALL"},
     {"collectionGroup":"contracts","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"createdAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
-    {"collectionGroup":"contracts","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"createdAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"}
+    {"collectionGroup":"contracts","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"createdAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"pos_voids","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"occurredAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"pos_voids","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"occurredAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"pos_voids","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"sessionId","order":"ASCENDING"},{"fieldPath":"occurredAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"pos_voids","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"pos_voids","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"occurredAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"closedAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}],"density":"SPARSE_ALL"}
   ],
   "fieldOverrides": []
 }

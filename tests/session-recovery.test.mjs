@@ -1,0 +1,240 @@
+import assert from 'node:assert/strict';
+import { readViewPreference, writeViewPreference } from '../frontend/src/core/session/viewPreference.js';
+import { it } from 'node:test';
+import { profileAccess, licenseAccess, accessErrorState } from '../frontend/src/core/session/accessState.js';
+import { createProfileSession } from '../frontend/src/core/session/profileSession.js';
+import { salesHistoryPresentation } from '../frontend/src/features/sales/application/recentSales.js';
+import { createNotificationRepository, projectFinancialNotice } from '../frontend/src/features/notifications/infrastructure/notificationQueryRepository.js';
+
+const server = { fromCache: false, hasPendingWrites: false };
+const cached = { fromCache: true, hasPendingWrites: false };
+const owner = { role: 'dueño', businessId: 'tenant', status: 'activo' };
+
+it('Plan08 integrates confirmed and uncertain history while preserving rejections in secondary review', () => {
+  const pending=Array.from({length:50},(_,i)=>({id:`local-${i}`,isOffline:true,queueStatus:i%2?'failed':'pending',createdAt:'2026-10-29T12:00:00Z'}));
+  const remote=[{id:'confirmed',createdAt:'2026-10-28T12:00:00Z'}];
+  const normal=salesHistoryPresentation(pending,remote);
+  assert.equal(normal.rows.length,26);assert.ok(normal.rows.some(row=>row.id==='confirmed'));assert.equal(normal.rejectedCount,25);assert.equal(normal.uncertainCount,25);
+  assert.equal(normal.rejected.length,25);assert.ok(normal.rows.every(row=>row.queueStatus!=='failed'));
+  assert.equal(salesHistoryPresentation([{...pending[0],id:'confirmed'}],remote).localCount,0);
+});
+
+it('Plan06 projects confirmed refunds and estimated close differences without claiming reconciliation', () => {
+  const refund={id:'ticket',saleId:'ticket',businessId:'tenant',branchId:'branch',userId:'cashier',authority:'pos-compensation',protocol:1,amount:-6,
+    reason:'Motivo registrado',occurredAt:'2026-10-29T12:00:00Z'};
+  const notice=projectFinancialNotice('pos-void',refund,'tenant','owner');
+  assert.equal(notice.metadata.actorId,'cashier');assert.equal(notice.metadata.amount,6);assert.equal(notice.metadata.ticketId,'ticket');
+  assert.equal(projectFinancialNotice('pos-void',refund,'foreign','owner'),null);
+  assert.equal(projectFinancialNotice('pos-void',{...refund,amount:NaN},'tenant','owner'),null);
+  const close={id:'shift',businessId:'tenant',branchId:'branch',userId:'cashier',closedBy:'manager',runtime:'spark',status:'closed_with_discrepancy',
+    closedAt:'2026-10-29T12:00:00Z',reconciliationPending:true};
+  for(const [difference,title] of [[-2,'Diferencia negativa estimada'],[2,'Diferencia positiva estimada'],[0,'Cierre']]) {
+    const item=projectFinancialNotice('cash-close',{...close,closeEstimate:{authority:'client-estimate',difference}},'tenant','owner');
+    assert.ok(item.title.startsWith(title));assert.equal(item.metadata.responsibleId,'cashier');assert.equal(item.metadata.actorId,'manager');assert.match(item.message,/conciliación pendiente/);
+  }
+  assert.equal(projectFinancialNotice('cash-close',{...close,status:'open'},'tenant','owner'),null);
+});
+
+it('Plan06 financial inbox keeps read state with source-only acknowledgements and ignores callbacks after disposal', async () => {
+  const listeners=[],writes=[],states=[];
+  const sdk={collection:(_,name)=>({name}),query:(ref,...filters)=>({...ref,filters}),where:(...args)=>args,orderBy:(...args)=>args,limit:n=>n,
+    doc:(_,name,id)=>({path:`${name}/${id}`}),onSnapshot:(ref,options,next,error)=>{const listener={ref,next,error,stopped:false};listeners.push(listener);return()=>{listener.stopped=true;};},
+    serverTimestamp:()=> 'SERVER',setDoc:async(ref,data)=>writes.push({ref,data}),writeBatch:()=>({set:(ref,data)=>writes.push({ref,data}),update:(ref,data)=>writes.push({ref,data}),commit:async()=>{}})};
+  const repository=createNotificationRepository({}, {sdk});
+  const stop=repository.subscribeUnreadNotifications('tenant','owner',rows=>states.push(rows),error=>assert.fail(error.message),{owner:true});
+  const snapshot=docs=>({docs:docs.map(data=>({id:data.id,metadata:server,data:()=>data})),metadata:server});
+  listeners.find(l=>l.ref.name==='notifications').next(snapshot([]));
+  listeners.find(l=>l.ref.name==='pos_voids').next(snapshot([{id:'ticket',saleId:'ticket',businessId:'tenant',branchId:'branch',userId:'cashier',authority:'pos-compensation',protocol:1,amount:-6,reason:'Devolución verificada',occurredAt:'2026-10-29T12:00:00Z'}]));
+  listeners.find(l=>l.ref.name==='cash_sessions').next(snapshot([]));
+  const marker=listeners.find(l=>l.ref.path?.includes('read_pos-void'));
+  marker.next({exists:()=>false,metadata:server});
+  const notice=states.at(-1)[0];assert.equal(notice.metadata.amount,6);
+  await repository.markNotificationRead(notice);
+  assert.deepEqual(Object.keys(writes[0].data).sort(),['authority','businessId','readAt','sourceId','sourceType','userId']);
+  await repository.markAllNotificationsRead('tenant','owner',[notice]);assert.equal(writes.length,2);
+  await assert.rejects(repository.markAllNotificationsRead('foreign','owner',[notice]));
+  marker.next({exists:()=>true,data:()=>({readAt:'SERVER'}),metadata:server});assert.equal(states.at(-1).length,0);
+  stop();const count=states.length;listeners.forEach(l=>l.next(l.ref.path?{exists:()=>false,metadata:server}:snapshot([])));
+  assert.equal(states.length,count);assert.ok(listeners.every(l=>l.stopped));
+});
+
+it('Plan05 persists only valid view filters across reloads within the same account and branch', () => {
+  const values = new Map(), storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  const allowed = ['hoy', 'semana', 'mes', 'todo'], key = 'report:uid-a:tenant-a:branch-a';
+  writeViewPreference(key, 'semana', allowed, storage);
+  assert.equal(readViewPreference(key, allowed, 'hoy', storage), 'semana');
+  for (const other of ['report:uid-b:tenant-a:branch-a', 'report:uid-a:tenant-b:branch-a', 'report:uid-a:tenant-a:branch-b']) assert.equal(readViewPreference(other, allowed, 'hoy', storage), 'hoy');
+  writeViewPreference(key, 'superadmin', allowed, storage); assert.equal(values.get(key), 'semana');
+  values.set(key, 'unexpected'); assert.equal(readViewPreference(key, allowed, 'hoy', storage), 'hoy');
+  const denied = { getItem: () => { throw Error('Storage denied'); }, setItem: () => { throw Error('Storage denied'); } };
+  assert.equal(readViewPreference(key, allowed, 'hoy', denied), 'hoy');
+  assert.doesNotThrow(() => writeViewPreference(key, 'semana', allowed, denied));
+});
+const record = (data, metadata = server) => ({ received: true, data, metadata });
+const license = { businessId: 'tenant', status: 'activa', expiry: '2030-01-01T00:00:00Z' };
+const access = (licenseDoc, tenantDoc) => licenseAccess({ license: licenseDoc, tenant: tenantDoc, businessId: 'tenant', now: new Date('2026-10-24') });
+
+it('never interprets a cache miss or pending local profile as account deletion or authorization', () => {
+  for (const data of [null, owner]) {
+    assert.equal(profileAccess(data, cached, () => true), 'offline-unverified');
+    assert.equal(profileAccess(data, { ...server, hasPendingWrites: true }, () => true), 'offline-unverified');
+  }
+  assert.equal(profileAccess(null, server, () => true), 'profile-not-found-confirmed');
+  assert.equal(profileAccess(owner, server, () => true), 'ready');
+  assert.equal(profileAccess({ ...owner, role: 'cajero' }, server, () => true), 'profile-incomplete');
+  assert.equal(profileAccess({ ...owner, status: 'inactivo' }, server, () => true), 'suspended');
+  assert.equal(profileAccess(owner, server, () => false), 'shift-denied');
+});
+
+it('distinguishes missing license/tenant, permissions, cache and historical tenant compatibility', () => {
+  assert.equal(access(record(null, cached), record({ status: 'active' })), 'offline-unverified');
+  assert.equal(access(record(null), record({ status: 'active' })), 'license-missing-confirmed');
+  assert.equal(access(record(null), record(null)), 'tenant-missing-confirmed');
+  assert.equal(access(record(license), record(null)), 'active');
+  assert.equal(access(record(license), record({ status: 'suspended' })), 'suspended');
+  assert.equal(access(record({ ...license, expiry: '2020-01-01' }), record(null)), 'expired');
+  assert.equal(access(record({ ...license, businessId: 'other' }), record(null)), 'configuration-error');
+  assert.equal(access({ error: { code: 'permission-denied' } }, record(null)), 'permission-denied');
+  assert.equal(accessErrorState({ code: 'firestore/unavailable' }), 'network-error');
+});
+
+it('requires explicit acceptance and discards callbacks/invitation reads from a closed identity', async () => {
+  let next, fail, resolveInvite, accepted = 0, stopped = 0;
+  const states = [], user = { uid: 'owner', email: 'owner@example.test', emailVerified: true, providerData: [{ providerId: 'google.com' }] };
+  const session = createProfileSession({ user, subscribe: (_uid, onData, onError) => { next = onData; fail = onError; return () => stopped++; },
+    readInvite: () => new Promise(resolve => { resolveInvite = resolve; }), acceptInvite: async () => accepted++,
+    withinShift: () => true, onState: state => states.push(state) });
+  next(null, cached);
+  assert.equal(resolveInvite, undefined);
+  next(null, server);
+  assert.equal(accepted, 0);
+  session.close();
+  const count = states.length;
+  resolveInvite({ email: user.email, ...owner }); await Promise.resolve();
+  next(owner, server); fail({ code: 'permission-denied' });
+  assert.equal(states.length, count); assert.equal(stopped, 1); assert.equal(accepted, 0);
+});
+
+it('keeps confirmed permissions distinct from connection errors and accepts an invitation only once', async () => {
+  let next, fail, finish, accepted = 0;
+  const states = [], user = { uid: 'cashier', email: 'cashier@example.test', emailVerified: true, providerData: [{ providerId: 'google.com' }] };
+  const session = createProfileSession({ user, subscribe: (_uid, onData, onError) => { next = onData; fail = onError; return () => {}; },
+    readInvite: async () => ({ ...owner, email: user.email }),
+    acceptInvite: () => { accepted++; return new Promise(resolve => { finish = resolve; }); },
+    withinShift: () => true, onState: state => states.push(state) });
+  next(null, server); await Promise.resolve();
+  assert.equal(states.at(-1).status, 'needs-invite'); assert.equal(accepted, 0);
+  const first = session.accept(); await session.accept(); assert.equal(accepted, 1);
+  finish(); await first; next(owner, server); assert.equal(states.at(-1).status, 'ready');
+  fail({ code: 'permission-denied' }); assert.equal(states.at(-1).status, 'permission-denied');
+  assert.equal(states.at(-1).profile, null); session.close();
+});
+
+
+// Focused lifecycle checks: no browser, account, Firebase writes or offline DB mutations.
+const { createSessionResources } = await import('../frontend/src/core/session/sessionResources.js');
+it('retains visited listeners/pages during navigation, deduplicates consumers and expires idle resources', () => {
+  const timers = new Map(); let sequence = 0, starts = 0, stops = 0, deliver;
+  const resources = createSessionResources({ schedule: fn => { timers.set(++sequence, fn); return sequence; }, cancel: id => timers.delete(id) });
+  const history = resources.cell('history', []); history.set([{ id: 'page-1' }]);
+  const listener = resources.watch('contracts', next => { starts++; deliver = next; return () => stops++; });
+  const leave = listener.subscribe(() => {}); deliver([{ id: 'one' }], { fromCache: false });
+  leave(); const revisit = resources.watch('contracts', () => { throw new Error('duplicate listener'); });
+  const leaveAgain = revisit.subscribe(() => {});
+  assert.equal(starts, 1); assert.equal(stops, 0); assert.equal(timers.size, 0);
+  assert.equal(revisit.get().data[0].id, 'one'); assert.equal(history.get()[0].id, 'page-1');
+  leaveAgain(); [...timers.values()][0](); assert.equal(stops, 1); assert.equal(revisit.get().isStale, true);
+  resources.close(); deliver([{ id: 'late' }]); assert.equal(revisit.get().data[0].id, 'one');
+  const other = createSessionResources(); assert.deepEqual(other.cell('history', []).get(), []); other.close();
+});
+it('deduplicates pending reads, invalidates results and cancels subsequent pages after logout', async () => {
+  const resources = createSessionResources(); let calls = 0, resolve;
+  const loader = () => { calls++; return new Promise(done => { resolve = done; }); };
+  const first = resources.read('report:one', loader), second = resources.read('report:one', loader);
+  await Promise.resolve(); assert.equal(calls, 1); assert.equal(first, second);
+  resolve([1]); await first; assert.deepEqual(await resources.read('report:one', loader), [1]);
+  resources.invalidate('report:'); const next = resources.read('report:one', async () => [2]); assert.deepEqual(await next, [2]);
+  resources.close(); assert.equal(resources.signal.aborted, true);
+  await assert.rejects(resources.read('report:new', loader), /sesión cambió/); assert.equal(calls, 1);
+});
+it('StrictMode lease replay preserves the active session, but a real unmount closes it', async () => {
+  const resources = createSessionResources(); const first = resources.lease(); first(); const second = resources.lease();
+  await Promise.resolve(); assert.equal(resources.active, true); second(); await Promise.resolve(); assert.equal(resources.active, false);
+});
+
+it('retries a failed shared listener after reconnection or navigation without reviving another identity', () => {
+  const resources = createSessionResources(); let starts = 0, fail, deliver;
+  const listener = resources.watch('contracts', (next, error) => { starts++; deliver = next; fail = error; return () => {}; });
+  const leave = listener.subscribe(() => {}); fail(new Error('offline')); assert.equal(listener.get().data.length, 0);
+  resources.retryErrors(); assert.equal(starts,2); deliver([{id:'fresh'}], {fromCache:false}); assert.equal(listener.get().error,null);
+  fail(new Error('permission-denied')); leave(); const leaveAgain = listener.subscribe(() => {}); assert.equal(starts,3);
+  leaveAgain(); resources.close(); resources.retryErrors(); assert.equal(starts,3);
+});
+
+
+it('waits neutrally through initial cache and invitation discovery, then verifies activation from server', async () => {
+  let next, timeout, activations = 0;
+  const states = [], user = { uid: 'new-owner', email: 'owner@example.test', emailVerified: true, providerData: [{ providerId: 'google.com' }] };
+  const session = createProfileSession({ user, subscribe: (_, onData) => { next = onData; return () => {}; },
+    schedule: callback => { timeout = callback; return 1; }, cancel: () => {},
+    readInvite: async () => ({ ...owner, email: user.email, firstName: 'Titular' }),
+    acceptInvite: async () => { activations++; next(null, cached); },
+    readProfile: async () => ({ data: owner, metadata: server }), withinShift: () => true, onState: state => states.push(state) });
+  next(null, cached); assert.equal(states.at(-1).status, 'loading');
+  timeout(); assert.equal(states.at(-1).status, 'offline-unverified');
+  next(null, server); assert.equal(states.at(-1).status, 'loading'); await Promise.resolve();
+  assert.equal(states.at(-1).status, 'needs-invite'); assert.equal(states.at(-1).invitation.businessId, 'tenant');
+  await session.accept(); assert.equal(activations, 1); assert.equal(states.at(-1).status, 'ready');
+  assert.ok(!states.some(state => state.status === 'profile-not-found-confirmed')); session.close();
+});
+it('retains personnel only inside the same session after index failure and blocks confirmation', () => {
+  const resources = createSessionResources(); let deliver, fail;
+  const listener = resources.watch('personnel', (next, error) => { deliver = next; fail = error; return () => {}; }, [], { preserveOnError: true });
+  const off = listener.subscribe(() => {}); deliver([owner], server); fail({ code: 'failed-precondition', message: 'missing index' });
+  assert.equal(listener.get().data.length, 1); assert.equal(listener.get().isStale, true); assert.equal(listener.get().error.code, 'failed-precondition');
+  off(); resources.close(); const other = createSessionResources(); assert.deepEqual(other.watch('personnel', () => () => {}).get().data, []); other.close();
+});
+
+
+it('bootstraps cached business profiles for presentation, then replaces them with server truth', () => {
+  let receive, fail;
+  const states = [], user = { uid: 'offline-owner', email: 'offline@example.test', emailVerified: true, providerData: [{ providerId: 'google.com' }] };
+  const profile = { ...owner, hasAcceptedTerms: true };
+  const session = createProfileSession({ user, subscribe: (_, next, error) => { receive = next; fail = error; return () => {}; },
+    readInvite: async () => null, withinShift: () => true, onState: next => states.push(next) });
+  receive(profile, cached);
+  assert.equal(states.at(-1).status, 'offline-assisted'); assert.equal(states.at(-1).profile.accessVerified, false);
+  receive(profile, server); assert.equal(states.at(-1).status, 'ready'); assert.equal(states.at(-1).profile.accessVerified, true);
+  fail({ code: 'permission-denied' }); assert.equal(states.at(-1).status, 'permission-denied'); assert.equal(states.at(-1).profile, null);
+  receive(profile, cached); assert.notEqual(states.at(-1).status, 'offline-assisted');
+  receive(profile, server); assert.equal(states.at(-1).status, 'ready');
+  receive({ ...profile, role: 'superadmin' }, cached); assert.equal(states.at(-1).status, 'loading');
+  receive(profile, { ...cached, hasPendingWrites: true }); assert.equal(states.at(-1).status, 'loading'); session.close();
+});
+it('requires valid cached license and tenant data without pending writes or confirmed denial', async () => {
+  const { cachedLicenseAccess } = await import('../frontend/src/core/session/accessState.js');
+  const records = { businessId: 'tenant', license: record(license, cached), tenant: record({ businessId: 'tenant', status: 'active' }, cached) };
+  assert.equal(cachedLicenseAccess(records), true);
+  assert.equal(cachedLicenseAccess({ ...records, tenant: record(null, cached), knownTenantAbsent: true }), true);
+  for (const changed of [
+    { license: record({ ...license, expiry: '2020-01-01' }, cached) },
+    { tenant: record({ businessId: 'other', status: 'active' }, cached) },
+    { tenant: record(null, cached) },
+    { license: { ...records.license, error: { code: 'permission-denied' } } },
+    { license: record(license, { ...cached, hasPendingWrites: true }) },
+  ]) assert.ok(!cachedLicenseAccess({ ...records, ...changed }));
+});
+it('never authorizes writes from assisted cache, offline state or a different identity', async () => {
+  const { setProfileAuthority, setLicenseAuthority, resetAccessAuthority, assertConfirmedWrite } = await import('../frontend/src/core/session/operationAccess.js');
+  const { getIdentityKey } = await import('../frontend/src/core/session/identity.js');
+  const user = { uid: 'owner', ...owner }, request = { uid: 'owner', online: true };
+  resetAccessAuthority(); setProfileAuthority(user, false); setLicenseAuthority(getIdentityKey(user), true);
+  assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/);
+  setProfileAuthority(user, true); setLicenseAuthority(getIdentityKey(user), false);
+  assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/);
+  setLicenseAuthority(getIdentityKey(user), true); assert.doesNotThrow(() => assertConfirmedWrite(request));
+  assert.throws(() => assertConfirmedWrite({ ...request, online: false }), /Operación bloqueada/);
+  assert.throws(() => assertConfirmedWrite({ ...request, uid: 'other' }), /Operación bloqueada/);
+  setProfileAuthority({ ...user, businessId: 'other' }, true);
+  assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/); resetAccessAuthority();
+});
