@@ -6,5 +6,5 @@ it('opens and counts cash with exact cents, rejects invalid original text, and p
   const result = await runBrowserFixture({ htmlFile: new URL('./cash-amount.browser.html', import.meta.url), route: '/cash-cent-precision',
     setupPage: page => page.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] }),
   });
-  assert.equal(result.checks.length, 44);
+  assert.equal(result.checks.length, 48);
 });

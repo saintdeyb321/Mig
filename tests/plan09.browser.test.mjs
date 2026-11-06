@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { runBrowserFixture } from './helpers/browserHarness.mjs';
+import { readBrowserBuildCss, runBrowserFixture } from './helpers/browserHarness.mjs';
 
 const path = name => fileURLToPath(new URL('../frontend/src/' + name, import.meta.url)).replaceAll('\\', '/');
 const mockHooks = Object.fromEntries([
@@ -27,9 +27,8 @@ const moduleMocks = { ...mockHooks,
 };
 
 it('P09 verifies actual views, viewport-bound checkout, dialog focus/busy, role navigation and contrast in isolated Chromium', { timeout: 180000 }, async () => {
-  const index = await readFile(new URL('../frontend/dist/index.html', import.meta.url), 'utf8');
-  const cssPath = index.match(/href="([^\"]+\.css)"/)[1];
-  const css = await readFile(new URL('../frontend/dist' + cssPath, import.meta.url), 'utf8');
+  const css = await readBrowserBuildCss();
+  const artifacts = process.env.MIGAPOS_TEST_ARTIFACT_DIR || '.release';
   const checks = [], screenshots = [];
   await runBrowserFixture({ htmlFile: new URL('./plan09.browser.html', import.meta.url), route: '/plan09-ux', fixture: { css }, moduleMocks,
     setupPage: async page => {
@@ -48,7 +47,7 @@ it('P09 verifies actual views, viewport-bound checkout, dialog focus/busy, role 
         const failure = await evaluate(async (name, role) => { await window.__p09.show(name, role); window.scrollTo(0, 0); await window.__p09.frames(); return window.__p09.renderError; }, name, role);
         assert.ok(!failure, `Render ${name}: ${failure}`);
       };
-      const capture = async name => { await new Promise(resolve => setTimeout(resolve, 220)); const result = await page.send('Page.captureScreenshot', { format: 'png' }); const directory = name.startsWith('p0907-') ? '.release/p0907-visual' : '.release/plan09-visual'; await mkdir(directory, { recursive: true }); await writeFile(directory + '/' + name + '.png', Buffer.from(result.data, 'base64')); screenshots.push(name); };
+      const capture = async name => { await new Promise(resolve => setTimeout(resolve, 220)); const result = await page.send('Page.captureScreenshot', { format: 'png' }); const directory = artifacts + (name.startsWith('p0907-') ? '/p0907-visual' : '/plan09-visual'); await mkdir(directory, { recursive: true }); await writeFile(directory + '/' + name + '.png', Buffer.from(result.data, 'base64')); screenshots.push(name); };
       const check = (condition, name) => { assert.ok(condition, name); checks.push(name); };
 
       await viewport(390,740); await show('users');

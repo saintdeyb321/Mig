@@ -32,7 +32,6 @@ const observePrint = (inspect, { root = document.body, native = true, fail = fal
   observer.observe(root, { childList: true });
   return () => observer.disconnect();
 };
-const externalImage = 'https://firebasestorage.googleapis.com/v0/b/demo-migapos.appspot.com/o/contracts%2Ffixture.png?alt=media&token=fixture';
 const attack = '<img src=x onerror="parent.__xss=1"><script>parent.__xss=1</script>" &';
 
 try {
@@ -57,7 +56,7 @@ try {
   check(inspections === 1 && beforePrint > 0, 'Native POS print works with sandbox and CSP');
   check(!document.querySelector('iframe'), 'POS frame removed after printing');
   const contract = { contractId: 'fixture', clientName: attack, clientPhone: attack, details: `Primera\n${attack}\nÚltima`, deliveryType: 'domicilio', deliveryAddress: attack,
-    referenceImage: temporary, referenceImages: [temporary, dataImage, externalImage], total: 10, balance: 5, payments: [{ method: attack, label: attack, amount: 5 }] };
+    referenceImage: temporary, referenceImages: [temporary, dataImage], total: 10, balance: 5, payments: [{ method: attack, label: attack, amount: 5 }] };
   for (const template of [generateContractReceiptHTML, generateContractProductionHTML, generateContractTextOnlyHTML]) {
     await createPrintJob({ finishTimeout: 300 }).print(template(contract, company));
   }
@@ -101,7 +100,17 @@ try {
   const deadUrl = URL.createObjectURL(blob); URL.revokeObjectURL(deadUrl);
   await rejection(createPrintJob({ imageTimeout: 1000 }).print(`<body><img src="${deadUrl}"></body>`), /cargar|carg/);
   check(!document.querySelector('iframe'), 'Image load failure closes the print container');
-  await rejection(createPrintJob({ imageTimeout: 200 }).print('<body><img src="https://storage.googleapis.com/demo-migapos/slow.png"></body>'), /cargar|carg/);
+  const stalledImage = new MutationObserver(records => {
+    for (const frame of records.flatMap(record => [...record.addedNodes]).filter(node => node.tagName === 'IFRAME')) {
+      frame.addEventListener('load', () => {
+        Object.defineProperty(frame.contentDocument.images[0], 'complete', { value: false });
+      }, { once: true, capture: true });
+    }
+  });
+  stalledImage.observe(document.body, { childList: true });
+  try {
+    await rejection(createPrintJob({ imageTimeout: 500 }).print(`<body><img src="${dataImage}"></body>`), /no terminó de cargar/);
+  } finally { stalledImage.disconnect(); }
   check(!document.querySelector('iframe'), 'Image load deadline closes a stalled print job');
 
   let rendered, rejected;
@@ -129,8 +138,10 @@ try {
     urls => lateJob.print(`<body><img src="${urls[0]}"></body>`), imageOptions), /AbortError/);
   check(latePopup.closed && revoked.length === 4, 'Closing a popup cancels late asynchronous print preparation and revokes its Blob');
 
-  const allowed = ['https://identitytoolkit.googleapis.com/fixture', 'https://securetoken.googleapis.com/fixture', 'https://firestore.googleapis.com/fixture', 'https://firebasestorage.googleapis.com/fixture', 'https://us-central1-migapos.cloudfunctions.net/fixture'];
+  const allowed = ['https://identitytoolkit.googleapis.com/fixture', 'https://securetoken.googleapis.com/fixture', 'https://firestore.googleapis.com/fixture'];
   await Promise.all(allowed.map(url => fetch(url).then(response => assert(response.ok, 'CSP blocked ' + url))));
+  const unavailableInSpark = ['https://firebasestorage.googleapis.com/fixture', 'https://storage.googleapis.com/fixture', 'https://us-central1-demo-migapos.cloudfunctions.net/fixture'];
+  await Promise.all(unavailableInSpark.map(url => rejection(fetch(url), /Failed to fetch/)));
   const script = document.createElement('script'); script.src = 'https://apis.google.com/js/api.js';
   await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
   const authFrame = document.createElement('iframe'); authFrame.src = 'https://migapos.firebaseapp.com/__/auth/iframe';

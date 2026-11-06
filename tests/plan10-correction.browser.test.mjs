@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { runBrowserFixture } from './helpers/browserHarness.mjs';
+import { readBrowserBuildCss, runBrowserFixture } from './helpers/browserHarness.mjs';
 
 const path = name => fileURLToPath(new URL('../frontend/src/' + name, import.meta.url)).replaceAll('\\', '/');
 const mockHooks = Object.fromEntries([
@@ -27,8 +27,8 @@ const moduleMocks = { ...mockHooks,
 };
 
 it('P10-06 preserves full payment focus, article space, fixed identity and compact sale cards', {timeout:180000}, async()=>{
-  const index=await readFile(new URL('../frontend/dist/index.html',import.meta.url),'utf8');
-  const css=await readFile(new URL('../frontend/dist'+index.match(/href="([^"]+\.css)"/)[1],import.meta.url),'utf8');
+  const css=await readBrowserBuildCss();
+  const artifacts=(process.env.MIGAPOS_TEST_ARTIFACT_DIR || '.release')+'/p10-06-visual';
   // Measured rejected P10 reference at 1440x900, eight fixture products, cash not entered.
   const before={ticket:{items:327}};
   const checks=[],metrics=[],captures=[];
@@ -41,7 +41,7 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
       const size=async(width,height)=>{await page.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<768});await frames();};
       const key=async(key,code=key,virtual)=>{await page.send('Input.dispatchKeyEvent',{type:'keyDown',key,code,windowsVirtualKeyCode:virtual});await page.send('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode:virtual});await frames();};
       const show=async(name,role='dueño')=>check(!await ev(async(name,role)=>{await window.__p09.show(name,role);window.scrollTo(0,0);await window.__p09.frames();return window.__p09.renderError;},name,role),'render '+name);
-      const shot=async(name)=>{await new Promise(r=>setTimeout(r,180));const p=await page.send('Page.captureScreenshot',{format:'png'});await mkdir('.release/p10-06-visual',{recursive:true});await writeFile('.release/p10-06-visual/after-'+name+'.png',Buffer.from(p.data,'base64'));captures.push(name);};
+      const shot=async(name)=>{await new Promise(r=>setTimeout(r,180));const p=await page.send('Page.captureScreenshot',{format:'png'});await mkdir(artifacts,{recursive:true});await writeFile(artifacts+'/after-'+name+'.png',Buffer.from(p.data,'base64'));captures.push(name);};
       const cart=async count=>ev(async count=>{
         const m=window.__p09;m.cash.currentSession={id:'p09-session',serverConfirmed:true,userId:'p09-user'};m.cash.isExpired=false;m.notify('cash');m.setBranch('p09-branch');await m.frames();
         for(const b of document.querySelectorAll('aside[aria-label="Ticket"] button[aria-label^="Quitar"]')){b.click();await m.frames();}
@@ -114,7 +114,7 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
       check(await ev(()=>{const r=document.querySelector('[role="dialog"] .pos-ticket');return Boolean(r.querySelector('[role="alert"]'))&&r.querySelector('.pos-ticket-actions button').disabled;}),'monetary validation error still visible and charge blocked');await shot('invalid-payment-320');
       await ev(()=>window.__p09.stop());
     }});
-  await writeFile('.release/p10-06-visual/after-layout.json',JSON.stringify(metrics,null,2));
+  await writeFile(artifacts+'/after-layout.json',JSON.stringify(metrics,null,2));
   console.log(JSON.stringify({checks:checks.length,captures:captures.length}));
 });
 

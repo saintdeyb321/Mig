@@ -42,6 +42,29 @@ try {
     await enter('10.05');
     check(input.value === '10.05', `${mode}: a rejected attempt keeps the form editable`);
   }
+  let resolveOpening, attempts = 0, dismissals = 0;
+  const opening = new Promise(resolve => { resolveOpening = resolve; });
+  const renderOpening = currentSession => root.render(React.createElement(CashRegisterModals, { ...props, currentSession,
+    showOpenModal: true, showCloseModal: false, setShowOpenModal: open => { if (!open) dismissals++; },
+    openRegister: amount => { check(amount === 100, 'opening sends the declared amount'); attempts++; return opening; } }));
+  renderOpening(null);
+  await wait(() => document.querySelector('h2')?.textContent.includes('Abrir caja'));
+  const fund = document.querySelector('input[type="number"]');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(fund, '100.00');
+  fund.dispatchEvent(new Event('input', { bubbles: true }));
+  await tick();
+  const form = document.querySelector('form');
+  for (let click = 0; click < 2; click++) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await wait(() => document.querySelector('fieldset').disabled);
+  check(attempts === 1 && dismissals === 0, 'a double submit sends one opening and the busy modal remains visible');
+  renderOpening({ status: 'open', serverConfirmed: false });
+  await wait(() => document.body.innerText.includes('Ya hay un turno'));
+  check(dismissals === 0 && document.querySelector('[role="dialog"]'), 'a cached shift never closes the dialog');
+  resolveOpening(false);
+  await wait(() => !document.querySelector('fieldset').disabled);
+  renderOpening({ status: 'open', serverConfirmed: true });
+  await wait(() => dismissals === 1 && !document.querySelector('[role="dialog"]'));
+  check(attempts === 1, 'confirmed shift closes the dialog without another opening');
   result = { ok: true, checks };
 } catch (error) { result = { ok: false, checks, error: error.stack }; }
 root.unmount();

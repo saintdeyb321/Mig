@@ -8,6 +8,16 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer } from '../../frontend/node_modules/vite/dist/node/index.js';
 
+const workspace = fileURLToPath(new URL('../../', import.meta.url));
+
+export async function readBrowserBuildCss() {
+  const directory = resolve(workspace, process.env.MIGAPOS_TEST_BUILD_DIR || 'frontend/dist');
+  const index = await readFile(resolve(directory, 'index.html'), 'utf8');
+  const asset = index.match(/href="(\/assets\/[^"/]+\.css)"/)?.[1];
+  assert.ok(asset, 'The browser fixture requires a built CSS asset.');
+  return readFile(resolve(directory, '.' + asset), 'utf8');
+}
+
 function findBrowser() {
   if (process.env.MIGAPOS_TEST_BROWSER) {
     assert.ok(existsSync(process.env.MIGAPOS_TEST_BROWSER), 'MIGAPOS_TEST_BROWSER does not point to an existing Chromium/Edge executable.');
@@ -49,7 +59,6 @@ async function connectCDP(url, onEvent) {
 export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, inspectPage, mockPng, verifyDownload, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
   const browser = findBrowser();
   const root = fileURLToPath(new URL('../../frontend/', import.meta.url));
-  const workspace = fileURLToPath(new URL('../../', import.meta.url));
   const html = (await readFile(htmlFile, 'utf8')).replaceAll('__WORKSPACE__', workspace.replaceAll('\\', '/'));
   const profile = await mkdtemp(resolve(tmpdir(), 'migapos-isolated-browser-'));
   let complete, finished = false, stderr = '', requests = 0;
@@ -65,7 +74,9 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
       resolveId: id => id === 'virtual:browser-fixture' ? '\0browser-fixture' : Object.hasOwn(moduleMocks, id) ? id : undefined,
       load: id => id === '\0browser-fixture' ? 'export default ' + JSON.stringify(fixture || {}) + ';' : moduleMocks[id],
       configureServer(server) {
-      server.middlewares.use((_request, response, next) => {
+      server.middlewares.use((request, response, next) => {
+        // Chromium sends absolute URLs when using this server as its deny-only proxy.
+        if (!request.url?.startsWith('/')) { response.writeHead(403).end(); return; }
         requests++;
         for (const [key, value] of Object.entries(headers)) response.setHeader(key, value);
         next();
@@ -90,7 +101,12 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
   const timeout = setTimeout(() => complete({ ok: false, error: `Browser fixture timed out after 60s (${requests} HTTP requests). ${stderr.slice(-1200)}` }), 60000);
   try {
     await server.listen();
+    const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
+    const localHosts = [new URL(origin).host, ...(firebaseSdk ? [8080, 9099, 5001].map(port => `127.0.0.1:${port}`) : [])];
+    server.httpServer.on('connect', (_request, socket) => socket.destroy());
     child = spawn(browser, ['--headless=new', '--disable-gpu', '--disable-background-networking', '--disable-popup-blocking', '--no-first-run', '--no-default-browser-check',
+      // Prevent outbound connections even from workers outside the page's DevTools interception.
+      `--proxy-server=${origin}`, `--proxy-bypass-list=<-loopback>;${localHosts.join(';')}`, '--disable-quic',
       ...(process.platform === 'linux' && process.getuid?.() === 0 ? ['--no-sandbox'] : []),
       '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
     childClosed = new Promise(resolve => child.once('close', resolve));
@@ -116,12 +132,11 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
       page = await connectCDP(target.webSocketDebuggerUrl, event => {
         if (event.method === 'Fetch.requestPaused') {
           const {requestId, request} = event.params;
-          if (!mockPng) {
-            void page.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
-            complete({ ok: false, error: 'Unexpected external request blocked before contacting its destination.' }); return;
-          }
-          if (request.url.endsWith('/slow.png')) return; // Local timeout fixture; never contacts Storage.
           const url = new URL(request.url);
+          if (!mockPng) {
+            void page.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }).catch(() => {});
+            complete({ ok: false, error: `Unexpected request to ${url.origin} blocked by the browser fixture.` }); return;
+          }
           const image = url.hostname === 'firebasestorage.googleapis.com' || url.hostname === 'storage.googleapis.com' || url.hostname === 'www.gstatic.com';
           const script = url.hostname === 'apis.google.com';
           const frame = url.pathname === '/__/auth/iframe';
@@ -133,7 +148,8 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
       });
       await page.send('Runtime.enable');
       if (setupPage) await setupPage(page);
-      await page.send('Page.navigate', { url: `http://127.0.0.1:${server.httpServer.address().port}${route}` });
+      await page.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] });
+      await page.send('Page.navigate', { url: `${origin}${route}` });
     }
     const result = await report;
     assert.equal(result.ok, true, result.error);

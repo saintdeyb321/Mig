@@ -123,7 +123,8 @@ describe('Subscription lifecycle', () => {
       return () => {};
     }, data => delivered.push(data), error => { throw error; }, records => records[0].id === 'old' ? first.promise : second.promise);
     const old = [{ id: 'old', businessId: 'a' }], latest = [{ id: 'latest', businessId: 'a' }];
-    const firstRun = callback(old), secondRun = callback(latest);
+    const confirmed = { fromCache: false, hasPendingWrites: false };
+    const firstRun = callback(old, confirmed), secondRun = callback(latest, confirmed);
     second.resolve(latest);
     await secondRun;
     first.resolve(old);

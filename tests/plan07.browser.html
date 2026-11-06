@@ -46,7 +46,7 @@ try {
   setCatalog(products); await wait(() => !api.catalogBlocked);
   for (const product of products.slice(0, 8)) api.addToCart(product);
   await wait(() => api.cart.length === 8); api.addToCart(products[8]); await new Promise(resolve => setTimeout(resolve, 50));
-  check(api.cart.length === 8 && document.getElementById('root').innerText.includes('8 de 8 productos diferentes') && document.getElementById('root').innerText.includes('Carrito lleno'), 'ninth distinct item is blocked with a coherent counter');
+  check(api.cart.length === 8 && document.getElementById('root').innerText.includes('8 productos') && document.getElementById('root').innerText.includes('Llegaste al límite de productos.'), 'ninth distinct item is blocked with a coherent counter');
   api.addToCart(products[0]); await wait(() => api.cart[0].qty === 2);
   check(api.cart.length === 8, 'existing quantities can increase in a full cart');
   publish([{ id: 'confirmed-notice' }], { fromCache: false, hasPendingWrites: false }); await wait(() => subscription.data.length === 1);

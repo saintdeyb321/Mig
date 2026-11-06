@@ -34,8 +34,12 @@ export async function plan08FinancialHarness() {
       state.transactions++;
       const staged = [];
       const result = await work({ get: async ref => { reads.push(ref.path); return snapshot(ref); },
-        set: (ref, data) => staged.push([ref, data]), update: (ref, data) => staged.push([ref, { ...documents.get(ref.path), ...data }]) });
-      for (const [ref, data] of staged) { documents.set(ref.path, data); writes.push(ref.path); }
+        set: (ref, data) => staged.push([ref, data]), update: (ref, data) => staged.push([ref, { ...documents.get(ref.path), ...data }]),
+        delete: ref => staged.push([ref, null]) });
+      for (const [ref, data] of staged) {
+        if (data === null) documents.delete(ref.path); else documents.set(ref.path, data);
+        writes.push(ref.path);
+      }
       if (staged.length) state.onCommit();
       if (state.afterCommitFailure) throw unavailable();
       return result;

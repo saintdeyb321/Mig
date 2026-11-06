@@ -219,12 +219,22 @@ describe('Hosting policy and conservative cleanup', () => {
     const markdown = [...walk('docs'), ...readdirSync('.').filter(name => name.endsWith('.md'))]
       .filter(path => path.endsWith('.md')).map(path => path.replaceAll('\\', '/').replace(resolve('.') .replaceAll('\\', '/') + '/', ''));
     assert.ok(markdown.includes('docs/MASTER-PLAN.md'));
-    assert.ok(markdown.every(path => ['docs/MASTER-PLAN.md', 'docs/PLAN-REFAC-SPARK-MIGAPOS.md', 'docs/PLAN-REFAC-FRONTEND-UX-MIGAPOS.md', 'docs/PLAN-03-CORRECCION-FLUJOS-OPERATIVOS-MIGAPOS.md', 'docs/INDICES-FIRESTORE-MIGAPOS.md',
+    const allowedMarkdown = ['docs/MASTER-PLAN.md', 'docs/PLAN-REFAC-SPARK-MIGAPOS.md', 'docs/PLAN-REFAC-FRONTEND-UX-MIGAPOS.md', 'docs/PLAN-03-CORRECCION-FLUJOS-OPERATIVOS-MIGAPOS.md', 'docs/INDICES-FIRESTORE-MIGAPOS.md',
       'docs/PLAN-01-RESCATE-UX-IX-MIGAPOS.md', 'docs/PLAN-02-RECUPERACION-SPARK-FLUJOS-DATOS-MIGAPOS.md', 'docs/PLAN-04-CIERRE-MVP-MIGAPOS.md', 'docs/PLAN-05-CORRECCION-AUDITORIA-PREPRODUCCION-MIGAPOS.md',
       'docs/PLAN-08-CORRECCION-FLUJOS-MIGAPOS.md', 'docs/PROMPT-CODEX-PLAN-08-MIGAPOS.md',
       'docs/PLAN-09-REFAC-UX-GALAXIA-MIGAPOS.md', 'docs/PROMPT-CODEX-PLAN-09-MIGAPOS.md', 'docs/PLAN-09-DESIGN-SYSTEM-MIGAPOS.md', 'docs/PROMPT-CODEX-CORRECCION-P09-07.md', 'docs/AUDITORIA-PLAN09-2026-11-04.md',
       'docs/AUDITORIA-P09-07-2026-11-04.md', 'docs/PROMPT-CODEX-P09-08.md',
       'docs/PLAN-10-UX-OPERATIVA-POS-HISTORIAL.md', 'docs/PROMPT-CODEX-INICIO-PLAN-10.md', 'docs/PLAN-10-RESULTADOS.md',
-      'docs/PLAN-10-P10-06-CORRECCION-UX-OPERATIVA.md', 'docs/PROMPT-CODEX-CORRECCION-P10-06.md', 'docs/PLAN-10-CORRECCION-P10-06-RESULTADOS.md'].includes(path)));
+      'docs/PLAN-10-P10-06-CORRECCION-UX-OPERATIVA.md', 'docs/PROMPT-CODEX-CORRECCION-P10-06.md', 'docs/PLAN-10-CORRECCION-P10-06-RESULTADOS.md',
+      'docs/PLAN-12-REFINAMIENTO-VISUAL-GALAXY-NEBULA.md', 'docs/PROMPT-CODEX-INICIO-PLAN-12.md',
+      'docs/PLAN-12-P12-06-HISTORIAL-POS-ANULACIONES-UX.md', 'docs/PROMPT-CODEX-P12-06-CORRECCION-HISTORIAL-POS.md',
+      'docs/PLAN-12-P12-07-UX-OPERATIVA-CAJA-NOTIFICACIONES-CONTRATOS.md', 'docs/PROMPT-CODEX-INICIO-P12-07.md',
+      'docs/PLAN-12-P12-08-CONTRATOS-REPORTES-ANULACION-UX.md', 'docs/PROMPT-CODEX-INICIO-P12-08.md',
+      'docs/PLAN-12-P12-09-POS-CARRITO-CONTRATOS-VISUAL.md', 'docs/PROMPT-CODEX-INICIO-P12-09.md',
+      'docs/PLAN-12-P12-10-UX-PERSONAL-AJUSTES-AUDITORIA-ANULACIONES.md', 'docs/PROMPT-CODEX-INICIO-P12-10.md',
+      'docs/AUDITORIA-ANULACIONES-CAJA-REPORTES.md', 'docs/AUDITORIA-FINANCIERA-ANULACIONES-CAJA-EXCEL.md', 'docs/AUDITORIA-TECNICA-MIGAPOS-10-20-NEGOCIOS.md',
+      'docs/PLAN-13-FASE-02-QA-AUTOMATIZADA-PREVENTA.md', 'docs/PROMPT-CODEX-PLAN-13-FASE-02.md',
+      'docs/CHECKLIST-QA-PREVENTA-MIGAPOS-2026-11-06.md', 'docs/PLAN-13-RESULTADOS-QA-AUTOMATIZADA.md'];
+    assert.deepEqual(markdown.filter(path => !allowedMarkdown.includes(path)), [], 'Documentos Markdown inesperados en el inventario local');
   });
 });
