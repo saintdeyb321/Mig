@@ -179,3 +179,7 @@ Datos sintéticos, SDK simulado y build de emulador `demo-migapos`. Chromium us�
 Los cuatro FAIL de Fase 02, **P0.4, N3, R4 y O5**, pasan con la evidencia acotada descrita arriba. El balance acumulado de los 73 casos queda en **39 PASS · 0 FAIL · 26 BLOCKED · 8 MANUAL**. Se conservan los casos bloqueados y manuales de la matriz original. La preventa sigue condicionada a Rules y CI del SHA exacto, aislamiento con usuarios de ensayo, devolución real verificable, inventario perecedero, restauración, cuotas y aceptación manual.
 
 Archivos de la fase: lectura y proyección en `reportTotals.js`, `reportResource.js`, `sessionReportReads.js`, `useReports.js`, `useExportSales.js`, `salesWorkbook.js` y `salesDataProcessor.js`. Layout e íconos en `index.css`, `BottomNav.jsx`, `PaymentParts.jsx` y `ReportParts.jsx`. Regresiones en `plan13.test.mjs`, `plan09.browser.test.mjs`, `plan10-correction.browser.test.mjs`, `ui-security.test.mjs` y `.github/workflows/verify.yml`.
+
+## Fase 04 · Seguimiento
+
+La auditoría del propietario registró un fallo de P10-06 en CI #37. El diagnóstico reproduce el exceso de altura con DejaVu Sans, conserva el límite de 310 px y documenta la reparación local. Las pruebas con los lectores acotados reproducen el descuadre histórico entre días separados. La aceptación estricta sigue en FAIL y la propuesta de verificación por ID requiere aprobación. [Diagnóstico, métricas y coste estimado](./PLAN-13-FASE-04-DIAGNOSTICO-CONCILIACION.md)

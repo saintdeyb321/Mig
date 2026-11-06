@@ -31,12 +31,25 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
   const artifacts=(process.env.MIGAPOS_TEST_ARTIFACT_DIR || '.release')+'/p10-06-visual';
   // Measured rejected P10 reference at 1440x900, eight fixture products, cash not entered.
   const before={ticket:{items:327}};
-  const checks=[],metrics=[],captures=[];
-  await runBrowserFixture({htmlFile:new URL('./plan09.browser.html',import.meta.url),fixture:{css},moduleMocks,
+  const checks=[],metrics=[],captures=[],historyMetrics=[],historyFailures=[];
+  try {
+    await runBrowserFixture({htmlFile:new URL('./plan09.browser.html',import.meta.url),fixture:{css},moduleMocks,
     setupPage:page=>page.send('Fetch.enable',{patterns:[{urlPattern:'https://*',requestStage:'Request'}]}),
     inspectPage:async page=>{
       const ev=async(fn,...args)=>{const r=await page.send('Runtime.evaluate',{expression:`(${fn.toString()})(...${JSON.stringify(args)})`,awaitPromise:true,returnByValue:true});assert.ok(!r.exceptionDetails,r.exceptionDetails?.exception?.description);return r.result.value;};
       const check=(yes,label)=>{assert.ok(yes,label);checks.push(label);};
+      const platformFonts=async()=>{
+        try {
+          await page.send('DOM.enable');
+          await page.send('CSS.enable');
+          const {root}=await page.send('DOM.getDocument');
+          return Object.fromEntries(await Promise.all(['header p','footer p span'].map(async selector=>{
+            const {nodeId}=await page.send('DOM.querySelector',{nodeId:root.nodeId,selector:'.sale-history-card '+selector});
+            const {fonts}=await page.send('CSS.getPlatformFontsForNode',{nodeId});
+            return [selector,fonts.map(font=>font.familyName)];
+          })));
+        } catch(error) { return {unavailable:error.message}; }
+      };
       const frames=()=>ev(()=>window.__p09.frames());
       const size=async(width,height)=>{await page.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<768});await frames();};
       const key=async(key,code=key,virtual)=>{await page.send('Input.dispatchKeyEvent',{type:'keyDown',key,code,windowsVirtualKeyCode:virtual});await page.send('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode:virtual});await frames();};
@@ -94,15 +107,60 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
           await ev(count=>{const m=window.__p09;m.history.sales=Array.from({length:count},(_,i)=>({...m.makeSale('p1006-'+i,'confirmed'),cashierName:'Ana Pérez'}));},count);await show('operationalHistory');
           check(await ev(()=>document.documentElement.scrollWidth<=innerWidth+1),'history fits '+width+'/'+count);
           const card=await ev(()=>{
-            const c=document.querySelector('article'),h=c.querySelector('header'),a=[...c.querySelectorAll('button')].find(b=>b.textContent==='Anular ticket');
+            const c=document.querySelector('.sale-history-card'),h=c.querySelector('header'),f=c.querySelector('footer');
+            const a=[...f.querySelectorAll('button')].find(b=>b.textContent==='Anular ticket');
+            const style=getComputedStyle(c);
+            const colorProbe=document.createElement('span');
+            colorProbe.hidden=true;
+            c.append(colorProbe);
+            const resolveColor=value=>{
+              colorProbe.style.color=value;
+              return getComputedStyle(colorProbe).color;
+            };
+            const canvas=document.createElement('canvas');
+            canvas.width=canvas.height=1;
+            const context=canvas.getContext('2d',{colorSpace:'srgb',willReadFrequently:true});
+            const channels=color=>{
+              context.clearRect(0,0,1,1);
+              context.fillStyle=color;
+              context.fillRect(0,0,1,1);
+              return [...context.getImageData(0,0,1,1).data];
+            };
+            const bg=style.backgroundColor, panel=resolveColor('var(--color-panel)');
+            const stripe=style.borderTopColor, success=resolveColor('var(--color-success)');
+            const foreground=getComputedStyle(h.querySelector('p')).color;
+            const footerForeground=getComputedStyle(f.querySelector('p')).color;
+            colorProbe.remove();
+            const luminance=color=>color.slice(0,3).map(value=>value/255)
+              .map(value=>value<=0.04045?value/12.92:((value+0.055)/1.055)**2.4)
+              .reduce((sum,value,index)=>sum+value*[0.2126,0.7152,0.0722][index],0);
+            const rgba=channels(bg), backgroundLight=luminance(rgba);
+            const contrast=ink=>{
+              const light=luminance(channels(ink));
+              return (Math.max(light,backgroundLight)+0.05)/(Math.min(light,backgroundLight)+0.05);
+            };
             return {height:c.getBoundingClientRect().height,width:c.clientWidth,action:a.getBoundingClientRect().width,
-              head:h.innerText,finance:c.querySelector('dl').innerText,body:c.innerText,label:c.getAttribute('aria-label'),bg:getComputedStyle(c).backgroundColor,
+              head:h.innerText,finance:c.querySelector('dl').innerText,body:c.innerText,label:c.getAttribute('aria-label'),bg,panel,rgba,neutral:rgba.join()===channels(panel).join(),
+              backgroundLight,contrast:contrast(foreground),footerContrast:contrast(footerForeground),stripe,success,stripeMatches:channels(stripe).join()===channels(success).join(),
+              stripeWidth:style.borderTopWidth,fontFamily:style.fontFamily,headerHeight:h.getBoundingClientRect().height,
+              footer:{text:f.innerText,height:f.getBoundingClientRect().height,fontFamily:getComputedStyle(f).fontFamily},
+              platform:navigator.platform,userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight],actionEnabled:!a.disabled,
               columns:getComputedStyle(document.querySelector('.history-grid')).gridTemplateColumns.split(' ').length,excel:document.querySelector('.export-toolbar').clientHeight};
           });
+          const dimensions=`${width}x${height}, ${count} tickets`;
+          historyMetrics.push({dimensions,...card,renderedFonts:count===1?await platformFonts():undefined,
+            oldBackgroundCheck:card.bg==='rgb(255, 254, 252)',oldHeightCheck:card.height<310});
+          for(const [passed,criterion]of [
+            [card.neutral&&card.rgba[3]===255&&card.backgroundLight>=0.85&&card.contrast>=4.5&&card.footerContrast>=4.5,
+              `light card matches panel with readable text at ${dimensions}: bg=${card.bg}, panel=${card.panel}, luminance=${card.backgroundLight}, contrast=${card.contrast}, footerContrast=${card.footerContrast}`],
+            [card.height<310,`compact card at ${dimensions}: height=${card.height}px, limit <310px, width=${card.width}px, header=${card.headerHeight}px, footer=${card.footer.height}px, font=${card.fontFamily}, footer text=${card.footer.text}`],
+            [card.stripeMatches&&parseFloat(card.stripeWidth)>=4,`cash stripe at ${dimensions}: color=${card.stripe}, expected=${card.success}, width=${card.stripeWidth}`],
+          ]) {
+            if(passed) check(true,criterion); else historyFailures.push(criterion);
+          }
           check(card.action<card.width*.65&&card.finance.includes('Total del ticket')&&card.finance.includes('S/ 5.00')&&card.head.includes('04 nov')
-            &&card.head.includes('Sede de simulación')&&card.label.endsWith('p1006-0')&&!card.body.includes('p1006-0')&&card.body.includes('Ana Pérez'),
+            &&card.head.includes('Sede de simulación')&&card.label.endsWith('p1006-0')&&!card.body.includes('p1006-0')&&card.body.includes('Ana Pérez')&&card.actionEnabled,
           `date, branch, amount, accessible ID, responsible and discrete void action ${width}: ${JSON.stringify(card)}`);
-          check(card.bg==='rgb(255, 254, 252)'&&card.height<310,'neutral compact card rather than lavender header and oversized footer');
           check(card.columns===(width>=1280?3:width>=1024?2:1),'legible columns '+width);
           if(width===1440){check(card.excel<100,'Excel is a single compact desktop band');metrics.push({case:'history-'+count,...card});}
           await shot(`history-${count}-${width}`);
@@ -153,6 +211,11 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
       check(await ev(()=>{const r=document.querySelector('[role="dialog"] .pos-ticket');return Boolean(r.querySelector('[role="alert"]'))&&r.querySelector('.pos-ticket-actions button').disabled;}),'monetary validation error still visible and charge blocked');await shot('invalid-payment-320');
       await ev(()=>window.__p09.stop());
     }});
+  } finally {
+    await mkdir(artifacts,{recursive:true});
+    await writeFile(artifacts+'/history-card-diagnostics.json',JSON.stringify(historyMetrics,null,2));
+  }
+  assert.deepEqual(historyFailures,[],'History card criteria failed independently');
   await writeFile(artifacts+'/after-layout.json',JSON.stringify(metrics,null,2));
   console.log(JSON.stringify({checks:checks.length,captures:captures.length}));
 });

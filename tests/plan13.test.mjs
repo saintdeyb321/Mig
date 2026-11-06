@@ -16,6 +16,7 @@ import { createSparkCashClosingRepository } from '../frontend/src/features/cash-
 import { createSparkSalesRepository } from '../frontend/src/features/sales/infrastructure/sparkSalesRepository.js';
 import { createPosVoidRepository } from '../frontend/src/features/sales/infrastructure/posVoidRepository.js';
 import { plan08FinancialHarness, plan08Sale, plan08Timestamp } from './helpers/plan08FinancialHarness.mjs';
+import { pairedTicket, reportPeriodHarness, saleDay as qaSaleDay, spanningPeriod, voidDay as qaVoidDay } from './helpers/plan13PeriodHarness.mjs';
 
 const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
 const time = (hour, day = '2026-10-22') => `${day}T${hour}:00:00-05:00`;
@@ -388,4 +389,159 @@ it('P13-03 scopes matches to exact IDs and rejects inconsistent receipts in Dash
     }
   }
   assert.throws(() => aggregateReport({ sales: [historical], voids: [{ ...yapeVoid, businessId: 'qa13-b' }] }), /Compensación POS no verificable/);
+});
+
+async function boundedReport(harness, period, options) {
+  const view = harness.open(period, options);
+  try {
+    await view.dashboard.ready;
+    assert.ok(view.state.model, view.state.error);
+    const result = { ...await view.excel(), dashboard: view.state.model };
+    assertReconciled(result);
+    return result;
+  } finally { view.close(); }
+}
+
+const periodTotals = ({ dashboard: { summary, products } }) => [
+  summary.netRevenue, summary.cashRevenue, summary.digitalRevenue, summary.voidedTicketCount,
+  sumMoney(products.map(row => row.qty)), sumMoney(products.map(row => row.revenue)),
+];
+const sumPeriods = (first, next) => periodTotals(first).map((value, index) => sumMoney([value, periodTotals(next)[index]]));
+
+it('P13-04 A1/A10 reads the November 5 and 6 modern ticket separately and reconciles their union', async () => {
+  const { sale, receipt } = pairedTicket();
+  const h = reportPeriodHarness({ sales: [sale], voids: [receipt] });
+  const first = await boundedReport(h, reportPeriod('hoy', qaSaleDay));
+  const next = await boundedReport(h, reportPeriod('hoy', qaVoidDay));
+  const union = await boundedReport(h, spanningPeriod());
+  assert.deepEqual(periodTotals(first), [30, 0, 30, 0, 1, 30]);
+  assert.deepEqual(periodTotals(next), [-30, 0, -30, 1, -1, -30]);
+  assert.deepEqual(sumPeriods(first, next), periodTotals(union));
+  assert.deepEqual(periodTotals(union), [0, 0, 0, 1, 0, 0]);
+  assert.equal(sale.sessionId === receipt.sessionId, false);
+  assert.deepEqual(union.dashboard.days.map(row => row.day), ['2026-11-05', '2026-11-06']);
+  assert.equal(h.calls.filter(call => call.collection === 'sales').length, 9);
+  assert.equal(h.calls.filter(call => call.collection === 'pos_voids').length, 3);
+  assert.ok(h.calls.every(call => call.filters.some(filter => filter.field === 'businessId' && filter.value === sale.businessId)));
+});
+
+it('P13-04 A2/A10 demonstrates the historical split gap through real bounded readers and matches only the union', async () => {
+  const { sale, receipt } = pairedTicket({ legacy: true });
+  const h = reportPeriodHarness({ sales: [sale], voids: [receipt] });
+  const first = await boundedReport(h, reportPeriod('hoy', qaSaleDay));
+  const next = await boundedReport(h, reportPeriod('hoy', qaVoidDay));
+  const union = await boundedReport(h, spanningPeriod());
+  assert.deepEqual(periodTotals(first), [0, 0, 0, 1, 0, 0]);
+  assert.deepEqual(periodTotals(next), [-30, 0, -30, 1, -1, -30]);
+  assert.deepEqual(sumPeriods(first, next), [-30, 0, -30, 2, -1, -30]);
+  assert.deepEqual(periodTotals(union), [0, 0, 0, 1, 0, 0]);
+  assert.deepEqual(h.calls.filter(call => call.collection === 'pos_voids').map(call => call.docs), [0, 1, 1]);
+});
+
+it('P13-04 A3/A4 handles historical records with a duplicate same-day receipt or with no receipt', async () => {
+  const soldAt = '2026-11-05T11:00:00-05:00', voidedAt = '2026-11-05T13:00:00-05:00';
+  const { sale, receipt } = pairedTicket({ legacy: true, timestamp: true, soldAt, voidedAt, method: 'plin' });
+  const period = reportPeriod('hoy', soldAt);
+  const pair = await boundedReport(reportPeriodHarness({ sales: [sale], voids: [receipt, receipt] }), period);
+  const unpaired = await boundedReport(reportPeriodHarness({ sales: [sale] }), period);
+  assert.deepEqual(periodTotals(pair), [0, 0, 0, 1, 0, 0]);
+  assert.equal(pair.dashboard.summary.refundCount, 1);
+  assert.equal(unpaired.dashboard.summary.refundCount, 0);
+  assert.deepEqual(periodTotals(unpaired), [0, 0, 0, 1, 0, 0]);
+  assert.equal(rows(unpaired.wb, 'Detalle_Centro').find(row => row.Ticket === sale.id).Estado, 'ANULADA ❌');
+});
+
+for (const [filter, before, after] of [
+  ['semana', '2026-11-08', '2026-11-09'], ['mes', '2026-11-30', '2026-12-01'], ['todo', '2026-12-31', '2027-01-01'],
+]) {
+  it(`P13-04 A5/A6 preserves both Lima dates and payment channels across ${filter}`, async () => {
+    const soldAt = before + 'T23:59:59.999-05:00', voidedAt = after + 'T00:00:00.000-05:00';
+    for (const [method, total, cash] of [['efectivo', 30, 30], ['mixto', 20, 8]]) {
+      const { sale, receipt } = pairedTicket({ method, total, cash, soldAt, voidedAt });
+      const h = reportPeriodHarness({ sales: [sale], voids: [receipt] });
+      const first = await boundedReport(h, reportPeriod(filter, soldAt));
+      const next = await boundedReport(h, reportPeriod(filter, voidedAt));
+      const union = await boundedReport(h, spanningPeriod(soldAt, voidedAt, filter));
+      assert.deepEqual(periodTotals(first), [total, cash, total - cash, 0, 1, total]);
+      assert.deepEqual(periodTotals(next), [-total, -cash || 0, -(total - cash) || 0, 1, -1, -total]);
+      assert.deepEqual(sumPeriods(first, next), periodTotals(union));
+      assert.deepEqual(union.dashboard.days.map(day => day.day), [before, after]);
+      assert.deepEqual(union.dashboard.summary.channels.cash, { collections: cash, posCompensations: -cash, contractRefunds: 0, net: 0 });
+    }
+    const legacy = pairedTicket({ legacy: true, timestamp: true, soldAt, voidedAt });
+    const h = reportPeriodHarness({ sales: [legacy.sale], voids: [legacy.receipt] });
+    const first = await boundedReport(h, reportPeriod(filter, soldAt));
+    const next = await boundedReport(h, reportPeriod(filter, voidedAt));
+    const union = await boundedReport(h, spanningPeriod(soldAt, voidedAt, filter));
+    assert.deepEqual(sumPeriods(first, next), [-30, 0, -30, 2, -1, -30]);
+    assert.deepEqual(periodTotals(union), [0, 0, 0, 1, 0, 0]);
+    assert.deepEqual(union.dashboard.days.map(day => [day.day, day.netRevenue]), [[before, 30], [after, -30]]);
+  });
+}
+
+it('P13-04 A7/A9 scopes both readers by tenant and branch and rejects a conflicting receipt inside the scope', async () => {
+  const a = pairedTicket(), b = pairedTicket({ id: 'taller-ticket', branchId: 'taller', method: 'efectivo', cash: 30 });
+  const foreign = pairedTicket({ id: 'other-company', businessId: 'qa13-b' });
+  const h = reportPeriodHarness({ sales: [a.sale, b.sale, foreign.sale], voids: [a.receipt, b.receipt, foreign.receipt] });
+  const period = reportPeriod('hoy', qaVoidDay);
+  const global = await boundedReport(h, period);
+  const centro = await boundedReport(h, period, { branchId: 'centro' });
+  const taller = await boundedReport(h, period, { branchId: 'taller' });
+  const other = await boundedReport(h, period, { businessId: 'qa13-b', identityKey: 'other-owner' });
+  assert.deepEqual(periodTotals(global), [-60, -30, -30, 2, -2, -60]);
+  assert.deepEqual(sumPeriods(centro, taller), periodTotals(global));
+  assert.deepEqual(periodTotals(other), [-30, 0, -30, 1, -1, -30]);
+  assert.notEqual(other.dashboard.products[0].id, centro.dashboard.products[0].id);
+  const wrongTenant = { ...a.receipt, businessId: 'qa13-b' };
+  const isolated = await boundedReport(reportPeriodHarness({ sales: [a.sale], voids: [wrongTenant] }), spanningPeriod());
+  assert.deepEqual(periodTotals(isolated), [30, 0, 30, 0, 1, 30]);
+  assert.throws(() => aggregateReport({ sales: [a.sale], voids: [wrongTenant], period: spanningPeriod() }), /Compensación POS no verificable/);
+  for (const forged of [
+    { branchId: 'taller' }, { saleId: 'different' }, { amount: -29, digitalAmount: -29 },
+    { items: [{ ...a.receipt.items[0], id: 'otro-producto' }] },
+  ]) {
+    const broken = reportPeriodHarness({ sales: [a.sale], voids: [{ ...a.receipt, ...forged }] }).open(spanningPeriod());
+    try {
+      await broken.dashboard.ready;
+      assert.equal(broken.state.model, null);
+      assert.match(broken.state.error, /Compensación POS no verificable/);
+      await assert.rejects(broken.excel(), /Compensación POS no verificable/);
+    } finally { broken.close(); }
+  }
+});
+
+it('P13-04 A8 withholds unverified figures on permission and network errors without sharing cached identities', async () => {
+  const { sale, receipt } = pairedTicket();
+  let errorCode;
+  const h = reportPeriodHarness({ sales: [sale], voids: [receipt], beforeQuery({ collection }) {
+    if (errorCode && collection === 'pos_voids') throw Object.assign(Error('Lectura simulada de compensación'), { code: errorCode });
+  } });
+  const period = spanningPeriod();
+  const first = h.open(period, { identityKey: 'previous-owner' });
+  try {
+    await first.dashboard.ready;
+    assert.equal(first.state.model.summary.voidedTicketCount, 1);
+    for (const code of ['permission-denied', 'unavailable']) {
+      errorCode = code;
+      const fresh = h.open(period, { identityKey: 'different-' + code });
+      try {
+        assert.equal(fresh.state.model, null);
+        await fresh.dashboard.ready;
+        assert.equal(fresh.state.model, null);
+        assert.equal(fresh.state.queryError.code, code);
+        assert.equal(h.cache.peek(fresh.key), null);
+        await assert.rejects(fresh.excel(), error => error.code === code);
+      } finally { fresh.close(); }
+    }
+    first.resources.invalidateWhere(key => key.startsWith('report:voids:'));
+    const lastVerified = first.state.model;
+    await first.dashboard.refresh(true);
+    assert.equal(first.state.queryError.code, 'unavailable');
+    assert.equal(first.state.model, lastVerified);
+    assert.equal(h.cache.peek(first.key), null);
+    errorCode = 'permission-denied';
+    await first.dashboard.refresh(true);
+    assert.equal(first.state.model, null);
+    assert.equal(first.state.queryError.code, 'permission-denied');
+  } finally { first.close(); }
 });
