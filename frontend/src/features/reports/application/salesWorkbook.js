@@ -6,16 +6,17 @@ import { reportRows, amount, CHANNEL_BREAKDOWN_ROWS, CHANNEL_EVIDENCE_NOTE, CHAN
 import { reportDay, visibleDay, reportTime } from '../domain/reportPeriod.js';
 
 export const MAX_EXPORT_ROWS = 10000;
-export function buildSalesWorkbook(XLSX, { stats = [], sales = [], payments = [], voids = [], contracts = [], sessions = [], branchesMap = {}, period,
+export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = [], voids = [], contracts = [], sessions = [], branchesMap = {}, period,
   businessId, branchId = 'global', detailed = ['hoy', 'semana'].includes(period.filter), now = new Date() }) {
   const scope = { businessId, branchId, period };
-  const scopedSales = reportRows(sales, scope, row => row.createdAt);
+  const scopedSales = reportRows(sales ?? [], scope, row => row.createdAt);
   const scopedPayments = reportRows(payments, scope);
   const scopedVoids = [...new Map(reportRows(voids, scope).map(row => [row.id, row])).values()];
   const scopedContracts = reportRows(contracts.filter(contract => contract.createdAt != null), scope, row => row.createdAt);
   const voidRows = scopedVoids.reduce((count, row) => count + (row.items?.length ?? 0) + 1, 0);
   if (scopedSales.reduce((count, sale) => count + (sale.items?.length ?? 0) + 1, scopedPayments.length + scopedContracts.length + voidRows) > MAX_EXPORT_ROWS) throw new Error('Demasiadas filas de detalle. Selecciona un período menor.');
-  const processed = detailed ? processSales(scopedSales, branchesMap, scopedPayments, { ...scope, voids: scopedVoids }) : processDailyStats(stats, scopedPayments, { ...scope, voids: scopedVoids });
+  const processed = detailed ? processSales(sales ?? [], branchesMap, scopedPayments, { ...scope, voids })
+    : processDailyStats(stats, scopedPayments, { ...scope, voids, sales });
   const { model } = processed, metrics = model.summary;
   const wb = XLSX.utils.book_new();
   const append = (name, rows, { currency = [], widths = [], style = 'default', detail = false } = {}) => {

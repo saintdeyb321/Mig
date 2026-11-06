@@ -48,6 +48,12 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
         const buttons=[...document.querySelectorAll('.pos-catalog button[title]')];for(const b of buttons.slice(0,count)){b.click();await m.frames();}
       },count);
       const openDrawer=async(width)=>{if(width<1024)await ev(async()=>{document.querySelector('.pos-cart-launcher').click();await window.__p09.frames();});};
+      const selectPayment=method=>ev(async method=>{
+        const ticket=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket');
+        const label={efectivo:'Efectivo',yape:'Yape / Plin',mixto:'Mixto'}[method];
+        [...ticket.querySelectorAll('[aria-label="Método de pago"] button')].find(button=>button.textContent===label).click();
+        await window.__p09.frames();
+      },method);
       const input=async(index,text)=>ev(async(index,text)=>{const root=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket');const i=root.querySelectorAll('input[inputmode="decimal"]')[index];Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,text);i.dispatchEvent(new Event('input',{bubbles:true}));await window.__p09.frames();},index,text);
       const focused=async index=>ev(async index=>{
         const root=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket'),i=root.querySelectorAll('input[inputmode="decimal"]')[index];i.focus();await window.__p09.frames();
@@ -60,7 +66,7 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
         for(const count of [0,1,5,8]){
           await cart(count);if(count===0&&width<1024)await shot('pos-page-'+width);await openDrawer(width);
           for(const method of ['efectivo','yape','mixto']){
-            await ev(async method=>{const r=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket');const label={efectivo:'Efectivo',yape:'Yape / Plin',mixto:'Mixto'}[method];[...r.querySelectorAll('[aria-label="Método de pago"] button')].find(b=>b.textContent===label).click();await window.__p09.frames();},method);
+            await selectPayment(method);
             const b=await ev(()=>{const r=document.querySelector('[role="dialog"] .pos-ticket')||document.querySelector('aside[aria-label="Ticket"] .pos-ticket');return{items:r.querySelector('.pos-ticket-items').clientHeight,payment:r.querySelector('.pos-ticket-payment').clientHeight,counter:r.querySelector('.pos-ticket-heading').textContent,body:r.textContent,scroll:document.documentElement.scrollWidth,viewport:innerWidth};});
             check(b.counter.includes(`${count} ${count===1?'producto':'productos'}`)&&!b.body.includes('Límite por ticket')&&!b.body.includes('operación atómica verificada'),`simple counter and no permanent technical text ${width}/${count}/${method}`);
             check(b.scroll<=b.viewport+1,`no horizontal overflow ${width}/${count}/${method}`);
@@ -87,9 +93,16 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
         for(const count of [1,3,10]){
           await ev(count=>{const m=window.__p09;m.history.sales=Array.from({length:count},(_,i)=>({...m.makeSale('p1006-'+i,'confirmed'),cashierName:'Ana Pérez'}));},count);await show('operationalHistory');
           check(await ev(()=>document.documentElement.scrollWidth<=innerWidth+1),'history fits '+width+'/'+count);
-          const card=await ev(()=>{const c=document.querySelector('article'),h=c.querySelector('header'),a=[...c.querySelectorAll('button')].find(b=>b.textContent==='Anular ticket');return{height:c.getBoundingClientRect().height,width:c.clientWidth,action:a.getBoundingClientRect().width,head:h.innerText,body:c.innerText,bg:getComputedStyle(c).backgroundColor,columns:getComputedStyle(document.querySelector('.history-grid')).gridTemplateColumns.split(' ').length,excel:document.querySelector('.export-toolbar').clientHeight};});
-          check(card.action<card.width*.65&&card.head.includes('S/ 5.00')&&card.head.includes('04 nov')&&card.head.includes('p1006-0')&&card.body.includes('Ana Pérez'),`date/amount/ID/responsible and discrete void action ${width}: ${JSON.stringify(card)}`);
-          check(card.bg==='rgb(255, 255, 255)'&&card.height<310,'neutral compact card rather than lavender header and oversized footer');
+          const card=await ev(()=>{
+            const c=document.querySelector('article'),h=c.querySelector('header'),a=[...c.querySelectorAll('button')].find(b=>b.textContent==='Anular ticket');
+            return {height:c.getBoundingClientRect().height,width:c.clientWidth,action:a.getBoundingClientRect().width,
+              head:h.innerText,finance:c.querySelector('dl').innerText,body:c.innerText,label:c.getAttribute('aria-label'),bg:getComputedStyle(c).backgroundColor,
+              columns:getComputedStyle(document.querySelector('.history-grid')).gridTemplateColumns.split(' ').length,excel:document.querySelector('.export-toolbar').clientHeight};
+          });
+          check(card.action<card.width*.65&&card.finance.includes('Total del ticket')&&card.finance.includes('S/ 5.00')&&card.head.includes('04 nov')
+            &&card.head.includes('Sede de simulación')&&card.label.endsWith('p1006-0')&&!card.body.includes('p1006-0')&&card.body.includes('Ana Pérez'),
+          `date, branch, amount, accessible ID, responsible and discrete void action ${width}: ${JSON.stringify(card)}`);
+          check(card.bg==='rgb(255, 254, 252)'&&card.height<310,'neutral compact card rather than lavender header and oversized footer');
           check(card.columns===(width>=1280?3:width>=1024?2:1),'legible columns '+width);
           if(width===1440){check(card.excel<100,'Excel is a single compact desktop band');metrics.push({case:'history-'+count,...card});}
           await shot(`history-${count}-${width}`);
@@ -106,6 +119,32 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
       for(const height of [560,600,700,900]){
         await size(1280,height);await input(0,'40.00');const m=await focused(0);assertFocus(m,'desktop payment focus at '+height);metrics.push({case:'desktop-focus-'+height,...m});await shot('desktop-focus-'+height);
       }
+      for (const height of [560, 600, 700, 800, 900]) {
+        await size(1280,height);
+        for (const count of [0,1,5,8]) {
+          await cart(count);
+          for (const method of ['efectivo','yape','mixto']) {
+            await selectPayment(method);
+            const label=`1280x${height}/${count}/${method}`;
+            const bounds=await ev(()=>{
+              const ticket=document.querySelector('aside[aria-label="Ticket"] .pos-ticket');
+              const total=ticket.querySelector('.pos-ticket-total'), action=ticket.querySelector('.pos-ticket-actions'), items=ticket.querySelector('.pos-ticket-items');
+              return {totalTop:total.getBoundingClientRect().top, cta:action.getBoundingClientRect().bottom,
+                ticket:ticket.getBoundingClientRect().bottom, items:items.clientHeight, count:items.querySelectorAll('button[aria-label^="Quitar"]').length,
+                pageScroll:window.scrollY, ctaHeight:action.querySelector('button').getBoundingClientRect().height};
+            });
+            check(bounds.count===count&&bounds.totalTop>=0&&bounds.cta<=height&&bounds.ticket<=height&&bounds.items>0
+              &&bounds.pageScroll===0&&bounds.ctaHeight>=44,`bounded desktop checkout ${label}: ${JSON.stringify(bounds)}`);
+            for (const index of method==='mixto'?[0,1]:method==='efectivo'?[0]:[]) {
+              const focus=await focused(index);
+              assertFocus(focus,`desktop checkout focus ${label}/${index}`);
+              check(focus.field[0]>=0&&focus.field[1]<=height,`focused field entirely inside viewport ${label}/${index}`);
+            }
+            if (count===8) metrics.push({case:label,...bounds});
+          }
+        }
+      }
+      await selectPayment('efectivo');
       await size(390,700);await openDrawer(390);await input(0,'40.00');
       for(const [width,height]of [[390,390],[320,390],[768,360]]){
         await size(width,height);const m=await focused(0);assertFocus(m,`keyboard-sized viewport ${width}/${height}`);metrics.push({case:'focus-'+width,...m});await shot('payment-focus-'+width);

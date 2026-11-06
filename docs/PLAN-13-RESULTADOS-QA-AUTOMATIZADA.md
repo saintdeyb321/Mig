@@ -1,8 +1,8 @@
-# MigaPOS · Plan 13 Fase 02 · Resultados de QA automatizada
+# MigaPOS · Plan 13 · Resultados de QA automatizada
 
 **2026-11-06 · America/Lima · Salida de preventa NO-GO**
 
-## Entorno
+## Fase 02 · Entorno
 
 - Windows, Node 24.18.1, npm 11.16.0, Vite 7.3.7 y Chrome instalado localmente. Se usaron las dependencias existentes. El propietario debe anotar aquí el SHA exacto y el job equivalente. El SHA de referencia del plan identifica la auditoría anterior.
 - Build y navegador con variables de proceso para `demo-migapos`, `VITE_USE_EMULATORS=true` y App Check desactivado. Auth y Firestore configurados para `127.0.0.1:9099` y `127.0.0.1:8080`. Storage no forma parte de Spark. Vite ignoró los archivos de entorno en las fixtures y Chromium usó perfiles temporales, mocks y un proxy de denegación en loopback.
@@ -38,7 +38,7 @@ Las pruebas de layout usaron `MIGAPOS_TEST_BUILD_DIR=.release/qa-plan13/build` y
 
 Dashboard se ejercitó a través de `createReportResource` con lectores simulados. Excel se serializó y reimportó. Los ocho importes por canal, los netos, las sedes, el detalle y la suma del período conciliaron en céntimos para estas entradas. El fondo inicial pertenece a caja. Los contramovimientos contables se mantienen con su signo y sin certificar desembolsos.
 
-## Defectos y decisiones pendientes
+## Defectos y decisiones registrados en Fase 02
 
 - **Crítico, anulación histórica duplicada.** Ejecutar `node --test --test-name-pattern "historical void" tests/plan13.test.mjs`. El caso usa una venta Yape de S/ 30 marcada `voided: true` y un `pos_voids` válido del mismo ticket y día, repetido en la entrada para ejercitar su deduplicación. Dashboard y Excel cuentan **2** anulaciones, neto **−S/ 30**, cantidad de producto **−1** e ingreso del producto **−S/ 30**. Se espera **1**, neto **S/ 0**, cantidad **0** e ingreso **S/ 0**. `salesToDailyStats` y el detalle excluyen la venta histórica, y `aggregateReport` vuelve a descontar y contar el recibo. Esto reproduce una doble proyección contable. Las pruebas separadas de repositorio verificaron una sola escritura de compensación y reposición.
 - **Corrección de dominio propuesta, pendiente de aprobación.** Unificar el reconocimiento del original y la compensación por ID, negocio y sede antes de agrupar, con la validación de recibo vigente. Para pares verificados, conservar el cobro original en su fecha y contabilizar el recibo una vez en la fecha de compensación. Conservar la exclusión histórica cuando falta recibo. Aplicar el mismo criterio en estadísticas y detalle, incluyendo cruces de período y casos en que solo se consulta la compensación. Revisar si las fuentes acotadas aportan las referencias necesarias antes de autorizar lecturas extra. Mantener las fuentes originales y repetir P0.4 con esta regresión todavía activa.
@@ -46,7 +46,7 @@ Dashboard se ejercitó a través de `createReportResource` con lectores simulado
 - **Lint.** Corregir en una tarea de frontend los seis bindings `Icon` reportados por la configuración actual, sin relajar ESLint.
 - **Inventario devuelto.** La anulación repone unidades automáticamente. Para perecederos, falta definir la inspección, merma y trazabilidad antes de volver a ofrecer el producto. Queda pendiente también el flujo verificable de devolución física/digital y una restauración aislada aprobada.
 
-## Matriz de aceptación
+## Matriz de aceptación de Fase 02
 
 **73 casos. 35 PASS · 4 FAIL · 26 BLOCKED · 8 MANUAL.** Un PASS de fixture se limita al modelo, repositorio simulado o navegador descrito en la fila. Rules y aceptación de la instancia se controlan aparte.
 
@@ -132,3 +132,50 @@ Dashboard se ejercitó a través de `createReportResource` con lectores simulado
 - `tests/plan13.test.mjs` automatiza conciliación, precisión, pedidos, caja, stock y la regresión histórica. `tests/helpers/plan08FinancialHarness.mjs` permite simular el borrado transaccional del candado de caja.
 - `tests/helpers/browserHarness.mjs` aísla el tráfico y permite leer CSS del build de ensayo. `tests/plan07.browser.html` usa los textos vigentes y sigue exigiendo el límite de ocho. `tests/plan09.browser.test.mjs` y `tests/plan10-correction.browser.test.mjs` usan el build y las rutas de artefactos de esta fase.
 - `tests/cash-amount.browser.html` y `tests/cash-amount.browser.test.mjs` prueban la carrera de confirmación de apertura. `tests/ui-security.browser.mjs` conserva la CSP Spark, exige bloquear Storage/Functions y simula el timeout de impresión con una imagen local.
+
+## Fase 03 · Correcciones críticas y revalidación local
+
+**2026-11-06 · America/Lima · Salida de preventa NO-GO**
+
+| Defecto | Resultado local | Evidencia |
+| --- | --- | --- |
+| P13-03-FIN-01 | PASS para pares verificables | El caso previo producía dos anulaciones, −S/ 30 y −1 unidad. La pareja histórica de S/ 30 en Yape ahora aporta un cobro de S/ 30, una compensación de −S/ 30, una anulación y cero unidades netas en Dashboard y Excel. Un recibo repetido idéntico se cuenta una vez. |
+| P13-03-UX-01 | PASS | La vista principal del POS toma la altura definida del viewport. Los avisos y la barra consumen su altura real, el catálogo y el ticket ocupan el espacio restante y las listas y el pago tienen scroll propio. El total y el CTA quedan fuera de esos paneles desplazables. |
+| P13-03-LINT-01 | PASS | Seis referencias a íconos dinámicos expresadas con `createElement`. Se conservan los SVG y el tratamiento accesible. ESLint sale con código 0 y sin avisos. |
+| P13-03-CI-01 | PASS de configuración local · BLOCKED en remoto | El YAML conserva seguridad, Spark/Rules, IndexedDB, lint, PWA, P09 y atestación. Añade Reportes/Plan 13 y P10-06 como pasos bloqueantes entre el build y la atestación. Conserva el límite del job de 20 minutos. El propietario debe verificar ejecución, tiempos y atestación del SHA exacto. |
+
+### Criterio contable y límite de evidencia
+
+Dashboard y Excel comparten el flujo de lectura de tickets individuales y compensaciones ya consultados. El emparejamiento exige la identidad del ticket, negocio y sede, el origen de la compensación, la suma y el desglose por canal, las líneas por ID de producto, sus cantidades y sus precios. Un conflicto de identidad o de recibos rechaza el reporte. Los cierres, transacciones, stock y documentos fuente quedan intactos.
+
+Cuando existe la pareja en los datos ya obtenidos, el cobro mantiene su fecha y la compensación la suya. Esto conserva +S/ 30 en el día de venta, −S/ 30 el día de compensación y S/ 0 al sumar ambos. Si el rango contiene solo una compensación válida, se conserva su neto negativo y su nota aclaratoria. Si el rango anterior trae únicamente la marca histórica `voided` y el recibo está fuera del rango, se mantiene la compatibilidad histórica sin fabricar el cobro. **Conciliar ese caso entre dos rangos disjuntos queda pendiente** cuando no hay evidencia compartida. Cualquier consulta adicional o cambio de persistencia requiere aprobación. El flujo que recibe solo agregados antiguos también rechaza una posible superposición cuando faltan los IDs para comprobarla.
+
+Los escenarios S/ 85 → S/ 55, pagos mixtos y devoluciones contables mantienen sus valores y signos. En el Excel reimportado se cotejaron los ocho conceptos por canal, el total por sede, las filas diarias, el detalle y la cantidad e ingreso por producto. El recibo contable sigue sin certificar desembolso.
+
+### Pruebas locales
+
+Datos sintéticos, SDK simulado y build de emulador `demo-migapos`. Chromium usó un perfil aislado y proxy de denegación en loopback. Los logs están en `.release/qa-plan13-03/`.
+
+| Comando | Resultado | Evidencia |
+| --- | --- | --- |
+| `node --test --test-concurrency=1 tests/reports.test.mjs tests/plan13.test.mjs` | PASS 52/52 | 39 casos de Reportes y 13 de Plan 13. `15-finanzas-final.log`. |
+| `node --test --test-concurrency=1 tests/reports.test.mjs tests/plan13.test.mjs tests/plan07.test.mjs tests/plan08.test.mjs tests/ui-security.test.mjs` | PASS 105/105 | Compatibilidad de reportes, ventas, caja, recuperación y allowlist Markdown por ruta exacta. `08-node-final.log`. |
+| `node --test --test-concurrency=1 tests/plan09.test.mjs tests/plan09.browser.test.mjs tests/plan10-correction.browser.test.mjs` | PASS 4/4 | Chromium completó 199 controles P09 y 456 P10-06. Los criterios de foco, visibilidad y tamaño se conservaron. Las comprobaciones del historial se actualizaron al contrato vigente de P12. `10-ux-final.log`. |
+| `npm run test:spark` | PASS 77/77 | Capacidades Spark, arranque, backup, seguridad UI e inventario Markdown. `11-spark.log`. |
+| `npm run test:offline-db` | PASS 1/1 | 22 controles con IndexedDB real dentro del perfil aislado. `12-indexeddb.log`. |
+| `npm run lint --prefix frontend` | PASS | Código 0. `09-lint-final.log`. |
+| `npm run build --prefix frontend -- --outDir ../.release/qa-plan13-03/build-final` | PASS | Vite/PWA completado con el aviso de tamaño de chunks. La comprobación de `scripts/check-build.mjs` se ejecutó por stdin apuntando al build aislado. Precache de 44 archivos y 2.86 MiB, scripts externos y caché diferida de Excel. `07-build-final.log`, `13-pwa-final.log`. |
+| Validación local de `.github/workflows/verify.yml` con `js-yaml` | PASS | Posición de pasos, carácter bloqueante y verificaciones conservadas. `14-workflow-local.log`. |
+| `npm run test:spark:rules` y atestación remota | BLOCKED | Java sigue sin estar disponible localmente. El workflow existente prepara Java 21. La comprobación del nuevo SHA corresponde al propietario. |
+
+### Métricas del checkout
+
+- **1280 × 800, ocho productos.** Ticket de 712 px de alto con scroll de artículos. Borde inferior del panel en 780 px, Cobrar en 779 px y total en 556 px.
+- **1280 × 560, ocho productos.** Con efectivo, el campo enfocado ocupa de 376 a 422 px dentro del panel de pago de 290 a 472 px. Con mixto, el área de productos mide 145 px y el CTA de 50 px de alto termina en 539 px. Desplazamiento de página de 0 px.
+- **1440 × 900, ocho productos en efectivo.** Área de artículos de 463 px y panel de pago de 148 px. Las comprobaciones de visibilidad y foco pasaron. P10-06 cubre además 0, 1, 5 y 8 productos con los tres métodos a alturas de 560, 600, 700, 800 y 900 px. Métricas en `.release/qa-plan13-03/p10-06-visual/after-layout.json`.
+
+### Matriz y alcance pendientes
+
+Los cuatro FAIL de Fase 02, **P0.4, N3, R4 y O5**, pasan con la evidencia acotada descrita arriba. El balance acumulado de los 73 casos queda en **39 PASS · 0 FAIL · 26 BLOCKED · 8 MANUAL**. Se conservan los casos bloqueados y manuales de la matriz original. La preventa sigue condicionada a Rules y CI del SHA exacto, aislamiento con usuarios de ensayo, devolución real verificable, inventario perecedero, restauración, cuotas y aceptación manual.
+
+Archivos de la fase: lectura y proyección en `reportTotals.js`, `reportResource.js`, `sessionReportReads.js`, `useReports.js`, `useExportSales.js`, `salesWorkbook.js` y `salesDataProcessor.js`. Layout e íconos en `index.css`, `BottomNav.jsx`, `PaymentParts.jsx` y `ReportParts.jsx`. Regresiones en `plan13.test.mjs`, `plan09.browser.test.mjs`, `plan10-correction.browser.test.mjs`, `ui-security.test.mjs` y `.github/workflows/verify.yml`.

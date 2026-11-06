@@ -234,6 +234,7 @@ describe('Hosting policy and conservative cleanup', () => {
       'docs/PLAN-12-P12-10-UX-PERSONAL-AJUSTES-AUDITORIA-ANULACIONES.md', 'docs/PROMPT-CODEX-INICIO-P12-10.md',
       'docs/AUDITORIA-ANULACIONES-CAJA-REPORTES.md', 'docs/AUDITORIA-FINANCIERA-ANULACIONES-CAJA-EXCEL.md', 'docs/AUDITORIA-TECNICA-MIGAPOS-10-20-NEGOCIOS.md',
       'docs/PLAN-13-FASE-02-QA-AUTOMATIZADA-PREVENTA.md', 'docs/PROMPT-CODEX-PLAN-13-FASE-02.md',
+      'docs/PLAN-13-FASE-03-CORRECCIONES-CRITICAS-QA.md', 'docs/PROMPT-CODEX-PLAN-13-FASE-03.md',
       'docs/CHECKLIST-QA-PREVENTA-MIGAPOS-2026-11-06.md', 'docs/PLAN-13-RESULTADOS-QA-AUTOMATIZADA.md'];
     assert.deepEqual(markdown.filter(path => !allowedMarkdown.includes(path)), [], 'Documentos Markdown inesperados en el inventario local');
   });

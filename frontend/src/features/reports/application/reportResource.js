@@ -18,20 +18,22 @@ export function createReportCache({ ttl = REPORT_TTL, max = 12, now = Date.now }
     get size() { return entries.size; },
   };
 }
-export function createReportResource({ key, businessId, branchId, period, cache, readStats, readPayments, readContracts = async () => [], readVoids = async () => [], subscribeStats, onState, now = Date.now }) {
+export function createReportResource({ key, businessId, branchId, period, cache, readSales, readStats, readPayments, readContracts = async () => [], readVoids = async () => [], subscribeStats, onState, now = Date.now }) {
   const ttl = reportTTL(period);
   const cached = cache.peek?.(key) ?? cache.get(key);
-  let active = true, stats = cached?.stats ?? null, payments = cached?.payments ?? null, loadedAt = cached?.loadedAt ?? -Infinity;
+  const readPos = readSales ?? readStats;
+  const source = readSales ? 'sales' : 'stats';
+  let active = true, pos = cached?.[source] ?? null, payments = cached?.payments ?? null, loadedAt = cached?.loadedAt ?? -Infinity;
   let contracts = cached?.contracts ?? [];
   let voids = cached?.voids ?? [];
   let pending = null, generation = 0, lastModel = null, stop = () => {};
   const emit = () => {
-    if (!active || stats === null || payments === null) return;
+    if (!active || pos === null || payments === null) return;
     try {
-      const model = aggregateReport({ stats, payments, voids, businessId, branchId, period });
+      const model = aggregateReport({ [source]: pos, payments, voids, businessId, branchId, period });
       model.contractCounts = contractCounts(contracts);
       lastModel = model;
-      cache.set(key, { stats, payments, contracts, voids, loadedAt, ttl });
+      cache.set(key, { [source]: pos, payments, contracts, voids, loadedAt, ttl });
       onState({ key, model, isLoading: false, isRefreshing: false, error: null, updatedAt: loadedAt });
     } catch (error) { fail(error); }
   };
@@ -48,19 +50,19 @@ export function createReportResource({ key, businessId, branchId, period, cache,
     if (lastModel) onState({ key, model: lastModel, isLoading: false, isRefreshing: true, error: null, updatedAt: loadedAt });
     pending = (async () => {
       try {
-        const [nextStats, nextPayments, nextContracts, nextVoids] = await Promise.all([subscribeStats && stats !== null ? stats : readStats(), readPayments(), readContracts(), readVoids()]);
+        const [nextPos, nextPayments, nextContracts, nextVoids] = await Promise.all([subscribeStats && pos !== null ? pos : readPos(), readPayments(), readContracts(), readVoids()]);
         if (!active || revision !== generation) return;
         // A live snapshot may have advanced while the payment query was pending.
-        if (!subscribeStats || stats === null) stats = nextStats;
+        if (!subscribeStats || pos === null) pos = nextPos;
         contracts = nextContracts; payments = nextPayments; voids = nextVoids; loadedAt = now(); emit();
       } catch (error) { if (revision === generation) { payments = null; fail(error); } }
       finally { if (revision === generation) pending = null; }
     })();
     return pending;
   }
-  if (cached) emit();
+  if (pos !== null && payments !== null) emit();
   else onState({ key, model: null, isLoading: true, error: null });
-  if (subscribeStats) stop = subscribeStats(rows => { if (active) { stats = rows; emit(); } }, error => { stats = null; fail(error); });
+  if (subscribeStats) stop = subscribeStats(rows => { if (active) { pos = rows; emit(); } }, error => { pos = null; fail(error); });
   const ready = refresh();
   return { ready, refresh, close() { active = false; generation++; stop(); } };
 }

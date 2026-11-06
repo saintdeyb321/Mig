@@ -19,22 +19,22 @@ export function processDailyStats(stats, payments = [], scope = {}) {
 export function processSales(sales, branchesMap = {}, payments = [], scope = {}) {
   const model = aggregateReport({ sales, payments, ...scope });
   const groups = [];
-  for (const sale of reportRows(sales, scope, row => row.createdAt)) {
+  for (const { row: sale, day } of model.pos.sales) {
     if (!Array.isArray(sale.items) || !sale.items.length || (!sale.voided
       && amount(sale.items.reduce((sum, item) => sum + amount(item.qty * item.price), 0)) !== amount(sale.total))) {
       throw new Error('El detalle POS no concilia con el ticket.');
     }
-    const rows = (sale.items ?? []).map((item, index) => detail({ Fecha: index ? '' : visibleDay(reportDay(sale.createdAt)),
+    const rows = (sale.items ?? []).map((item, index) => detail({ Fecha: index ? '' : visibleDay(day),
       Hora: index ? '' : reportTime(sale.createdAt), Ticket: index ? '' : sale.id ?? sale.saleId,
       Estado: index ? '' : sale.voided ? 'ANULADA ❌' : 'COMPLETADA', Pago: index ? '' : paymentLabel(sale.payment, sale.splitPayments),
-      Producto: item.name, Cantidad: amount(item.qty), 'Precio Unit.': amount(item.price), Subtotal: sale.voided ? 0 : amount(item.qty * item.price),
+      Producto: item.name, Cantidad: sale.voided ? 0 : amount(item.qty), 'Precio Unit.': amount(item.price), Subtotal: sale.voided ? 0 : amount(item.qty * item.price),
       Observaciones: index || !sale.voided ? '' : `${sale.voidReason ?? ''} (${sale.voidedByName ?? ''})` }));
     rows.push(detail({ 'Precio Unit.': sale.voided ? 'TICKET ANULADO ➔' : 'TOTAL TICKET ➔', 'Total movimiento (S/)': sale.voided ? 0 : amount(sale.total) }));
     groups.push({ branchId: sale.branchId, timestamp: toMillisSafe(sale.createdAt), id: sale.id ?? sale.saleId, rows });
   }
   const uniquePayments = new Map(reportRows(payments, scope).map(payment => [payment.id, payment]));
-  for (const row of new Map(reportRows(scope.voids ?? [], scope).map(value => [value.id, value])).values()) {
-    const lines = row.items.map((item, index) => detail({ Fecha: index ? '' : visibleDay(reportDay(row.occurredAt)), Hora: index ? '' : reportTime(row.occurredAt),
+  for (const { row, day } of model.pos.voids) {
+    const lines = row.items.map((item, index) => detail({ Fecha: index ? '' : visibleDay(day), Hora: index ? '' : reportTime(row.occurredAt),
       Ticket: index ? '' : `COMPENSACIÓN POS: ${row.saleId}`, Estado: index ? '' : 'COMPENSACIÓN POS',
       Pago: index ? '' : `Efectivo ${row.cashAmount.toFixed(2)} · Yape/Plin ${row.digitalAmount.toFixed(2)}`, Producto: item.name, Cantidad: -item.qty,
       'Precio Unit.': item.price, Subtotal: -amount(item.qty * item.price), Observaciones: index ? '' : `${row.reason} · UID: ${row.userId}` }));

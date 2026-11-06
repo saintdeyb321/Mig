@@ -84,6 +84,7 @@ it('P09 verifies actual views, viewport-bound checkout, dialog focus/busy, role 
         return { height: card.getBoundingClientRect().height, bottom: card.getBoundingClientRect().bottom, actionBottom: action.getBoundingClientRect().bottom, totalBottom: total.getBoundingClientRect().bottom, scroll: list.scrollHeight > list.clientHeight, count: list.querySelectorAll('button[aria-label^="Quitar"]').length };
       });
       let bounds = await ticketBounds(); check(bounds.actionBottom <= 800, 'checkout is visible immediately below the POS header before any page scroll'); check(bounds.count === 8 && bounds.scroll && bounds.height <= 752, 'eight actual cart lines scroll inside a fixed-height ticket');
+      console.log(JSON.stringify({ checkout1280x800: bounds }));
       await evaluate(async () => { window.scrollTo(0, 650); document.querySelector('[aria-label="Catálogo de productos"]').scrollTop = 650; await window.__p09.frames(); });
       check(await evaluate(() => document.querySelector('[aria-label="Catálogo de productos"]').scrollTop > 0), 'the catalogue has its own scroll without moving checkout');
       bounds = await ticketBounds(); check(bounds.actionBottom <= 800 && bounds.totalBottom <= 800, 'catalogue scroll keeps total and checkout action inside the viewport');
@@ -127,8 +128,16 @@ it('P09 verifies actual views, viewport-bound checkout, dialog focus/busy, role 
       await viewport(1280, 480); await frames();
       check(await evaluate(() => document.querySelector('[role="dialog"] button[type="submit"]').getBoundingClientRect().bottom <= innerHeight), 'actual contract form keeps its save action visible at low desktop height');
       await viewport(1280, 800);
-      await show('history'); const historyText = await evaluate(() => document.getElementById('main-content').innerText);
-      check(['Venta registrada', 'Sin cobrar', 'Por comprobar', 'Venta anulada', 'Revisión local'].every(text => historyText.includes(text)), 'financial statuses remain visually distinct and rejections stay secondary');
+      await show('history');
+      const history = await evaluate(() => {
+        const list = document.querySelector('.sales-history');
+        const labels = [...list.querySelectorAll('.history-grid article')].filter(card => !card.closest('details')).map(card => card.getAttribute('aria-label'));
+        const review = list.querySelector('details');
+        return { labels, secondary: !review.open && review.querySelector('summary').textContent.includes('Revisión local')
+          && Boolean(review.querySelector('article[aria-label^="Venta no realizada"]')) };
+      });
+      check(['Venta registrada', 'Sin cobrar', 'Por comprobar', 'Venta anulada'].every(state => history.labels.some(label => label.startsWith(state)))
+        && history.secondary, 'financial statuses remain distinct and rejections stay in the collapsed review');
       await show('pos', 'cajero');
       check(await evaluate(() => !document.querySelector('[aria-label="Módulos"] button[title="Personal"]')), 'cashier navigation does not expose owner modules');
       await show('superadmin', 'superadmin');

@@ -1,5 +1,5 @@
 import { Banknote, Check, Coins, Smartphone, Split } from 'lucide-react';
-import { useId } from 'react';
+import { createElement, useId } from 'react';
 import { Alert, Button, FormField, Input, cn } from '../../shared/ui';
 
 const methods = [
@@ -28,7 +28,7 @@ export function PaymentSelector({ payment, onSelect, disabled, inTicket = false 
         className={cn('min-h-11 gap-1 px-1 py-1.5 text-xs shadow-none disabled:border-line disabled:bg-subtle disabled:text-muted disabled:opacity-100 disabled:ring-0',
           inTicket && 'relative',
           selected ? cn('font-bold', active) : cn(idle, inTicket && 'border-line bg-panel'))}>
-        {selected ? <Check aria-hidden="true" className={inTicket ? 'payment-method-check' : 'payment-method-icon'} /> : <Icon aria-hidden="true" className="payment-method-icon" />}
+        {selected ? <Check aria-hidden="true" className={inTicket ? 'payment-method-check' : 'payment-method-icon'} /> : createElement(Icon, { 'aria-hidden': true, className: 'payment-method-icon' })}
         <span className="min-w-0 wrap-anywhere">{label}</span>
       </Button>;
     })}

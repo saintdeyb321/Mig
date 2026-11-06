@@ -51,7 +51,7 @@
   .pos-ticket-payment { min-height: 5rem; flex: 0 1 auto; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 0.25rem; }
   .pos-ticket-payment :is(input, select, textarea, button) { scroll-margin-block: 0.25rem; }
   .pos-ticket-total, .pos-ticket-actions { flex: 0 0 auto; }
-  .pos-ticket-desktop { position: sticky; top: 0; height: 100%; min-height: 0; }
+  .pos-ticket-desktop { height: 100%; min-height: 0; }
   .pos-ticket-drawer { flex: 1; max-height: 100%; min-height: 0; }
   .pos-cart-launcher { bottom: calc(4.5rem + env(safe-area-inset-bottom) + 0.75rem); }
   .app-bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
@@ -85,9 +85,18 @@
 .nebula-brand :focus-visible { outline-color: var(--color-sidebar-glow); }
 @media (min-width: 64rem) {
   /* Include the real shell notices and padding, rather than assuming a header height. */
-  #main-content:has(> .pos-workspace) { display: flex; height: var(--ui-viewport-height, 100dvh); flex-direction: column; gap: 0.75rem; padding: 1.25rem; }
+  #main-content:has(> .pos-workspace) {
+    display: flex;
+    flex: none;
+    height: var(--ui-viewport-height, 100dvh);
+    min-height: 0;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1.25rem;
+  }
   #main-content:has(> .pos-workspace) > * { margin-block: 0; flex-shrink: 0; }
   #main-content > .pos-workspace { flex: 1 1 0%; min-height: 0; }
+  .pos-ticket-desktop > .pos-ticket { max-height: 100%; }
 }
 @media (max-height: 600px) {
   .dialog-heading { padding-block: 0.5rem; }

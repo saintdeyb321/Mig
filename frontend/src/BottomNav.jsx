@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { createElement, memo, useMemo } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Boxes, Building2, ChartColumnIncreasing, Check, ClipboardList, Ellipsis, ReceiptText, Settings2, ShoppingCart, Tags, UsersRound } from 'lucide-react';
 import { getSessionModules } from './core/session/context.js';
@@ -26,7 +26,7 @@ const BottomNav = memo(({ current, setCurrent, user, isDesktop }) => {
       <span className={cn('grid shrink-0 place-items-center', isDesktop ? 'size-8 rounded-lg' : 'h-6 min-w-8 rounded-full',
         isDesktop && (active ? 'bg-white/15 text-white' : 'bg-white/6 text-sidebar-muted group-hover:text-white'),
         !isDesktop && active && 'bg-primary-soft text-primary')}>
-        <Icon aria-hidden="true" strokeWidth={active ? 2.25 : 1.85} className="size-[1.125rem]" />
+        {createElement(Icon, { 'aria-hidden': true, strokeWidth: active ? 2.25 : 1.85, className: 'size-[1.125rem]' })}
       </span>
       <span className={cn('wrap-anywhere', isDesktop ? 'text-left' : 'text-center')}>{label}</span>
     </button>;
@@ -37,7 +37,7 @@ const BottomNav = memo(({ current, setCurrent, user, isDesktop }) => {
       <DropdownMenu.Portal><DropdownMenu.Content side="top" align="end" sideOffset={10} className="ui-scroll z-50 mb-1 max-h-[min(70dvh,var(--radix-dropdown-menu-content-available-height))] w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-2xl border border-line bg-panel p-2 shadow-float">
         <DropdownMenu.Label className="px-3 py-2 text-xs font-semibold text-muted">Más herramientas</DropdownMenu.Label>
         {secondary.map(({ id, label, icon: Icon }) => <DropdownMenu.Item key={id} onSelect={() => setCurrent(id)} aria-current={current === id ? 'page' : undefined} className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm text-ink outline-none data-[highlighted]:bg-primary-soft data-[highlighted]:text-primary">
-          <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary-soft/65 text-primary"><Icon aria-hidden="true" strokeWidth={1.85} className="size-4" /></span>{label}{current === id && <Check aria-hidden="true" className="ml-auto size-4 text-primary" />}
+          <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary-soft/65 text-primary">{createElement(Icon, { 'aria-hidden': true, strokeWidth: 1.85, className: 'size-4' })}</span>{label}{current === id && <Check aria-hidden="true" className="ml-auto size-4 text-primary" />}
         </DropdownMenu.Item>)}
       </DropdownMenu.Content></DropdownMenu.Portal>
     </DropdownMenu.Root>}

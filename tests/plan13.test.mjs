@@ -6,7 +6,8 @@ import { calculateCashTotals } from '../functions/src/cash-register/domain/cashT
 import { commercialFields, financialProjection } from '../functions/src/contracts/domain/contractModel.js';
 import { createReportCache, createReportResource, reportCacheKey } from '../frontend/src/features/reports/application/reportResource.js';
 import { buildSalesWorkbook, MAX_EXPORT_ROWS } from '../frontend/src/features/reports/application/salesWorkbook.js';
-import { reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
+import { reportPeriod, visibleDay } from '../frontend/src/features/reports/domain/reportPeriod.js';
+import { aggregateReport } from '../frontend/src/features/reports/domain/reportTotals.js';
 import { salesToDailyStats } from '../frontend/src/features/reports/domain/sparkReport.js';
 import { voidCashPayments } from '../frontend/src/features/sales/infrastructure/posVoidQueryRepository.js';
 import { fitsContractImageLimit, MAX_CONTRACT_IMAGES } from '../frontend/src/features/contracts/application/contractImagePolicy.js';
@@ -41,14 +42,13 @@ const sumMoney = values => values.reduce((cents, value) => cents + Math.round((v
 
 async function simulate({ sales = [], payments = [], voids = [], ...options } = {}) {
   const query = { ...scope, ...options };
-  const stats = salesToDailyStats(sales);
   let state;
   const resource = createReportResource({ ...query, key: reportCacheKey({ ...query, identityKey: 'qa13-dueno' }),
-    cache: createReportCache(), readStats: async () => stats, readPayments: async () => payments,
+    cache: createReportCache(), readSales: async () => sales, readPayments: async () => payments,
     readVoids: async () => voids, onState: value => { state = value; } });
   try { await resource.ready; } finally { resource.close(); }
   assert.ok(state.model, state.error);
-  const { workbook, model } = buildSalesWorkbook(XLSX, { ...query, stats, sales, payments, voids, branchesMap, now });
+  const { workbook, model } = buildSalesWorkbook(XLSX, { ...query, sales, payments, voids, branchesMap, now });
   const wb = roundTrip(workbook);
   const summary = Object.fromEntries(rows(wb, 'Resumen_Financiero').map(row => [row.Concepto, row.Valor]));
   return { dashboard: state.model, model, wb, summary };
@@ -57,6 +57,8 @@ async function simulate({ sales = [], payments = [], voids = [], ...options } = 
 function assertReconciled({ dashboard, model, wb, summary }) {
   const metrics = dashboard.summary;
   assert.deepEqual(model.summary, metrics);
+  assert.deepEqual(model.days, dashboard.days);
+  assert.deepEqual(model.products, dashboard.products);
   assert.equal(summary['💰 GRAN TOTAL INGRESOS NETOS'], metrics.netRevenue);
   assert.equal(summary['🛒 VENTAS MOSTRADOR NETAS'], metrics.posRevenue);
   assert.equal(summary['🎂 INGRESOS NETOS PEDIDOS ESPECIALES'], metrics.contractRevenue);
@@ -69,12 +71,29 @@ function assertReconciled({ dashboard, model, wb, summary }) {
     assert.equal(sumMoney([channel.collections, channel.posCompensations, channel.contractRefunds]), channel.net);
   }
   assert.equal(sumMoney([metrics.cashRevenue, metrics.digitalRevenue]), metrics.netRevenue);
-  assert.equal(sumMoney(rows(wb, 'Comparativa_Sedes').map(row => row['Ventas Sistema (S/)'])), metrics.netRevenue);
+  const branchRows = rows(wb, 'Comparativa_Sedes');
+  assert.equal(sumMoney(branchRows.map(row => row['Ventas Sistema (S/)'])), metrics.netRevenue);
+  for (const branch of dashboard.branches.values()) {
+    const name = branchesMap[branch.branchId] ?? branch.branchId;
+    const row = branchRows.find(row => row.Sucursal === name);
+    assert.deepEqual([row['Ventas Sistema (S/)'], row.Efectivo, row['Yape/Plin'], row.Anulados],
+      [branch.netRevenue, branch.cashRevenue, branch.digitalRevenue, branch.voidedTicketCount]);
+    if (wb.Sheets['Resum_' + name]) {
+      assert.deepEqual(rows(wb, 'Resum_' + name).map(row => [row.Fecha, row.Ingreso, row.Efectivo, row['Yape/Plin'], row.Anulados]),
+        dashboard.days.filter(day => day.branchId === branch.branchId)
+          .map(day => [visibleDay(day.day), day.netRevenue, day.cashRevenue, day.digitalRevenue, day.voidedTicketCount]));
+    }
+  }
+  if (dashboard.products.length) {
+    assert.deepEqual(rows(wb, 'Productos_Sedes').map(row => [row.Producto, row.Sucursal, row.Cantidad, row.Ingreso]),
+      dashboard.products.map(row => [row.name, branchesMap[row.branchId] ?? row.branchId, row.qty, row.revenue]));
+  }
   const detailSheets = wb.SheetNames.filter(name => name.startsWith('Detalle_'));
   const periodRows = detailSheets.length ? detailSheets.flatMap(name => rows(wb, name))
     : wb.SheetNames.filter(name => name.startsWith('Resum_')).flatMap(name => rows(wb, name));
   const totalColumn = detailSheets.length ? 'Total movimiento (S/)' : 'Ingreso';
   assert.equal(sumMoney(periodRows.map(row => row[totalColumn])), metrics.netRevenue);
+  if (detailSheets.length) assert.equal(sumMoney(periodRows.map(row => row.Subtotal)), metrics.netRevenue);
   assert.match(summary['Alcance de las compensaciones POS'], /sin evidencia de desembolso físico ni de devolución digital/);
 }
 
@@ -284,7 +303,8 @@ it('P13 keeps branch stock independent and credits a prior-shift void exactly on
 });
 
 it('P13 counts a historical void and its matching immutable compensation as one economic reversal', async () => {
-  const result = await simulate({ sales: [{ ...yapeSale, voided: true }], voids: [yapeVoid, yapeVoid] });
+  const historical = { ...yapeSale, voided: true };
+  const result = await simulate({ sales: [historical], voids: [yapeVoid, yapeVoid] });
   assertReconciled(result);
   const { summary, products } = result.dashboard;
   assert.deepEqual({
@@ -292,4 +312,80 @@ it('P13 counts a historical void and its matching immutable compensation as one 
     qty: sumMoney(products.map(row => row.qty)), productRevenue: sumMoney(products.map(row => row.revenue)),
     excelVoids: result.summary['Tickets POS Anulados'], excelNet: result.summary['💰 GRAN TOTAL INGRESOS NETOS'],
   }, { voids: 1, net: 0, qty: 0, productRevenue: 0, excelVoids: 1, excelNet: 0 });
+  assert.equal(historical.voided, true);
+  const detail = rows(result.wb, 'Detalle_Centro');
+  assert.equal(detail.filter(row => row.Ticket === 'COMPENSACIÓN POS: s2').length, 1);
+  assert.equal(sumMoney(detail.map(row => row.Cantidad)), 0);
+  assert.deepEqual(result.dashboard.summary.channels.digital, { collections: 30, posCompensations: -30, contractRefunds: 0, net: 0 });
+});
+
+it('P13-03 retains unpaired legacy voids without generating money, stock or an Excel compensation', async () => {
+  const historical = { ...yapeSale, voided: true, voidReason: 'Anulación anterior' };
+  const result = await simulate({ sales: [historical, cashSale] });
+  assertReconciled(result);
+  const { summary, products } = result.dashboard;
+  assert.deepEqual([summary.netRevenue, summary.posTicketCount, summary.voidedTicketCount, summary.refundCount], [20, 1, 1, 0]);
+  assert.deepEqual(products.map(row => [row.id, row.qty, row.revenue]), [[cashSale.items[0].id, 1, 20]]);
+  const detail = rows(result.wb, 'Detalle_Centro');
+  const legacy = detail.find(row => row.Ticket === historical.id);
+  assert.deepEqual([legacy.Estado, legacy.Cantidad, legacy.Subtotal], ['ANULADA ❌', 0, 0]);
+  assert.equal(detail.some(row => row.Estado === 'COMPENSACIÓN POS'), false);
+  const stats = salesToDailyStats([historical]);
+  assert.throws(() => aggregateReport({ ...scope, stats, voids: [yapeVoid] }), /agregado histórico no identifica/);
+  assert.throws(() => buildSalesWorkbook(XLSX, { ...scope, stats, voids: [yapeVoid], detailed: false }), /agregado histórico no identifica/);
+});
+
+it('P13-03 separates original and compensation dates across bounded queries and reconciles all four Excel filters', async () => {
+  const originalDate = time('10', '2026-10-21');
+  const original = { ...yapeSale, createdAt: originalDate, status: 'confirmed' };
+  const historical = { ...original, voided: true };
+  const priorPeriod = reportPeriod('hoy', originalDate);
+  const originalOnly = await simulate({ sales: [original], period: priorPeriod });
+  const compensationOnly = await simulate({ voids: [yapeVoid] });
+  for (const result of [originalOnly, compensationOnly]) assertReconciled(result);
+  assert.equal(originalOnly.dashboard.summary.netRevenue, 30);
+  assert.equal(compensationOnly.dashboard.summary.netRevenue, -30);
+  assert.equal(rows(compensationOnly.wb, 'Detalle_Centro').some(row => row.Estado === 'COMPLETADA'), false);
+  const unknownPrior = await simulate({ sales: [historical], period: priorPeriod });
+  assert.equal(unknownPrior.dashboard.summary.netRevenue, 0);
+  const evidencedPrior = await simulate({ sales: [historical], voids: [yapeVoid], period: priorPeriod });
+  assertReconciled(evidencedPrior);
+  assert.deepEqual([evidencedPrior.dashboard.summary.netRevenue, evidencedPrior.dashboard.summary.voidedTicketCount], [30, 0]);
+  for (const filter of ['hoy', 'semana', 'mes', 'todo']) {
+    const period = reportPeriod(filter, now);
+    for (const branchId of ['global', 'centro']) {
+      const result = await simulate({ sales: filter === 'hoy' ? [] : [historical], voids: [yapeVoid, yapeVoid], period, branchId });
+      assertReconciled(result);
+      assert.deepEqual(result.dashboard.days.map(row => [row.day, row.netRevenue, row.voidedTicketCount]),
+        filter === 'hoy' ? [['2026-10-22', -30, 1]] : [['2026-10-21', 30, 0], ['2026-10-22', -30, 1]]);
+      assert.equal(result.dashboard.summary.netRevenue, filter === 'hoy' ? -30 : 0);
+    }
+  }
+});
+
+it('P13-03 scopes matches to exact IDs and rejects inconsistent receipts in Dashboard and both workbook modes', async () => {
+  const historical = { ...yapeSale, voided: true };
+  const unrelated = { ...yapeVoid, id: 'another-ticket', saleId: 'another-ticket' };
+  const separated = await simulate({ sales: [historical], voids: [unrelated, { ...yapeVoid, businessId: 'qa13-b' }] });
+  assertReconciled(separated);
+  assert.deepEqual([separated.dashboard.summary.netRevenue, separated.dashboard.summary.voidedTicketCount], [-30, 2]);
+  const otherBranch = { ...yapeVoid, branchId: 'taller' };
+  const local = await simulate({ sales: [historical], voids: [otherBranch], branchId: 'centro' });
+  assert.equal(local.dashboard.summary.netRevenue, 0);
+  assert.equal(local.dashboard.summary.refundCount, 0);
+  for (const voids of [
+    [otherBranch],
+    [{ ...yapeVoid, saleId: 'different' }],
+    [{ ...yapeVoid, authority: 'unverified' }],
+    [{ ...yapeVoid, amount: -31, digitalAmount: -31, items: [{ ...yapeVoid.items[0], price: 31 }] }],
+    [{ ...yapeVoid, cashAmount: -30, digitalAmount: 0 }],
+    [{ ...yapeVoid, items: [{ ...yapeVoid.items[0], id: 'otro-producto' }] }],
+    [yapeVoid, { ...yapeVoid, occurredAt: time('13') }],
+  ]) {
+    assert.throws(() => aggregateReport({ ...scope, sales: [historical], voids }), /Compensación POS no verificable/);
+    for (const detailed of [true, false]) {
+      assert.throws(() => buildSalesWorkbook(XLSX, { ...scope, sales: [historical], voids, detailed, now }), /Compensación POS no verificable/);
+    }
+  }
+  assert.throws(() => aggregateReport({ sales: [historical], voids: [{ ...yapeVoid, businessId: 'qa13-b' }] }), /Compensación POS no verificable/);
 });

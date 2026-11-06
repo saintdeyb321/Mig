@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { createElement, memo } from 'react';
 import { CheckCircle2, ClipboardList, Clock3, WalletCards, XCircle } from 'lucide-react';
 import { Card, cn } from '../../shared/ui';
 import { CHANNEL_BREAKDOWN_ROWS, CHANNEL_EVIDENCE_NOTE, CHANNEL_NEGATIVE_NOTE, REPORT_CHANNELS } from '../../features/reports/domain/reportTotals.js';
@@ -28,7 +28,7 @@ const formatChartMoney = (amount = 0) => Number(amount).toLocaleString('en-US', 
 export function ReportPanel({ title, headingId, icon: Icon, children }) {
   return <Card aria-labelledby={headingId} className={cn('overflow-hidden p-0 hover:border-stellar/35 focus-within:border-stellar/45 sm:p-0', panelFeedback)}>
     <div className="flex items-center gap-2 bg-linear-to-r from-stellar to-stellar/90 px-4 py-3 text-white">
-      <Icon aria-hidden="true" className="size-5 shrink-0" />
+      {createElement(Icon, { 'aria-hidden': true, className: 'size-5 shrink-0' })}
       <h2 id={headingId} className="font-bold">{title}</h2>
     </div>
     {children}
@@ -74,7 +74,7 @@ export function OrderStatusChart({ counts }) {
       <dl className="divide-y divide-line rounded-xl border border-line bg-subtle/40 px-3 sm:px-4">
         {orderIndicators.map(({ key, label, icon: Icon, badge, bar }) => <div key={key} className="grid min-w-0 grid-cols-[minmax(0,42%)_minmax(0,1fr)] items-center gap-2 py-2 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
           <dt className="flex min-w-0 items-center gap-2 text-sm font-semibold text-ink">
-            <span className={cn('grid size-7 shrink-0 place-items-center rounded-lg', badge)}><Icon aria-hidden="true" className="size-4" /></span>
+            <span className={cn('grid size-7 shrink-0 place-items-center rounded-lg', badge)}>{createElement(Icon, { 'aria-hidden': true, className: 'size-4' })}</span>
             <span className="wrap-anywhere">{label}</span>
           </dt>
           <dd className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -101,7 +101,7 @@ export const MetricCard = memo(({
 }) => <Card className={cn('grid content-start gap-2 border-t-4 bg-linear-to-br from-panel via-panel p-3 sm:p-4', panelFeedback, metricTones[tone])} as="div">
   <div className="flex items-center gap-2">
     <span className={cn('flex size-9 shrink-0 items-center justify-center rounded-xl shadow-xs', bgColor, valueColor)}>
-      <Icon aria-hidden="true" className="size-4" />
+      {createElement(Icon, { 'aria-hidden': true, className: 'size-4' })}
     </span>
     <h2 className="text-sm font-semibold leading-snug text-muted">{title}</h2>
   </div>
