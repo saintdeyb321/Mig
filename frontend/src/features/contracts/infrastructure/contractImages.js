@@ -2,8 +2,9 @@ import { requireCapability } from '../../../config/runtimeCapabilities.js';
 import { auth } from '../../../core/firebase/client';
 import offlineDB from '../../../offlineDB.js';
 import { safeImageUrl } from '../../../shared/security/html.js';
+import { MAX_CONTRACT_IMAGES } from '../application/contractImagePolicy.js';
 
-export const MAX_CONTRACT_IMAGES = 20;
+export { MAX_CONTRACT_IMAGES };
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const localReference = /^local-image:([A-Za-z0-9_-]{1,128}):([A-Za-z0-9_-]{1,128}):([A-Za-z0-9_-]{36})$/;
@@ -53,7 +54,9 @@ async function optimizedImages(blob) {
 export async function prepareContractImages({ businessId, contractId, newImages = [], retainedImages = [] }) {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Inicia sesión.');
-  if (newImages.length + retainedImages.length > MAX_CONTRACT_IMAGES) throw new Error('Máximo 20 referencias por contrato.');
+  if (newImages.length && newImages.length + retainedImages.length > MAX_CONTRACT_IMAGES) {
+    throw new Error(`Máximo ${MAX_CONTRACT_IMAGES} imágenes de referencia por pedido.`);
+  }
   // Retained historical references are never deleted or silently migrated.
   const references = [...retainedImages];
   for (const blob of newImages) {
@@ -72,18 +75,22 @@ export async function cleanupContractImagePaths(_businessId, _contractId, paths 
 export const cleanupRetiredContractImages = async () => {};
 export async function retryContractImageCleanup() { requireCapability('cloudStorage', 'Limpieza remota de imágenes históricas'); }
 
-export async function resolveContractImageUrls(images, { thumbnails = false } = {}) {
+export async function resolveContractImageUrls(images, { thumbnails = false, preserveSlots = false } = {}) {
   const uid = auth.currentUser?.uid, urls = [], owned = [], warnings = [];
+  const missing = message => {
+    warnings.push(message);
+    if (preserveSlots) urls.push(null);
+  };
   for (const image of images ?? []) {
     if (typeof image === 'string' && localReference.test(image)) {
       let saved;
       try { saved = uid ? await offlineDB.settings.get(imageKey(uid, image)) : null; }
-      catch { warnings.push('Foto local no disponible: IndexedDB no pudo leerla. Puedes imprimir sin ella.'); continue; }
-      if (!saved || saved.userId !== uid || auth.currentUser?.uid !== uid) { warnings.push('Foto local no disponible en este dispositivo/cuenta.'); continue; }
+      catch { missing('Foto local no disponible: IndexedDB no pudo leerla. Puedes imprimir sin ella.'); continue; }
+      if (!saved || saved.userId !== uid || auth.currentUser?.uid !== uid) { missing('Foto local no disponible en este dispositivo/cuenta.'); continue; }
       const url = URL.createObjectURL(thumbnails ? saved.thumbnail : saved.main); owned.push(url); urls.push(url);
     } else if (typeof image === 'string' && /^(data:image\/(jpeg|png|webp);base64,|blob:)/.test(image) && safeImageUrl(image)) {
       urls.push(image);
-    } else warnings.push('Referencia histórica conservada; Firebase Storage no está disponible en Spark.');
+    } else missing('Referencia histórica conservada; Firebase Storage no está disponible en Spark.');
   }
   return { urls, warnings, release: () => owned.splice(0).forEach(url => URL.revokeObjectURL(url)) };
 }

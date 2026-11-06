@@ -1,17 +1,15 @@
 import FirestoreQueryError from '../components/FirestoreQueryError';
-import { ChartNoAxesCombined } from 'lucide-react';
-import { MetricCard, ChartColumn, TopProductItem } from "./reports/ReportParts.jsx";
-import { LoadingState, Button, PageHeader, Card, cn, HelpDisclosure } from "../shared/ui";
-// src/modules/Reports.jsx
+import { Banknote, ChartNoAxesCombined, ReceiptText, Smartphone, Trophy, WalletCards } from 'lucide-react';
+import { MetricCard, ChartColumn, OrderStatusChart, ReportPanel, TopProductItem } from './reports/ReportParts.jsx';
+import { LoadingState, Button, PageHeader, HelpDisclosure } from '../shared/ui';
 import { useMemo } from 'react';
-
-
 import { useReports } from '../features/reports/hooks/useReports';
+
 const TIME_FILTERS = {
   hoy: 'Hoy',
-  semana: 'Esta Semana',
-  mes: 'Este Mes',
-  todo: 'Este Año'
+  semana: 'Esta semana',
+  mes: 'Este mes',
+  todo: 'Este año'
 };
 const formatMoney = (amount = 0) => Number(amount).toLocaleString('en-US', {
   minimumFractionDigits: 2,
@@ -34,7 +32,6 @@ export default function Reports({
   } = useReports(user);
 
 
-  // 🚀 LIMPIO: Nos quedamos solo con las métricas estandarizadas
   const total = summary.netRevenue;
   const cash = summary.cashRevenue;
   const yape = summary.digitalRevenue;
@@ -44,58 +41,54 @@ export default function Reports({
     return Math.max(1, ...chartData.map(d => Math.abs(Number(d?.ventas) || 0)));
   }, [chartData]);
   if (isLoading) {
-    return <LoadingState>Generando Reportes...</LoadingState>;
+    return <LoadingState variant="module">Generando reportes…</LoadingState>;
   }
   if (error && !hasData) return <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />;
-  return <div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none">
-
-
-      <PageHeader title="Dashboard gerencial" icon={ChartNoAxesCombined} eyebrow="Resumen del negocio" description="Consulta los movimientos confirmados del período." actions={<><div className="segmented-control" role="group" aria-label="Período del reporte">
-          {Object.entries(TIME_FILTERS).map(([key, label]) => <Button key={key} onClick={() => setTimeFilter(key)} aria-pressed={timeFilter === key} className={cn(`text-xs sm:text-sm ${timeFilter === key ? "bg-primary-soft text-primary" : ''} `)} type="button" variant="secondary">
-              {label}
-            </Button>)}
-        </div></>} />
-
-      {error && <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />}
-      {isRefreshing && <p role="status" className="text-sm text-muted">Actualizando el período… Los resultados anteriores siguen visibles.</p>}
-      <p role="status" className="text-sm text-muted">Lectura del reporte: {updatedAt ? new Date(updatedAt).toLocaleString('es-PE') : 'pendiente'}. Informe histórico, no saldo en tiempo real. <Button onClick={refreshReport} variant="secondary">Actualizar período</Button></p>
-      <p className="rounded-xl border border-line bg-panel p-4 text-sm text-muted">Pedidos creados en el período: {contractCounts.pending} pendientes · {contractCounts.delivered} entregados · {contractCounts.cancelled} cancelados · {contractCounts.withDebt} con saldo.</p>
-
-      <HelpDisclosure title="Alcance de este informe">Movimientos contables confirmados; excluye pendientes locales. Las compensaciones POS se descuentan una sola vez por el método original y no acreditan desembolso físico de efectivo ni Yape. Lectura limitada a 10000 movimientos y 500 contratos por negocio. Los cierres operativos conservan conciliación pendiente.</HelpDisclosure>
-
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard title="Ingresos Netos" value={`S/ ${formatMoney(total)}`} subtext={`POS: S/ ${formatMoney(summary.posRevenue)} · Pedidos: S/ ${formatMoney(summary.contractRevenue)}`} emoji="💰" borderColor="border-primary" bgColor="bg-primary-soft" />
-
-        <MetricCard title="Tickets POS" value={totalSales.toLocaleString('en-US')} subtext={`Promedio POS: S/ ${formatMoney(summary.posAverageTicket)} · Anulados: ${summary.voidedTicketCount} · Pagos pedidos: ${summary.contractPaymentCount}`} emoji="🧾" borderColor="border-t-4 border-t-ink" bgColor="bg-subtle" />
-
-        {/* 🚀 Ahora estos reflejan el Efectivo y Yape de la Sede Seleccionada (o el Global) */}
-        <MetricCard title="Neto contable en efectivo" value={`S/ ${formatMoney(cash)}`} subtext="Incluye compensaciones; no certifica el saldo físico." emoji="💵" borderColor="border-success" bgColor="bg-success-soft" valueColor="text-success" />
-
-        <MetricCard title="Neto contable Yape / Plin" value={`S/ ${formatMoney(yape)}`} subtext="No acredita una devolución digital efectuada." emoji="📲" borderColor="border-t-4 border-t-accent" bgColor="bg-accent-soft" valueColor="text-accent" />
+  return <div className="workspace-page max-w-7xl gap-3 animate-enter motion-reduce:animate-none">
+    <PageHeader title="Dashboard gerencial" icon={ChartNoAxesCombined} className="border-t-stellar/70 p-3 sm:p-3" actions={
+      <div className="segmented-control grid w-full grid-cols-2 sm:flex sm:w-auto" role="group" aria-label="Período del reporte">
+        {Object.entries(TIME_FILTERS).map(([key, label]) => <Button key={key} type="button" size="sm"
+          onClick={() => setTimeFilter(key)} aria-pressed={timeFilter === key} variant={timeFilter === key ? 'primary' : 'ghost'}>
+          {label}
+        </Button>)}
       </div>
+    } />
 
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        <Card className="min-w-0 overflow-hidden p-0 sm:p-0" as="div">
-          <div className="border-b border-primary/10 bg-primary-soft/50 p-4">
-            <h3 className="text-base font-semibold">📈 Evolución de Ventas</h3>
-          </div>
-          <div className={cn(`flex h-80 min-w-0 items-end gap-4 overflow-x-auto overscroll-x-contain p-5 pt-10 ${chartData.length > 10 ? "gap-3" : ''} `)}>
-            {chartData.length === 0 ? <div className="m-auto text-center text-sm text-muted">No hay datos suficientes para graficar.</div> : chartData.map((data, i) => <ChartColumn key={i} ventas={data?.ventas} date={data?.date} maxChartValue={maxChartValue} />)}
-          </div>
-        </Card>
+    {error && <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />}
+    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+      <p>Informe histórico · no es saldo de caja.</p>
+      <p role="status">{isRefreshing ? 'Actualizando el período… Los resultados anteriores siguen visibles.'
+        : updatedAt ? `Actualizado ${new Date(updatedAt).toLocaleString('es-PE')}` : 'Lectura pendiente.'}</p>
+    </div>
 
-        <Card className="min-w-0 overflow-hidden p-0 sm:p-0" as="div">
-          <div className="border-b border-primary/10 bg-primary-soft/50 p-4">
-            <h3 className="text-base font-semibold">🏆 Top 5 Productos</h3>
-          </div>
-          {topProducts.length === 0 ? <div className="grid min-h-48 place-content-center gap-3 p-5 text-center text-sm text-muted">
-              <span className="text-4xl text-muted">🛒</span>
-              No hay datos en este periodo.
-            </div> : <div className="px-4">
-              {topProducts.map((p, index) => <TopProductItem key={p.name} name={p?.name} qty={p?.qty} index={index} isLast={index === topProducts.length - 1} maxProductQty={maxProductQty} />)}
-            </div>}
-        </Card>
-      </div>
+    <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricCard title="Ingresos netos" value={`S/ ${formatMoney(total)}`} subtext={`POS: S/ ${formatMoney(summary.posRevenue)} · Pedidos: S/ ${formatMoney(summary.contractRevenue)}`} icon={WalletCards} tone="stellar" bgColor="bg-stellar-soft" valueColor="text-stellar" />
+      <MetricCard title="Tickets POS" value={totalSales.toLocaleString('en-US')} subtext={`Promedio POS: S/ ${formatMoney(summary.posAverageTicket)} · Anulados: ${summary.voidedTicketCount} · Pagos pedidos: ${summary.contractPaymentCount}`} icon={ReceiptText} bgColor="bg-subtle" />
+      <MetricCard title="Neto contable en efectivo" value={`S/ ${formatMoney(cash)}`} subtext="Incluye compensaciones." icon={Banknote} tone="success" bgColor="bg-success-soft" valueColor="text-success" />
+      <MetricCard title="Neto contable Yape / Plin" value={`S/ ${formatMoney(yape)}`} subtext="Incluye compensaciones." icon={Smartphone} tone="accent" bgColor="bg-accent-soft" valueColor="text-accent" />
+    </div>
 
-    </div>;
+    <OrderStatusChart counts={contractCounts} />
+
+    <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+      <ReportPanel title="Evolución de ventas" icon={ChartNoAxesCombined}>
+        <div role="region" aria-label="Gráfico de ventas" tabIndex={chartData.length ? 0 : undefined}
+          className="flex h-64 min-w-0 items-end gap-3 overflow-x-auto overscroll-x-contain p-4 focus-visible:outline-offset-[-3px]">
+          {chartData.length === 0 ? <p className="m-auto text-center text-sm text-muted">No hay datos suficientes para graficar.</p>
+            : chartData.map((data, i) => <ChartColumn key={i} ventas={data?.ventas} date={data?.date} maxChartValue={maxChartValue} />)}
+        </div>
+      </ReportPanel>
+      <ReportPanel title="Top 5 productos" icon={Trophy}>
+        {topProducts.length === 0 ? <p className="p-4 text-sm text-muted">No hay datos en este período.</p>
+          : <div className="px-4">
+            {topProducts.map((p, index) => <TopProductItem key={p.name} name={p?.name} qty={p?.qty} index={index} maxProductQty={maxProductQty} />)}
+          </div>}
+      </ReportPanel>
+    </div>
+
+    <HelpDisclosure title="Alcance de este informe">
+      <p>Incluye movimientos contables confirmados y excluye pendientes locales. Las compensaciones POS se descuentan una vez por el método original. No certifican saldo físico, desembolsos ni devoluciones digitales. Los cierres operativos conservan conciliación pendiente.</p>
+      <p>La lectura se limita a 10 000 movimientos y 500 contratos por negocio.</p>
+    </HelpDisclosure>
+  </div>;
 }

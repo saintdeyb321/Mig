@@ -4,13 +4,13 @@ import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 
 const EMPTY_IMAGES = [];
 
-export function useContractImageUrls(images = EMPTY_IMAGES) {
+export function useContractImageUrls(images = EMPTY_IMAGES, { preserveSlots = false } = {}) {
   const key = JSON.stringify(images);
   const [result, setResult] = useState({ key: null, urls: [], loading: false, error: null });
   useEffect(() => {
     let disposed = false;
     let release = () => {};
-    resolveContractImageUrls(JSON.parse(key)).then(resolved => {
+    resolveContractImageUrls(JSON.parse(key), { preserveSlots }).then(resolved => {
       if (disposed) { resolved.release(); return; }
       release = resolved.release;
       setResult({ key, urls: resolved.urls, loading: false, error: resolved.warnings?.length ? new Error(resolved.warnings.join(' ')) : null });
@@ -19,6 +19,6 @@ export function useContractImageUrls(images = EMPTY_IMAGES) {
       if (!disposed) setResult({ key, urls: [], loading: false, error });
     });
     return () => { disposed = true; release(); };
-  }, [key]);
+  }, [key, preserveSlots]);
   return result.key === key ? result : { urls: [], loading: images.length > 0, error: null };
 }

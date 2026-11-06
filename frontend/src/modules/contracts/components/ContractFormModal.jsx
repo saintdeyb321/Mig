@@ -1,11 +1,12 @@
 import { ContractFinanceFields } from "./ContractFinanceFields";
 import { Dialog, Input, FormField, Button, Select, Textarea, DialogFooter, SectionCard } from "../../../shared/ui";
-import { CalendarClock, ImagePlus, NotebookPen, Save, UserRound } from 'lucide-react';
+import { CalendarClock, ImagePlus, Images, NotebookPen, Save, UserRound } from 'lucide-react';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { toDateSafe } from '../../../core/dates/dateValues';
 import { useContractImageUrls } from '../../../features/contracts/hooks/useContractImageUrls';
-import { MAX_CONTRACT_IMAGES } from '../../../features/contracts/infrastructure/contractImages';
+import { contractImageList } from '../../../features/contracts/infrastructure/contractImages';
+import { fitsContractImageLimit, MAX_CONTRACT_IMAGES } from '../../../features/contracts/application/contractImagePolicy.js';
 const ContractFormModal = ({
   contractToEdit,
   activeLocations,
@@ -51,23 +52,9 @@ const ContractFormModal = ({
       paymentMethod: 'efectivo'
     };
   });
-  const [images, setImages] = useState(() => {
-    const initialImages = [];
-    if (contractToEdit) {
-      if (contractToEdit.referenceImages && contractToEdit.referenceImages.length > 0) {
-        contractToEdit.referenceImages.forEach(img => initialImages.push({
-          type: 'existing',
-          value: img
-        }));
-      } else if (contractToEdit.referenceImage) {
-        initialImages.push({
-          type: 'existing',
-          value: contractToEdit.referenceImage
-        });
-      }
-    }
-    return initialImages;
-  });
+  const savedImages = contractImageList(contractToEdit);
+  const [images, setImages] = useState(() => savedImages.map(value => ({ type: 'existing', value })));
+  const overImageLimit = images.length > MAX_CONTRACT_IMAGES;
   const previewUrls = useRef(new Set());
   useEffect(() => {
     const created = previewUrls.current;
@@ -78,8 +65,8 @@ const ContractFormModal = ({
   }, []);
   const imageReferences = useMemo(() => images.map(image => image.type === 'existing' ? image.value : image.url), [images]);
   const {
-    urls: displayedImages
-  } = useContractImageUrls(imageReferences);
+    urls: displayedImages, loading: loadingImages
+  } = useContractImageUrls(imageReferences, { preserveSlots: true });
   const totals = useMemo(() => {
     const sub = Math.max(0, Number(formData.subtotal) || 0);
     const del = Math.max(0, Number(formData.deliveryCost) || 0);
@@ -113,7 +100,8 @@ const ContractFormModal = ({
     }));
   }, []);
   const handleImageChange = e => {
-    const files = Array.from(e.target.files);
+    const files = Array.from(e.currentTarget.files);
+    e.currentTarget.value = '';
     if (files.length === 0) return;
     if (images.length + files.length > MAX_CONTRACT_IMAGES) {
       return toast.error(`Máximo ${MAX_CONTRACT_IMAGES} imágenes de referencia por pedido.`);
@@ -131,7 +119,6 @@ const ContractFormModal = ({
       };
     });
     setImages(prev => [...prev, ...newImages]);
-    e.target.value = null;
   };
   const handleRemoveImage = indexToRemove => {
     const removed = images[indexToRemove];
@@ -154,6 +141,9 @@ const ContractFormModal = ({
     }
     const existingImages = images.filter(img => img.type === 'existing').map(img => img.value);
     const newImageFiles = images.filter(img => img.type === 'new').map(img => img.file);
+    if (!fitsContractImageLimit([...existingImages, ...newImageFiles], savedImages)) {
+      return toast.error(`Reduce la selección a ${MAX_CONTRACT_IMAGES} fotos para guardar los cambios en las referencias.`);
+    }
     const finalData = {
       ...formData,
       clientName: formData.clientName.trim(),
@@ -175,9 +165,9 @@ const ContractFormModal = ({
   return <>
       <Dialog title={isEditing ? 'Editar Pedido' : 'Registro de Nuevo Pedido'} description="Cada detalle, listo para una entrega especial." icon={NotebookPen} busy={isProcessing} className="dialog-form-surface max-w-[850px]" bodyClassName="flex flex-col space-y-0 overflow-hidden p-0 sm:p-0" onClose={onClose}>
         <form onSubmit={handleFormSubmit} className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
-            <SectionCard number="1" title="Datos del cliente" icon={UserRound}>
-              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <div className="ui-scroll min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain bg-canvas p-4 sm:p-6">
+            <SectionCard number="1" title="Datos del cliente" icon={UserRound} tone="customer">
+              <div className="grid min-w-0 gap-x-4 gap-y-3.5 sm:grid-cols-2">
                 <FormField label="Nombre completo" required>
                   <Input name="clientName" autoFocus value={formData.clientName} onChange={handleChange} required disabled={isProcessing} placeholder="Ej: Juan Pérez" />
                 </FormField>
@@ -188,8 +178,8 @@ const ContractFormModal = ({
 
             </SectionCard>
 
-            <SectionCard number="2" title="Logística de entrega" icon={CalendarClock}>
-              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <SectionCard number="2" title="Logística de entrega" icon={CalendarClock} tone="delivery">
+              <div className="grid min-w-0 gap-x-4 gap-y-3.5 sm:grid-cols-2">
                 <FormField label="Fecha y hora" required>
                   <Input name="deliveryDate" type="datetime-local" value={formData.deliveryDate} onChange={handleChange} required disabled={isProcessing} />
                 </FormField>
@@ -205,33 +195,41 @@ const ContractFormModal = ({
               </div>
             </SectionCard>
 
-            <SectionCard number="3" title="Detalles del pedido" icon={NotebookPen}>
-              <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+            <SectionCard number="3" title="Detalles del pedido" icon={NotebookPen} tone="details">
+              <div className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
                 <FormField label="Descripción exacta" required>
-                  <Textarea name="details" value={formData.details} onChange={handleChange} required disabled={isProcessing} className="min-h-28" placeholder="Ej: Torta de chocolate, 2 pisos, relleno de fresa…" />
+                  <Textarea name="details" value={formData.details} onChange={handleChange} required disabled={isProcessing} className="min-h-32" placeholder="Ej: Torta de chocolate, 2 pisos, relleno de fresa…" />
                 </FormField>
-                <div className="min-w-0 space-y-2">
-                  <p className="flex flex-wrap justify-between gap-1 text-sm font-semibold text-brand-deep"><span>Fotos de referencia</span><span className="text-xs font-medium text-muted">{images.length}/{MAX_CONTRACT_IMAGES}</span></p>
-                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-3">
-                    {images.map((_image, idx) => <div key={idx} className="relative aspect-square overflow-hidden rounded-xl border border-line bg-subtle shadow-xs">
-                      {displayedImages[idx] ? <img src={displayedImages[idx]} alt={`Referencia ${idx + 1}`} className="size-full object-cover" /> : <span className="p-2 text-xs text-muted">Cargando…</span>}
-                      <Button onClick={() => handleRemoveImage(idx)} disabled={isProcessing} className="absolute right-0.5 top-0.5 z-10 size-9 min-h-9 rounded-full p-1" variant="danger" aria-label={`Quitar foto ${idx + 1}`}>×</Button>
+                <div className="min-w-0 space-y-2.5 rounded-2xl border border-accent/20 bg-linear-to-br from-panel to-accent-soft/65 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-bold text-brand-deep">
+                    <span className="flex items-center gap-2"><Images aria-hidden="true" className="size-4 text-accent" />Fotos de referencia</span>
+                    <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent tabular-nums">
+                      {overImageLimit ? `${images.length} fotos existentes` : `${images.length}/${MAX_CONTRACT_IMAGES}`}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-2">
+                    {images.map((_image, idx) => <div key={idx} className="relative aspect-square min-w-0 rounded-xl border border-accent/15 bg-panel shadow-xs">
+                      {displayedImages[idx] ? <img src={displayedImages[idx]} alt={`Referencia ${idx + 1}`} className="size-full rounded-[inherit] object-cover" />
+                        : <span className="absolute inset-x-1 bottom-2 text-center text-xs text-muted">{loadingImages ? 'Cargando…' : 'No disponible aquí'}</span>}
+                      <Button onClick={() => handleRemoveImage(idx)} disabled={isProcessing} className="absolute top-1 right-1 size-9 min-h-9 rounded-full p-1" variant="danger" aria-label={`Quitar foto ${idx + 1}`}>×</Button>
                     </div>)}
-                    {images.length < MAX_CONTRACT_IMAGES && <div className="relative flex aspect-square items-center justify-center rounded-xl border-2 border-dashed border-accent/35 bg-accent-soft text-accent transition-colors hover:border-accent focus-within:ring-2 focus-within:ring-focus">
+                    {images.length < MAX_CONTRACT_IMAGES && <div className="relative flex aspect-square min-w-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-accent/45 bg-accent-soft/70 p-1 text-center text-accent transition-colors hover:border-accent hover:bg-accent-soft focus-within:ring-2 focus-within:ring-focus motion-reduce:transition-none">
                       <Input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handleImageChange} disabled={isProcessing} className="absolute inset-0 size-full cursor-pointer opacity-0" aria-label="Añadir fotos de referencia" />
-                      <ImagePlus aria-hidden="true" className="pointer-events-none size-6" />
+                      <ImagePlus aria-hidden="true" className="pointer-events-none size-5" />
+                      <span aria-hidden="true" className="pointer-events-none text-xs font-semibold">Añadir fotos</span>
                     </div>}
                   </div>
                   <p className="text-xs leading-relaxed text-muted">Hasta {MAX_CONTRACT_IMAGES} fotos · JPEG, PNG o WebP · 5 MB por foto. Se guardan comprimidas solo en este dispositivo y cuenta.</p>
+                  {overImageLimit && <p className="rounded-lg bg-warning-soft px-2 py-1.5 text-xs text-warning">Puedes conservar las fotos anteriores. Para cambiar la selección, redúcela a {MAX_CONTRACT_IMAGES} como máximo.</p>}
                 </div>
               </div>
             </SectionCard>
             {cashAction}
             <ContractFinanceFields formData={formData} isProcessing={isProcessing} isEditing={isEditing} totals={totals} handleChange={handleChange} />
           </div>
-          <DialogFooter className="static m-0 gap-3 bg-panel px-4 py-4 sm:m-0 sm:px-6">
-            <Button onClick={onClose} disabled={isProcessing} variant="secondary">Cancelar</Button>
-            <Button type="submit" loading={isProcessing} className="sm:min-w-60"><Save aria-hidden="true" />{isProcessing ? 'Procesando…' : isEditing ? 'Actualizar Pedido' : 'Guardar y Registrar Pedido'}</Button>
+          <DialogFooter className="static m-0 grid grid-cols-2 gap-2 border-finance-line/60 bg-linear-to-r from-panel via-panel to-success-soft/70 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:m-0 sm:grid-cols-[minmax(0,11rem)_minmax(0,16rem)] sm:justify-center sm:gap-3 sm:px-6">
+            <Button onClick={onClose} disabled={isProcessing} variant="secondary" className="px-2">Cancelar</Button>
+            <Button type="submit" loading={isProcessing} className="px-2"><Save aria-hidden="true" className="max-xs:hidden" />{isProcessing ? 'Procesando…' : isEditing ? 'Actualizar Pedido' : 'Guardar y Registrar Pedido'}</Button>
           </DialogFooter>
         </form>
       </Dialog>

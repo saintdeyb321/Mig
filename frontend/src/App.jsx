@@ -133,7 +133,7 @@ function App() {
       }} />
 
               <AppLayout user={user} tab={tab} setTab={setTab} handleLogout={handleLogout}>
-                <Suspense fallback={<LoadingState>Abriendo módulo...</LoadingState>}>
+                <Suspense fallback={<LoadingState variant="module">Abriendo módulo…</LoadingState>}>
                   {/* === RUTAS DE LA APLICACIÓN === */}
                   {!tab && <p role="alert" className="rounded-xl border border-danger/20 bg-danger-soft p-3 text-sm text-danger">Tu perfil no tiene un contexto operativo válido. Contacta al administrador.</p>}
                   {tab === 'pos' && <POS user={user} />}

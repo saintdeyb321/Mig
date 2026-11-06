@@ -1,7 +1,6 @@
-import { Building2, Plus, Pencil } from 'lucide-react';
+import { MapPin, Pencil, Phone, Plus, QrCode, Store } from 'lucide-react';
 import { Alert, Dialog, cn, Button, PageHeader, Input, FormField, Select, Badge, Card, DialogFooter, SearchField, EmptyState } from "../shared/ui";
-// src/modules/BranchManager.jsx
-import React, { memo, useState } from 'react';
+import { memo, useState } from 'react';
 import { useBranches } from '../features/branches/hooks/useBranches';
 import QRPaymentCard from './QRPaymentCard';
 const BranchCard = memo(({
@@ -11,46 +10,32 @@ const BranchCard = memo(({
 }) => {
   const isInactive = b.status?.toLowerCase() === 'inactivo';
   const hasQR = Boolean(b.yapeQrUrl);
-  return <Card className={cn(`flex min-w-0 flex-wrap items-center justify-between gap-4       p-4 sm:p-4 animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65" : ''} `)} as="div">
-      <div className="flex min-w-0 flex-[1_1_15rem] items-center gap-3">
-        <div className="flex size-12 shrink-0 items-center justify-center rounded-xl text-2xl bg-subtle relative">
-          <Building2 aria-hidden="true" className="size-6 text-primary" />
-        </div>
-
-        <div className="grid min-w-0 flex-1 gap-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={cn(`break-words font-semibold ${isInactive ? "line-through text-muted" : "text-ink"} `)}>
-              {b.name}
-            </span>
-            <div className="flex gap-1">
-              {hasQR && <Badge className="bg-primary-soft text-accent">
-                  📱 QR Activo
-                </Badge>}
-              <Badge className={cn(isInactive ? "bg-danger-soft" : "bg-success-soft", isInactive ? "text-danger" : "text-success")}>
-                {isInactive ? 'Inactiva' : 'Activa'}
-              </Badge>
-            </div>
-          </div>
-
-          <span className="break-all text-xs text-muted mt-1">
-            📍 {b.address || 'Sin dirección'}
-          </span>
-
-          <div className="flex flex-wrap items-center gap-1 text-xs text-primary mt-0.5">
-            <span className="text-sm">📞</span>
-            <span className="text-muted font-medium">
-              {b.phone || 'Sin teléfono'}
-            </span>
-          </div>
+  return <Card as="article" className={cn('grid min-w-0 gap-3 border-l-4 bg-linear-to-br from-panel via-panel p-3.5 hover:shadow-md motion-safe:transition-shadow sm:p-4',
+    isInactive ? 'border-l-control/45 to-subtle' : 'border-l-stellar/55 to-stellar-soft/45')}>
+    <header className="flex min-w-0 items-start gap-2.5">
+      <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-stellar/15 bg-stellar-soft text-stellar"><Store aria-hidden="true" className="size-5" /></span>
+      <div className="min-w-0 space-y-1">
+        <h4 className="font-extrabold text-brand-deep wrap-anywhere">{b.name}</h4>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant={isInactive ? 'neutral' : 'success'}>{isInactive ? 'Inactiva' : 'Activa'}</Badge>
+          {hasQR && <Badge variant="accent"><QrCode aria-hidden="true" className="size-3.5" />QR configurado</Badge>}
         </div>
       </div>
-
-      <div className="flex w-full flex-wrap items-center gap-2 border-t border-line pt-3 sm:w-auto sm:border-0 sm:pt-0">
-        <Button onClick={() => openEditForm(b)} disabled={isProcessing} className="flex-1 sm:flex-none" type="button" variant="secondary">
-          <Pencil aria-hidden="true" /> Editar
-        </Button>
+    </header>
+    <dl className="grid min-w-0 gap-2 rounded-xl border border-stellar/15 bg-stellar-soft/40 px-3 py-2.5">
+      <div className="grid min-w-0 gap-0.5">
+        <dt className="flex items-center gap-1.5 text-xs font-semibold text-stellar"><MapPin aria-hidden="true" className="size-3.5 shrink-0" />Dirección</dt>
+        <dd className="text-sm wrap-anywhere">{b.address || 'Sin dirección'}</dd>
       </div>
-    </Card>;
+      <div className="grid min-w-0 gap-0.5">
+        <dt className="flex items-center gap-1.5 text-xs font-semibold text-stellar"><Phone aria-hidden="true" className="size-3.5 shrink-0" />Teléfono</dt>
+        <dd className="text-sm tabular-nums wrap-anywhere">{b.phone || 'Sin teléfono'}</dd>
+      </div>
+    </dl>
+    <footer className="flex justify-end border-t border-line/75 pt-2.5">
+      <Button onClick={() => openEditForm(b)} disabled={isProcessing} size="sm" type="button" variant="secondary"><Pencil aria-hidden="true" />Editar</Button>
+    </footer>
+  </Card>;
 });
 function BranchManager({
   user,
@@ -87,22 +72,22 @@ function BranchManager({
   });
   if (isLoading && !showFormModal) {
     return <div className="flex min-h-64 flex-col items-center justify-center gap-4 animate-enter motion-reduce:animate-none p-5">
-        <span className="text-3xl">🏢</span>
+        <span className="grid size-12 place-items-center rounded-xl bg-stellar-soft text-stellar"><Store aria-hidden="true" className="size-6" /></span>
         <p className="text-sm text-muted">Cargando sucursales...</p>
       </div>;
   }
-  return <div className={cn(isEmbedded ? "animate-enter motion-reduce:animate-none" : "workspace-page max-w-7xl animate-enter motion-reduce:animate-none", isEmbedded ? "" : "w-full max-w-6xl m-[0_auto]")}>
+  return <div className={cn('animate-enter motion-reduce:animate-none', isEmbedded ? 'space-y-3' : 'workspace-page max-w-6xl')}>
 
-      {!isEmbedded && <PageHeader title="Mis sucursales" icon={Building2} eyebrow="Tus locales" description="Organiza las sedes y sus métodos de pago." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
+      {!isEmbedded && <PageHeader title="Mis sucursales" icon={Store} eyebrow="Tus locales" description="Organiza las sedes y sus métodos de pago." className="to-stellar-soft/65" actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
             <Plus aria-hidden="true" /> Nueva sede
           </Button></>} />}
 
       <Alert variant={branchQuota?.registeredBranchQuotaVersion === 1 ? 'info' : 'warning'}>{branchQuota?.registeredBranchQuotaVersion === 1 ? `Sedes activas: ${branchQuota.activeBranchIds.length} / ${branchQuota.maxActiveBranches}. Registradas: ${branchQuota.registeredBranchIds.length} / ${branchQuota.maxRegisteredBranches}. Inactivar libera solo cupo activo; el historial conserva su plaza registrada.` : 'Inventario registrado sin regularizar: conserva sus operaciones; SuperAdmin debe inventariar y regularizar antes de nuevas altas o cambios de estado.'}</Alert>
-      <div className="view-toolbar mb-5">
+      <div className="view-toolbar border-stellar/20 bg-panel/85">
 
-        <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre..." onClear={() => setSearchTerm('')} />
+        <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-48" />
 
-        <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted m-0">
+        <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-stellar/15 bg-stellar-soft/45 px-3 text-sm font-medium text-ink focus-within:border-stellar">
           <Input type="checkbox" className="shrink-0" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Ver inactivos
         </label>
@@ -112,7 +97,7 @@ function BranchManager({
           </Button>}
       </div>
 
-      <h3 className="text-sm font-semibold text-muted mt-0">
+      <h3 className="text-sm font-bold text-brand-deep">
         Lista de Sedes ({filteredBranches.length})
       </h3>
 
@@ -123,7 +108,7 @@ function BranchManager({
       </div>
 
       {/* MODAL FORMULARIO */}
-      {showFormModal && <Dialog title={editingBranch ? 'Editar sede' : 'Nueva sede'} icon={Building2} busy={isProcessing} className="max-w-lg" onClose={() => setShowFormModal(false)}>
+      {showFormModal && <Dialog title={editingBranch ? 'Editar sede' : 'Nueva sede'} icon={Store} busy={isProcessing} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
             <form onSubmit={handleSave} className="grid gap-4">
               <FormField label={<>NOMBRE DE LA SEDE</>}>

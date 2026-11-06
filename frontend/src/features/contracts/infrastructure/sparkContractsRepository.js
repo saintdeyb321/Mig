@@ -4,6 +4,7 @@ import * as firestoreSDK from 'firebase/firestore';
 import { commercialFields, contractAmount, paymentMethod, operationId, financialProjection } from '../../../../../functions/src/contracts/domain/contractModel.js';
 import { money } from '../../sales/domain/saleModel.js';
 import { cashLockId } from '../../cash-register/infrastructure/sparkCashRepository.js';
+import { fitsContractImageLimit, MAX_CONTRACT_IMAGES } from '../application/contractImagePolicy.js';
 
 const emptyMethods = () => ({ efectivo: 0, yape: 0, plin: 0 });
 const projection = (total, byMethod, status) => financialProjection(total,
@@ -31,11 +32,12 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
     if (who() !== uid) fail('La sesión cambió.');
     return result(id, saved.data());
   }
-  const commercial = (input, businessId, id) => {
+  const commercial = (input, businessId, id, savedImages) => {
     const fields = commercialFields(input, { businessId, contractId: id, allowLegacyImages: true });
     const images = input.referenceImages ?? [];
-    if (!Array.isArray(images) || images.length > 20 || images.some(image => typeof image !== 'string'
+    if (!Array.isArray(images) || images.some(image => typeof image !== 'string'
       || !image.startsWith(`local-image:${businessId}:${id}:`) || image.length > 350)) fail('Solo referencias locales acotadas; las referencias históricas se conservan en modo lectura.');
+    if (!fitsContractImageLimit(images, savedImages)) fail(`Máximo ${MAX_CONTRACT_IMAGES} imágenes de referencia por pedido.`);
     return { ...fields, deliveryDate: fields.deliveryDate ? Timestamp.fromDate(new Date(fields.deliveryDate)) : null, referenceImages: images };
   };
   const payment = (context, id, contract, op, amount, method, type) => ({ ...context, sourceType: 'contract', sourceId: id,
@@ -88,7 +90,7 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
     update: (id, changes) => change(id, async (tx, ref, contract) => {
       await actor(tx, contract.branchId, { cashRequired: false });
       if (contract.status === 'cancelado') fail('El pedido está cancelado.');
-      const fields = commercial({ ...contract, ...changes }, contract.businessId, id);
+      const fields = commercial({ ...contract, ...changes }, contract.businessId, id, contract.referenceImages);
       if (fields.total < contract.paidTotal) fail('El nuevo total no puede ser menor al importe ya abonado.');
       tx.update(ref, { ...fields, ...projection(fields.total, contract.paidByMethod, contract.status), updatedAt: serverTimestamp() });
     }),

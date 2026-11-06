@@ -3,8 +3,8 @@ import { CashRegisterModals } from '../CashRegisterModals';
 import { CashStatus } from '../pos/TicketParts';
 import FirestoreQueryError from '../../components/FirestoreQueryError';
 import { isBranchOperational } from '../../features/branches/domain/branchPolicy';
-import { CakeSlice } from 'lucide-react';
-import { Alert, Button, PageHeader, Select, cn, SearchField, EmptyState } from "../../shared/ui";
+import { CakeSlice, History, Package, Plus, WalletCards } from 'lucide-react';
+import { Alert, Button, PageHeader, Select, SearchField, EmptyState } from "../../shared/ui";
 // src/modules/contracts/ContractManager.jsx
 import React, { useState, useMemo, useCallback } from 'react';
 import { useContracts } from '../../features/contracts/hooks/useContracts';
@@ -31,8 +31,13 @@ function ContractManager({
     settings
   } = useTenantData();
   const cash = useCashRegister(user, activeBranchId);
-  const [openCashBranch, setOpenCashBranch] = useState(null);
-  const [closeCashBranch, setCloseCashBranch] = useState(null);
+  const cashScope = JSON.stringify([user.uid, user.businessId, activeBranchId]);
+  const [cashModal, setCashModal] = useState(null);
+  const [previousCashScope, setPreviousCashScope] = useState(cashScope);
+  if (previousCashScope !== cashScope) {
+    setPreviousCashScope(cashScope);
+    setCashModal(null);
+  }
   const physicalCashBranch = activeBranchId && activeBranchId !== 'global' && businessBranches?.some(branch => branch.id === activeBranchId && isBranchOperational(branch));
   const canManageCash = physicalCashBranch && (user.role === 'dueño' || user.role === 'cajero' && user.branchId === activeBranchId);
   const canCollect = cash.currentSession && !cash.currentSession.needsForceClose && !cash.isExpired && !cash.readError;
@@ -143,25 +148,33 @@ function ContractManager({
     if (success) setContractToView(null); // Refresca cerrando modal
     return success;
   }, [addPayment, canCollect]);
+  const dismissCashModal = () => setCashModal(request => request === cashModal ? null : request);
+  const showCashOpening = () => setCashModal({ mode: 'open' });
+  const showCashClosing = () => setCashModal({ mode: 'close', sessionId: cash.currentSession.id });
+  const cashModals = <CashRegisterModals {...cash}
+    key={cashModal?.mode === 'open' ? cashScope : `${cashScope}:${cash.currentSession?.id ?? 'closed'}`}
+    showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal}
+    showCloseModal={cashModal?.mode === 'close' && cashModal.sessionId === cash.currentSession?.id} setShowCloseModal={dismissCashModal}
+  />;
   if (isLoading) {
-    return <div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none flex justify-center items-center min-h-64">
+    return <><div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none flex justify-center items-center min-h-64">
         <div className="text-center text-muted">
           <div className="size-8 animate-spin rounded-full border-3 border-line border-t-primary motion-reduce:animate-none m-[0_auto_15px]"></div>
           <p>Cargando agenda de pedidos...</p>
         </div>
-      </div>;
+      </div>{cashModals}</>;
   }
-  return <div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none">
-      <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." actions={<>
+  return <><div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none">
+      <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." className="to-primary-soft/60" actions={<>
         {canManageCash && <CashStatus readOnly={false} session={cash.currentSession} isExpired={cash.isExpired} expiresAt={cash.expiresAt} remainingMinutes={cash.remainingMinutes} />}
-        {canManageCash && !cash.currentSession && !cash.readError && <Button variant="secondary" disabled={cash.isLoadingSession} onClick={() => setOpenCashBranch(activeBranchId)}>Abrir caja</Button>}
-        {canManageCash && cash.currentSession && (!cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button variant="secondary" onClick={() => setCloseCashBranch(activeBranchId)}>Cerrar caja</Button>}
+        {canManageCash && !cash.currentSession && !cash.readError && <Button variant="secondary" disabled={cash.isLoadingSession} onClick={showCashOpening}>Abrir caja</Button>}
+        {canManageCash && cash.currentSession && (!cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button variant="secondary" onClick={showCashClosing}>Cerrar caja</Button>}
         <Button onClick={() => {
         if (!activeBranchId || activeBranchId === 'global') return toast.error('Selecciona una sede física.');
         setContractToEdit(null);
         setShowCreateModal(true);
       }} className="shrink-0 py-2.5 px-5 text-base" type="button" variant="primary">
-          ➕ Nuevo Pedido
+          <Plus aria-hidden="true" />Nuevo Pedido
         </Button></>} />
 
       {cash.isExpired && <Alert variant="warning" title="Caja vencida">Cierra el turno y abre una caja nueva para anticipos, abonos o devoluciones. Puedes preparar pedidos sin anticipo.</Alert>}
@@ -170,24 +183,24 @@ function ContractManager({
       <p role="status" className="text-sm text-muted">{isStale ? 'Agenda en caché, pendiente de servidor.' : `Agenda recibida: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`}{historyUpdatedAt > 0 && ` Historial leído: ${new Date(historyUpdatedAt).toLocaleTimeString('es-PE')}.`}</p>
       <FirestoreQueryError error={error} area="contracts-active" user={user} onRetry={retry} />
 
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-panel p-4 shadow-card">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-primary/15 bg-linear-to-r from-panel to-primary-soft/45 p-3.5 shadow-card">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por cliente, teléfono o ID..." />
-        <div className="flex min-w-0 flex-1 basis-full items-center gap-2.5 sm:basis-64">
-          <span className="font-bold text-muted text-sm">ORDENAR:</span>
-          <Select value={sortBy} onChange={e => setSortBy(e.target.value)} className="py-2.5 px-4 rounded-xl border border-line bg-panel font-bold min-w-0 flex-1 cursor-pointer">
-            <option value="urgencia">🚨 Más Próximos a Entregar</option>
-            <option value="recientes">🆕 Recién Creados</option>
+        <label className="flex min-w-0 flex-1 basis-full items-center gap-2.5 sm:basis-64">
+          <span className="text-sm font-semibold text-muted">Ordenar</span>
+          <Select value={sortBy} onChange={e => setSortBy(e.target.value)} className="flex-1 cursor-pointer font-semibold">
+            <option value="urgencia">Más próximos a entregar</option>
+            <option value="recientes">Recién creados</option>
           </Select>
-        </div>
+        </label>
       </div>
 
-      <div className="flex justify-between items-center mb-5 flex-wrap gap-2.5">
-        <div className="segmented-control w-full sm:w-auto" role="group" aria-label="Estado de los pedidos">
-          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'activos' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'activos' ? "bg-primary text-panel" : "")} aria-pressed={viewFilter === 'activos'} onClick={() => setViewFilter('activos')} type="button" variant="secondary">📦 Pedidos en Curso</Button>
-          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'deudas' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'deudas' ? "bg-danger text-panel" : "")} aria-pressed={viewFilter === 'deudas'} onClick={() => setViewFilter('deudas')} type="button" variant="secondary">⚠️ Cuentas por Cobrar</Button>
-          <Button className={cn(`flex-1 text-xs sm:flex-none sm:text-sm ${viewFilter === 'historial' ? "bg-primary-soft text-primary" : ''} `, viewFilter === 'historial' ? "bg-muted text-panel" : "")} aria-pressed={viewFilter === 'historial'} onClick={() => setViewFilter('historial')} type="button" variant="secondary">📜 Historial Cerrados</Button>
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="segmented-control w-full border-primary/15 bg-primary-soft/30 sm:w-auto" role="group" aria-label="Estado de los pedidos">
+          <Button size="sm" className="flex-1 sm:flex-none" aria-pressed={viewFilter === 'activos'} onClick={() => setViewFilter('activos')} type="button" variant={viewFilter === 'activos' ? 'primary' : 'ghost'}><Package aria-hidden="true" />Pedidos en Curso</Button>
+          <Button size="sm" className="flex-1 sm:flex-none" aria-pressed={viewFilter === 'deudas'} onClick={() => setViewFilter('deudas')} type="button" variant={viewFilter === 'deudas' ? 'primary' : 'ghost'}><WalletCards aria-hidden="true" />Cuentas por Cobrar</Button>
+          <Button size="sm" className="flex-1 sm:flex-none" aria-pressed={viewFilter === 'historial'} onClick={() => setViewFilter('historial')} type="button" variant={viewFilter === 'historial' ? 'primary' : 'ghost'}><History aria-hidden="true" />Historial Cerrados</Button>
         </div>
-        <span className="text-sm text-muted font-semibold bg-panel py-1.5 px-3 rounded-2xl border border-line">
+        <span className="rounded-full border border-stellar/15 bg-stellar-soft/65 px-3 py-1.5 text-xs font-semibold text-stellar">
           Mostrando {filteredContracts.length} pedidos cargados
         </span>
       </div>
@@ -206,15 +219,13 @@ function ContractManager({
         La agenda muestra los 100 pedidos activos con entrega más próxima. La búsqueda se aplica a esos pedidos.
       </p>}
 
-      <CashRegisterModals key={activeBranchId} {...cash} showOpenModal={openCashBranch === activeBranchId} setShowOpenModal={show => setOpenCashBranch(show ? activeBranchId : null)}
-        showCloseModal={closeCashBranch === activeBranchId} setShowCloseModal={show => setCloseCashBranch(show ? activeBranchId : null)} />
       {(showCreateModal || contractToEdit) && <ContractFormModal contractToEdit={contractToEdit} activeLocations={activeLocations} onClose={() => {
       setShowCreateModal(false);
       setContractToEdit(null);
     }} onSubmit={handleFormSubmit} isProcessing={isProcessing} cashAction={!canCollect && <Alert variant="warning" title="Los cobros requieren caja vigente">
         Puedes guardar el pedido sin anticipo.
         {canManageCash && !cash.readError && (!cash.currentSession || !cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={cash.isLoadingSession}
-          onClick={() => cash.currentSession ? setCloseCashBranch(activeBranchId) : setOpenCashBranch(activeBranchId)}>{cash.currentSession ? 'Cerrar turno anterior' : 'Abrir caja'}</Button>}
+          onClick={cash.currentSession ? showCashClosing : showCashOpening}>{cash.currentSession ? 'Cerrar turno anterior' : 'Abrir caja'}</Button>}
       </Alert>} />}
       {contractToView && <ContractDetailsModal user={user} contract={contracts.find(c => c.id === contractToView.id) || contractToView} branches={businessBranches} settings={settings} onClose={() => setContractToView(null)} onAddPayment={handleAddPayment} onMarkDelivered={markDelivered} onEditRequest={contract => {
       setContractToView(null);
@@ -224,6 +235,6 @@ function ContractManager({
       setContractToCancel(contract);
     }} isProcessing={isProcessing} />}
       {contractToCancel && <ContractCancelModal contract={contractToCancel} onClose={() => setContractToCancel(null)} onConfirm={handleCancelSubmit} isProcessing={isProcessing} />}
-    </div>;
+    </div>{cashModals}</>;
 }
 export default ContractManager;

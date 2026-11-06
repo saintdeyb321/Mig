@@ -56,7 +56,7 @@ export const useSalesHistory = user => {
       }
       const uncertain = ['void-unverified', 'receipt-not-found', 'unavailable', 'deadline-exceeded', 'aborted'].includes(getFirebaseErrorCode(error));
       setVoidResult({ id: sale.id, phase: uncertain ? 'uncertain' : 'rejected', message: error.message });
-      if (uncertain) toast('Comprobando anulación. Conserva el ticket y no repitas la operación.', { id: notice, icon: '⚠️' });
+      if (uncertain) toast('Anulación pendiente de confirmación. Conserva el ticket y no repitas la operación.', { id: notice, icon: '⚠️' });
       else toast.error(error.message || 'No se pudo anular el ticket.', { id: notice });
       return false;
     } finally { processing.busy = false; if (active()) setIsProcessing(false); }

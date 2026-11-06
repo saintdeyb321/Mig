@@ -172,8 +172,8 @@ const ContractDetailsModal = ({
                </div>}
 
             <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-              <div className="grid min-w-0 gap-4 rounded-2xl border border-line bg-panel p-4 shadow-card">
-                <h3 className="border-b border-line pb-3 text-sm font-semibold">Datos del Cliente</h3>
+              <div className="grid min-w-0 gap-4 rounded-2xl border border-primary/15 bg-linear-to-br from-panel to-primary-soft/50 p-4 shadow-card">
+                <h3 className="border-b border-primary/15 pb-3 text-sm font-bold text-brand-deep">Datos del Cliente</h3>
                 <div className="grid gap-4">
 
                   <div className="grid min-w-0 gap-1.5 [&>label]:text-xs [&>label]:font-medium [&>label]:text-muted [&>small]:text-xs [&>small]:text-muted">
@@ -194,7 +194,7 @@ const ContractDetailsModal = ({
                     </div>
                   </div>
 
-                  <div className="rounded-xl bg-subtle p-3 text-sm">
+                  <div className="rounded-xl border border-stellar/15 bg-stellar-soft/85 p-3 text-sm">
                     <label className="text-sm leading-relaxed text-muted">Entrega Programada</label>
                     <p className="font-semibold">{formatFirebaseDate(contract.deliveryDate, true)}</p>
                   </div>
@@ -202,12 +202,12 @@ const ContractDetailsModal = ({
                 </div>
               </div>
 
-              <div className="grid min-w-0 gap-4 rounded-2xl border border-line bg-panel p-4 shadow-card">
-                <h3 className="border-b border-line pb-3 text-sm font-semibold">Fotos de Referencia</h3>
+              <div className="grid min-w-0 gap-4 rounded-2xl border border-accent/15 bg-linear-to-br from-panel to-accent-soft/45 p-4 shadow-card">
+                <h3 className="border-b border-accent/15 pb-3 text-sm font-bold text-brand-deep">Fotos de Referencia</h3>
                 <div className="min-w-0">
                    {allImages.length > 0 ? <div className={cn("grid gap-2 min-h-30", allImages.length > 1 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1")}>
                         {allImages.map((img, idx) => <button key={idx} type="button" className="min-w-0 overflow-hidden rounded-xl focus-visible:ring-2 focus-visible:ring-focus" onClick={() => setSelectedImageIndex(idx)} aria-label={`Ampliar fotografía ${idx + 1}`}><img src={img} alt={`Referencia ${idx + 1}`} title="Haz clic para ampliar" className="w-full h-full max-h-45 object-cover rounded-xl border border-line cursor-zoom-in motion-reduce:transition-none transition-colors hover:border-primary/40 hover:bg-primary-soft/40" /></button>)}
-                      </div> : <div className="grid min-h-28 place-content-center gap-2 rounded-xl bg-subtle text-center text-sm text-muted">
+                      </div> : <div className="grid min-h-28 place-content-center gap-2 rounded-xl border border-accent/15 bg-panel/85 text-center text-sm text-muted">
                         <span className="text-3xl">🎂</span>
                         <p>Sin referencia</p>
                       </div>}
@@ -215,9 +215,9 @@ const ContractDetailsModal = ({
               </div>
             </div>
 
-            <div className="grid min-w-0 gap-4 rounded-2xl border border-line bg-panel p-4 shadow-card">
-              <h3 className="border-b border-line pb-3 text-sm font-semibold">Detalles de Preparación</h3>
-              <div className="whitespace-pre-wrap break-words rounded-xl bg-subtle p-4 text-sm leading-relaxed">
+            <div className="grid min-w-0 gap-4 rounded-2xl border border-primary/15 bg-linear-to-br from-panel to-indigo-soft/70 p-4 shadow-card">
+              <h3 className="border-b border-primary/15 pb-3 text-sm font-bold text-brand-deep">Detalles de Preparación</h3>
+              <div className="rounded-xl border border-primary/10 bg-panel/85 p-4 text-sm leading-relaxed whitespace-pre-wrap wrap-anywhere">
                 {contract.details}
               </div>
 
@@ -236,10 +236,10 @@ const ContractDetailsModal = ({
               </div>
             </div>
 
-            <div className="min-w-0 rounded-2xl border border-finance-line bg-success-soft p-5 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-4 rounded-2xl border border-finance-line bg-linear-to-r from-success-soft to-panel p-4">
               <div className="grid gap-1 text-sm [&>label]:text-muted">
                 <label className="text-sm leading-relaxed text-muted">Total General</label>
-                <span className={cn("text-2xl font-bold", isCancelled ? "line-through" : "no-underline")}>
+                <span className={cn("text-2xl font-extrabold tabular-nums", isCancelled ? "line-through" : "text-success")}>
                   S/ {contract.total.toFixed(2)}
                 </span>
               </div>

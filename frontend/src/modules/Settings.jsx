@@ -1,8 +1,7 @@
-import { Settings2, Building2, ReceiptText } from 'lucide-react';
-import { PageHeader, cn, Button, Input, FormField, Card, HelpDisclosure } from "../shared/ui";
+import { ChevronDown, Pencil, ReceiptText, Settings2, Store } from 'lucide-react';
+import { PageHeader, cn, Button, Input, FormField, Card } from '../shared/ui';
 import CapabilitiesPanel from '../components/CapabilitiesPanel';
-// src/modules/Settings.jsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useSettings } from '../features/settings/hooks/useSettings';
 import BranchManager from './BranchManager';
 function Settings({
@@ -22,70 +21,67 @@ function Settings({
   };
   return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
 
-      {/* HEADER SIMÉTRICO NATIVO */}
-      <PageHeader title="Configuración global" icon={Settings2} eyebrow="Tu negocio" description="Datos comerciales y preferencias del sistema." />
+      <PageHeader title="Configuración global" icon={Settings2} eyebrow="Tu negocio" description="Datos comerciales y preferencias del sistema." className="to-primary-soft/70" />
 
-      {/* =========================================
-          🚀 1. GESTIÓN DE SEDES
-       ========================================= */}
-      <Card className="space-y-5" tone="accent">
-        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-line pb-4">
-          <div>
-            <h3 className="flex items-center gap-2 text-base font-bold text-brand-deep"><Building2 aria-hidden="true" className="size-5" />Sucursales</h3>
-            <p className="m-0 text-sm text-muted">Administra tus locales físicos y sus métodos de pago.</p>
+      <Card className="space-y-4 border-stellar/20 bg-linear-to-br from-panel to-stellar-soft/65">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-stellar/15 bg-stellar-soft text-stellar"><Store aria-hidden="true" className="size-5" /></span>
+            <div className="min-w-0">
+              <h2 className="text-base font-extrabold text-brand-deep">Sucursales</h2>
+              <p className="text-sm text-muted">Administra tus locales físicos y sus métodos de pago.</p>
+            </div>
           </div>
 
-          <Button type="button" onClick={() => setShowBranches(!showBranches)} aria-expanded={showBranches} aria-controls="settings-branches" variant="secondary" className={cn("flex items-center gap-2 py-1.5 px-3.5 rounded-xl border border-line cursor-pointer text-sm font-semibold text-ink transition-colors motion-reduce:transition-none", showBranches ? "bg-subtle" : "bg-panel", showBranches ? "shadow-none" : "shadow-card")}>
+          <Button type="button" onClick={() => setShowBranches(!showBranches)} aria-expanded={showBranches} aria-controls="settings-branches" variant="secondary" className={cn('border-stellar/30 text-stellar hover:border-stellar hover:bg-stellar-soft', showBranches && 'bg-stellar-soft shadow-none')}>
             <span>{showBranches ? 'Ocultar Sucursales' : 'Mostrar Sucursales'}</span>
-            <span className={cn("inline-block text-sm transition-colors motion-reduce:transition-none", showBranches ? "rotate-180" : "rotate-0")}>
-              ▼
-            </span>
+            <ChevronDown aria-hidden="true" className={cn('motion-safe:transition-transform', showBranches && 'rotate-180')} />
           </Button>
         </div>
 
-        {showBranches && <Card id="settings-branches" className="animate-enter motion-reduce:animate-none" as="div">
-            <BranchManager user={user} isEmbedded={true} />
-          </Card>}
+        <div id="settings-branches" hidden={!showBranches}>
+          {showBranches && <div className="border-t border-stellar/15 pt-4"><BranchManager user={user} isEmbedded /></div>}
+        </div>
       </Card>
 
-      {/* =========================================
-          🚀 2. DATOS FISCALES
-       ========================================= */}
-      <Card className="space-y-5" tone="accent">
-        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-line pb-4">
-          <div>
-            <h3 className="flex items-center gap-2 text-base font-bold text-brand-deep"><ReceiptText aria-hidden="true" className="size-5" />Datos para boletas y facturas</h3>
-            <p className="m-0 text-sm text-muted">Información para los tickets y facturas.</p>
+      <Card className="space-y-4 border-finance-line bg-linear-to-br from-panel to-success-soft/75">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-finance-line bg-success-soft text-success"><ReceiptText aria-hidden="true" className="size-5" /></span>
+            <div className="min-w-0">
+              <h2 className="text-base font-extrabold text-brand-deep">Datos para boletas y facturas</h2>
+              <p className="text-sm text-muted">Información comercial para tus comprobantes.</p>
+            </div>
           </div>
-          {hasCompanyData && !isEditingCompany && <Button onClick={() => setIsEditingCompany(true)} type="button" variant="secondary" className="py-1.5 px-3 rounded-lg border border-line bg-warning-soft cursor-pointer text-sm font-semibold">
-              ✏️ Editar
+          {hasCompanyData && !isEditingCompany && <Button onClick={() => setIsEditingCompany(true)} type="button" variant="secondary" className="border-finance-line text-success hover:border-success hover:bg-success-soft">
+              <Pencil aria-hidden="true" />Editar
             </Button>}
         </div>
 
-        {!hasCompanyData || isEditingCompany ? <Card className="animate-enter motion-reduce:animate-none" as="div">
+        {!hasCompanyData || isEditingCompany ? <div className="rounded-xl border border-finance-line bg-panel/90 p-3.5 sm:p-4">
             <div className="grid gap-4">
               <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                <FormField label={<>RAZÓN SOCIAL</>}>
+                <FormField label="Razón social">
 
                   <Input type="text" name="razonSocial" value={companyData.razonSocial} onChange={handleCompanyDataChange} placeholder="Mi Empresa S.A.C." />
                 </FormField>
-                <FormField label={<>RUC</>}>
+                <FormField label="RUC">
 
                   <Input type="text" name="ruc" value={companyData.ruc} onChange={handleCompanyDataChange} placeholder="Ej. 20123456789" />
                 </FormField>
               </div>
               <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                <FormField label={<>DIRECCIÓN FISCAL</>}>
+                <FormField label="Dirección fiscal">
 
                   <Input type="text" name="direccion" value={companyData.direccion} onChange={handleCompanyDataChange} placeholder="Av. Principal 123" />
                 </FormField>
-                <FormField label={<>TELÉFONO GENERAL</>}>
+                <FormField label="Teléfono general">
 
                   <Input type="text" name="telefono" value={companyData.telefono} onChange={handleCompanyDataChange} placeholder="987 654 321" />
                 </FormField>
               </div>
 
-              <div className="flex justify-end gap-2.5 mt-4">
+              <div className="flex flex-wrap justify-end gap-2.5 border-t border-finance-line/60 pt-3">
                 {hasCompanyData && <Button type="button" onClick={() => setIsEditingCompany(false)} disabled={isSavingData} variant="secondary">
                     Cancelar
                   </Button>}
@@ -94,33 +90,18 @@ function Settings({
                 </Button>
               </div>
             </div>
-          </Card> : <Card className="animate-enter motion-reduce:animate-none border-l-4 border-l-primary p-5" as="div">
-            <div className="grid gap-4">
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                <div className="grid min-w-0 gap-1.5 mb-0">
-                  <label className="text-sm font-medium text-muted">RAZÓN SOCIAL</label>
-                  <div className="text-lg font-bold text-ink">{companyData.razonSocial || '-'}</div>
-                </div>
-                <div className="grid min-w-0 gap-1.5 mb-0">
-                  <label className="text-sm font-medium text-muted">RUC</label>
-                  <div className="text-base text-ink">{companyData.ruc || '-'}</div>
-                </div>
-              </div>
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2 mt-4">
-                <div className="grid min-w-0 gap-1.5 mb-0">
-                  <label className="text-sm font-medium text-muted">DIRECCIÓN FISCAL</label>
-                  <div className="text-base text-ink">{companyData.direccion || '-'}</div>
-                </div>
-                <div className="grid min-w-0 gap-1.5 mb-0">
-                  <label className="text-sm font-medium text-muted">TELÉFONO GENERAL</label>
-                  <div className="text-base text-ink">{companyData.telefono || '-'}</div>
-                </div>
-              </div>
-            </div>
-          </Card>}
+          </div> : <dl className="grid min-w-0 gap-2.5 sm:grid-cols-2">
+            {[
+              ['Razón social', companyData.razonSocial], ['RUC', companyData.ruc],
+              ['Dirección fiscal', companyData.direccion], ['Teléfono general', companyData.telefono],
+            ].map(([label, value]) => <div key={label} className="min-w-0 rounded-xl border border-finance-line/80 bg-panel/90 px-3 py-2.5">
+              <dt className="text-xs font-semibold text-success">{label}</dt>
+              <dd className="mt-1 text-sm font-semibold tabular-nums wrap-anywhere">{value || '—'}</dd>
+            </div>)}
+          </dl>}
       </Card>
 
-      <HelpDisclosure title="Disponibilidad de funciones del sistema"><CapabilitiesPanel /></HelpDisclosure>
+      <CapabilitiesPanel />
     </div>;
 }
 export default Settings;

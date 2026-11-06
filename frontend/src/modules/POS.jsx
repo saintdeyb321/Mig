@@ -2,7 +2,7 @@ import FirestoreQueryError from '../components/FirestoreQueryError';
 import { useCatalogData } from '../features/catalog/context/CatalogContext';
 import { isBranchOperational } from '../features/branches/domain/branchPolicy';
 import { useState, useMemo } from 'react';
-import { Info, LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
+import { Banknote, Info, LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
 import { checkoutBlockReason } from '../features/sales/domain/checkoutPolicy.js';
 import { parsePaymentCents, saleAmountCents } from '../features/sales/domain/saleModel.js';
 import { canAddDistinctProduct } from '../features/sales/domain/cartCatalog.js';
@@ -40,13 +40,12 @@ function POS({ user }) {
   const [checkoutAttempted, setCheckoutAttempted] = useState(false);
   const [draftReview, setDraftReview] = useState(null);
 
-  const [showOpenModal, setShowOpenModal] = useState(false);
-  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [cashModal, setCashModal] = useState(null);
   const modalScope = JSON.stringify([user.uid, user.businessId, activeBranchId]);
   const [previousModalScope, setPreviousModalScope] = useState(modalScope);
   if (previousModalScope !== modalScope) {
     setPreviousModalScope(modalScope);
-    setDraftReview(null); setShowOpenModal(false); setShowCloseModal(false); setIsCartOpen(false);
+    setDraftReview(null); setCashModal(null); setIsCartOpen(false);
   }
 
   const checkoutBlocked = checkoutBlockReason(cart);
@@ -101,7 +100,16 @@ function POS({ user }) {
 
   const isGlobalDisabled = branchStatus.isReadOnly || (isOnline && (!currentSession || currentSession?.needsForceClose || isExpired));
 
-  if (isLoading || isLoadingSession) return <LoadingState>Preparando caja registradora…</LoadingState>;
+  const dismissCashModal = () => setCashModal(request => request === cashModal ? null : request);
+  const showCashClosing = () => setCashModal({ mode: 'close', sessionId: currentSession.id });
+  const cashModals = <CashRegisterModals
+    key={cashModal?.mode === 'open' ? modalScope : `${modalScope}:${currentSession?.id ?? 'closed'}`}
+    showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal}
+    showCloseModal={cashModal?.mode === 'close' && cashModal.sessionId === currentSession?.id} setShowCloseModal={dismissCashModal}
+    currentSession={currentSession} isLoadingSession={isLoadingSession} checkSession={checkSession}
+    openRegister={openRegister} authorizeOffline={authorizeOffline} calculateClose={calculateClose} confirmClose={confirmClose}
+  />;
+  if (isLoading || isLoadingSession) return <><LoadingState>Preparando caja registradora…</LoadingState>{cashModals}</>;
   const selectPayment = method => {
     setPayment(method);
     if(method==='mixto') { setSplitEfectivo('');setSplitYape(''); }
@@ -114,19 +122,22 @@ function POS({ user }) {
     handleCheckoutClick();
   };
   const action = readError && isOnline ? <Button variant="secondary" onClick={checkSession}>Reintentar lectura de caja</Button> : isOnline&&!currentSession&&!branchStatus.isReadOnly
-    ? <Button className="w-full" onClick={()=>setShowOpenModal(true)}><UnlockKeyhole />Abrir caja para vender</Button>
+    ? <Button className="w-full" onClick={() => setCashModal({ mode: 'open' })}><UnlockKeyhole />Abrir caja para vender</Button>
     : isOnline&&currentSession?.needsForceClose
-      ? currentSession.canForceClose ? <Button variant="danger" className="w-full" onClick={()=>setShowCloseModal(true)}>Revisar y cerrar turno anterior</Button>
+      ? currentSession.canForceClose ? <Button variant="danger" className="w-full" onClick={showCashClosing}>Revisar y cerrar turno anterior</Button>
         : <Button variant="secondary" className="w-full" onClick={checkSession}>Comprobar disponibilidad</Button>
-      : <Button className="w-full" size="lg" onClick={requestCheckout} loading={isProcessing} disabled={(isOnline&&isExpired)||catalogBlocked||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>{branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':isOnline?'Cobrar':'Guardar sin cobrar'}</Button>;
+      : <Button className="w-full" variant={isOnline && !branchStatus.isReadOnly ? 'success' : 'primary'} size="lg" onClick={requestCheckout} loading={isProcessing} disabled={(isOnline&&isExpired)||catalogBlocked||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>
+        {isOnline && !isProcessing && !branchStatus.isReadOnly && <Banknote aria-hidden="true" />}
+        {branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':isOnline?'Cobrar':'Guardar sin cobrar'}
+      </Button>;
   const ticket = lastSale ? <SaleStatus sale={lastSale} onPrint={printReceipt} onNew={handleNuevaVenta} onVerify={verifyLastSale} onReview={() => setDraftReview(lastSale)} isProcessing={isProcessing} />
     : <Ticket drawer={isCartOpen} cart={cart} total={total} onQty={updateQty} onRemove={removeFromCart} isProcessing={isProcessing} action={action} catalogChanges={catalogChanges} onAcceptChange={acceptCatalogChange}>
       {!isProcessing && catalogBlocked && <Alert variant="warning">Cambió el catálogo. Acepta los datos vigentes, ajusta cantidades o retira los productos señalados antes de cobrar.</Alert>}
       {checkoutAttempted && checkoutBlocked && <Alert variant="warning" title="No se puede confirmar este ticket">{checkoutBlocked} El carrito se conserva completo; no se ha registrado ningún cobro.</Alert>}
-      <PaymentSelector payment={payment} onSelect={selectPayment} disabled={branchStatus.isReadOnly||isProcessing} />
-      <PaymentFields payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} validation={paymentValidation} disabled={branchStatus.isReadOnly||isProcessing} />
+      <PaymentSelector inTicket payment={payment} onSelect={selectPayment} disabled={branchStatus.isReadOnly||isProcessing} />
+      <PaymentFields inTicket payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} validation={paymentValidation} disabled={branchStatus.isReadOnly||isProcessing} />
     </Ticket>;
-  return <div className="pos-workspace min-w-0 space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0">
+  return <><div className="pos-workspace min-w-0 space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0">
     {!isOnline && <Alert variant="info">Sin conexión: puedes guardar un ticket sin cobrar. No se moverá inventario ni se enviará automáticamente al reconectar.</Alert>}
     {isExpired && <Alert variant="warning" title="Caja vencida">Cierra este turno y abre uno nuevo para cobrar. Los movimientos se conservan.</Alert>}
     <FirestoreQueryError error={readError} area="cash-open" user={user} onRetry={checkSession} />
@@ -135,7 +146,7 @@ function POS({ user }) {
       <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight"><ShoppingBag aria-hidden="true" className="size-5 text-primary" />Punto de venta</h1>
       <div className="flex flex-wrap items-center gap-2">
       <CashStatus readOnly={branchStatus.isReadOnly} session={currentSession} isExpired={isExpired} expiresAt={expiresAt} remainingMinutes={remainingMinutes} />
-      {currentSession&&!branchStatus.isReadOnly&&(!currentSession.needsForceClose||currentSession.canForceClose)&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={()=>setShowCloseModal(true)}><LockKeyhole />{currentSession.needsForceClose?'Revisar cierre anterior':'Cerrar caja'}</Button>}
+      {currentSession&&!branchStatus.isReadOnly&&(!currentSession.needsForceClose||currentSession.canForceClose)&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={showCashClosing}><LockKeyhole />{currentSession.needsForceClose?'Revisar cierre anterior':'Cerrar caja'}</Button>}
       </div>
     </header>
     {branchStatus.isReadOnly&&<p role="status" className="flex shrink-0 items-start gap-2 rounded-xl border border-warning/25 bg-warning-soft px-3 py-2 text-sm text-warning"><Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><span>{branchStatus.reason==='global'?<><strong>Vista global · Solo lectura.</strong> Elige una sucursal en el selector de sede para vender.</>:<><strong>Solo lectura.</strong> La sucursal {branchStatus.name} está inactiva.</>}</span></p>}
@@ -159,8 +170,7 @@ function POS({ user }) {
       <div className="mx-auto flex aspect-square w-full max-w-60 items-center justify-center rounded-2xl border border-line bg-panel p-3">{qrUrl?<img src={qrUrl} alt="QR Yape" className="size-full object-contain" />:<Alert variant="warning">QR no configurado en Ajustes.</Alert>}</div>
       <div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={isProcessing} onClick={()=>setShowQrModal(false)}>Cancelar</Button><Button variant="success" onClick={processSale} loading={isProcessing} disabled={catalogBlocked||!!checkoutBlocked||!isPaymentValid||!runtimeCapabilities.saleOnline||isProcessing}>{isProcessing?'Procesando…':'Validar pago'}</Button></div>
     </Dialog>}
-    <CashRegisterModals key={`${modalScope}:${currentSession?.id ?? 'closed'}`} showOpenModal={showOpenModal} setShowOpenModal={setShowOpenModal} showCloseModal={showCloseModal} setShowCloseModal={setShowCloseModal} isLoadingSession={isLoadingSession} openRegister={openRegister} authorizeOffline={authorizeOffline} calculateClose={calculateClose} confirmClose={confirmClose} />
     {draftReview?.branchId === activeBranchId && draftReview.userId === user.uid && <DraftSaleReview key={`${modalScope}:${draftReview.saleId ?? draftReview.id}`} sale={draftReview} user={user} activeBranchId={activeBranchId} onClose={() => setDraftReview(null)} onResult={result => { acceptReviewedSale(result); setDraftReview(null); }} />}
-  </div>;
+  </div>{cashModals}</>;
 }
 export default POS;

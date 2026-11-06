@@ -2,8 +2,12 @@ import { CircleAlert, Inbox, LoaderCircle } from 'lucide-react';
 import { Button } from './Button';
 import { cn } from './cn';
 
-export function LoadingState({ children = 'Cargando…', className }) {
-  return <div role="status" className={cn('flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted', className)}><LoaderCircle aria-hidden="true" className="size-7 animate-spin text-primary motion-reduce:animate-none" />{children}</div>;
+export function LoadingState({ children = 'Cargando…', className, variant = 'embedded' }) {
+  const isModule = variant === 'module';
+  return <div role="status" className={cn('loading-state flex flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted', isModule ? 'min-h-32 flex-1' : 'min-h-48', className)}>
+    <LoaderCircle aria-hidden="true" className="size-7 animate-spin text-primary motion-reduce:animate-none" />
+    {children}
+  </div>;
 }
 export function EmptyState({ title = 'No hay registros', description, icon = Inbox, children, className }) {
   const Icon = icon;

@@ -17,7 +17,8 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
   useVisualViewport();
   const { businessBranches = [] } = useTenantData() ?? {};
   const notifications = useAlerts(user);
-  const assisted = useAssistedAccess(), online = useNetworkStatus();
+  const online = useNetworkStatus();
+  const assisted = useAssistedAccess();
   const fullName = useMemo(() => user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : 'Usuario del sistema', [user]);
   const assignedBranchName = useMemo(() => user?.role === 'cajero' && user?.branchId
     ? businessBranches.find(branch => branch.id === user.branchId)?.name || 'Sede desconocida' : null, [user, businessBranches]);
@@ -29,26 +30,38 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
         <div className="flex items-center gap-3"><img src={brand.logo} alt="" className="size-9 rounded-xl bg-white object-contain p-1" /><div><p className="text-lg font-bold tracking-tight">{brand.name}</p></div></div>
         <div className="flex min-h-11 items-center justify-between gap-3 border-b border-white/10" aria-label="Conectividad y notificaciones"><NetworkBadge dark /><NotificationBell user={user} {...notifications} isDesktop /></div>
         <div className="flex items-start gap-3 py-2">
-          <span className="rounded-lg bg-white/10 p-2"><UserRound className="size-4" /></span>
-          <div className="min-w-0"><p className="text-sm font-semibold wrap-anywhere">{fullName}</p><p className="mt-0.5 text-xs capitalize text-sidebar-muted">{user?.role}</p></div>
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/10"><UserRound aria-hidden="true" strokeWidth={1.85} className="size-4" /></span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold wrap-anywhere">{fullName}</p>
+            <p className="mt-0.5 text-xs text-sidebar-muted"><span className="capitalize">{user?.role}</span>{online && assisted && <span role="status"> · Acceso en revisión</span>}</p>
+          </div>
         </div>
         {canSelectBranch && <BranchSelector dark />}
-        {assignedBranchName && <p className="flex items-center gap-2 text-xs text-sidebar-muted"><MapPin className="size-4 shrink-0" />{assignedBranchName}</p>}
+        {assignedBranchName && <p className="flex items-center gap-2 text-xs text-sidebar-muted"><MapPin aria-hidden="true" strokeWidth={1.85} className="size-4 shrink-0" />{assignedBranchName}</p>}
       </div>
       <div className="sidebar-scroll min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 pb-4 focus-visible:outline-2 focus-visible:outline-focus" tabIndex={0} role="region" aria-label="Lista de módulos"><p className="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-muted">Espacio de trabajo</p><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop /></div>
       <div className="sidebar-footer shrink-0 border-t border-white/10 p-4">
-        <Button variant="ghost" className="w-full justify-start text-sidebar-muted hover:bg-white/10 hover:text-white" onClick={handleLogout}><LogOut />Cerrar sesión</Button>
+        <Button variant="ghost" className="w-full justify-start text-sidebar-muted hover:bg-white/10 hover:text-white" onClick={handleLogout}><LogOut aria-hidden="true" strokeWidth={1.85} />Cerrar sesión</Button>
       </div>
     </aside>
-    <div className="min-w-0 lg:pl-64 xl:pl-68">
+    <div className="flex min-h-dvh min-w-0 flex-col lg:pl-64 xl:pl-68">
       <header className="sticky top-0 z-20 space-y-3 border-b border-line bg-panel px-4 py-3 shadow-xs lg:hidden">
-        <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2"><img src={brand.logo} alt="" className="size-8 rounded-lg object-contain" /><span className="font-bold tracking-tight">{brand.name}</span></div>
-          <div className="flex shrink-0 items-center gap-1"><NetworkBadge /><NotificationBell user={user} {...notifications} /><IconButton label="Cerrar sesión" onClick={handleLogout}><LogOut /></IconButton></div>
+        <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2">
+          <img src={brand.logo} alt="" className="size-8 shrink-0 rounded-lg object-contain" />
+          <div className="min-w-0 leading-tight">
+            <span className="font-bold tracking-tight">{brand.name}</span>
+            {online && assisted && <span role="status" className="block text-xs text-muted">En revisión</span>}
+          </div>
+        </div>
+          <div className="flex shrink-0 items-center gap-1"><NetworkBadge /><NotificationBell user={user} {...notifications} /><IconButton label="Cerrar sesión" onClick={handleLogout}><LogOut aria-hidden="true" strokeWidth={1.85} /></IconButton></div>
         </div>
         {canSelectBranch && <BranchSelector />}
-        {assignedBranchName && <Badge><MapPin className="size-3" />{assignedBranchName}</Badge>}
+        {assignedBranchName && <Badge><MapPin aria-hidden="true" strokeWidth={1.85} className="size-3" />{assignedBranchName}</Badge>}
       </header>
-      <main id="main-content" tabIndex={-1} className="mx-auto min-w-0 max-w-[1680px] space-y-6 px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:p-6 xl:p-8">{(!online || assisted) && <p role="status" className="rounded-xl border border-warning/20 bg-warning-soft px-4 py-3 text-sm text-warning">{!online ? 'Trabajando sin conexión. Los pendientes del dispositivo se conservan. Puedes consultar datos locales; las operaciones online siguen bloqueadas.' : 'Confirmando el acceso. Puedes consultar datos locales; espera la verificación para registrar operaciones.'}</p>}{children}</main>
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full min-w-0 max-w-[1680px] flex-1 space-y-6 px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:p-6 xl:p-8">
+        {!online && <p role="status" className="rounded-xl border border-warning/20 bg-warning-soft px-4 py-3 text-sm text-warning">Trabajando sin conexión. Los pendientes del dispositivo se conservan. Puedes consultar datos locales; las operaciones online siguen bloqueadas.</p>}
+        {children}
+      </main>
     </div>
     <div className="app-bottom-nav fixed inset-x-0 bottom-0 z-30 border-t border-line bg-panel shadow-[0_-4px_24px_rgb(33_26_67/0.06)] lg:hidden"><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop={false} /></div>
   </div>;

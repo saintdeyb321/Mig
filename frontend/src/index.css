@@ -30,7 +30,10 @@
 @layer components {
   .nebula-brand {
     background-color: var(--color-sidebar);
-    background-image: radial-gradient(ellipse at 0% 25%, rgb(141 88 216 / 0.18), transparent 65%), radial-gradient(ellipse at 100% 100%, rgb(49 94 206 / 0.18), transparent 65%), linear-gradient(165deg, var(--color-sidebar), var(--color-brand-deep));
+    background-image:
+      radial-gradient(ellipse at 0% 18%, color-mix(in srgb, var(--color-nebula) 22%, transparent), transparent 60%),
+      radial-gradient(ellipse at 100% 100%, color-mix(in srgb, var(--color-stellar) 22%, transparent), transparent 60%),
+      linear-gradient(165deg, var(--color-sidebar), var(--color-brand-deep) 58%, var(--color-sidebar-end));
   }
   .workspace-page { width: 100%; min-width: 0; margin-inline: auto; display: grid; gap: 1.25rem; padding-bottom: 1.5rem; }
   .view-toolbar { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.875rem; border: 1px solid var(--color-line); border-radius: 1rem; background: var(--color-panel); }
@@ -52,8 +55,31 @@
   .pos-ticket-drawer { flex: 1; max-height: 100%; min-height: 0; }
   .pos-cart-launcher { bottom: calc(4.5rem + env(safe-area-inset-bottom) + 0.75rem); }
   .app-bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
-  .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 18.5rem), 1fr)); gap: 0.75rem; align-items: start; }
+  .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: 0.75rem; }
+  .pos-payment-methods { container: payment-methods / inline-size; }
 }
+
+@container payment-methods (max-width: 17rem) {
+  .pos-payment-methods .payment-method-icon { display: none; }
+  .pos-payment-methods .payment-method-check { position: absolute; inset-block-start: 0.125rem; inset-inline-end: 0.125rem; width: 0.625rem; height: 0.625rem; }
+}
+
+/* Header colors for the sales history dialog. */
+.sale-void-dialog .dialog-heading { background: var(--color-panel); color: var(--color-ink); border-color: var(--color-line); }
+.sale-void-dialog .dialog-heading-icon { background: var(--color-danger-soft); color: var(--color-danger); border-color: transparent; }
+.sale-void-dialog .dialog-heading button { color: var(--color-muted); }
+.sale-void-dialog .dialog-heading button:hover { background: var(--color-subtle); color: var(--color-ink); }
+.sale-void-dialog .dialog-heading :focus-visible { outline-color: var(--color-focus); }
+
+/* Module roots can sit directly in main or one level below a route wrapper. */
+#main-content:has(> .loading-state, > * > .loading-state, > * > .workspace-page.min-h-64),
+#main-content > :has(> .loading-state, > .workspace-page.min-h-64) {
+  display: flex;
+  flex-direction: column;
+}
+#main-content > :has(> .loading-state, > .workspace-page.min-h-64) { flex: 1; height: auto; }
+#main-content > .loading-state,
+#main-content > * > :is(.loading-state, .workspace-page.min-h-64) { flex: 1; min-height: 8rem; }
 
 /* These viewport adaptations must also override per-view utility padding. */
 .nebula-brand :focus-visible { outline-color: var(--color-sidebar-glow); }
@@ -77,6 +103,7 @@
   /* Keep the drawer description available to assistive technology at keyboard height. */
   .dialog-drawer:has(.pos-ticket) .dialog-heading p { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
   .pos-ticket-heading { padding-block: 0.125rem; }
+  .pos-ticket-heading-icon { display: none; }
   .pos-ticket > p[role="status"] { padding-block: 0.125rem; line-height: 1rem; }
   .pos-ticket-items { min-height: 1rem; }
   .pos-ticket-total { padding-block: 0.25rem; }

@@ -14,35 +14,22 @@ const CategoryCard = memo(({
 }) => {
   const isInactive = c.status === 'inactivo';
 
-  // Reutilizamos el estilo de las tarjetas de productos
-  let cardClasses = `grid min-w-0 grid-cols-[3rem_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto] p-4 sm:p-4 animate-enter motion-reduce:animate-none ${isInactive ? "opacity-65 border-l-4 border-l-muted" : ''} `;
-  return <Card className={cn(cardClasses, !isInactive ? "border-l-4 border-l-primary" : "")} as="div">
-
-      {/* 1. ICONO */}
-      <div className={cn("flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-primary-soft [&>img]:size-full [&>img]:object-cover sm:size-14", isInactive ? "bg-subtle" : "bg-primary-soft")}>
-        <Tags aria-hidden="true" className="size-6 text-primary" />
-      </div>
-
-      {/* 2. INFO (Nombre y Estado) */}
-      <div className="grid min-w-0 gap-1.5">
-        <h3 className={cn(`break-words font-semibold ${isInactive ? "text-danger line-through" : ''} `)}>
-          {c.name}
-        </h3>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge className={cn(isInactive ? "bg-danger-soft" : "bg-success-soft", isInactive ? "text-danger" : "text-success")}>
-            {isInactive ? 'Inactiva' : 'Activa'}
-          </Badge>
-        </div>
-      </div>
-
-      {/* 3. ACCIÓN (Botón Editar) */}
-      <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 sm:col-span-1 sm:border-0 sm:pt-0">
-        <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 shrink-0 p-2 bg-subtle min-h-11 min-w-11 flex items-center justify-center" title="Editar" type="button" variant="ghost" aria-label="Editar">
-          <Pencil aria-hidden="true" />
-        </Button>
-      </div>
-
-    </Card>;
+  return <Card as="div" className={cn(
+    'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-l-4 p-3 sm:p-3',
+    isInactive ? 'border-l-control' : 'border-l-stellar/65'
+  )}>
+    <span className={cn('grid size-10 place-items-center rounded-xl', isInactive ? 'bg-subtle text-muted' : 'bg-stellar-soft text-stellar')}>
+      <Tags aria-hidden="true" className="size-5" />
+    </span>
+    <div className="min-w-0 space-y-1">
+      <h3 className="font-semibold text-ink">{c.name}</h3>
+      <Badge variant={isInactive ? 'danger' : 'success'}>{isInactive ? 'Inactiva' : 'Activa'}</Badge>
+    </div>
+    <Button onClick={() => openEditForm(c)} disabled={isLoading} className="size-11 border border-line bg-panel p-2 text-stellar"
+      title="Editar" type="button" variant="ghost" aria-label="Editar">
+      <Pencil aria-hidden="true" />
+    </Button>
+  </Card>;
 });
 
 // Componente Principal
@@ -69,12 +56,12 @@ function CategoryManager({
   } = useCategories(user);
   const { error: catalogError, retry: retryCatalog } = useCatalogData();
   if (isLoading && !showFormModal) {
-    return <LoadingState>Organizando categorías...</LoadingState>;
+    return <LoadingState variant="module">Organizando categorías...</LoadingState>;
   }
   return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
 
       {/* HEADER REFACTORIZADO */}
-      <PageHeader title="Categorías" icon={Tags} eyebrow="Organización" description="Un catálogo claro para encontrar cada producto." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
+      <PageHeader title="Categorías" icon={Tags} eyebrow="Organización" className="border-t-stellar/65 p-3 sm:p-3" actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
           <Plus aria-hidden="true" /> Nueva categoría
         </Button></>} />
 

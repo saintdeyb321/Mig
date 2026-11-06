@@ -1,7 +1,7 @@
 import { useAssistedAccess } from '../core/session/AssistedAccessContext';
 import { getFirebaseErrorCode } from '../core/errors/firebaseErrors';
 import { isBranchOperational } from '../features/branches/domain/branchPolicy';
-import { Button, Card, LoadingState, ErrorState, FullscreenState } from "../shared/ui";
+import { Button, Card, ErrorState, FullscreenState } from "../shared/ui";
 // src/components/BranchGuard.jsx
 import React, { useMemo } from 'react';
 import { useCatalogData } from '../features/catalog/context/CatalogContext';
@@ -44,7 +44,7 @@ export default function BranchGuard({
     return false;
   }, [isAdmin, myBranch]);
   if (!assisted && (isTenantLoading || isCatalogLoading)) {
-    return <LoadingState>Verificando sede y catálogo…</LoadingState>;
+    return <FullscreenState loading title="Verificando sede y catálogo…" />;
   }
 
   if (branchesError && !(assisted && ['unavailable', 'deadline-exceeded'].includes(getFirebaseErrorCode(branchesError)))) return <ErrorState title="No se pudo verificar la sede" error={branchesError} onRetry={retryBranches} />;
