@@ -14,13 +14,38 @@ const count = value => {
   if (!Number.isSafeInteger(value ?? 0) || value < 0) throw new Error('Cantidad de operaciones inválida.');
   return value ?? 0;
 };
+export const REPORT_CHANNELS = { cash: 'Efectivo', digital: 'Yape / Plin' };
+export const CHANNEL_BREAKDOWN_ROWS = [
+  { key: 'collections', label: 'Cobros registrados' },
+  { key: 'posCompensations', label: 'Compensaciones POS' },
+  { key: 'contractRefunds', label: 'Reembolsos contables de pedidos' },
+  { key: 'net', label: 'Neto contable' },
+];
+export const CHANNEL_NEGATIVE_NOTE = 'El neto de un canal puede ser negativo si las compensaciones y los reembolsos contables superan los cobros del período. El cobro original puede pertenecer a un período anterior.';
+export const CHANNEL_EVIDENCE_NOTE = 'Las compensaciones POS y los reembolsos contables de pedidos son registros sin evidencia de desembolso físico ni de devolución digital.';
+
+const emptyChannel = () => ({ collections: 0, posCompensations: 0, contractRefunds: 0, net: 0 });
 export const emptyMetrics = () => ({ posRevenue: 0, posCash: 0, posDigital: 0, contractRevenue: 0, contractCash: 0, contractDigital: 0,
-  refunds: 0, posTicketCount: 0, voidedTicketCount: 0, contractPaymentCount: 0, refundCount: 0, netRevenue: 0, cashRevenue: 0, digitalRevenue: 0, posAverageTicket: 0 });
+  refunds: 0, posTicketCount: 0, voidedTicketCount: 0, contractPaymentCount: 0, refundCount: 0, netRevenue: 0, cashRevenue: 0, digitalRevenue: 0, posAverageTicket: 0,
+  channels: { cash: emptyChannel(), digital: emptyChannel() } });
+
+function addChannelMovement({ cash, digital }, kind, cashAmount, digitalAmount) {
+  cash[kind] = money(cash[kind] + cashAmount);
+  digital[kind] = money(digital[kind] + digitalAmount);
+}
+const channelNet = channel => money(channel.collections + channel.posCompensations + channel.contractRefunds) || 0;
+
 export function finishMetrics(metrics) {
+  const { cash, digital } = metrics.channels;
+  cash.net = channelNet(cash);
+  digital.net = channelNet(digital);
+  metrics.cashRevenue = cash.net;
+  metrics.digitalRevenue = digital.net;
   metrics.netRevenue = money(metrics.posRevenue + metrics.contractRevenue);
-  metrics.cashRevenue = money(metrics.posCash + metrics.contractCash);
-  metrics.digitalRevenue = money(metrics.posDigital + metrics.contractDigital);
-  if (Math.abs(money(metrics.cashRevenue + metrics.digitalRevenue) - metrics.netRevenue) >= MONEY_TOLERANCE) throw new Error('Los métodos de pago no concilian con el ingreso neto.');
+  if (cash.net !== money(metrics.posCash + metrics.contractCash) || digital.net !== money(metrics.posDigital + metrics.contractDigital)
+    || Math.abs(money(cash.net + digital.net) - metrics.netRevenue) >= MONEY_TOLERANCE) {
+    throw new Error('Los métodos de pago no concilian con el ingreso neto.');
+  }
   metrics.posAverageTicket = metrics.posTicketCount ? money(metrics.posRevenue / metrics.posTicketCount) : 0;
   return metrics;
 }
@@ -71,6 +96,7 @@ export function aggregateReport({ stats = [], sales = null, payments = [], voids
       : { cash: methods('efectivo'), digital: money(methods('yape') + methods('plin')) };
     for (const target of targets(row, day)) {
       target.posRevenue = money(target.posRevenue + revenue); target.posCash = money(target.posCash + split.cash); target.posDigital = money(target.posDigital + split.digital);
+      addChannelMovement(target.channels, 'collections', split.cash, split.digital);
       target.posTicketCount += sales !== null ? (row.voided ? 0 : 1) : count(row.totalOrders);
       target.voidedTicketCount += sales !== null ? (row.voided ? 1 : 0) : count(row.voidedOrders);
     }
@@ -81,15 +107,17 @@ export function aggregateReport({ stats = [], sales = null, payments = [], voids
   for (const payment of payments) {
     const day = reportDay(payment.occurredAt);
     if (!accepted(payment, day)) continue;
+    const isRefund = payment.type === 'refund';
     if (!payment.id || !payment.sourceId || !['advance', 'payment', 'refund'].includes(payment.type)
-      || (payment.type === 'refund' ? payment.amount >= 0 : payment.amount <= 0)) throw new Error('Movimiento financiero incompleto.');
+      || (isRefund ? payment.amount >= 0 : payment.amount <= 0)) throw new Error('Movimiento financiero incompleto.');
     if (seen.has(payment.id)) continue;
     seen.add(payment.id);
     const split = paymentAmounts(payment), net = amount(payment.amount);
     if (money(split.efectivo + split.yape) !== net) throw new Error('Desglose del ledger incompleto.');
     for (const target of targets(payment, day)) {
       target.contractRevenue = money(target.contractRevenue + net); target.contractCash = money(target.contractCash + split.efectivo); target.contractDigital = money(target.contractDigital + split.yape);
-      if (payment.type === 'refund') { target.refunds = money(target.refunds + net); target.refundCount++; } else target.contractPaymentCount++;
+      addChannelMovement(target.channels, isRefund ? 'contractRefunds' : 'collections', split.efectivo, split.yape);
+      if (isRefund) { target.refunds = money(target.refunds + net); target.refundCount++; } else target.contractPaymentCount++;
     }
   }
   const seenVoids = new Set();
@@ -103,6 +131,7 @@ export function aggregateReport({ stats = [], sales = null, payments = [], voids
     for (const target of targets(row, day)) {
       target.posRevenue = money(target.posRevenue + row.amount); target.posCash = money(target.posCash + row.cashAmount);
       target.posDigital = money(target.posDigital + row.digitalAmount); target.refunds = money(target.refunds + row.amount);
+      addChannelMovement(target.channels, 'posCompensations', row.cashAmount, row.digitalAmount);
       target.refundCount++; target.voidedTicketCount++;
     }
     for (const item of row.items) addProduct(row, { id: item.id, name: item.name, qty: -item.qty, revenue: -money(item.price * item.qty) });

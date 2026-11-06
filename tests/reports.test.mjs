@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createRequire } from 'node:module';
 import { aggregateReport } from '../frontend/src/features/reports/domain/reportTotals.js';
+import { salesToDailyStats } from '../frontend/src/features/reports/domain/sparkReport.js';
 import { reportPeriod, reportDay } from '../frontend/src/features/reports/domain/reportPeriod.js';
 import { createReportCache, reportCacheKey, createReportResource, invalidateReportScope } from '../frontend/src/features/reports/application/reportResource.js';
 import { processDailyStats, processSales, DETAIL_HEADERS } from '../frontend/src/utils/salesDataProcessor.js';
@@ -45,11 +46,24 @@ it('Plan05 accounts an immutable POS refund once with negative detailed items an
     authority: 'pos-compensation', amount: -40, cashAmount: -15, digitalAmount: -25, items: original.items, occurredAt: date('12') };
   const { workbook, model } = build({ sales: [original], stats: [], payments: [], voids: [refund, refund] });
   assert.equal(model.summary.netRevenue, 0); assert.equal(model.summary.contractRevenue, 0); assert.equal(model.summary.refundCount, 1);
+  assert.deepEqual(model.summary.channels, {
+    cash: { collections: 15, posCompensations: -15, contractRefunds: 0, net: 0 },
+    digital: { collections: 25, posCompensations: -25, contractRefunds: 0, net: 0 },
+  });
   assert.ok(model.products.every(row => row.qty === 0 && row.revenue === 0));
   const copy = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
   const details = rows(copy, copy.SheetNames.find(name => name.startsWith('Detalle_')));
+  const summary = new Map(rows(copy, 'Resumen_Financiero').map(row => [row.Concepto, row.Valor]));
+  assert.equal(summary.get('Compensaciones POS · Yape / Plin'), -25);
+  assert.equal(summary.get('Neto contable · Yape / Plin'), 0);
   assert.equal(details.filter(row => row.Cantidad === -2).length, 1);
   assert.equal(details.reduce((sum, row) => sum + (Number(row['Total movimiento (S/)']) || 0), 0), 0);
+  const priorSale = { ...original, createdAt: '2026-10-21T10:00:00-05:00' };
+  const dashboard = aggregateReport({ ...scope, stats: salesToDailyStats([priorSale]), voids: [refund] }).summary;
+  const priorDayExport = build({ sales: [priorSale], payments: [], voids: [refund] });
+  const priorDayRows = new Map(rows(priorDayExport.workbook, 'Resumen_Financiero').map(row => [row.Concepto, row.Valor]));
+  assert.deepEqual(priorDayExport.model.summary.channels, dashboard.channels);
+  assert.equal(priorDayRows.get('Neto contable · Yape / Plin'), -25);
   assert.throws(() => build({ voids: [{ ...refund, items: [{ ...item, qty: 1 }] }] }), /no verificable/);
 });
 
@@ -71,6 +85,8 @@ describe('Phase 7 canonical financial reports', () => {
   it('mixed POS reconciles cash and digital', () => {
     const result = aggregateReport({ sales: [sales[0]], ...scope }).summary;
     assert.equal(result.cashRevenue, 15); assert.equal(result.digitalRevenue, 25);
+    const historical = { ...sales[0], splitPayments: { efectivo: 15, plin: 25 } };
+    assert.deepEqual(aggregateReport({ stats: salesToDailyStats([historical]), ...scope }).summary.channels, result.channels);
   });
   it('several contract payments sum their movements, not the commercial total', () => {
     const result = aggregateReport({ payments, ...scope }).summary;
@@ -79,6 +95,7 @@ describe('Phase 7 canonical financial reports', () => {
   it('refunds remain negative and never count as new tickets', () => {
     const result = aggregateReport({ payments: [payments[2]], ...scope }).summary;
     assert.equal(result.netRevenue, -5); assert.equal(result.refunds, -5); assert.equal(result.contractPaymentCount, 0);
+    assert.deepEqual(result.channels.cash, { collections: 0, posCompensations: 0, contractRefunds: -5, net: -5 });
     assert.equal(aggregateReport({ payments: [payments[2]], ...scope }).chartData[0].ventas, -5);
   });
   it('payment IDs are counted once even during overlapping reads', () => {
@@ -160,7 +177,7 @@ describe('Phase 7 workbooks in memory', () => {
     assert.equal(result.contractPaymentRows.length, 3);
     assert.equal(result.contractPaymentRows[0]['ID Pedido'], 'COM-100'); assert.equal(result.contractPaymentRows[0]['Documento Pedido'], 'doc-id');
     assert.equal(result.contractPaymentRows[0]['Fecha Pago'], '22/10/2026 09:00');
-    assert.equal(result.contractPaymentRows[2]['Reembolso (S/)'], -5);
+    assert.equal(result.contractPaymentRows[2]['Reembolso contable (S/)'], -5);
     assert.equal(result.paymentsByBranch.b1[0].method, 'efectivo');
   });
   it('XLSX serializes and reads back with no helper columns or nonfinite cells', () => {

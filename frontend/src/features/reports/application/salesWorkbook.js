@@ -2,7 +2,7 @@ import { processDailyStats, processSales, DETAIL_HEADERS } from '../../../utils/
 import { createSheet, applyCurrencyToCols, styleSummarySheet, styleTotalRows, uniqueSheetName } from '../../../utils/excelHelpers.js';
 import { buildContractLedgerReport } from './contractLedgerReport.js';
 import { cashAuditRows } from './cashAuditRows.js';
-import { reportRows, amount } from '../domain/reportTotals.js';
+import { reportRows, amount, CHANNEL_BREAKDOWN_ROWS, CHANNEL_EVIDENCE_NOTE, CHANNEL_NEGATIVE_NOTE, REPORT_CHANNELS } from '../domain/reportTotals.js';
 import { reportDay, visibleDay, reportTime } from '../domain/reportPeriod.js';
 
 export const MAX_EXPORT_ROWS = 10000;
@@ -36,18 +36,27 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = [], payments = []
     { Concepto: '🎂 INGRESOS NETOS PEDIDOS ESPECIALES', Valor: metrics.contractRevenue },
     { Concepto: ' ↳ Efectivo Pedidos', Valor: metrics.contractCash },
     { Concepto: ' ↳ Yape/Plin Pedidos', Valor: metrics.contractDigital },
-    { Concepto: ' ↳ Compensaciones POS y reembolsos Pedidos (ya incluidos)', Valor: metrics.refunds },
-    { Concepto: 'Efectivo Neto Total', Valor: metrics.cashRevenue },
-    { Concepto: 'Yape/Plin Neto Total', Valor: metrics.digitalRevenue },
+    ...Object.entries(REPORT_CHANNELS).flatMap(([channel, channelLabel]) => CHANNEL_BREAKDOWN_ROWS.map(({ key, label }) => ({
+      Concepto: `${label} · ${channelLabel}`, Valor: metrics.channels[channel][key],
+    }))),
     { Concepto: 'Ticket promedio POS', Valor: metrics.posAverageTicket },
-    { Concepto: 'Tickets POS Registrados', Valor: metrics.posTicketCount },
-    { Concepto: 'Pagos de Pedidos Procesados', Valor: metrics.contractPaymentCount },
-    { Concepto: 'Tickets POS Anulados', Valor: metrics.voidedTicketCount },
-    { Concepto: 'Compensaciones y reembolsos registrados', Valor: metrics.refundCount },
-    { Concepto: 'Alcance de las compensaciones POS', Valor: 'Registro contable sin evidencia de desembolso físico. Cierres operativos con conciliación pendiente.' },
+    { Concepto: 'Tickets POS Registrados', Valor: metrics.posTicketCount, _count: true },
+    { Concepto: 'Pagos de Pedidos Procesados', Valor: metrics.contractPaymentCount, _count: true },
+    { Concepto: 'Tickets POS Anulados', Valor: metrics.voidedTicketCount, _count: true },
+    { Concepto: 'Compensaciones POS y reembolsos contables (cantidad)', Valor: metrics.refundCount, _count: true },
+    { Concepto: 'Cómo se calcula el neto por canal', Valor: 'Suma de cobros y contramovimientos con su signo, por fecha de registro.', _noteHeight: 32 },
+    { Concepto: 'Neto negativo', Valor: CHANNEL_NEGATIVE_NOTE, _noteHeight: 60 },
+    { Concepto: 'Alcance de las compensaciones POS', Valor: `${CHANNEL_EVIDENCE_NOTE} Los cierres operativos conservan conciliación pendiente.`, _noteHeight: 60 },
   ];
-  const summary = append('Resumen_Financiero', summaryRows, { currency: ['B'], widths: [{ wch: 52 }, { wch: 32 }] });
-  summaryRows.forEach((row, index) => { if (index >= 14 && summary[`B${index + 2}`]) summary[`B${index + 2}`].z = '0'; });
+  const summary = append('Resumen_Financiero', summaryRows, { currency: ['B'], widths: [{ wch: 56 }, { wch: 60 }] });
+  summaryRows.forEach(({ _count, _noteHeight }, index) => {
+    const cell = summary[`B${index + 2}`];
+    if (_count) cell.z = '0';
+    if (_noteHeight) {
+      cell.s = { ...cell.s, alignment: { ...cell.s?.alignment, wrapText: true, vertical: 'top' } };
+      (summary['!rows'] ??= [])[index + 1] = { hpt: _noteHeight };
+    }
+  });
   if (scopedContracts.length) append('Estado_Pedidos', scopedContracts.map(contract => ({
     Pedido: contract.contractNumber ?? contract.contractId ?? contract.id, Cliente: contract.clientName,
     Sede: branchesMap[contract.branchId] ?? contract.branchId, Estado: contract.status,
@@ -55,7 +64,7 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = [], payments = []
   })), { currency: ['E', 'F', 'G'], widths: [24, 30, 24, 24, 24, 20, 20].map(wch => ({ wch })) });
   const audit = buildContractLedgerReport(scopedPayments, contracts, branchesMap);
   if (audit.contractPaymentRows.length) append('Auditoría_Pedidos', audit.contractPaymentRows, {
-    currency: ['F', 'G', 'I', 'K', 'P'], widths: [22, 22, 25, 22, 22, 20, 18, 18, 18, 18, 18, 22, 38, 55, 22, 22].map(wch => ({ wch })) });
+    currency: ['F', 'G', 'I', 'K', 'P'], widths: [22, 22, 25, 22, 22, 20, 18, 18, 18, 18, 26, 22, 38, 55, 22, 22, 24].map(wch => ({ wch })) });
   if (detailed) {
     const rows = cashAuditRows(sessions, branchesMap, scope);
     if (rows.length) append('Auditoría_Cajas', rows, { currency: ['E', 'F', 'G'], style: 'auditoria', widths: [15, 25, 22, 22, 22, 22, 22, 26, 40].map(wch => ({ wch })) });

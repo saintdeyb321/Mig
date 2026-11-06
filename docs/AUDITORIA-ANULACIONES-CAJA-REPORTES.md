@@ -65,3 +65,42 @@ Referencias de los controles y límites. [Rules](../firestore.rules), [Recuperac
 Aplicar **B primero** conservando los negativos de A. Mostrar el desglose por canal y usar la misma definición en Reportes y Excel. Aplicar **C en presentación** para separar referencia, conteo y desembolso sin atribuir movimientos físicos a los recibos actuales. Reservar D para cuando exista una decisión explícita sobre cómo acreditar reembolsos y ajustes reales.
 
 Para evaluar ese cambio, comparar el neto actual con la suma de los nuevos subtotales en escenarios de mismo día, cambio de día o turno, efectivo, Yape/Plin y mixto. Incluir el reembolso de un pedido, el recibo perdido con reintento y un cierre concurrente. La comprobación debe conservar la identidad `neto efectivo + neto digital = ingreso neto` y distinguir el resultado operativo de la conciliación certificada.
+
+## Plan 13 · Fase 01
+
+Reportes y `Resumen_Financiero` de Excel usan el desglose de `aggregateReport`. Para cada canal se presentan los cobros de POS y pedidos, las compensaciones POS y los reembolsos contables de pedidos. El detalle Excel identifica los contramovimientos por su naturaleza contable. La fase utiliza los lectores existentes y conserva el alcance de cada exportación. [Agregación](../frontend/src/features/reports/domain/reportTotals.js), [Dashboard](../frontend/src/modules/reports/ReportParts.jsx), [Excel](../frontend/src/features/reports/application/salesWorkbook.js)
+
+### Invariantes
+
+- Por canal, `neto = cobros registrados + compensaciones POS + reembolsos contables de pedidos`. Los dos contramovimientos mantienen su signo. Yape y Plin se agrupan en el canal digital. Una venta mixta se divide según los importes registrados, incluido el desglose histórico con `plin`.
+- Cada neto por canal coincide con la suma previa de netos POS y pedidos de ese canal. `neto efectivo + neto digital = ingreso neto`, con la misma política de céntimos. Se preservan el signo, los conteos de tickets y la definición vigente de promedio POS.
+- Ventas Spark por `confirmedAt`, ventas históricas admitidas por `createdAt`, pagos de pedidos y compensaciones por `occurredAt`. Se mantienen los días de Lima, el filtro por negocio y sede, la exclusión de pendientes locales y el tratamiento previo de tickets históricos marcados como anulados.
+- Un recibo POS y un pago se contabilizan una sola vez por su ID en su origen. Los subtotales no agregan una segunda transacción. El cierre y el inventario siguen usando sus flujos actuales. El desglose no presenta el neto como saldo de caja o de billetera.
+
+### Validación pendiente del propietario
+
+| Escenario | Resultado esperado en Reportes y Excel |
+| --- | --- |
+| Venta y anulación en el mismo período, por efectivo, Yape, Plin y mixto | Cobro y compensación aparecen por separado. El neto del ticket es cero y el mixto conserva ambos componentes. |
+| Venta Yape de S/ 100 ayer, anulación hoy y S/ 30 de nuevos cobros digitales | En Hoy se muestran S/ 30, −S/ 100 y un neto digital de −S/ 70. En un rango que incluya ambos días, el neto de esos movimientos es S/ 30. |
+| Cancelación de un pedido con anticipo digital o reembolso mixto histórico | La salida contable aparece solo en reembolsos de pedidos y conserva el método original. El detalle y la auditoría Excel no dan por acreditado un desembolso. |
+| Recibo POS y pago duplicados, reintento y cambio de sede o negocio | Cada ID entra una vez. Los datos de otra sede o negocio quedan fuera cuando el alcance los excluye. El total global coincide con la suma de sedes del mismo negocio. |
+| Ventana vacía, compensación de S/ 0.01 y mixto histórico con `plin` | Ceros explícitos, signo y céntimos legibles, y el mismo desglose en las rutas detallada y resumida. |
+| Hoy, semana, mes y año con los mismos datos de origen y alcance | Las ocho cifras por canal coinciden entre pantalla y `Resumen_Financiero`. Las comparativas y los resúmenes diarios conservan los mismos netos. Excel mantiene celdas numéricas y formato de cantidad para los conteos. |
+| Históricos no regularizados, lectura interrumpida o cierre concurrente | Se conservan los errores y avisos vigentes. El desglose no vuelve definitiva una lectura parcial ni certifica un cierre. |
+
+Los controles existentes de reportes y la fixture visual se adaptaron al nuevo desglose. La ejecución y la revisión de un Excel generado quedan pendientes. [Controles de reportes](../tests/reports.test.mjs), [Fixture visual](../tests/plan09.fixture.jsx)
+
+### Diseño pendiente del registro verificable de devoluciones
+
+Separar tres entidades. El **contramovimiento comercial** es el recibo POS o de pedido actual. La **obligación** registra el importe elegible para devolución, con origen estable y desglose original. El **desembolso** registra una devolución parcial o total con su canal real, importe en céntimos, responsable, sede, turno si afecta efectivo, fecha de ejecución y referencia de evidencia. Por ejemplo, un cobro Yape puede dar origen a una devolución en efectivo. El contramovimiento sigue atribuido a Yape y la salida acreditada corresponde al efectivo.
+
+- Identificar cada obligación por negocio, tipo e ID de origen. Identificar cada desembolso por comando idempotente y proteger el saldo restante de forma atómica. La suma de desembolsos acreditados no puede superar la obligación. Un reintento recupera el mismo resultado.
+- Distinguir `NO_APLICA`, `PENDIENTE`, `PARCIAL`, `CONFIRMADO` e `INCIDENCIA` a partir del saldo y la evidencia disponible. Los históricos sin evidencia quedan pendientes de revisión. Un desembolso registrado como acreditado debe conservar quién lo verificó, la referencia mínima y la fecha. Evitar adjuntar datos bancarios sensibles.
+- Separar permiso de anular del permiso de acreditar fondos. Definir aprobación para montos altos, cambio de canal y devoluciones entre turnos. Los ajustes posteriores se registran como contramovimientos trazables. Una salida acreditada reduce la obligación y afecta el flujo real una vez. El neto comercial ya incorpora la reversión original.
+
+### Política pendiente de stock devuelto
+
+Registrar la decisión por línea y cantidad, vinculada al ticket y a la sede. Distinguir producto no entregado con custodia confirmada, producto retornado pendiente de inspección, retorno vendible, merma y producto no devuelto. Los perecederos quedan fuera del stock vendible hasta que una inspección autorice su reincorporación. Liberar una unidad que nunca salió requiere confirmar que sigue bajo custodia.
+
+La futura reincorporación debe ser idempotente y atómica con el ajuste de stock. La suma por línea no puede superar las unidades originales. Cada crédito de stock vendible actualiza `posStockVersion` una vez. Antes de aplicar la política a un histórico, conciliar el recibo de anulación con la reposición que ya ejecutó el protocolo vigente para evitar un segundo crédito. Esta fase conserva la reposición actual y deja pendiente decidir autorización, criterios de inspección y tratamiento de mermas. [Transacción POS vigente](../frontend/src/features/sales/infrastructure/posVoidRepository.js), [Rules vigentes](../firestore.rules)

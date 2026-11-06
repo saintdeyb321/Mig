@@ -1,6 +1,6 @@
 import FirestoreQueryError from '../components/FirestoreQueryError';
 import { Banknote, ChartNoAxesCombined, ReceiptText, Smartphone, Trophy, WalletCards } from 'lucide-react';
-import { MetricCard, ChartColumn, OrderStatusChart, ReportPanel, TopProductItem } from './reports/ReportParts.jsx';
+import { ChannelBreakdown, MetricCard, ChartColumn, OrderStatusChart, ReportPanel, TopProductItem } from './reports/ReportParts.jsx';
 import { LoadingState, Button, PageHeader, HelpDisclosure } from '../shared/ui';
 import { useMemo } from 'react';
 import { useReports } from '../features/reports/hooks/useReports';
@@ -64,10 +64,11 @@ export default function Reports({
     <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <MetricCard title="Ingresos netos" value={`S/ ${formatMoney(total)}`} subtext={`POS: S/ ${formatMoney(summary.posRevenue)} · Pedidos: S/ ${formatMoney(summary.contractRevenue)}`} icon={WalletCards} tone="stellar" bgColor="bg-stellar-soft" valueColor="text-stellar" />
       <MetricCard title="Tickets POS" value={totalSales.toLocaleString('en-US')} subtext={`Promedio POS: S/ ${formatMoney(summary.posAverageTicket)} · Anulados: ${summary.voidedTicketCount} · Pagos pedidos: ${summary.contractPaymentCount}`} icon={ReceiptText} bgColor="bg-subtle" />
-      <MetricCard title="Neto contable en efectivo" value={`S/ ${formatMoney(cash)}`} subtext="Incluye compensaciones." icon={Banknote} tone="success" bgColor="bg-success-soft" valueColor="text-success" />
-      <MetricCard title="Neto contable Yape / Plin" value={`S/ ${formatMoney(yape)}`} subtext="Incluye compensaciones." icon={Smartphone} tone="accent" bgColor="bg-accent-soft" valueColor="text-accent" />
+      <MetricCard title="Neto contable en efectivo" value={`S/ ${formatMoney(cash)}`} subtext="Según movimientos del período." icon={Banknote} tone="success" bgColor="bg-success-soft" valueColor="text-success" />
+      <MetricCard title="Neto contable Yape / Plin" value={`S/ ${formatMoney(yape)}`} subtext="Según movimientos del período." icon={Smartphone} tone="accent" bgColor="bg-accent-soft" valueColor="text-accent" />
     </div>
 
+    <ChannelBreakdown channels={summary.channels} formatMoney={formatMoney} />
     <OrderStatusChart counts={contractCounts} />
 
     <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">

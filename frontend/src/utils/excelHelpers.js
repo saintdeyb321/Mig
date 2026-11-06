@@ -290,7 +290,7 @@ export const styleTotalRows = (ws) => {
     else if (col === 'D') {
       if (cellObj.v === 'COMPLETADA') ws[cell].s = { ...(ws[cell].s || {}), ...COMPLETED_STYLE };
       else if (cellObj.v === 'ANULADA ❌') ws[cell].s = { ...(ws[cell].s || {}), ...VOIDED_STYLE };
-      else if (cellObj.v === 'REEMBOLSO') ws[cell].s = { ...(ws[cell].s || {}), ...DANGER_STYLE };
+      else if (['COMPENSACIÓN POS', 'REEMBOLSO CONTABLE'].includes(cellObj.v)) ws[cell].s = { ...(ws[cell].s || {}), ...DANGER_STYLE };
     }
     else if (col === 'E') {
       if (cellObj.v === 'YAPE' || cellObj.v === 'PLIN') ws[cell].s = { ...(ws[cell].s || {}), ...YAPE_STYLE };

@@ -1,4 +1,5 @@
 import { saleDay, statsDelta, money } from '../../sales/domain/saleModel.js';
+import { posAmounts } from './reportTotals.js';
 
 // Same domain projection as the historical engine, derived on demand from confirmed documents.
 export function salesToDailyStats(sales) {
@@ -7,6 +8,12 @@ export function salesToDailyStats(sales) {
     const date = saleDay(sale), key = JSON.stringify([sale.businessId, sale.branchId, date]);
     const row = days.get(key) ?? { businessId: sale.businessId, branchId: sale.branchId, date };
     const delta = sale.voided ? { voidedOrders: 1 } : statsDelta({ ...sale, items: (sale.items ?? []).map(item => ({ ...item, id: item.id ?? item.name })) });
+    if (!sale.voided && sale.payment === 'mixto') {
+      // Use the same split as the detailed report, including historical Plin splits.
+      const { cash, digital } = posAmounts(sale);
+      delta['paymentMethods.efectivo'] = cash;
+      delta['paymentMethods.yape'] = digital;
+    }
     for (const [field, value] of Object.entries(delta)) {
       // Old tickets may lack cost/profit. Do not invent either amount in historical summaries.
       if (typeof value === 'number' && !Number.isFinite(value) && ['totalCost', 'grossProfit'].includes(field)) continue;

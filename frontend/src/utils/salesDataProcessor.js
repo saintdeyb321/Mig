@@ -1,6 +1,6 @@
 import { aggregateReport, amount, reportRows } from '../features/reports/domain/reportTotals.js';
 import { reportDay, visibleDay, reportTime } from '../features/reports/domain/reportPeriod.js';
-import { paymentLabel } from '../features/reports/application/contractLedgerReport.js';
+import { ledgerPaymentLabel, paymentLabel } from '../features/reports/application/contractLedgerReport.js';
 import { toMillisSafe } from '../core/dates/dateValues.js';
 
 export const DETAIL_HEADERS = ['Fecha', 'Hora', 'Ticket', 'Estado', 'Pago', 'Producto', 'Cantidad', 'Precio Unit.', 'Subtotal', 'Observaciones', 'Total movimiento (S/)'];
@@ -35,16 +35,16 @@ export function processSales(sales, branchesMap = {}, payments = [], scope = {})
   const uniquePayments = new Map(reportRows(payments, scope).map(payment => [payment.id, payment]));
   for (const row of new Map(reportRows(scope.voids ?? [], scope).map(value => [value.id, value])).values()) {
     const lines = row.items.map((item, index) => detail({ Fecha: index ? '' : visibleDay(reportDay(row.occurredAt)), Hora: index ? '' : reportTime(row.occurredAt),
-      Ticket: index ? '' : `DEVOLUCIÓN POS: ${row.saleId}`, Estado: index ? '' : 'COMPENSACIÓN POS',
-      Pago: index ? '' : `Efectivo ${-row.cashAmount} · Yape ${-row.digitalAmount}`, Producto: item.name, Cantidad: -item.qty,
+      Ticket: index ? '' : `COMPENSACIÓN POS: ${row.saleId}`, Estado: index ? '' : 'COMPENSACIÓN POS',
+      Pago: index ? '' : `Efectivo ${row.cashAmount.toFixed(2)} · Yape/Plin ${row.digitalAmount.toFixed(2)}`, Producto: item.name, Cantidad: -item.qty,
       'Precio Unit.': item.price, Subtotal: -amount(item.qty * item.price), Observaciones: index ? '' : `${row.reason} · UID: ${row.userId}` }));
-    lines.push(detail({ 'Precio Unit.': 'TOTAL DEVOLUCIÓN ➔', 'Total movimiento (S/)': row.amount }));
+    lines.push(detail({ 'Precio Unit.': 'TOTAL COMPENSACIÓN ➔', 'Total movimiento (S/)': row.amount }));
     groups.push({ branchId: row.branchId, timestamp: toMillisSafe(row.occurredAt), id: `void:${row.id}`, rows: lines });
   }
   for (const payment of uniquePayments.values()) groups.push({ branchId: payment.branchId, timestamp: toMillisSafe(payment.occurredAt), id: payment.id,
     rows: [detail({ Fecha: visibleDay(reportDay(payment.occurredAt)), Hora: reportTime(payment.occurredAt),
-      Ticket: `PEDIDO: ${payment.contractNumber ?? payment.sourceId}`, Estado: payment.type === 'refund' ? 'REEMBOLSO' : 'PAGO PEDIDO',
-      Pago: paymentLabel(payment.method, payment.splitPayments), Producto: `[${payment.type}] ${payment.clientName ?? ''}`,
+      Ticket: `PEDIDO: ${payment.contractNumber ?? payment.sourceId}`, Estado: payment.type === 'refund' ? 'REEMBOLSO CONTABLE' : 'PAGO PEDIDO',
+      Pago: ledgerPaymentLabel(payment), Producto: `[${payment.type}] ${payment.clientName ?? ''}`,
       Cantidad: 1, 'Precio Unit.': amount(payment.amount), Subtotal: amount(payment.amount), 'Total movimiento (S/)': amount(payment.amount),
       Observaciones: `Movimiento ${payment.id} · Cajero: ${payment.cashierName ?? ''}` })] });
   groups.sort((a, b) => a.timestamp - b.timestamp || String(a.id).localeCompare(String(b.id)));

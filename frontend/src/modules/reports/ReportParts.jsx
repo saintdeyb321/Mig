@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { CheckCircle2, ClipboardList, Clock3, WalletCards, XCircle } from 'lucide-react';
 import { Card, cn } from '../../shared/ui';
+import { CHANNEL_BREAKDOWN_ROWS, CHANNEL_EVIDENCE_NOTE, CHANNEL_NEGATIVE_NOTE, REPORT_CHANNELS } from '../../features/reports/domain/reportTotals.js';
 
 const metricTones = {
   stellar: 'border-t-stellar to-stellar-soft/75 hover:border-x-stellar/35 hover:border-b-stellar/35',
@@ -22,7 +23,7 @@ const rankStyles = [
   { badge: 'bg-subtle text-brand-deep', bar: 'bg-nebula' },
   { badge: 'bg-subtle text-muted', bar: 'bg-control' },
 ];
-const formatChartMoney = (amount = 0) => Math.round(Number(amount)).toLocaleString('en-US');
+const formatChartMoney = (amount = 0) => Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function ReportPanel({ title, headingId, icon: Icon, children }) {
   return <Card aria-labelledby={headingId} className={cn('overflow-hidden p-0 hover:border-stellar/35 focus-within:border-stellar/45 sm:p-0', panelFeedback)}>
@@ -32,6 +33,37 @@ export function ReportPanel({ title, headingId, icon: Icon, children }) {
     </div>
     {children}
   </Card>;
+}
+
+export function ChannelBreakdown({ channels, formatMoney }) {
+  const entries = Object.entries(REPORT_CHANNELS);
+  return <ReportPanel title="Desglose contable por canal" headingId="report-channels-heading" icon={WalletCards}>
+    <div className="space-y-3 p-3 sm:p-4">
+      <table className="w-full table-fixed text-xs sm:text-sm">
+        <caption className="sr-only">Cobros, contramovimientos y neto contable del período</caption>
+        <thead className="border-b border-line text-muted">
+          <tr>
+            <th scope="col" className="w-[44%] py-2 pr-2 text-left font-semibold">Concepto</th>
+            {entries.map(([key, label]) => <th key={key} scope="col" className="px-1 py-2 text-right font-semibold sm:px-2">{label}</th>)}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {CHANNEL_BREAKDOWN_ROWS.map(({ key, label }) => <tr key={key} className={key === 'net' ? 'bg-stellar-soft text-ink' : undefined}>
+            <th scope="row" className={cn('py-2.5 pr-2 text-left', key === 'net' ? 'pl-1 font-extrabold sm:pl-2' : 'font-medium')}>{label}</th>
+            {entries.map(([channel]) => {
+              const value = channels[channel][key];
+              return <td key={channel} className={cn('px-1 py-2.5 text-right tabular-nums wrap-anywhere sm:px-2', key === 'net' && 'font-extrabold', value < 0 && 'text-danger')}>S/ {formatMoney(value)}</td>;
+            })}
+          </tr>)}
+        </tbody>
+      </table>
+      <div className="space-y-1 text-xs leading-relaxed text-muted">
+        <p>El neto suma los cobros y los contramovimientos con su signo, por fecha de registro.</p>
+        <p>{CHANNEL_NEGATIVE_NOTE}</p>
+        <p>{CHANNEL_EVIDENCE_NOTE}</p>
+      </div>
+    </div>
+  </ReportPanel>;
 }
 
 export function OrderStatusChart({ counts }) {
