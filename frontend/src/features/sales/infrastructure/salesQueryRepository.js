@@ -3,6 +3,7 @@ import * as firestoreSDK from 'firebase/firestore';
 import { mapDocuments } from '../../../core/firebase/documents.js';
 
 export const SALES_PAGE_SIZE = 200;
+const reportLimit = maxRows => Object.assign(new Error(`Demasiados tickets (máximo ${maxRows}). Selecciona un período menor.`), { code: 'report-limit' });
 export function createSalesPeriodReader(database, { sdk = firestoreSDK } = {}) {
   const { collection, query, where, orderBy, documentId, startAfter, limit, getDocsFromServer, Timestamp } = sdk;
   return async (businessId, startDate, endDate, { branchId = 'global', maxRows = 10000, signal } = {}) => {
@@ -23,12 +24,12 @@ export function createSalesPeriodReader(database, { sdk = firestoreSDK } = {}) {
           where(field, '>=', from), where(field, '<=', to), orderBy(field), orderBy(documentId()),
           ...(cursor ? [startAfter(cursor)] : []), limit(pageSize)));
         scanned += page.size;
-        if (scanned > maxRows) throw new Error(`Demasiados tickets (máximo ${maxRows}). Selecciona un período menor.`);
+        if (scanned > maxRows) throw reportLimit(maxRows);
         for (const row of mapDocuments(page)) {
           if (spark ? row.status !== 'confirmed' : row.confirmedAt != null) continue;
           rows.set(row.id, { ...row, createdAt: row.confirmedAt ?? row.createdAt, isOffline: false });
         }
-        if (rows.size > maxRows) throw new Error('Demasiados tickets. Selecciona un período menor.');
+        if (rows.size > maxRows) throw reportLimit(maxRows);
         cursor = page.size === pageSize ? page.docs.at(-1) : null;
       } while (cursor);
     }

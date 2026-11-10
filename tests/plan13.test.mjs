@@ -251,8 +251,9 @@ it('P13 preserves one cash lock and immutable declarations across double open, c
     const period = reportPeriod('hoy', plan08Timestamp().toDate());
     const { workbook } = buildSalesWorkbook(XLSX, { businessId, branchId, period, sessions: [saved], now: plan08Timestamp().toDate() });
     const audit = rows(roundTrip(workbook), 'Auditoría_Cajas').find(row => row.Turno.startsWith('CIERRE'));
-    assert.deepEqual([audit['Contado Real (S/)'], audit['Diferencia (S/)'], audit.Estado],
-      [declared, 'Pendiente', 'Pendiente de revisión']);
+    assert.deepEqual([audit['Contado Real (S/)'], audit['Referencia calculada (S/)'], audit['Diferencia (S/)'], audit.Estado],
+      [declared, 128, difference, 'Conciliación pendiente']);
+    assert.match(audit.Observación, /provisionales/);
     assert.equal(h.writes.length, 4);
     assert.equal(h.documents.has(lockPath), false);
     await assert.rejects(close.close(opening.sessionId, declared + 1, notes), /cerrada con otra declaración/);

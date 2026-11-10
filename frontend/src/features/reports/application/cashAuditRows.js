@@ -1,27 +1,53 @@
 import { toDateSafe } from '../../../core/dates/dateValues.js';
 import { reportDay, visibleDay, reportTime } from '../domain/reportPeriod.js';
-import { amount } from '../domain/reportTotals.js';
 
-export function cashAuditRows(sessions, branchesMap, scope) {
-  const rows = [];
-  const state = difference => difference === null ? 'Pendiente de revisión' : difference === 0 ? '✅ Cuadrado' : difference > 0 ? '⚠️ Sobrante' : '❌ Faltante';
+const monetaryValue = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
+const eventTitles = { opening: 'APERTURA', closing: 'CIERRE MANUAL', expiry: 'VENCIMIENTO SIN ARQUEO' };
+
+export function cashAuditEvents(sessions, scope) {
+  const events = [];
   for (const session of sessions) {
     if (scope.businessId && session.businessId !== scope.businessId) continue;
     if (scope.branchId !== 'global' && session.branchId !== scope.branchId) continue;
-    const open = toDateSafe(session.openedAt), close = toDateSafe(session.closedAt);
-    const add = (date, opening) => {
+    const add = (value, kind, details) => {
+      const date = toDateSafe(value);
+      if (!date) return;
       const day = reportDay(date);
       if (day < scope.period.start || day > scope.period.end) return;
-      const raw = opening ? session.openingDiscrepancy : session.requiresFinancialReview || session.reconciliationPending ? null : session.difference ?? session.discrepancy;
-      const difference = raw == null ? null : amount(raw);
-      rows.push({ timestamp: date.getTime(), row: { 'Fecha Cierre': visibleDay(day), Turno: `${opening ? 'APERTURA' : 'CIERRE'}: ${reportTime(date)}`,
-        Sede: branchesMap[session.branchId] ?? session.branchId, Cajero: session.cashierName ?? '',
-        'Fondo+Ventas (S/)': opening ? difference === null ? 'Pendiente' : amount(session.openingAmount - difference) : session.expectedCash ?? session.expectedAmount ?? 'Pendiente',
-        'Contado Real (S/)': (opening ? session.openingAmount : session.declaredAmount) ?? 'Pendiente', 'Diferencia (S/)': difference ?? 'Pendiente',
-        Estado: state(difference), Justificación: (opening ? session.openingNote : session.closingNote) ?? '' } });
+      events.push({ kind, date, day, branchId: session.branchId, cashier: session.cashierName || session.userId || '',
+        opening: monetaryValue(session.openingAmount), reference: null, counted: null, difference: null, actor: '', ...details });
     };
-    if (open) add(open, true);
-    if (close && ['closed', 'closed_with_discrepancy'].includes(session.status)) add(close, false);
+    add(session.openedAt, 'opening', { actor: session.cashierName || session.userId || '', state: 'Fondo registrado', note: session.openingNote ?? '' });
+    if (session.status === 'expired_unreconciled') {
+      const recovered = toDateSafe(session.recoveredAt);
+      add(session.expiredAt, 'expiry', { actor: session.recoveredBy ?? '', state: 'Pendiente de arqueo',
+        note: 'Límite de 10 horas desde apertura.' + (recovered ? ` Recuperado el ${visibleDay(reportDay(recovered))} ${reportTime(recovered)} (Lima).` : '') });
+    }
+    if (['closed', 'closed_with_discrepancy'].includes(session.status)) {
+      const counted = monetaryValue(session.declaredAmount);
+      const reference = monetaryValue(session.closeEstimate?.expectedCash ?? session.expectedCash ?? session.expectedAmount);
+      const estimated = !!(session.reconciliationPending || session.requiresFinancialReview || session.closeEstimate?.authority === 'client-estimate');
+      const difference = counted === null ? null : monetaryValue(session.closeEstimate?.difference ?? session.difference ?? session.discrepancy);
+      const state = estimated ? 'Conciliación pendiente' : difference === null ? 'Pendiente de revisión'
+        : difference === 0 ? 'Coincide' : difference > 0 ? 'Sobrante registrado' : 'Faltante registrado';
+      add(session.closedAt, 'closing', { actor: session.closedBy ?? '', counted, reference, difference, estimated, state, note: session.closingNote ?? '' });
+    }
   }
-  return rows.sort((a, b) => a.timestamp - b.timestamp).map(item => item.row);
+  return events.sort((a, b) => a.date - b.date);
+}
+
+export function cashAuditRows(events, branchesMap) {
+  return events.map(event => ({
+    'Fecha y hora del movimiento (Lima)': `${visibleDay(event.day)} ${reportTime(event.date)}`,
+    Turno: eventTitles[event.kind],
+    Sede: branchesMap[event.branchId] ?? event.branchId,
+    Responsable: event.cashier,
+    'Registrado por': event.actor,
+    'Fondo inicial (S/)': event.opening ?? 'No registrado',
+    'Referencia calculada (S/)': event.reference ?? (event.kind === 'opening' ? 'No aplica' : 'Sin referencia'),
+    'Contado Real (S/)': event.counted ?? (event.kind === 'opening' ? 'No aplica' : 'No declarado'),
+    'Diferencia (S/)': event.difference ?? (event.kind === 'opening' ? 'No aplica' : 'No calculable'),
+    Estado: event.state,
+    Observación: (event.estimated ? 'Referencia y diferencia disponibles son provisionales. ' : '') + event.note,
+  }));
 }

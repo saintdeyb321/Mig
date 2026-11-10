@@ -8,12 +8,14 @@ import '../frontend/src/index.css';
 
 const fixture = window.__excelFixture = { reads: 0, fault: '', empty: false, compensated: false };
 const branch = { id: 'centro', name: 'Centro' };
+const secondBranch = { id: 'taller', name: 'Taller' };
 const user = { uid: 'qa-excel-owner', businessId: 'qa-excel', role: 'dueño' };
 const resources = createSessionResources();
+fixture.resetReads = () => resources.invalidateWhere(key => key.startsWith('report:'));
 const base = { businessId: user.businessId, branchId: branch.id, cashierName: 'Cajera de ensayo' };
 const at = (day, hour) => `${day}T${hour}:00:00-05:00`;
 
-fixture.read = async (kind, day) => {
+fixture.read = async (kind, day, branchId) => {
   fixture.reads++;
   if (fixture.fault === 'permission') throw Object.assign(Error('Lectura de ensayo denegada'), { code: 'permission-denied', queryArea: 'sales-period' });
   if (fixture.fault === 'limit') throw Error('Demasiados tickets (máximo 10000). Selecciona un período menor.');
@@ -22,20 +24,28 @@ fixture.read = async (kind, day) => {
   const sale = (id, payment, total, extra = {}) => ({ ...base, id, payment, total, createdAt: at(day, '10'),
     items: [{ id: 'product-' + id, name: '=1+1', qty: 1, price: total }], ...extra });
   const yape = sale('digital', 'yape', 30);
-  if (kind === 'sales') return [sale('cash', 'efectivo', 20), yape, sale('mixed', 'mixto', 20, { splitPayments: { efectivo: 8, yape: 12 } })];
+  if (kind === 'sales') {
+    const rows = [sale('cash', 'efectivo', 20), yape, sale('mixed', 'mixto', 20, { splitPayments: { efectivo: 8, yape: 12 } })];
+    if (fixture.multi) rows.push(sale('cash-taller', 'efectivo', 12, { branchId: secondBranch.id }));
+    return rows.filter(row => branchId === 'global' || row.branchId === branchId);
+  }
   if (kind === 'contracts') return { contracts: [], payments: [{ ...base, id: 'advance', sourceId: 'pedido', type: 'advance', amount: 15, method: 'yape', occurredAt: at(day, '11') }] };
   if (kind === 'voids') return fixture.compensated || fixture.fault === 'integrity'
     ? [{ ...base, id: yape.id, saleId: yape.id, userId: user.uid, authority: 'pos-compensation', amount: -30,
       cashAmount: 0, digitalAmount: fixture.fault === 'integrity' ? -29 : -30, items: yape.items, occurredAt: at(day, '12'), reason: 'Motivo de ensayo' }] : [];
-  return [{ ...base, id: 'cash-session', openingAmount: 100, declaredAmount: 128, status: 'closed', reconciliationPending: true,
+  const cash = [{ ...base, id: 'cash-session', openingAmount: 100, declaredAmount: 128, status: 'closed', reconciliationPending: true,
     openedAt: at(day, '08'), closedAt: at(day, '13') }];
+  if (fixture.multi) cash.push({ ...base, id: 'cash-expired', branchId: secondBranch.id, openingAmount: 50, status: 'expired_unreconciled',
+    openedAt: at(day, '08'), expiredAt: at(day, '18'), recoveredAt: at(day, '20'), recoveredBy: user.uid, declaredAmount: null, difference: null });
+  return cash;
 };
 
 function Fixture() {
   const [scope, setScope] = useState({ identityKey: 'original', branchId: branch.id, mounted: true });
   fixture.setScope = update => setScope(previous => ({ ...previous, ...update }));
   return <SessionResourcesContext.Provider value={resources}>
-    <TenantContext.Provider value={{ activeBranchId: scope.branchId, identityKey: scope.identityKey, businessBranches: [branch] }}>
+    <TenantContext.Provider value={{ activeBranchId: scope.branchId, identityKey: scope.identityKey, businessBranches: [branch, secondBranch],
+      settings: { companyData: { razonSocial: 'Pan de ensayo <img src="https://no-network.invalid/">' } } }}>
       <main className="mx-auto max-w-5xl px-3 py-6 sm:px-6"><h1 className="sr-only">Historial de ventas</h1>
         {scope.mounted && <ExportSales user={user} />}
       </main>

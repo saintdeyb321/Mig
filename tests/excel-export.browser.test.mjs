@@ -11,6 +11,7 @@ const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))
 const artifacts = fileURLToPath(new URL('../.release/qa-excel-ux/', import.meta.url));
 const card = '.export-toolbar';
 const primary = card + ' button[type="submit"]';
+const pdfAction = card + ' button[type="button"]';
 const retry = card + ' [role="alert"] button';
 const downloadNames = async directory => (await readdir(directory).catch(error => {
   if (error.code === 'ENOENT') return [];
@@ -51,7 +52,7 @@ const alert = ev => title => until(() => ev(title => document.querySelector('.ex
 const ready = ev => until(() => ev(() => Boolean(window.__excelFixture && document.querySelector('.export-toolbar'))), 'Fixture ready after reload');
 const offline = (page, offline) => page.send('Network.emulateNetworkConditions', { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
 
-async function workbook(downloads, previous, { net, cash, digital, label, artifact, detailed = true, empty = false }) {
+async function workbook(downloads, previous, { net, cash, digital, label, artifact, detailed = true, empty = false, branches = ['Centro'] }) {
   const filename = await until(async () => (await downloadNames(downloads)).find(name => !previous.includes(name)), `Missing download ${label}`);
   assert.match(filename, new RegExp(`^Reporte_${label}_\\d{4}-\\d{2}-\\d{2}\\.xlsx$`));
   const bytes = await readFile(join(downloads, filename));
@@ -65,10 +66,10 @@ async function workbook(downloads, previous, { net, cash, digital, label, artifa
   else {
     for (const name of ['Comparativa_Sedes', 'Productos_Global', 'Productos_Sedes', 'Auditoría_Pedidos']) assert.ok(book.SheetNames.includes(name), name);
     assert.equal(book.SheetNames.includes('Auditoría_Cajas'), detailed);
-    const sheet = book.Sheets[detailed ? 'Detalle_Centro' : 'Resum_Centro'];
-    assert.ok(sheet);
     const column = detailed ? 'Total movimiento (S/)' : 'Ingreso';
-    assert.equal(XLSX.utils.sheet_to_json(sheet).reduce((sum, row) => sum + (row[column] || 0), 0), net);
+    const movementSheets = branches.map(branch => book.Sheets[(detailed ? 'Detalle_' : 'Resum_') + branch]);
+    assert.ok(movementSheets.every(Boolean));
+    assert.equal(movementSheets.flatMap(sheet => XLSX.utils.sheet_to_json(sheet)).reduce((sum, row) => sum + (row[column] || 0), 0), net);
     const cells = Object.values(book.Sheets.Productos_Sedes);
     assert.ok(cells.some(cell => cell.t === 's' && cell.v.includes('=1+1')));
     assert.ok(Object.values(book.Sheets).flatMap(sheet => Object.values(sheet)).every(cell => cell?.f == null && cell?.l == null));
@@ -108,6 +109,8 @@ async function ux(page) {
   await ev(() => document.querySelector('.export-toolbar select').focus());
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
   assert.ok(await ev(() => document.activeElement.matches('.export-toolbar button[type="submit"]')));
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+  assert.ok(await ev(() => document.activeElement.textContent.includes('Informe PDF')));
   const ax = await page.send('Accessibility.getFullAXTree', {}, 15000);
   assert.ok(ax.nodes.some(node => node.role?.value === 'combobox' && node.name?.value === 'Período de exportación'));
   assert.ok(ax.nodes.some(node => node.role?.value === 'button' && node.name?.value === 'Descargar Excel'));
@@ -151,7 +154,7 @@ it('downloads actual XLSX from Vite dev, recovers an obsolete optimizer URL and 
     await page.send('Page.reload', { ignoreCache: true });
     await ready(ev);
     for (const [fault, message] of [['permission','Lectura de movimientos denegada'], ['integrity','Los movimientos no concilian'], ['limit','El período supera el límite']]) {
-      await ev(fault => { window.__excelFixture.fault = fault; }, fault);
+      await ev(fault => { window.__excelFixture.resetReads(); window.__excelFixture.fault = fault; }, fault);
       await press(primary);
       await error(message);
       assert.deepEqual(await downloadNames(downloads), names);
@@ -168,15 +171,16 @@ it('downloads actual XLSX from Vite dev, recovers an obsolete optimizer URL and 
     assert.deepEqual(await downloadNames(downloads), names);
     await ev(() => { URL.createObjectURL = window.__excelFixture.makeBlob; });
     for (const update of [{ branchId: 'taller' }, { identityKey: 'other' }, { mounted: false }]) {
-      await ev(() => { window.__excelFixture.fault = 'hold'; window.__excelFixture.pending = []; });
+      await ev(() => { window.__excelFixture.resetReads(); window.__excelFixture.fault = 'hold'; window.__excelFixture.pending = []; });
       await press(primary);
-      await until(() => ev(() => window.__excelFixture.pending?.length === 3), 'Report reached the held reads');
+      await until(() => ev(() => window.__excelFixture.pending?.length === 1), 'Report reached the held sales read');
       await press(primary);
-      assert.equal(await ev(() => window.__excelFixture.pending.length), 3, 'A second click during the read cannot start another export');
+      assert.equal(await ev(() => window.__excelFixture.pending.length), 1, 'A second click during the read cannot start another export');
       await ev(update => window.__excelFixture.setScope(update), update);
       await until(() => ev(() => !document.querySelector('.export-toolbar button[type="submit"]')?.disabled), 'Scope changed before resolving reads');
       await ev(() => window.__excelFixture.pending.forEach(resolve => resolve()));
       await delay(150);
+      assert.equal(await ev(() => window.__excelFixture.pending.length), 1, 'An abandoned scope cannot start supplemental reads');
       assert.deepEqual(await downloadNames(downloads), names);
       assert.ok(await ev(() => !document.querySelector('.export-toolbar [role="status"]')?.textContent));
     }
@@ -224,9 +228,93 @@ it('downloads from Vite preview, keeps Excel out of precache and retries an unav
     await ev(() => { window.__excelFixture.empty = true; });
     await select(ev)('todo');
     await press(primary);
-    names = await workbook(downloads, names, { net: 0, cash: 0, digital: 0, label: 'Anual_Resumen', artifact: 'preview', detailed: false, empty: true });
+    await error('No se pudieron consultar los movimientos');
+    assert.deepEqual(await downloadNames(downloads), names);
     assert.equal(responses.length, requestCount, 'Cached Excel must not hit preview while offline');
     assert.ok(network.slice(networkCount).some(row => row.status === 200 && row.fromServiceWorker), 'Offline Excel comes from the active Workbox service worker');
+    await offline(page, false);
+    await press(retry);
+    names = await workbook(downloads, names, { net: 0, cash: 0, digital: 0, label: 'Anual_Resumen', artifact: 'preview', detailed: false, empty: true });
     console.log(JSON.stringify({ previewRequests: responses, network, files: names.length }));
+  } });
+});
+
+it('Plan14 previews the authorized scope, prints sanitized A4 and reuses its snapshot for XLSX', { timeout: 180000 }, async () => {
+  const out = resolve(artifacts, '../qa-plan14');
+  await mkdir(out, { recursive: true });
+  await runExcelFixture({ async inspectPage(page, { downloads, responses }) {
+    const ev = evaluate(page), press = click(page);
+    let filenames = [];
+    for (const [multi, net, cash, digital] of [[false, 85, 28, 57], [true, 67, 40, 27]]) {
+      if (multi) {
+        await page.send('Page.reload', { ignoreCache: true });
+        await ready(ev);
+        await ev(() => {
+          Object.assign(window.__excelFixture, { multi: true, compensated: true });
+          window.__excelFixture.setScope({ branchId: 'global' });
+        });
+        await select(ev)('semana');
+      }
+      await ev(() => {
+        const fixture = window.__excelFixture;
+        fixture.failPrint = true;
+        new MutationObserver(records => {
+          for (const frame of records.flatMap(record => [...record.addedNodes])) {
+            if (frame.title !== 'Informe gerencial para impresión') continue;
+            frame.addEventListener('load', () => {
+              frame.contentWindow.print = () => {
+                if (fixture.failPrint) throw Error('Impresión de ensayo rechazada');
+                const document = frame.contentDocument;
+                fixture.printed = { html: document.documentElement.outerHTML, width: frame.getBoundingClientRect().width,
+                  script: !!document.querySelector('script, img, object, svg'), sandbox: frame.getAttribute('sandbox'),
+                  csp: document.querySelector('meta[http-equiv="Content-Security-Policy"]').content };
+                frame.contentWindow.dispatchEvent(new Event('afterprint'));
+              };
+            }, { capture: true, once: true });
+          }
+        }).observe(document.body, { childList: true });
+      });
+      await press(pdfAction);
+      const preview = await until(() => ev(() => {
+        const frame = document.querySelector('iframe[title="Vista previa del informe gerencial"]');
+        return frame && { sandbox: frame.getAttribute('sandbox'), html: frame.srcdoc };
+      }), 'PDF preview is shown');
+      assert.equal(preview.sandbox, '');
+      assert.ok(preview.html.includes(`S/ ${net.toFixed(2)}`));
+      assert.ok(preview.html.includes('Pan de ensayo &lt;img'));
+      assert.equal(preview.html.includes('<td class="bounded">Taller</td>'), multi);
+      if (multi) {
+        assert.match(preview.html, /No declarado/);
+        assert.match(preview.html, /Pendiente de arqueo/);
+      }
+      if (!multi) assert.deepEqual(responses, [], 'PDF does not load the Excel library');
+      const print = () => ev(() => [...document.querySelectorAll('[role="dialog"] button')]
+        .find(button => button.textContent.trim() === 'Imprimir / Guardar como PDF').click());
+      await print();
+      await until(() => ev(() => document.querySelector('[role="dialog"] [role="alert"]')?.textContent.includes('No se pudo abrir la impresión')),
+        'Print failure stays in preview and offers retry');
+      await ev(() => { window.__excelFixture.failPrint = false; });
+      await print();
+      const printed = await until(() => ev(() => window.__excelFixture.printed), 'Native print uses sanitized HTML');
+      assert.equal(printed.sandbox, 'allow-same-origin allow-modals');
+      assert.match(printed.csp, /script-src 'none'/);
+      assert.equal(printed.script, false);
+      assert.ok(printed.width > 790 && printed.width < 795, String(printed.width));
+      await until(() => ev(() => !document.querySelector('iframe[title="Informe gerencial para impresión"]')), 'Print frame is removed');
+      const reads = await ev(() => window.__excelFixture.reads);
+      await ev(() => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.textContent === 'Cerrar vista previa').click());
+      await press(primary);
+      filenames = await workbook(downloads, filenames, { net, cash, digital, label: multi ? 'Semanal_Detallado' : 'Diario_Detallado',
+        branches: multi ? ['Centro', 'Taller'] : ['Centro'] });
+      assert.equal(await ev(() => window.__excelFixture.reads), reads, 'Consecutive PDF and Excel reuse all authorized reads');
+      // Chromium renders the actual sanitized print document to a PDF in the isolated browser.
+      await ev(html => { document.open(); document.write('<!doctype html>' + html); document.close(); }, printed.html);
+      const pdf = Buffer.from((await page.send('Page.printToPDF', { preferCSSPageSize: true, printBackground: false }, 15000)).data, 'base64');
+      assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
+      const pageCount = [...pdf.toString('latin1').matchAll(/\/Type\s*\/Page\b/g)].length;
+      assert.equal(pageCount, 2);
+      await writeFile(resolve(out, `informe-${multi ? 'dos-sedes' : 'una-sede'}.pdf`), pdf);
+      console.log(JSON.stringify({ scopes: multi ? 2 : 1, net, cash, digital, pageCount, coldReads: reads, warmExtraReads: 0 }));
+    }
   } });
 });

@@ -38,9 +38,14 @@ const DANGER_STYLE = { fill: { fgColor: { rgb: "FECACA" } }, font: { bold: true,
 const WARNING_STYLE = { fill: { fgColor: { rgb: "FEF08A" } }, font: { bold: true, color: { rgb: "92400E" } }, border: BORDER }; 
 const SUCCESS_STYLE = { fill: { fgColor: { rgb: "BBF7D0" } }, font: { bold: true, color: { rgb: "166534" } }, border: BORDER }; 
 
-// NUEVOS ESTILOS PARA SUB-FILAS (Desglose de Auditoría)
-const SUBROW_LABEL_STYLE = { fill: { fgColor: { rgb: "F3F4F6" } }, font: { bold: true }, border: BORDER, alignment: { horizontal: "right" } };
-const SUBROW_VALUE_STYLE = { fill: { fgColor: { rgb: "E0F2FE" } }, font: { bold: true }, border: BORDER };
+const CASH_AUDIT_STYLE = {
+  'Pendiente de arqueo': WARNING_STYLE,
+  'Conciliación pendiente': WARNING_STYLE,
+  'Pendiente de revisión': WARNING_STYLE,
+  'Sobrante registrado': WARNING_STYLE,
+  'Faltante registrado': DANGER_STYLE,
+  Coincide: SUCCESS_STYLE,
+};
 
 
 /* =========================================
@@ -163,39 +168,9 @@ export const styleSummarySheet = (ws, type = 'default') => {
 
     // --- 3. HOJA DE AUDITORÍA DE CAJAS ---
     if (type === 'auditoria') {
-      const turnoCell = ws['B' + rowNum];
-      const isSubRow = turnoCell && String(turnoCell.v).includes("↳ Fondo esperado");
-
-      if (isSubRow) {
-        if (col === 'B' || col === 'D') {
-          ws[cell].s = { ...(ws[cell].s || {}), ...SUBROW_LABEL_STYLE };
-        } else if (col === 'C' || col === 'E') {
-          ws[cell].s = { ...(ws[cell].s || {}), ...SUBROW_VALUE_STYLE };
-          if (typeof cellObj.v === 'number') ws[cell].z = '"S/" #,##0.00';
-        } else if (col === 'F') {
-          const isFaltante = String(cellObj.v).includes("FALTANTE") || String(cellObj.v).includes("ALERTA");
-          ws[cell].s = { ...(ws[cell].s || {}), ...(isFaltante ? DANGER_STYLE : WARNING_STYLE), alignment: { horizontal: "center" } };
-        } else if (col === 'G') {
-          const isFaltante = Number(cellObj.v) < 0 || String(ws['F'+rowNum]?.v).includes("FALTANTE");
-          ws[cell].s = { ...(ws[cell].s || {}), ...(isFaltante ? DANGER_STYLE : WARNING_STYLE) };
-          if (typeof cellObj.v === 'number') ws[cell].z = '"S/" #,##0.00';
-        } else {
-          ws[cell].s = { ...(ws[cell].s || {}), ...VALUE_STYLE };
-        }
-        return;
-      }
-
-      const estadoCell = ws['H' + rowNum]; 
-      if (estadoCell && estadoCell.v) {
-        let rowStyle = VALUE_STYLE;
-        if (String(estadoCell.v).includes('Faltante')) rowStyle = DANGER_STYLE;
-        else if (String(estadoCell.v).includes('Sobrante')) rowStyle = WARNING_STYLE;
-        else if (String(estadoCell.v).includes('Cuadrado') && ['F', 'G', 'H'].includes(col)) rowStyle = SUCCESS_STYLE;
-
-        ws[cell].s = { ...(ws[cell].s || {}), ...rowStyle };
-        return;
-      }
-      ws[cell].s = { ...(ws[cell].s || {}), ...VALUE_STYLE };
+      const state = ws['J' + rowNum]?.v;
+      const style = ['B', 'J'].includes(col) ? CASH_AUDIT_STYLE[state] ?? VALUE_STYLE : VALUE_STYLE;
+      ws[cell].s = { ...ws[cell].s, ...style };
       return;
     }
 

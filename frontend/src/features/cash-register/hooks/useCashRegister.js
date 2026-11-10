@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSessionResources, useSessionState } from '../../../core/session/sessionResourceHooks.js';
-import { toMillisSafe } from '../../../core/dates/dateValues.js';
+import { toDateSafe } from '../../../core/dates/dateValues.js';
 import toast from 'react-hot-toast';
 import { findOpenSession, createSession, updateSession, cacheSession, reserveOfflineSession, previewSessionClose, watchCashAvailability } from '../infrastructure/cashRegisterRepository';
 import { calculateCashTotals } from '../../../../../functions/src/cash-register/domain/cashTotals.js';
@@ -9,6 +9,7 @@ import offlineDB from '../../../offlineDB';
 import { encrypt, decrypt } from '../../../crypto';
 import { auth } from '../../../core/firebase/client';
 import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
+import { invalidateReportScope } from '../../reports/application/reportResource.js';
 
 export const useCashRegister = (user, currentBranchId) => {
   const resources = useSessionResources();
@@ -21,8 +22,12 @@ export const useCashRegister = (user, currentBranchId) => {
   const openings = resources.value('cash:commands:' + scopeKey, () => ({ current: new Map() }));
   const readKey = 'cash:open:' + scopeKey;
   const [clock, setClock] = useState(() => Date.now());
-  const expiresAt = currentSession?.durationHours === 10 ? toMillisSafe(currentSession.openedAt) + 10 * 60 * 60 * 1000 : null;
+  const openedAt = toDateSafe(currentSession?.openedAt);
+  const expiresAt = currentSession?.runtime === 'spark' && currentSession.durationHours === 10 && openedAt ? openedAt.getTime() + 36000000 : null;
   const isExpired = expiresAt !== null && clock >= expiresAt;
+  const recoverySession = isExpired && currentSession?.serverConfirmed && currentSession.status === 'open'
+    && (user?.role === 'dueño' || user?.role === 'cajero' && user.branchId === currentBranchId) ? currentSession : null;
+  const [lastRecovery, setLastRecovery] = useSessionState('cash:recovery:' + scopeKey, null);
   useEffect(() => {
     if (expiresAt === null) return;
     const timer = setInterval(() => setClock(Date.now()), 30000);
@@ -89,20 +94,24 @@ export const useCashRegister = (user, currentBranchId) => {
     } catch (error) { toast.error(error.message || 'No se pudo autorizar la apertura offline.'); }
     finally { processing.current = false; }
   };
-  const openRegister = async (openingAmount, notes = '') => {
+  const openRegister = async (openingAmount, notes = '', recoverSessionId) => {
     if (!user?.businessId || currentBranchId === 'global' || processing.current || auth.currentUser?.uid !== user.uid) return false;
     if (typeof openingAmount !== 'number' || !Number.isFinite(openingAmount) || openingAmount < 0) { toast.error('Monto de apertura inválido.'); return false; }
     if (!navigator.onLine) { toast.error('La apertura Spark requiere conexión. Los pendientes existentes se conservan.'); return false; }
+    if (recoverSessionId && recoverSessionId !== recoverySession?.id) {
+      toast.error('El turno anterior cambió. Comprueba el estado de la caja.'); return false;
+    }
     processing.current = true;
     const token = ++revision.current;
     const toastId = toast.loading('Abriendo caja...');
     try {
       let session;
-      const command = JSON.stringify([user.uid, user.businessId, currentBranchId, openingAmount, notes]);
+      const command = JSON.stringify([user.uid, user.businessId, currentBranchId, recoverSessionId, openingAmount, notes]);
       if (!openings.current.has(command)) openings.current.set(command, crypto.randomUUID());
       if (navigator.onLine) session = await createSession({ userId: user.uid, businessId: user.businessId, branchId: currentBranchId,
-        openingAmount, openingNote: notes, sessionId: openings.current.get(command) });
+        openingAmount, openingNote: notes, sessionId: openings.current.get(command), recoverSessionId });
       else {
+        if (recoverSessionId) throw new Error('La recuperación requiere conexión.');
         let reserved;
         for (const record of await offlineDB.cash_sessions.toArray()) {
           try {
@@ -118,7 +127,11 @@ export const useCashRegister = (user, currentBranchId) => {
         await offlineDB.cash_sessions.put({ localId: session.id, data: await encrypt(JSON.stringify(session), user.uid), sync: false });
       }
       resources.invalidate(readKey);
+      invalidateReportScope(resources, user.businessId, currentBranchId);
       openings.current.delete(command);
+      if (session.recoveredSession && resources.active && auth.currentUser?.uid === user.uid) {
+        setLastRecovery({ previous: session.recoveredSession, current: { id: session.id, openedAt: session.openedAt } });
+      }
       if (!resources.active || auth.currentUser?.uid !== user.uid || token !== revision.current) { toast.dismiss(toastId); return false; }
       setCurrentSession(session);
       toast.success('Caja abierta y confirmada', { id: toastId }); return true;
@@ -162,10 +175,11 @@ export const useCashRegister = (user, currentBranchId) => {
         await offlineDB.cash_sessions.put({ localId: session.id, data: await encrypt(JSON.stringify(session), user.uid), sync: false });
       }
       resources.invalidate(readKey);
+      invalidateReportScope(resources, user.businessId, currentBranchId);
       if (resources.active && auth.currentUser?.uid === user.uid && token === revision.current) setCurrentSession(null);
       toast.success('Caja cerrada; conciliación pendiente (estimación local)', { id: toastId }); return true;
     } catch (error) { toast.error(error.message || 'No se pudo cerrar la caja.', { id: toastId }); return false; }
     finally { processing.current = false; }
   };
-  return { currentSession, isExpired, expiresAt, remainingMinutes: expiresAt === null ? null : Math.max(0, Math.ceil((expiresAt - clock) / 60000)), readError, isLoadingSession, checkSession: refreshSession, authorizeOffline, openRegister, calculateClose, confirmClose };
+  return { currentSession, isExpired, expiresAt, recoverySession, lastRecovery, remainingMinutes: expiresAt === null ? null : Math.max(0, Math.ceil((expiresAt - clock) / 60000)), readError, isLoadingSession, checkSession: refreshSession, authorizeOffline, openRegister, calculateClose, confirmClose };
 };

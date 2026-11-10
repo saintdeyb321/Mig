@@ -4,5 +4,6 @@ import { getPaymentsInPeriod, getContractAuditDocuments } from '../../payments/i
 import { createSessionReportReads } from '../application/sessionReportReads.js';
 import { db } from '../../../core/firebase/client.js';
 import { createPosVoidReader } from '../../sales/infrastructure/posVoidQueryRepository.js';
+import { getSessionsInPeriod } from '../../cash-register/infrastructure/cashRegisterRepository.js';
 export const sessionReportReads = createSessionReportReads({ getSalesInPeriod, getContractsInPeriod, getPaymentsInPeriod,
-  getContractAuditDocuments, readVoidsInPeriod: createPosVoidReader(db).inPeriod });
+  getContractAuditDocuments, getSessionsInPeriod, readVoidsInPeriod: createPosVoidReader(db).inPeriod });

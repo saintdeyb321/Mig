@@ -4,6 +4,12 @@ import { reportDay, chartSkeleton } from './reportPeriod.js';
 import { toMillisSafe } from '../../../core/dates/dateValues.js';
 
 export const amount = value => money(value ?? 0);
+export function assertPosReportDetail(sale) {
+  if (!Array.isArray(sale.items) || !sale.items.length || (!sale.voided
+    && amount(sale.items.reduce((sum, item) => sum + amount(item.qty * item.price), 0)) !== amount(sale.total))) {
+    throw new Error('El detalle POS no concilia con el ticket.');
+  }
+}
 const inScope = (row, { businessId, branchId = 'global' }) =>
   (!businessId || row.businessId === businessId) && (branchId === 'global' || row.branchId === branchId);
 const inPeriod = (day, period) => !period || (day >= period.start && day <= period.end);

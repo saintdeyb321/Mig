@@ -1,5 +1,6 @@
 import { useCashRegister } from '../../features/cash-register/hooks/useCashRegister';
 import { CashRegisterModals } from '../CashRegisterModals';
+import CashRecoveryStatus from '../CashRecoveryStatus.jsx';
 import { CashStatus } from '../pos/TicketParts';
 import FirestoreQueryError from '../../components/FirestoreQueryError';
 import { isBranchOperational } from '../../features/branches/domain/branchPolicy';
@@ -40,7 +41,7 @@ function ContractManager({
   }
   const physicalCashBranch = activeBranchId && activeBranchId !== 'global' && businessBranches?.some(branch => branch.id === activeBranchId && isBranchOperational(branch));
   const canManageCash = physicalCashBranch && (user.role === 'dueño' || user.role === 'cajero' && user.branchId === activeBranchId);
-  const canCollect = cash.currentSession && !cash.currentSession.needsForceClose && !cash.isExpired && !cash.readError;
+  const canCollect = cash.currentSession?.serverConfirmed === true && !cash.currentSession.needsForceClose && !cash.isExpired && !cash.readError;
   const [viewFilter, setViewFilter] = useSessionState(`contracts:filter:${activeBranchId}`, 'activos');
   const {
     contracts,
@@ -150,10 +151,11 @@ function ContractManager({
   }, [addPayment, canCollect]);
   const dismissCashModal = () => setCashModal(request => request === cashModal ? null : request);
   const showCashOpening = () => setCashModal({ mode: 'open' });
+  const showCashRecovery = () => setCashModal({ mode: 'open', recoverSessionId: cash.recoverySession.id });
   const showCashClosing = () => setCashModal({ mode: 'close', sessionId: cash.currentSession.id });
   const cashModals = <CashRegisterModals {...cash}
-    key={cashModal?.mode === 'open' ? cashScope : `${cashScope}:${cash.currentSession?.id ?? 'closed'}`}
-    showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal}
+    key={cashModal?.mode === 'open' ? `${cashScope}:open:${cashModal.recoverSessionId ?? 'new'}` : `${cashScope}:${cash.currentSession?.id ?? 'closed'}`}
+    showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal} recoverSessionId={cashModal?.recoverSessionId}
     showCloseModal={cashModal?.mode === 'close' && cashModal.sessionId === cash.currentSession?.id} setShowCloseModal={dismissCashModal}
   />;
   if (isLoading) {
@@ -168,7 +170,7 @@ function ContractManager({
       <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." className="to-primary-soft/60" actions={<>
         {canManageCash && <CashStatus readOnly={false} session={cash.currentSession} isExpired={cash.isExpired} expiresAt={cash.expiresAt} remainingMinutes={cash.remainingMinutes} />}
         {canManageCash && !cash.currentSession && !cash.readError && <Button variant="secondary" disabled={cash.isLoadingSession} onClick={showCashOpening}>Abrir caja</Button>}
-        {canManageCash && cash.currentSession && (!cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button variant="secondary" onClick={showCashClosing}>Cerrar caja</Button>}
+        {canManageCash && !cash.isExpired && cash.currentSession && (!cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button variant="secondary" onClick={showCashClosing}>Cerrar caja</Button>}
         <Button onClick={() => {
         if (!activeBranchId || activeBranchId === 'global') return toast.error('Selecciona una sede física.');
         setContractToEdit(null);
@@ -177,8 +179,9 @@ function ContractManager({
           <Plus aria-hidden="true" />Nuevo Pedido
         </Button></>} />
 
-      {cash.isExpired && <Alert variant="warning" title="Caja vencida">Cierra el turno y abre una caja nueva para anticipos, abonos o devoluciones. Puedes preparar pedidos sin anticipo.</Alert>}
-      {cash.currentSession?.needsForceClose && canManageCash && <Alert variant="warning" title="Turno anterior pendiente">Solicita al administrador el cierre del turno anterior antes de cobrar.</Alert>}
+      {canManageCash && <CashRecoveryStatus session={cash.currentSession} isExpired={cash.isExpired} expiresAt={cash.expiresAt}
+        recoverySession={cash.recoverySession} lastRecovery={cash.lastRecovery} online={navigator.onLine} onRecover={showCashRecovery} onCheck={cash.checkSession} />}
+      {cash.currentSession?.needsForceClose && !cash.isExpired && canManageCash && <Alert variant="warning" title="Turno anterior pendiente">Solicita al administrador el cierre del turno anterior antes de cobrar.</Alert>}
       <FirestoreQueryError error={cash.readError} area="cash-open" user={user} onRetry={cash.checkSession} />
       <p role="status" className="text-sm text-muted">{isStale ? 'Agenda en caché, pendiente de servidor.' : `Agenda recibida: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`}{historyUpdatedAt > 0 && ` Historial leído: ${new Date(historyUpdatedAt).toLocaleTimeString('es-PE')}.`}</p>
       <FirestoreQueryError error={error} area="contracts-active" user={user} onRetry={retry} />
@@ -224,7 +227,9 @@ function ContractManager({
       setContractToEdit(null);
     }} onSubmit={handleFormSubmit} isProcessing={isProcessing} cashAction={!canCollect && <Alert variant="warning" title="Los cobros requieren caja vigente">
         Puedes guardar el pedido sin anticipo.
-        {canManageCash && !cash.readError && (!cash.currentSession || !cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={cash.isLoadingSession}
+        {canManageCash && cash.recoverySession && <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={!navigator.onLine}
+          onClick={showCashRecovery}>Recuperar y abrir nueva caja</Button>}
+        {canManageCash && !cash.isExpired && !cash.readError && (!cash.currentSession || !cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={cash.isLoadingSession}
           onClick={cash.currentSession ? showCashClosing : showCashOpening}>{cash.currentSession ? 'Cerrar turno anterior' : 'Abrir caja'}</Button>}
       </Alert>} />}
       {contractToView && <ContractDetailsModal user={user} contract={contracts.find(c => c.id === contractToView.id) || contractToView} branches={businessBranches} settings={settings} onClose={() => setContractToView(null)} onAddPayment={handleAddPayment} onMarkDelivered={markDelivered} onEditRequest={contract => {

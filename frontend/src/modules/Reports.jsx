@@ -1,7 +1,7 @@
 import FirestoreQueryError from '../components/FirestoreQueryError';
 import { Banknote, ChartNoAxesCombined, ReceiptText, Smartphone, Trophy, WalletCards } from 'lucide-react';
 import { ChannelBreakdown, MetricCard, ChartColumn, OrderStatusChart, ReportPanel, TopProductItem } from './reports/ReportParts.jsx';
-import { LoadingState, Button, PageHeader, HelpDisclosure } from '../shared/ui';
+import { Alert, LoadingState, Button, PageHeader, HelpDisclosure } from '../shared/ui';
 import { useMemo } from 'react';
 import { useReports } from '../features/reports/hooks/useReports';
 
@@ -28,7 +28,7 @@ export default function Reports({
     timeFilter,
     setTimeFilter,
     refreshReport,
-    maxProductQty, updatedAt
+    maxProductQty, updatedAt, warning
   } = useReports(user);
 
 
@@ -43,18 +43,25 @@ export default function Reports({
   if (isLoading) {
     return <LoadingState variant="module">Generando reportes…</LoadingState>;
   }
-  if (error && !hasData) return <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />;
-  return <div className="workspace-page max-w-7xl gap-3 animate-enter motion-reduce:animate-none">
-    <PageHeader title="Dashboard gerencial" icon={ChartNoAxesCombined} className="border-t-stellar/70 p-3 sm:p-3" actions={
+  const header = <PageHeader title="Dashboard gerencial" icon={ChartNoAxesCombined} className="border-t-stellar/70 p-3 sm:p-3" actions={
       <div className="segmented-control grid w-full grid-cols-2 sm:flex sm:w-auto" role="group" aria-label="Período del reporte">
         {Object.entries(TIME_FILTERS).map(([key, label]) => <Button key={key} type="button" size="sm"
           onClick={() => setTimeFilter(key)} aria-pressed={timeFilter === key} variant={timeFilter === key ? 'primary' : 'ghost'}>
           {label}
         </Button>)}
       </div>
-    } />
+    } />;
+  if (error && !hasData) return <div className="workspace-page max-w-7xl gap-3">
+    {header}
+    {error.code === 'report-limit' ? <Alert variant="warning" title="El período supera el límite de lectura">
+      Selecciona un período menor. No se calcularon totales parciales.
+    </Alert> : <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />}
+  </div>;
+  return <div className="workspace-page max-w-7xl gap-3 animate-enter motion-reduce:animate-none">
+    {header}
 
     {error && <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />}
+    {warning && <Alert variant="warning" title="Conciliación histórica pendiente">{warning}</Alert>}
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
       <p>Informe histórico · no es saldo de caja.</p>
       <p role="status">{isRefreshing ? 'Actualizando el período… Los resultados anteriores siguen visibles.'

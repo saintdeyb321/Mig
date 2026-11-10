@@ -43,13 +43,16 @@ export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', f
     load(id) {
       if (id === main) return `import ${JSON.stringify(entry)};`;
       if (matches('reports/infrastructure/sessionReportReads.js', id)) return `
-        export const sessionReportReads = (_resources, _business, _branch, period) => ({
-          sales: () => window.__excelFixture.read('sales', period.start),
-          exportContracts: () => window.__excelFixture.read('contracts', period.start),
-          voids: () => window.__excelFixture.read('voids', period.start)
+        import { createSessionReportReads } from '../application/sessionReportReads.js';
+        const day = date => new Date(+date - 18000000).toISOString().slice(0, 10);
+        export const sessionReportReads = createSessionReportReads({
+          getSalesInPeriod: (_business, start, _end, { branchId }) => window.__excelFixture.read('sales', day(start), branchId),
+          getPaymentsInPeriod: async (_business, start) => (await window.__excelFixture.read('contracts', day(start))).payments,
+          getContractsInPeriod: async () => [],
+          getContractAuditDocuments: async () => [],
+          readVoidsInPeriod: (_business, start) => window.__excelFixture.read('voids', day(start)),
+          getSessionsInPeriod: (_business, start) => window.__excelFixture.read('cash', day(start)),
         });`;
-      if (matches('cash-register/infrastructure/cashRegisterRepository.js', id)) return `
-        export const getSessionsInPeriod = (_business, start) => window.__excelFixture.read('cash', start.slice(0, 10));`;
     },
   };
   const config = { root, configFile: resolve(root, 'vite.config.js'), envFile: false, logLevel: 'error', plugins: [plugin],

@@ -1,4 +1,4 @@
-import { contractCounts } from '../domain/sparkReport.js';
+import { reportViewModel } from './reportViewModel.js';
 import { aggregateReport } from '../domain/reportTotals.js';
 import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 import { getFirebaseErrorCode } from '../../../core/errors/firebaseErrors.js';
@@ -31,7 +31,8 @@ export function createReportResource({ key, businessId, branchId, period, cache,
     if (!active || pos === null || payments === null) return;
     try {
       const model = aggregateReport({ [source]: pos, payments, voids, businessId, branchId, period });
-      model.contractCounts = contractCounts(contracts);
+      model.view = reportViewModel(model, contracts, { businessId, branchId, period });
+      model.contractCounts = model.view.contractCounts;
       lastModel = model;
       cache.set(key, { [source]: pos, payments, contracts, voids, loadedAt, ttl });
       onState({ key, model, isLoading: false, isRefreshing: false, error: null, updatedAt: loadedAt });
@@ -50,7 +51,11 @@ export function createReportResource({ key, businessId, branchId, period, cache,
     if (lastModel) onState({ key, model: lastModel, isLoading: false, isRefreshing: true, error: null, updatedAt: loadedAt });
     pending = (async () => {
       try {
-        const [nextPos, nextPayments, nextContracts, nextVoids] = await Promise.all([subscribeStats && pos !== null ? pos : readPos(), readPayments(), readContracts(), readVoids()]);
+        const posRead = subscribeStats && pos !== null ? pos : readPos();
+        // Annual Spark reads often hit the ticket ceiling. Avoid launching the remaining readers on that failure.
+        const preparedPos = period.filter === 'todo' && readSales ? await posRead : posRead;
+        if (!active || revision !== generation) return;
+        const [nextPos, nextPayments, nextContracts, nextVoids] = await Promise.all([preparedPos, readPayments(), readContracts(), readVoids()]);
         if (!active || revision !== generation) return;
         // A live snapshot may have advanced while the payment query was pending.
         if (!subscribeStats || pos === null) pos = nextPos;

@@ -65,6 +65,34 @@ try {
   renderOpening({ status: 'open', serverConfirmed: true });
   await wait(() => dismissals === 1 && !document.querySelector('[role="dialog"]'));
   check(attempts === 1, 'confirmed shift closes the dialog without another opening');
+  let verifyRecovery, recoveryAttempts = 0, recoveryDismissals = 0;
+  const old = { id: 'previous', status: 'open', serverConfirmed: true, heldByOther: true };
+  const renderRecovery = currentSession => root.render(React.createElement(CashRegisterModals, { ...props,
+    key: 'recover:' + old.id, currentSession, recoverSessionId: old.id, showOpenModal: true, showCloseModal: false,
+    setShowOpenModal: open => { if (!open) recoveryDismissals++; },
+    openRegister: (...command) => {
+      check(JSON.stringify(command) === '[50,"","previous"]', 'recovery binds the prior ID and independently entered fund');
+      recoveryAttempts++;
+      return new Promise(resolve => { verifyRecovery = resolve; });
+    },
+  }));
+  renderRecovery(old);
+  await wait(() => document.querySelector('h2')?.textContent.includes('Recuperar turno'));
+  const replacementFund = document.querySelector('input[type="number"]');
+  check(replacementFund.value === '' && document.body.innerText.includes('sin arqueo'), 'recovery requires a fresh fund and explains the prior state');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(replacementFund, '50');
+  replacementFund.dispatchEvent(new Event('input', { bubbles: true }));
+  await tick();
+  const recoverForm = document.querySelector('form');
+  for (let click = 0; click < 2; click++) recoverForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await wait(() => document.querySelector('fieldset').disabled);
+  check(recoveryAttempts === 1 && recoveryDismissals === 0, 'only one recovery submits, with the modal locked during the transaction');
+  verifyRecovery(false);
+  await wait(() => document.body.innerText.includes('aún no se confirmó'));
+  check(replacementFund.value === '50' && recoveryDismissals === 0, 'an uncertain result preserves the input without claiming recovery');
+  renderRecovery({ id: 'new', status: 'open', serverConfirmed: true });
+  await wait(() => recoveryDismissals === 1 && !document.querySelector('[role="dialog"]'));
+  check(recoveryAttempts === 1, 'server-confirmed replacement closes the modal without another write');
   result = { ok: true, checks };
 } catch (error) { result = { ok: false, checks, error: error.stack }; }
 root.unmount();

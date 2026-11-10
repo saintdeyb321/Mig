@@ -191,13 +191,18 @@ describe('Phase 7 workbooks in memory', () => {
       if (cell.t === 'n') assert.ok(Number.isFinite(cell.v));
       assert.ok(!String(cell.v).startsWith('_sortDate'));
     }
-    assert.equal(rows(workbook, 'Auditoría_Cajas')[1]['Contado Real (S/)'], 'Pendiente');
+    const audit = rows(restored, 'Auditoría_Cajas');
+    assert.equal(audit[0]['Fondo inicial (S/)'], 10);
+    assert.equal(audit[0]['Contado Real (S/)'], 'No aplica');
+    assert.equal(audit[1]['Contado Real (S/)'], 'No declarado');
+    assert.equal(audit[1]['Diferencia (S/)'], 'No calculable');
   });
   it('cash audit includes an overnight session closing in the selected Lima day', () => {
     const { workbook } = build({ sessions: [{ ...base, openedAt: '2026-10-21T23:00:00-05:00', closedAt: date('08'), status: 'closed',
       openingAmount: 10, openingDiscrepancy: 0, declaredAmount: 75, expectedCash: 75, difference: 0 }] });
     const audit = rows(workbook, 'Auditoría_Cajas');
-    assert.equal(audit.length, 1); assert.equal(audit[0]['Fecha Cierre'], '22/10/2026'); assert.match(audit[0].Turno, /CIERRE/);
+    assert.equal(audit.length, 1); assert.equal(audit[0]['Fecha y hora del movimiento (Lima)'], '22/10/2026 08:00');
+    assert.equal(audit[0].Turno, 'CIERRE MANUAL');
     assert.equal(build({}).model.summary.netRevenue, 90);
   });
   it('sanitized or truncated branch names cannot duplicate workbook sheet names', () => {

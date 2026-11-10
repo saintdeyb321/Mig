@@ -21,7 +21,7 @@ function printableDocument(html, document) {
   return '<!doctype html>' + parsed.documentElement.outerHTML;
 }
 
-export function createPrintJob({ popup = false, compact = false, host = window, imageTimeout = 10000, finishTimeout = 60000 } = {}) {
+export function createPrintJob({ popup = false, compact = false, page, host = window, imageTimeout = 10000, finishTimeout = 60000 } = {}) {
   const target = popup ? host.open('', '', compact ? 'width=350,height=600' : 'width=800,height=900') : host;
   if (!target) throw new Error('Permite las ventanas emergentes.');
   if (popup) target.opener = null;
@@ -54,10 +54,11 @@ export function createPrintJob({ popup = false, compact = false, host = window, 
       if (printed) throw new Error('La impresión ya fue preparada.');
       printed = true;
       frame = target.document.createElement('iframe');
-      frame.title = 'Comprobante';
+      frame.title = page === 'a4' ? 'Informe gerencial para impresión' : 'Comprobante';
       // Printing needs modals and same-origin DOM access; executable scripts stay disabled.
       frame.setAttribute('sandbox', 'allow-same-origin allow-modals');
-      frame.style.cssText = popup ? 'width:100%;height:100vh;border:0' : 'position:fixed;left:-10000px;width:320px;height:600px;border:0';
+      const dimensions = page === 'a4' ? 'width:210mm;height:297mm' : 'width:320px;height:600px';
+      frame.style.cssText = popup ? 'width:100%;height:100vh;border:0' : `position:fixed;left:-10000px;${dimensions};border:0`;
       const loaded = waitFor(finish => {
         const onLoad = () => finish();
         frame.addEventListener('load', onLoad, { once: true });

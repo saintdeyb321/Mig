@@ -506,6 +506,44 @@ service cloud.firestore {
         && session.durationHours is int && session.durationHours == 10;
     }
 
+    function cashRecoveryLock(lockId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let previousPath = /databases/$(database)/documents/cash_sessions/$(before.sessionId);
+      let recovered = getAfter(previousPath).data;
+      return before.businessId == after.businessId && before.branchId == after.branchId
+        && before.status == 'open' && before.runtime == 'spark'
+        && before.sessionId != after.sessionId
+        && get(previousPath).data.status == 'open'
+        && recovered.status == 'expired_unreconciled' && recovered.recoveredAt == request.time
+        && recovered.recoveredBy == request.auth.uid && recovered.recoverySessionId == after.sessionId
+        && newCashLock(lockId);
+    }
+    function cashExpiryRecovery(sessionId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let lockPath = /databases/$(database)/documents/active_cash_sessions/$(cashLockId(before.businessId, before.branchId));
+      let oldLock = get(lockPath).data;
+      let newLock = getAfter(lockPath).data;
+      return cashActor(before.businessId, before.branchId)
+        && before.runtime == 'spark' && before.status == 'open' && before.openedAt is timestamp
+        && before.durationHours is int && before.durationHours == 10
+        && before.get('closedAt', null) == null && before.get('declaredAmount', null) == null
+        && before.get('closeEstimate', null) == null && before.get('difference', null) == null
+        && request.time >= before.openedAt + duration.value(10, 'h')
+        && after.diff(before).affectedKeys().hasOnly(['status', 'expiredAt', 'recoveredAt', 'recoveredBy',
+          'recoveryReason', 'recoverySessionId', 'reconciliationPending', 'declaredAmount', 'difference'])
+        && after.status == 'expired_unreconciled' && after.expiredAt == before.openedAt + duration.value(10, 'h')
+        && after.recoveredAt == request.time && after.recoveredBy == request.auth.uid
+        && after.recoveryReason == 'shift-time-limit' && after.reconciliationPending == true
+        && after.declaredAmount == null && after.difference == null
+        && oldLock.sessionId == sessionId && oldLock.userId == before.userId
+        && oldLock.businessId == before.businessId && oldLock.branchId == before.branchId
+        && oldLock.status == 'open' && oldLock.runtime == 'spark'
+        && newLock.sessionId != sessionId && newLock.sessionId == after.recoverySessionId
+        && newLock.userId == request.auth.uid && newLock.updatedAt == request.time;
+    }
+
     function cashClosing(sessionId) {
       let d = request.resource.data;
       let previous = resource.data;
@@ -950,7 +988,7 @@ service cloud.firestore {
       allow list: if permittedFinancialResource();
       allow create: if cashOpening(sessionId);
       // Estimates remain explicitly uncertified; closing creates a barrier for new operations.
-      allow update: if cashClosing(sessionId);
+      allow update: if request.resource.data.status == 'expired_unreconciled' ? cashExpiryRecovery(sessionId) : cashClosing(sessionId);
       allow delete: if false;
     }
 
@@ -971,7 +1009,7 @@ service cloud.firestore {
       allow list: if permittedFinancialResource();
       allow create: if newCashLock(lockId);
       allow delete: if releaseCashLock();
-      allow update: if false;
+      allow update: if cashRecoveryLock(lockId);
     }
 
     match /audit_events/{eventId} {

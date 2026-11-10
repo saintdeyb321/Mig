@@ -2,6 +2,7 @@ import { processDailyStats, processSales, DETAIL_HEADERS } from '../../../utils/
 import { createSheet, applyCurrencyToCols, styleSummarySheet, styleTotalRows, uniqueSheetName } from '../../../utils/excelHelpers.js';
 import { buildContractLedgerReport } from './contractLedgerReport.js';
 import { cashAuditRows } from './cashAuditRows.js';
+import { reportViewModel } from './reportViewModel.js';
 import { reportRows, amount, CHANNEL_BREAKDOWN_ROWS, CHANNEL_EVIDENCE_NOTE, CHANNEL_NEGATIVE_NOTE, REPORT_CHANNELS } from '../domain/reportTotals.js';
 import { reportDay, visibleDay, reportTime } from '../domain/reportPeriod.js';
 
@@ -13,11 +14,13 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
   const scopedPayments = reportRows(payments, scope);
   const scopedVoids = [...new Map(reportRows(voids, scope).map(row => [row.id, row])).values()];
   const scopedContracts = reportRows(contracts.filter(contract => contract.createdAt != null), scope, row => row.createdAt);
-  const voidRows = scopedVoids.reduce((count, row) => count + (row.items?.length ?? 0) + 1, 0);
-  if (scopedSales.reduce((count, sale) => count + (sale.items?.length ?? 0) + 1, scopedPayments.length + scopedContracts.length + voidRows) > MAX_EXPORT_ROWS) throw new Error('Demasiadas filas de detalle. Selecciona un período menor.');
+  const countRows = rows => detailed ? rows.reduce((count, row) => count + (row.items?.length ?? 0) + 1, 0) : rows.length;
+  if (countRows(scopedSales) + countRows(scopedVoids) + scopedPayments.length + scopedContracts.length > MAX_EXPORT_ROWS) {
+    throw new Error(`${detailed ? 'Demasiadas filas de detalle' : 'Demasiados movimientos'}. Selecciona un período menor.`);
+  }
   const processed = detailed ? processSales(sales ?? [], branchesMap, scopedPayments, { ...scope, voids })
     : processDailyStats(stats, scopedPayments, { ...scope, voids, sales });
-  const { model } = processed, metrics = model.summary;
+  const { model } = processed, view = reportViewModel(model, scopedContracts, scope, sessions), metrics = view.summary;
   const wb = XLSX.utils.book_new();
   const append = (name, rows, { currency = [], widths = [], style = 'default', detail = false } = {}) => {
     const sheet = createSheet(XLSX, rows, widths);
@@ -31,6 +34,9 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
     { Concepto: 'Rango de Fechas', Valor: `${visibleDay(period.start)} al ${visibleDay(period.end)}` },
     { Concepto: 'Generado el', Valor: `${visibleDay(reportDay(now))} ${reportTime(now)}` },
     { Concepto: '💰 GRAN TOTAL INGRESOS NETOS', Valor: metrics.netRevenue },
+    { Concepto: 'Cobros registrados', Valor: amount(metrics.channels.cash.collections + metrics.channels.digital.collections) },
+    { Concepto: 'Compensaciones y reembolsos contables', Valor: metrics.refunds },
+    ...(view.warning ? [{ Concepto: 'Conciliación histórica pendiente', Valor: view.warning, _noteHeight: 60 }] : []),
     { Concepto: '🛒 VENTAS MOSTRADOR NETAS', Valor: metrics.posRevenue },
     { Concepto: ' ↳ Efectivo POS', Valor: metrics.posCash },
     { Concepto: ' ↳ Yape/Plin POS', Valor: metrics.posDigital },
@@ -66,11 +72,10 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
   const audit = buildContractLedgerReport(scopedPayments, contracts, branchesMap);
   if (audit.contractPaymentRows.length) append('Auditoría_Pedidos', audit.contractPaymentRows, {
     currency: ['F', 'G', 'I', 'K', 'P'], widths: [22, 22, 25, 22, 22, 20, 18, 18, 18, 18, 26, 22, 38, 55, 22, 22, 24].map(wch => ({ wch })) });
-  if (detailed) {
-    const rows = cashAuditRows(sessions, branchesMap, scope);
-    if (rows.length) append('Auditoría_Cajas', rows, { currency: ['E', 'F', 'G'], style: 'auditoria', widths: [15, 25, 22, 22, 22, 22, 22, 26, 40].map(wch => ({ wch })) });
-  }
-  if (model.branches.size) append('Comparativa_Sedes', [...model.branches.values()].map(branch => ({
+  const cashRows = cashAuditRows(view.cashEvents, branchesMap);
+  if (detailed && cashRows.length) append('Auditoría_Cajas', cashRows, { currency: ['F', 'G', 'H', 'I'], style: 'auditoria',
+    widths: [30, 30, 22, 25, 32, 22, 25, 22, 20, 26, 64].map(wch => ({ wch })) });
+  if (view.branches.length) append('Comparativa_Sedes', view.branches.map(branch => ({
     Sucursal: branchesMap[branch.branchId] ?? branch.branchId, 'Tickets POS': branch.posTicketCount, 'Pagos Pedidos': branch.contractPaymentCount,
     Anulados: branch.voidedTicketCount, 'Ingreso POS': branch.posRevenue, 'Ingreso Pedidos': branch.contractRevenue,
     'Ventas Sistema (S/)': branch.netRevenue, Efectivo: branch.cashRevenue, 'Yape/Plin': branch.digitalRevenue,
@@ -89,5 +94,5 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
   for (const [id, rows] of Object.entries(byBranch).sort(([a], [b]) => a.localeCompare(b))) append(`${detailed ? 'Detalle' : 'Resum'}_${branchesMap[id] ?? id}`, rows,
     { currency: detailed ? ['H', 'I', 'K'] : ['D', 'E', 'F', 'G', 'H'], detail: detailed,
       widths: (detailed ? DETAIL_HEADERS.map(header => ['Producto', 'Observaciones'].includes(header) ? 42 : 24) : [16, 16, 16, 20, 20, 20, 20, 20, 18]).map(wch => ({ wch })) });
-  return { workbook: wb, model };
+  return { workbook: wb, model, view };
 }

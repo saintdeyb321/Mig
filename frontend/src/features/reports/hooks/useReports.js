@@ -43,5 +43,5 @@ export const useReports = user => {
   const refreshReport = useCallback(() => { invalidateReportScope(resources, user?.businessId, activeBranchId); cache.invalidate(key); return resource.current?.refresh(true); }, [resources, cache, user?.businessId, activeBranchId, key]);
   return { contractCounts: model?.contractCounts ?? { pending: 0, delivered: 0, cancelled: 0, withDebt: 0 }, summary: model?.summary ?? emptyMetrics(), topProducts: model?.topProducts ?? [], chartData: model?.chartData ?? [],
     hasData: Boolean(model), isRefreshing: current.isRefreshing === true, isLoading: current.isLoading, error: current.queryError ?? current.error, timeFilter, setTimeFilter, refreshReport, updatedAt: current.updatedAt,
-    maxProductQty: Math.max(1, ...(model?.topProducts ?? []).map(row => row.qty)) };
+    warning: model?.view.warning, maxProductQty: Math.max(1, ...(model?.topProducts ?? []).map(row => row.qty)) };
 };

@@ -12,6 +12,7 @@ import { useTenantData } from '../features/branches/context/TenantContext';
 import { useCashRegister } from '../features/cash-register/hooks/useCashRegister';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 import { CashRegisterModals } from './CashRegisterModals';
+import CashRecoveryStatus from './CashRecoveryStatus.jsx';
 import { Alert, Button, Dialog, Drawer, EmptyState, LoadingState } from '../shared/ui';
 import { ProductSearch, CategoryFilters, ProductCard } from './pos/CatalogParts';
 import { PaymentFields, PaymentSelector } from './pos/PaymentParts';
@@ -23,7 +24,7 @@ function POS({ user }) {
   const { error: catalogError, retry: retryCatalog } = useCatalogData();
 
   const {
-    currentSession, isExpired, expiresAt, remainingMinutes, readError, checkSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
+    currentSession, isExpired, expiresAt, recoverySession, lastRecovery, remainingMinutes, readError, checkSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
   } = useCashRegister(user, activeBranchId);
 
   const {
@@ -98,13 +99,15 @@ function POS({ user }) {
     setIsCartOpen(false);
   };
 
-  const isGlobalDisabled = branchStatus.isReadOnly || (isOnline && (!currentSession || currentSession?.needsForceClose || isExpired));
+  const cashReady = currentSession?.serverConfirmed === true && !currentSession.needsForceClose && !isExpired && !readError;
+  const isGlobalDisabled = branchStatus.isReadOnly || (isOnline && !cashReady);
 
   const dismissCashModal = () => setCashModal(request => request === cashModal ? null : request);
   const showCashClosing = () => setCashModal({ mode: 'close', sessionId: currentSession.id });
+  const showCashRecovery = () => setCashModal({ mode: 'open', recoverSessionId: recoverySession.id });
   const cashModals = <CashRegisterModals
-    key={cashModal?.mode === 'open' ? modalScope : `${modalScope}:${currentSession?.id ?? 'closed'}`}
-    showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal}
+    key={cashModal?.mode === 'open' ? `${modalScope}:open:${cashModal.recoverSessionId ?? 'new'}` : `${modalScope}:${currentSession?.id ?? 'closed'}`}
+    showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal} recoverSessionId={cashModal?.recoverSessionId}
     showCloseModal={cashModal?.mode === 'close' && cashModal.sessionId === currentSession?.id} setShowCloseModal={dismissCashModal}
     currentSession={currentSession} isLoadingSession={isLoadingSession} checkSession={checkSession}
     openRegister={openRegister} authorizeOffline={authorizeOffline} calculateClose={calculateClose} confirmClose={confirmClose}
@@ -118,15 +121,15 @@ function POS({ user }) {
   const requestCheckout = () => {
     setCheckoutAttempted(true);
     if (checkoutBlocked) return;
-    if (isExpired) return;
+    if (isExpired || (isOnline && !cashReady)) return;
     handleCheckoutClick();
   };
   const action = readError && isOnline ? <Button variant="secondary" onClick={checkSession}>Reintentar lectura de caja</Button> : isOnline&&!currentSession&&!branchStatus.isReadOnly
     ? <Button className="w-full" onClick={() => setCashModal({ mode: 'open' })}><UnlockKeyhole />Abrir caja para vender</Button>
-    : isOnline&&currentSession?.needsForceClose
+    : isOnline&&currentSession?.needsForceClose&&!isExpired
       ? currentSession.canForceClose ? <Button variant="danger" className="w-full" onClick={showCashClosing}>Revisar y cerrar turno anterior</Button>
         : <Button variant="secondary" className="w-full" onClick={checkSession}>Comprobar disponibilidad</Button>
-      : <Button className="w-full" variant={isOnline && !branchStatus.isReadOnly ? 'success' : 'primary'} size="lg" onClick={requestCheckout} loading={isProcessing} disabled={(isOnline&&isExpired)||catalogBlocked||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing||branchStatus.isReadOnly}>
+      : <Button className="w-full" variant={isOnline && !branchStatus.isReadOnly ? 'success' : 'primary'} size="lg" onClick={requestCheckout} loading={isProcessing} disabled={isGlobalDisabled||catalogBlocked||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing}>
         {isOnline && !isProcessing && !branchStatus.isReadOnly && <Banknote aria-hidden="true" />}
         {branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':isOnline?'Cobrar':'Guardar sin cobrar'}
       </Button>;
@@ -139,18 +142,19 @@ function POS({ user }) {
     </Ticket>;
   return <><div className="pos-workspace min-w-0 space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0">
     {!isOnline && <Alert variant="info">Sin conexión: puedes guardar un ticket sin cobrar. No se moverá inventario ni se enviará automáticamente al reconectar.</Alert>}
-    {isExpired && <Alert variant="warning" title="Caja vencida">Cierra este turno y abre uno nuevo para cobrar. Los movimientos se conservan.</Alert>}
+    {!branchStatus.isReadOnly && <CashRecoveryStatus session={currentSession} isExpired={isExpired} expiresAt={expiresAt}
+      recoverySession={recoverySession} lastRecovery={lastRecovery} online={isOnline} onRecover={showCashRecovery} onCheck={checkSession} />}
     <FirestoreQueryError error={readError} area="cash-open" user={user} onRetry={checkSession} />
     <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
     <header className="pos-toolbar flex shrink-0 flex-wrap items-center justify-between gap-2">
       <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight"><ShoppingBag aria-hidden="true" className="size-5 text-primary" />Punto de venta</h1>
       <div className="flex flex-wrap items-center gap-2">
       <CashStatus readOnly={branchStatus.isReadOnly} session={currentSession} isExpired={isExpired} expiresAt={expiresAt} remainingMinutes={remainingMinutes} />
-      {currentSession&&!branchStatus.isReadOnly&&(!currentSession.needsForceClose||currentSession.canForceClose)&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={showCashClosing}><LockKeyhole />{currentSession.needsForceClose?'Revisar cierre anterior':'Cerrar caja'}</Button>}
+      {currentSession&&!isExpired&&!branchStatus.isReadOnly&&(!currentSession.needsForceClose||currentSession.canForceClose)&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={showCashClosing}><LockKeyhole />{currentSession.needsForceClose?'Revisar cierre anterior':'Cerrar caja'}</Button>}
       </div>
     </header>
     {branchStatus.isReadOnly&&<p role="status" className="flex shrink-0 items-start gap-2 rounded-xl border border-warning/25 bg-warning-soft px-3 py-2 text-sm text-warning"><Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><span>{branchStatus.reason==='global'?<><strong>Vista global · Solo lectura.</strong> Elige una sucursal en el selector de sede para vender.</>:<><strong>Solo lectura.</strong> La sucursal {branchStatus.name} está inactiva.</>}</span></p>}
-    {currentSession?.needsForceClose&&!branchStatus.isReadOnly&&<Alert variant="warning" title="Caja a cargo de otro responsable"><p>{businessBranches?.find(branch=>branch.id===currentSession.branchId)?.name??'Esta sede'} · {currentSession.cashierName||'Responsable'} · UID: {currentSession.userId}</p><p>{currentSession.canForceClose?'Revisa los movimientos y realiza el arqueo antes de cerrar este turno.':'Solicita al dueño que realice el arqueo y cierre el turno anterior. Te avisaremos al quedar disponible; también puedes comprobarlo aquí.'}</p></Alert>}
+    {currentSession?.needsForceClose&&!isExpired&&!branchStatus.isReadOnly&&<Alert variant="warning" title="Caja a cargo de otro responsable"><p>{businessBranches?.find(branch=>branch.id===currentSession.branchId)?.name??'Esta sede'} · {currentSession.cashierName||'Responsable'} · UID: {currentSession.userId}</p><p>{currentSession.canForceClose?'Revisa los movimientos y realiza el arqueo antes de cerrar este turno.':'Solicita al dueño que realice el arqueo y cierre el turno anterior. Te avisaremos al quedar disponible; también puedes comprobarlo aquí.'}</p></Alert>}
     <div className="grid min-w-0 items-start gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
       <section aria-label="Catálogo de productos" className="pos-catalog min-w-0 space-y-3 pb-20 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-0">
         <div className="pos-catalog-tools sticky top-0 z-10 space-y-1 bg-canvas pb-2">
@@ -168,7 +172,7 @@ function POS({ user }) {
     {showQrModal&&<Dialog title="Escanea para pagar" description="Verifica en tu celular que el abono se haya realizado." onClose={()=>setShowQrModal(false)} busy={isProcessing} className="max-w-sm">
       <p className="text-center text-3xl font-bold text-accent">S/ {payment==='mixto'?Number(splitYape).toFixed(2):total.toFixed(2)}</p>
       <div className="mx-auto flex aspect-square w-full max-w-60 items-center justify-center rounded-2xl border border-line bg-panel p-3">{qrUrl?<img src={qrUrl} alt="QR Yape" className="size-full object-contain" />:<Alert variant="warning">QR no configurado en Ajustes.</Alert>}</div>
-      <div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={isProcessing} onClick={()=>setShowQrModal(false)}>Cancelar</Button><Button variant="success" onClick={processSale} loading={isProcessing} disabled={catalogBlocked||!!checkoutBlocked||!isPaymentValid||!runtimeCapabilities.saleOnline||isProcessing}>{isProcessing?'Procesando…':'Validar pago'}</Button></div>
+      <div className="grid grid-cols-2 gap-2"><Button variant="secondary" disabled={isProcessing} onClick={()=>setShowQrModal(false)}>Cancelar</Button><Button variant="success" onClick={processSale} loading={isProcessing} disabled={!isOnline||isGlobalDisabled||catalogBlocked||!!checkoutBlocked||!isPaymentValid||!runtimeCapabilities.saleOnline||isProcessing}>{isProcessing?'Procesando…':'Validar pago'}</Button></div>
     </Dialog>}
     {draftReview?.branchId === activeBranchId && draftReview.userId === user.uid && <DraftSaleReview key={`${modalScope}:${draftReview.saleId ?? draftReview.id}`} sale={draftReview} user={user} activeBranchId={activeBranchId} onClose={() => setDraftReview(null)} onResult={result => { acceptReviewedSale(result); setDraftReview(null); }} />}
   </div>{cashModals}</>;

@@ -311,6 +311,111 @@ describe('SPARK-3 online cash opening', () => {
   });
 });
 
+describe('Plan 14: recovery of an expired Spark cash lock', () => {
+  const oldId = 'plan14-previous-cash-session';
+  const newId = 'plan14-replacement-cash-session';
+  const prepare = async (age, { historical = false } = {}) => {
+    const owner = await businessOwner();
+    const { businessId, branchId } = owner;
+    const lockPath = `active_cash_sessions/${await cashLockId(businessId, branchId)}`;
+    const oldPath = `cash_sessions/${oldId}`;
+    const openedAt = Timestamp.fromMillis(Date.now() - age);
+    const profile = { businessId, branchId, role: 'cajero', status: 'activo', shiftStart: null, shiftEnd: null };
+    await seed({
+      [oldPath]: { businessId, branchId, userId: 'owner', runtime: 'spark', status: 'open', cashierName: 'Dueña',
+        openedAt, syncedAt: openedAt, openingAmount: 100, openingNote: 'Fondo anterior', ...(historical ? {} : { durationHours: 10 }) },
+      [lockPath]: { businessId, branchId, sessionId: oldId, userId: 'owner', status: 'open', runtime: 'spark', updatedAt: openedAt },
+      'users/next-cashier': profile,
+      'users/other-branch': { ...profile, branchId: 'otra' },
+      'users/suspended': { ...profile, status: 'inactivo' },
+      'users/other-business': { ...profile, businessId: 'otro' },
+    });
+    return { ...owner, openedAt, lockPath, oldPath, command: { businessId, branchId, sessionId: newId, recoverSessionId: oldId, openingAmount: 50 } };
+  };
+  const assertUntouched = async ({ lockPath, oldPath }) => {
+    assert.equal((await dump(lockPath)).data().sessionId, oldId);
+    assert.equal((await dump(oldPath)).data().status, 'open');
+    assert.equal((await dump(`cash_sessions/${newId}`)).exists(), false);
+  };
+  const rawRecovery = (database, setup, actor, { omit, previous, nextId = newId } = {}) => {
+    const { businessId, branchId, openedAt, lockPath, oldPath } = setup;
+    const batch = writeBatch(database), now = serverTimestamp();
+    if (omit !== 'previous') batch.update(doc(database, oldPath), {
+      status: 'expired_unreconciled', expiredAt: new Timestamp(openedAt.seconds + 36000, openedAt.nanoseconds),
+      recoveredAt: now, recoveredBy: actor, recoveryReason: 'shift-time-limit', recoverySessionId: nextId,
+      reconciliationPending: true, declaredAmount: null, difference: null, ...previous,
+    });
+    if (omit !== 'lock') batch.update(doc(database, lockPath), { sessionId: nextId, userId: actor, updatedAt: now });
+    if (omit !== 'new') batch.set(doc(database, 'cash_sessions', nextId), {
+      businessId, branchId, userId: actor, status: 'open', runtime: 'spark', durationHours: 10, openingAmount: 50,
+      openingNote: '', cashierName: 'Cajera', openedAt: now, syncedAt: now,
+    });
+    return batch.commit();
+  };
+
+  it('rejects the lock replacement at 9h59m and allows it at the ten-hour boundary or later', async () => {
+    const setup = await prepare(35940000);
+    const actor = 'next-cashier', database = dbFor(actor);
+    await assertFails(rawRecovery(database, setup, actor));
+    await assertUntouched(setup);
+    // Pin the boundary to an emulator-committed timestamp. The next request is necessarily at or after it.
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'test_clock/anchor'), { time: serverTimestamp() }));
+    const { time } = (await dump('test_clock/anchor')).data();
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), setup.oldPath), {
+      openedAt: new Timestamp(time.seconds - 36000, time.nanoseconds),
+    }));
+    await cashRepository(database, actor).open(setup.command);
+    assert.ok((await dump(setup.oldPath)).data().expiredAt.isEqual(time));
+  });
+
+  it('recovers a five-day lock for a different assigned cashier, atomically and only once', async () => {
+    const setup = await prepare(5 * 86400000), actor = 'next-cashier';
+    const repo = cashRepository(dbFor(actor), actor);
+    const result = await Promise.allSettled([
+      repo.open(setup.command), cashRepository(setup.database).open({ ...setup.command, sessionId: 'plan14-concurrent-owner-session' }),
+    ]);
+    assert.equal(result.filter(item => item.status === 'fulfilled').length, 1);
+    const winner = result.find(item => item.status === 'fulfilled').value;
+    const confirmed = winner.id === newId ? await repo.open(setup.command)
+      : await cashRepository(setup.database).open({ ...setup.command, sessionId: winner.id });
+    const previous = confirmed.recoveredSession;
+    assert.equal(previous.status, 'expired_unreconciled');
+    assert.equal(previous.userId, 'owner');
+    assert.equal(previous.openingAmount, 100);
+    assert.equal(previous.openingNote, 'Fondo anterior');
+    assert.equal(previous.declaredAmount, null);
+    assert.equal(previous.difference, null);
+    assert.equal(previous.closedAt, undefined);
+    assert.equal(previous.reconciliationPending, true);
+    assert.equal(previous.recoveredBy, winner.userId);
+    assert.equal(previous.recoverySessionId, winner.id);
+    assert.ok(previous.recoveredAt.isEqual(confirmed.openedAt));
+    assert.equal(confirmed.openingAmount, 50);
+    assert.equal((await dump(setup.lockPath)).data().sessionId, winner.id);
+    const sessions = await getDocs(query(collection(setup.database, 'cash_sessions'), where('businessId', '==', setup.businessId),
+      where('branchId', '==', setup.branchId), where('status', '==', 'open')));
+    assert.deepEqual(sessions.docs.map(doc => doc.id), [winner.id]);
+  });
+
+  it('rejects partial, forged, cross-scope and historical recovery bundles', async () => {
+    const setup = await prepare(5 * 86400000), actor = 'next-cashier', database = dbFor(actor);
+    for (const omit of ['previous', 'lock', 'new']) await assertFails(rawRecovery(database, setup, actor, { omit }));
+    for (const previous of [{ expiredAt: serverTimestamp() }, { declaredAmount: 0 }, { difference: 0 },
+      { closedAt: serverTimestamp() }, { openingAmount: 0 }, { recoverySessionId: oldId }]) {
+      await assertFails(rawRecovery(database, setup, actor, { previous }));
+    }
+    for (const uid of ['other-branch', 'suspended', 'other-business', 'admin']) await assertFails(rawRecovery(dbFor(uid), setup, uid));
+    await assertFails(rawRecovery(database, { ...setup, branchId: 'global' }, actor));
+    const licensePath = `licenses/${setup.businessId}`, license = (await dump(licensePath)).data();
+    await seed({ [licensePath]: { ...license, expiry: Timestamp.fromMillis(Date.now() - 60000) } });
+    await assertFails(rawRecovery(database, setup, actor));
+    await seed({ [licensePath]: license });
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), setup.oldPath), { durationHours: deleteField() }));
+    await assertFails(rawRecovery(database, setup, actor));
+    await assertUntouched(setup);
+  });
+});
+
 
 describe('Plan03 branch authority and quota concurrency', () => {
   const ownerWithQuota = async (maximum, registeredMaximum = Math.max(maximum, 5)) => {

@@ -836,3 +836,28 @@ it('Plan04 preserves old-session policy and accepts new sessions before expiry; 
     branchId, clientName: 'Pedido sin anticipo', total: 10, subtotal: 10, deliveryCost: 0 });
   assert.equal((await inspect('contracts/11111111-1111-4111-8111-111111111111')).data().paidTotal, 0);
 });
+
+it('Plan14 verifies a committed recovery after a lost response and accepts sales only in the replacement cash session', async () => {
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), {
+    durationHours: 10, openedAt: Timestamp.fromMillis(Date.now() - 5 * 86400000),
+  }));
+  const db = database();
+  let commits = 0;
+  const repository = createSparkCashRepository(db, { currentUser: () => ({ uid }), sdk: { ...sdk,
+    async runTransaction(...args) {
+      await sdk.runTransaction(...args);
+      if (++commits === 1) throw Object.assign(new Error('Connection lost after commit'), { code: 'unavailable' });
+    },
+  } });
+  const command = { businessId, branchId, sessionId: 'plan14-new-cash-session', recoverSessionId: sessionId, openingAmount: 50 };
+  const result = await repository.open(command);
+  assert.equal(result.recoveredSession.status, 'expired_unreconciled');
+  assert.equal(result.openingAmount, 50);
+  assert.ok((await repository.open(command)).openedAt.isEqual(result.openedAt));
+  await assertFails(commit(payload('plan14-stale-session-sale', 1)));
+  assert.equal((await inspect('sales/plan14-stale-session-sale')).exists(), false);
+  await commit({ ...payload('plan14-replacement-session-sale', 1), sessionId: result.id });
+  assert.equal((await inspect('sales/plan14-replacement-session-sale')).data().sessionId, result.id);
+  assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
+  assert.equal((await inspect('cash_sessions/' + sessionId)).data().declaredAmount, null);
+});

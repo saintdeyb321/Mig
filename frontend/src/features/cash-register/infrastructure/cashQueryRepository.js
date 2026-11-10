@@ -32,13 +32,46 @@ export function createCashPeriodReader(database, { sdk = firestoreSDK, project =
   };
 }
 
+export function createCashAuditPeriodReader(database, options) {
+  const read = createCashPeriodReader(database, options);
+  return async (businessId, start, end, branchId, readOptions) => {
+    const startDate = toDateSafe(start);
+    if (!startDate) throw new Error('Período de cajas inválido.');
+    // Expiry is exactly ten hours after opening. The lookback reuses the existing opening index.
+    const [opened, closed] = await Promise.all([read('openedAt', businessId, +startDate - 36000000, end, branchId, readOptions),
+      read('closedAt', businessId, start, end, branchId, readOptions)]);
+    const sessions = [...new Map([...opened.filter(session => session.status === 'expired_unreconciled'
+      || +toDateSafe(session.openedAt) >= +startDate), ...closed].map(session => [session.id, session])).values()];
+    if (sessions.length > 10000) throw new Error('Demasiadas cajas. Selecciona un período menor.');
+    return sessions;
+  };
+}
+
 export function createCashStateReader(database, { sdk = firestoreSDK } = {}) {
   const { query, collection, where, limit } = sdk;
   const readDocs = sdk.getDocsFromServer ?? sdk.getDocs;
   const getDocs = checkedRead(readDocs, 'cash-open');
+  const getDoc = checkedRead(sdk.getDocFromServer, 'cash-lock');
   return async (businessId, branchId, userId = null) => {
+    if (!userId) {
+      const lock = await getDoc(sdk.doc(database, 'active_cash_sessions', await cashLockId(businessId, branchId)));
+      if (lock.metadata?.hasPendingWrites || lock.metadata?.fromCache) throw new Error('El candado de caja está pendiente de confirmar.');
+      if (lock.exists() && lock.data().runtime === 'spark') {
+        const active = lock.data();
+        if (active.businessId !== businessId || active.branchId !== branchId || active.status !== 'open'
+          || typeof active.sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(active.sessionId)) throw new Error('El candado de caja requiere revisión administrativa.');
+        const snapshot = await getDoc(sdk.doc(database, 'cash_sessions', active.sessionId));
+        const session = snapshot.data();
+        if (snapshot.metadata?.hasPendingWrites || snapshot.metadata?.fromCache || session?.status !== 'open'
+          || session.businessId !== businessId || session.branchId !== branchId || session.userId !== active.userId || session.runtime !== 'spark') {
+          throw new Error('La caja no coincide con el candado verificado. Comprueba su estado.');
+        }
+        return { ...session, id: snapshot.id };
+      }
+    }
     const open = await getDocs(query(collection(database, 'cash_sessions'), where('businessId', '==', businessId),
       where('branchId', '==', branchId), ...(userId ? [where('userId', '==', userId)] : []), where('status', '==', 'open'), limit(1)));
+    if (open.metadata?.hasPendingWrites || open.metadata?.fromCache) throw new Error('El estado de la caja está pendiente de confirmar en el servidor.');
     return mapDocuments(open)[0] ?? null;
   };
 }
