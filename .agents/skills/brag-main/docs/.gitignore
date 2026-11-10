@@ -1,0 +1,14 @@
+# Built demo gallery: ignore everything, then allow only the three slugs the
+# gallery shows (each ships brag.mp4 + a brag.jpg poster + a site.jpg thumbnail).
+# The top-level slugs are the /brag-slim examples; full/ keeps the original sites
+# next to the /brag --full videos made from them.
+examples/*
+!examples/horse-tinder/
+!examples/fish-flight-school/
+!examples/taxi-for-taxis/
+!examples/full/
+
+# Heavy HyperFrames composition/render sources — never committed
+brag-output*/
+
+.DS_Store

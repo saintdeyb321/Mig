@@ -7,7 +7,10 @@
     "studio": "remotion studio src/index.jsx --no-open --disable-git-source",
     "check": "node --test scripts/timeline.test.mjs",
     "capture": "node scripts/capture-demo.mjs",
-    "review": "node scripts/render-review.mjs"
+    "check:assets": "node scripts/render-review.mjs check",
+    "review": "node scripts/render-review.mjs",
+    "render:final": "node scripts/render-review.mjs final",
+    "verify:final": "node scripts/verify-video.mjs"
   },
   "dependencies": {
     "@remotion/cli": "4.0.542",

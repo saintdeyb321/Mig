@@ -1,0 +1,73 @@
+.ad {
+  overflow: hidden;
+  color: #f9f7ff;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #0d0f26;
+}
+.world { overflow: hidden; }
+.light {
+  position: absolute;
+  inset: -190px;
+  background: radial-gradient(ellipse at 25% 62%, #2347c27d 0%, transparent 48%),
+    radial-gradient(ellipse at 80% 50%, #7149bb8a 0%, transparent 48%),
+    radial-gradient(ellipse at 42% 96%, #342968, transparent 53%),
+    linear-gradient(142deg, #10152d 0%, #101126 42%, #181227 100%);
+}
+.orbit { position: absolute; inset: 0; width: 100%; height: 100%; }
+.orbit ellipse { fill: none; stroke: url(#orbit); stroke-width: 2; }
+.phone {
+  position: absolute;
+  width: 526px;
+  padding: 4px;
+  border-radius: 52px;
+  background: linear-gradient(152deg, #dbd3ff 0%, #7a71b4 10%, #322c5c 43%, #6d64a9 72%, #262343);
+  box-shadow: 0 70px 105px #080915c9, 0 0 91px #7974ef50, 16px 28px 0 -9px #10112575;
+}
+.rim { padding: 8px; border-radius: 48px; background: #101020; box-shadow: inset 0 0 0 2px #fff2; }
+.screen { position: relative; isolation: isolate; width: 100%; aspect-ratio: 390 / 844; overflow: hidden; border-radius: 40px; background: #fcfaf7; }
+.footage { width: 100%; height: 100%; display: block; object-fit: fill; }
+.button { position: absolute; display: block; width: 5px; border-radius: 4px; background: #8379bd; }
+.button-volume { top: 207px; left: -4px; height: 81px; box-shadow: 0 98px #6b619d; }
+.button-power { top: 293px; right: -4px; height: 108px; }
+.match { position: absolute; inset: 0; pointer-events: none; background: #251a47; }
+.touch {
+  position: absolute;
+  width: 53px;
+  height: 53px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  border: 4px solid #fff5ff;
+  box-shadow: 0 0 0 5px #5f41d5c0, inset 0 0 23px #a075f2;
+  background: #8556ec38;
+}
+.identity {
+  position: absolute; left: 88px; right: 170px; top: 107px;
+  display: flex; gap: 15px; align-items: center; font-size: 34px;
+}
+.identity img { width: 52px; height: 52px; object-fit: cover; border: 1px solid #cfbcff7a; border-radius: 15px; }
+.identity span { margin-left: auto; color: #e5dbfb; font-size: 25px; font-weight: 600; }
+.headline { position: absolute; top: 187px; left: 88px; right: 170px; }
+.headline > span { display: block; color: #d3c2fc; font-size: 27px; font-weight: 700; letter-spacing: 2.2px; }
+.headline h1 { margin: 12px 0 0; font-size: 73px; font-weight: 780; letter-spacing: -3.5px; line-height: 1.03; white-space: pre-line; }
+.headline .hero-title { font-size: 81px; }
+.proof {
+  position: absolute; left: 132px; right: 222px; bottom: 337px;
+  height: 81px; border: 1px solid #bca6ff72; border-radius: 24px;
+  background: #18152e; box-shadow: 0 18px 45px #0708177d;
+  padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.proof span { color: #e7dcff; font-weight: 650; font-size: 28px; }
+.proof b { font-size: 41px; letter-spacing: -0.7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.outro {
+  position: absolute; left: 90px; right: 170px; top: 473px;
+  display: grid; justify-items: center; text-align: center;
+}
+.mark { width: 470px; height: 415px; object-fit: contain; mask-image: radial-gradient(ellipse, #000 48%, transparent 72%); }
+.outro strong { margin-top: -16px; font-size: 110px; letter-spacing: -5px; font-weight: 820; }
+.cta {
+  margin-top: 31px; padding: 25px 43px 28px;
+  border: 2px solid #ceb9ff94; border-radius: 28px;
+  background: linear-gradient(105deg, #6142ba, #2949b1);
+  font-size: 51px; font-weight: 760; box-shadow: 0 13px 63px #6540c966;
+}
+.cta span { margin-left: 7px; color: #e0d6ff; }

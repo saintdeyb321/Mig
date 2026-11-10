@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Taxi for Taxis: when your taxi needs a taxi</title>
+  <meta name="description" content="Cab-to-cab dispatch. We route the nearest cab to your tired cab. No surge for tired vehicles.">
+  <meta property="og:title" content="Taxi for Taxis">
+  <meta property="og:description" content="When your taxi needs a taxi. We route the nearest cab to your tired cab. Yes, really.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <pattern id="check" width="16" height="16" patternUnits="userSpaceOnUse"><rect width="16" height="16" fill="#fff"/><rect width="8" height="8" fill="#111"/><rect x="8" y="8" width="8" height="8" fill="#111"/></pattern>
+      <!-- A checker cab, side view, facing right. --tired (1 or 0) lowers the eyelid and
+           flattens the mouth, so the same cab plays tired #4821 and wide-awake #2207. -->
+      <symbol id="cab" viewBox="0 0 340 210">
+        <path class="c-shadow" d="M30 196h280"/>
+        <path class="c-cabin" d="M96 92 124 44c4-7 10-10 18-10h66c8 0 14 3 19 9l38 49z"/>
+        <path class="c-window" d="M112 88 134 50c2-4 5-6 10-6h26v44z"/>
+        <path class="c-window" d="M182 44h24c6 0 10 2 13 6l30 38h-67z"/>
+        <rect class="c-sign" x="140" y="14" width="56" height="22" rx="6"/>
+        <text class="c-sign-text" x="168" y="30" text-anchor="middle">TAXI</text>
+        <path class="c-body" d="M22 128c0-20 14-36 34-36h212c26 0 46 16 50 38l4 22c2 12-6 22-18 22H40c-10 0-18-8-18-18z"/>
+        <rect class="c-check" x="30" y="118" width="286" height="14" fill="url(#check)"/>
+        <path class="c-line" d="M178 94v68"/>
+        <rect class="c-light" x="312" y="136" width="14" height="12" rx="4"/>
+        <path class="c-bumper" d="M300 168h30"/>
+        <circle class="c-tire" cx="88" cy="172" r="26"/><circle class="c-hub" cx="88" cy="172" r="10"/>
+        <circle class="c-tire" cx="262" cy="172" r="26"/><circle class="c-hub" cx="262" cy="172" r="10"/>
+        <ellipse class="c-white" cx="212" cy="66" rx="18" ry="20"/><circle class="c-pupil" cx="218" cy="70" r="8.5"/><circle class="c-glint" cx="215" cy="64" r="3"/>
+        <path class="c-lid" d="M193 68a19 19 0 0 1 38 0z"/><path class="c-lidline" d="M193 68h38"/>
+        <path class="c-smile" d="M290 152q9 7 18 0"/><path class="c-flat" d="M290 154h18"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <nav class="nav">
+    <a href="#" class="brand"><span class="roof">T4T</span><span>Taxi for Taxis</span></a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#feed">Live feed</a>
+      <a href="#fleet" class="nav-cta">Request pickup</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="city" aria-hidden="true">
+      <svg class="map" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice">
+        <path class="river" d="M-20 470C140 430 260 520 420 480S700 380 820 420v200H-20z"/>
+        <path class="street" d="M0 120h800M0 260h800M0 380h800M120 0v600M300 0v600M480 0v600M660 0v600"/>
+        <path class="street thin" d="M0 190h800M0 320h800M210 0v600M390 0v600M570 0v600M740 0v600"/>
+      </svg>
+      <span class="star s1"></span><span class="star s2"></span><span class="star s3"></span><span class="star s4"></span>
+    </div>
+
+    <div class="hero-copy">
+      <p class="eyebrow"><span class="live-dot"></span>Cab-to-cab dispatch · live in 12 metros</p>
+      <h1>When your taxi needs a <span class="hl">taxi.</span></h1>
+      <p class="lede">We route the nearest cab to your tired cab. Yes, really.</p>
+      <div class="hero-actions">
+        <a href="#fleet" class="btn btn-primary">Request a pickup</a>
+        <span class="no-surge">No surge for tired vehicles.</span>
+      </div>
+    </div>
+
+    <div class="hero-scene" aria-hidden="true">
+      <svg class="route" viewBox="0 0 600 400" preserveAspectRatio="none"><path d="M110 300C110 210 230 210 300 210S480 200 480 120"/></svg>
+      <div class="cab-wrap tired-wrap">
+        <span class="zzz">z<span>z</span><span>z</span></span>
+        <svg class="cab tired"><use href="#cab"/></svg>
+        <span class="cab-tag">#4821 · requested pickup</span>
+      </div>
+      <div class="cab-wrap awake-wrap">
+        <svg class="cab awake"><use href="#cab"/></svg>
+        <span class="cab-tag">#2207 · on the way</span>
+      </div>
+      <div class="eta"><span class="eta-label">ETA</span><span class="eta-value">3:08</span><span class="eta-note">#2207 accepted #4821</span></div>
+    </div>
+  </header>
+
+  <div class="checker-band" aria-label="Tonight">
+    <div class="band-track">
+      <span>847 cabs collected tonight</span><span>4.9 average rating</span><span>No surge for tired vehicles</span><span>Live in 12 metros</span>
+      <span aria-hidden="true">847 cabs collected tonight</span><span aria-hidden="true">4.9 average rating</span><span aria-hidden="true">No surge for tired vehicles</span><span aria-hidden="true">Live in 12 metros</span>
+    </div>
+  </div>
+
+  <section class="how" id="how">
+    <div class="section-head">
+      <p class="eyebrow">How it works</p>
+      <h2>Three steps.<br>Zero walking.</h2>
+    </div>
+    <ol class="steps">
+      <li class="step">
+        <div class="step-art art-fleet">
+          <svg class="medallion" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="46" class="m-ring"/><circle cx="60" cy="60" r="34" class="m-in"/><text x="60" y="56" text-anchor="middle" class="m-t1">NYC</text><text x="60" y="76" text-anchor="middle" class="m-t2">4821</text></svg>
+        </div>
+        <span class="step-num">01</span>
+        <h3>Register the fleet</h3>
+        <p>We verify medallions, meter status, and emotional availability.</p>
+      </li>
+      <li class="step">
+        <div class="step-art art-request">
+          <div class="mini-phone"><span class="mini-pin"></span><span class="mini-btn">Pick up #4821</span></div>
+        </div>
+        <span class="step-num">02</span>
+        <h3>Request the pickup</h3>
+        <p>Pick the cab that needs a lift. We route the nearest cab to it.</p>
+      </li>
+      <li class="step">
+        <div class="step-art art-collect">
+          <svg class="cab awake stack-bottom" aria-hidden="true"><use href="#cab"/></svg>
+          <svg class="cab tired stack-top" aria-hidden="true"><use href="#cab"/></svg>
+        </div>
+        <span class="step-num">03</span>
+        <h3>Cab collects cab</h3>
+        <p>Driver confirms. Both vehicles proceed at standard rate.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="feed" id="feed">
+    <div class="console">
+      <div class="console-top"><span class="live-dot"></span>DISPATCH · GRID 7 · MIDTOWN<span class="clock">02:47 LOCAL</span></div>
+      <ol class="log">
+        <li><time>02:47:12</time><b>#2207</b> accepted <b>#4821</b></li>
+        <li><time>02:47:09</time><b>#4821</b> requested pickup · reason: "just tired"</li>
+        <li><time>02:46:51</time><b>#1130</b> dropped off <b>#0907</b> at the depot</li>
+        <li><time>02:46:30</time><b>#0907</b> rated the ride ★★★★★</li>
+        <li><time>02:45:58</time><b>#3316</b> declined surge pricing. Again.</li>
+      </ol>
+    </div>
+    <dl class="stats">
+      <div><dt>847</dt><dd>pickups tonight</dd></div>
+      <div><dt>4.9</dt><dd>average rating, cab to cab</dd></div>
+      <div><dt>0%</dt><dd>surge for tired vehicles</dd></div>
+    </dl>
+  </section>
+
+  <section class="quote">
+    <svg class="cab tired quote-cab" aria-hidden="true"><use href="#cab"/></svg>
+    <blockquote>
+      <p>“I used to drive all night. Now sometimes I get driven.”</p>
+      <footer>Taxi #4821 · 847 pickups · verified member</footer>
+    </blockquote>
+  </section>
+
+  <section class="fleet" id="fleet">
+    <h2>Your cabs deserve better.</h2>
+    <p>Emergency pickup for emotionally unavailable sedans. Start with one tired cab.</p>
+    <a href="#" class="btn btn-primary btn-big">Create fleet account</a>
+    <p class="fine">First 10 dispatches free. No card required.</p>
+  </section>
+
+  <footer class="footer">
+    <span class="brand"><span class="roof">T4T</span>Taxi for Taxis, Inc.</span>
+    <span>Dispatch · Status · Legal</span>
+  </footer>
+
+</body>
+</html>

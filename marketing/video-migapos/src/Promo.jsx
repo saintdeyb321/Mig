@@ -1,11 +1,13 @@
 import React from 'react';
-import {AbsoluteFill, Easing, Img, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, Easing, Html5Audio, Img, Sequence, getStaticFiles, interpolate, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {DemoPanel} from './DemoPanel.jsx';
 import {montage, scenes} from './timeline.mjs';
+import {logo, soundtrack} from './media.mjs';
 import captions from './captions.json';
 
-const logo = 'assets/brand/Logo_MP.png';
 const glide = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.cubic)};
+const ease = {extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.sin)};
+const featureNumbers = {pos: '01', inventory: '02', reports: '03', cash: '04'};
 
 function Galaxy() {
   const frame = useCurrentFrame();
@@ -24,10 +26,11 @@ function Galaxy() {
   </AbsoluteFill>;
 }
 
-function Masthead({label}) {
+function Masthead({label, number}) {
   return <div className="masthead">
     <Img src={staticFile(logo)} alt="" className="mini-logo" />
     <span>MigaPOS</span><i /><span className="module-label">{label}</span>
+    {number && <span className="chapter">{number}<em>/ 04</em></span>}
   </div>;
 }
 
@@ -43,19 +46,29 @@ function Subtitles() {
 function FeatureScene({scene}) {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const reveal = interpolate(frame, [0, 0.48 * fps], [0, 1], glide);
   const isMontage = scene.id === 'montage';
+  const isHook = scene.id === 'hook';
   const beat = scene.duration / montage.length;
-  const asset = isMontage ? montage[Math.floor(frame / beat)]
-    : scene.id === 'pos' && frame >= 2 * fps ? 'ticket-updated' : scene.asset;
-  const panelFrame = isMontage ? frame % beat : frame;
-  const zoom = interpolate(panelFrame, [0, isMontage ? beat - 1 : scene.duration - 1], [0.96, 1], glide);
+  const ticketChange = 2 * fps;
+  const hasUpdatedTicket = scene.id === 'pos' && frame >= ticketChange;
+  const asset = isMontage ? montage[Math.floor(frame / beat)] : hasUpdatedTicket ? 'ticket-updated' : scene.asset;
+  const panelFrame = isMontage ? frame % beat : hasUpdatedTicket ? frame - ticketChange : frame;
+  const panelLength = isMontage ? beat : scene.id === 'pos'
+    ? (hasUpdatedTicket ? scene.duration - ticketChange : ticketChange) : scene.duration;
+
+  const enter = isHook ? 1 : interpolate(frame, [0, 8], [0, 1], ease);
+  const exit = interpolate(frame, [scene.duration - 8, scene.duration - 1], [1, 0], ease);
+  const panelIn = isHook ? 1 : interpolate(panelFrame, [0, 7], [0, 1], glide);
+  const panelOut = interpolate(panelFrame, [panelLength - 7, panelLength - 1], [1, 0], ease);
+  const zoom = interpolate(panelFrame, [0, panelLength - 1], [isHook ? 0.97 : 0.955, 1], glide);
+  const titleY = (1 - enter) * 24 - (1 - exit) * 10;
+  const panelY = (1 - panelIn) * 34 - (1 - panelOut) * 15;
   return <div className="safe-area">
-    <Masthead label={scene.label} />
-    <h1 className="headline" style={{translate: `0 ${(1 - reveal) * 28}px`, opacity: 0.82 + reveal * 0.18}}>
+    <Masthead label={scene.label} number={featureNumbers[scene.id]} />
+    <h1 className="headline" style={{translate: `0 ${titleY}px`, opacity: 0.65 + enter * exit * 0.35}}>
       {scene.title}
     </h1>
-    <div className="stage" style={{scale: zoom}}>
+    <div className="stage" style={{scale: zoom, translate: `0 ${panelY}px`, opacity: 0.65 + panelIn * panelOut * 0.35}}>
       <DemoPanel asset={asset} />
     </div>
   </div>;
@@ -64,21 +77,25 @@ function FeatureScene({scene}) {
 function ClosingScene({title}) {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
-  const scale = interpolate(frame, [0, 0.9 * fps], [0.93, 1], glide);
+  const scale = interpolate(frame, [0, 0.9 * fps], [0.9, 1], glide);
+  const lift = interpolate(frame, [0, 0.55 * fps], [24, 0], glide);
   return <div className="safe-area closing">
     <div className="closing-lockup">
+      <div className="closing-halo" aria-hidden="true" style={{scale}} />
       <div className="closing-emblem" style={{scale}}>
         <Img src={staticFile(logo)} alt="Emblema de MigaPOS" />
       </div>
       <div className="closing-brand">MigaPOS</div>
-      <h1 className="cta">{title}</h1>
+      <h1 className="cta" style={{translate: `0 ${lift}px`}}>{title}</h1>
     </div>
   </div>;
 }
 
 export function Promo() {
+  const hasSound = getStaticFiles().some(file => file.name === soundtrack);
   return <AbsoluteFill className="promo">
     <Galaxy />
+    {hasSound && <Html5Audio src={staticFile(soundtrack)} />}
     {scenes.map(scene => <Sequence key={scene.id} name={scene.title.replace('\n', ' ')}
       from={scene.from} durationInFrames={scene.duration}>
       {scene.id === 'cta' ? <ClosingScene title={scene.title} /> : <FeatureScene scene={scene} />}

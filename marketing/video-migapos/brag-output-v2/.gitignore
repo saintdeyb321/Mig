@@ -1,0 +1,10 @@
+/.cache/
+/public/recordings/
+/public/logo.png
+/public/score.wav
+/src/gestures.generated.json
+/brag.mp4
+/brag.jpg
+/preview.mp4
+/review/
+/node_modules/

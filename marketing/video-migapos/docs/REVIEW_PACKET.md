@@ -1,24 +1,26 @@
-# Revisión 2 · Hito C · MigaPOS
+# Candidato final · MigaPOS
 
-Rama local `marketing/video-promo-migapos` · HEAD `5dfe311`. `git status --short` registra el plan local y dos MD del video modificados, el nuevo proyecto audiovisual y los dos MD preexistentes sin seguimiento en `docs/`. `GO-NO-GO-P15-PRODUCCION.md` se conservó.
+Rama local `marketing/video-promo-migapos` · HEAD `24df9df`. El plan de cierre estaba en `docs/` y se conservó. Los cambios de producción audiovisual están dentro de `marketing/video-migapos/`.
 
-## Entrega
+## Qué revisar
 
-- `src/` contiene la composición Remotion de siete escenas, la estética Galaxy y los subtítulos. `public/assets/brand/` contiene la copia idéntica del logo oficial.
-- `scripts/`, `package.json` y `package-lock.json` reproducen la comprobación, captura, Studio y revisión. [README](../README.md) contiene los comandos.
-- [PROGRESS.md](PROGRESS.md) y [ASSETS-LICENSES.md](ASSETS-LICENSES.md) registran el avance y la procedencia. Se actualizó la regla de rama en el [plan local](../../../docs/PLAN-VIDEO-PROMOCIONAL-MIGAPOS-CODEX.md).
+- Siete escenas Galaxy con movimiento por fotograma, transiciones suaves y foco ampliado para el total, el stock, el período y el arqueo. Caja conserva «Por revisar» y el carácter provisional.
+- Cinco capturas auténticas del fixture aislado de Plan 09 con datos sintéticos. El máster requiere las cinco capturas y el logo original.
+- Audio instrumental original generado por [score.mjs](../scripts/score.mjs), con fades y sin narración. [Registro de recursos](ASSETS-LICENSES.md).
 
-## Evidencia y verificación
+## Entregables locales
 
-- Los cuatro beneficios usan recortes del fixture aislado de Plan 09. El carrito muestra los totales de dos cantidades. El inventario muestra existencias por sede. El reporte encuadra el período, «Tickets POS» y la gráfica. Caja compara los importes y conserva «Por revisar».
-- `npm.cmd run check` aprobado. Verifica siete escenas, 900 frames, nueve subtítulos y los puntos de revisión.
-- `npm.cmd run capture` aprobado. Cinco recortes sintéticos con Firebase simulado y red de salida bloqueada.
-- `npm.cmd run studio` compiló la composición. `npm.cmd run review` generó los cinco PNG a 1080 × 1920 con Chrome local.
-- La inspección visual detectó un desbordamiento inicial a la derecha. Se corrigió y se revisaron de nuevo los cinco encuadres reducidos.
+| Archivo | Resultado |
+|---|---|
+| [Máster MP4](../out/migapos-promo-30s.mp4) | 5.701.417 bytes, H.264 yuv420p BT.709, 1080 × 1920, 30 fps, 900 frames, AAC estéreo |
+| [Prueba de cinco segundos](../out/preview-5s.mp4) | H.264, 540 × 960, 30 fps. Decodificación completa aprobada |
+| [Miniatura](../out/thumbnail.png) | 1080 × 1920, tomada del hook |
+| [Copy para redes](COPY-REDES.md) | TikTok y Facebook Reels |
+| [QA final](QA-FINAL.md) | Pruebas, evidencia y límites de revisión |
 
-## Fotogramas locales
+## Fotogramas de revisión
 
-| Frame | Imagen |
+| Frame | Toma |
 |---:|---|
 | 36 | [Hook y ticket](../out/review/frame-036.png) |
 | 315 | [Inventario](../out/review/frame-315.png) |
@@ -26,6 +28,12 @@ Rama local `marketing/video-promo-migapos` · HEAD `5dfe311`. `git status --shor
 | 615 | [Caja](../out/review/frame-615.png) |
 | 870 | [Logo y CTA](../out/review/frame-870.png) |
 
-El prototipo es silencioso. Quedan pendientes la revisión de movimiento y zonas seguras en un teléfono y la decisión de audio. El máster sigue pendiente.
+`npm.cmd run check`, el preflight de capturas, la prueba corta y `npm.cmd run verify:final` pasaron. El máster decodificó los 900 fotogramas. Se inspeccionaron cinco encuadres a escala móvil simulada, doce muestras de corte y el primer y último fotograma codificados.
 
-**Siguiente paso.** Revisar juntos los cinco PNG a tamaño móvil y recorrer la composición en Studio.
+La aprobación, la comprobación en un teléfono con la interfaz real de cada red y la elegibilidad comercial de Remotion corresponden al propietario.
+
+## V2 · Demostración móvil
+
+- [Máster V2](../brag-output-v2/brag.mp4) de 21 s y 7.416.381 bytes. 1080 × 1920, H.264, 30 fps y AAC estéreo original. 630 fotogramas decodificados. El MP4 de la V1 conserva su SHA-256.
+- [Portada](../brag-output-v2/brag.jpg), [preview](../brag-output-v2/preview.mp4), [copy](../brag-output-v2/share-copy.txt), [QA V2](../brag-output-v2/REVIEW_V2.md) e [instrucciones](../brag-output-v2/README.md).
+- Brag aportó el flujo creativo. Remotion fue el motor local ante la ausencia de Hyperframes. El fixture móvil comprobó tres toques y dos desplazamientos del DOM con datos sintéticos.

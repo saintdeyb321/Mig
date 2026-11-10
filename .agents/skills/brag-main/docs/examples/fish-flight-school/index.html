@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fish Flight School: we teach fish to fly</title>
+  <meta name="description" content="A twelve-week flight academy for fish. Flapping, leaving the water, and landing back in it. Some prior swimming recommended.">
+  <meta property="og:title" content="Fish Flight School">
+  <meta property="og:description" content="We teach fish to fly. Wings issued on day one.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@700;900&family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <!-- Capt. Bubbles: a goldfish in goggles, with cardboard wings strapped on. Faces right. -->
+      <symbol id="bubbles" viewBox="0 0 420 300">
+        <path class="f-scarf" d="M232 176c-22 18-52 30-92 30-26 0-44 10-60 26 20-4 36 0 52 6-14 6-24 14-30 26 34-22 70-30 110-40 24-6 38-20 44-40z"/>
+        <path class="f-tail" d="M92 150 22 86c-6-6-16-1-14 8l14 56-14 56c-2 9 8 14 14 8z"/>
+        <path class="f-body" d="M84 150c34-70 138-96 222-60 34 14 60 36 70 60-10 24-36 46-70 60-84 36-188 10-222-60z"/>
+        <path class="f-belly" d="M120 176c50 26 130 30 190 6 22-9 40-20 52-32-8 26-34 46-66 58-66 24-138 10-176-32z"/>
+        <path class="f-fin" d="M220 196c-6 22-24 38-46 42 6-14 8-28 6-42z"/>
+        <path class="f-gill" d="M276 110c-14 26-14 54 0 80"/>
+        <path class="f-scale" d="M150 138c10-12 24-12 34 0M190 128c10-12 24-12 34 0M170 162c10-12 24-12 34 0M210 154c10-12 24-12 34 0"/>
+        <rect class="f-strap" x="196" y="84" width="22" height="134" rx="4" transform="rotate(-8 207 151)"/>
+        <path class="f-wing" d="M176 108 70 22c-8-7-3-18 7-17l86 8c10 1 18 6 22 14l58 76z"/>
+        <path class="f-wing-line" d="M104 22l72 70M134 22l62 66M162 26l46 56"/>
+        <circle class="f-rivet" cx="196" cy="100" r="4"/><circle class="f-rivet" cx="222" cy="100" r="4"/>
+        <path class="f-goggle-strap" d="M293 122l-26-6"/>
+        <circle class="f-goggle" cx="318" cy="126" r="26"/>
+        <circle class="f-lens" cx="318" cy="126" r="17"/>
+        <circle class="f-eye" cx="322" cy="128" r="7"/>
+        <circle class="f-glint" cx="312" cy="118" r="4"/>
+        <path class="f-mouth" d="M372 158c-6 6-14 8-22 6"/>
+      </symbol>
+      <symbol id="roundel" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="30" class="r-out"/>
+        <circle cx="32" cy="32" r="21" class="r-mid"/>
+        <path class="r-fish" d="M14 33c6-9 18-12 28-8l8-6-2 9 2 9-8-6c-10 4-22 1-28-8z" transform="rotate(-20 32 32) translate(1 -1)"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <nav class="nav">
+    <a href="#" class="brand"><svg class="brand-mark" aria-hidden="true"><use href="#roundel"/></svg><span>Fish Flight School</span></a>
+    <div class="nav-links">
+      <a href="#courses">Curriculum</a>
+      <a href="#instructor">Instructor</a>
+      <a href="#enroll" class="nav-cta">Enroll</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="sky" aria-hidden="true">
+      <span class="cloud c1"></span><span class="cloud c2"></span><span class="cloud c3"></span><span class="cloud c4"></span>
+      <svg class="trail" viewBox="0 0 1000 600" preserveAspectRatio="none"><path d="M250 560C360 300 620 120 960 60"/></svg>
+    </div>
+
+    <div class="hero-copy">
+      <p class="eyebrow">Accredited aviation academy for fish · Est. 2024</p>
+      <h1>We teach<br>fish to <span class="fly">fly.</span></h1>
+      <p class="lede">Twelve weeks from first flap to full altitude. Wings issued on day one. Some prior swimming recommended.</p>
+      <div class="hero-actions">
+        <a href="#enroll" class="btn btn-primary">Enroll for the spring cohort</a>
+        <a href="#courses" class="btn btn-ghost">See the flight path</a>
+      </div>
+    </div>
+
+    <div class="hero-fish" aria-hidden="true">
+      <div class="altitude"><span class="alt-label">Altitude</span><span class="alt-value">14,200 ft</span><span class="alt-status">Capt. Bubbles · climbing</span></div>
+      <svg class="fish"><use href="#bubbles"/></svg>
+      <span class="drop d1"></span><span class="drop d2"></span><span class="drop d3"></span><span class="drop d4"></span>
+    </div>
+
+    <div class="sea" aria-hidden="true">
+      <svg class="wave wave-back" viewBox="0 0 1440 80" preserveAspectRatio="none"><path d="M0 40c120-30 240-30 360 0s240 30 360 0 240-30 360 0 240 30 360 0v40H0z"/></svg>
+      <svg class="wave wave-front" viewBox="0 0 1440 80" preserveAspectRatio="none"><path d="M0 44c120 26 240 26 360 0s240-26 360 0 240 26 360 0 240-26 360 0v36H0z"/></svg>
+    </div>
+  </header>
+
+  <div class="ticker" aria-label="Now boarding">
+    <div class="ticker-track">
+      <span>Now boarding: salmon</span><span>tuna</span><span>two clownfish</span><span>one very determined guppy</span><span>a pufferfish (window seat)</span>
+      <span aria-hidden="true">Now boarding: salmon</span><span aria-hidden="true">tuna</span><span aria-hidden="true">two clownfish</span><span aria-hidden="true">one very determined guppy</span><span aria-hidden="true">a pufferfish (window seat)</span>
+    </div>
+  </div>
+
+  <section class="courses" id="courses">
+    <div class="section-head">
+      <p class="eyebrow">The flight path</p>
+      <h2>Three courses.<br>One sky.</h2>
+    </div>
+    <ol class="course-list">
+      <li class="course">
+        <svg class="course-art" viewBox="0 0 160 120" aria-hidden="true"><path class="ca-motion" d="M20 40h28M14 60h30M20 80h28"/><path class="ca-fish" d="M56 62c14-22 48-28 72-12 8 5 12 10 14 14-2 4-6 9-14 14-24 16-58 10-72-16z"/><path class="ca-tail" d="M58 62 40 46v32z"/><path class="ca-wing" d="M92 54 80 22l40 12-10 22z"/><circle class="ca-eye" cx="124" cy="60" r="4"/></svg>
+        <span class="course-code">FLT 101</span>
+        <h3>Introduction to Flapping</h3>
+        <p>Fins, but faster. Students learn that the wing goes up and then, crucially, down.</p>
+        <span class="course-meta">4 weeks · no prerequisites</span>
+      </li>
+      <li class="course">
+        <svg class="course-art" viewBox="0 0 160 120" aria-hidden="true"><path class="ca-water" d="M0 86c20-10 40-10 60 0s40 10 60 0 30-10 40-4v38H0z"/><path class="ca-arrow" d="M80 76V18M60 38l20-20 20 20"/><circle class="ca-drop" cx="56" cy="70" r="4"/><circle class="ca-drop" cx="106" cy="64" r="3"/></svg>
+        <span class="course-code">FLT 201</span>
+        <h3>Leaving the Water</h3>
+        <p>The hardest four inches in aviation. Taught above a very soft pool.</p>
+        <span class="course-meta">4 weeks · FLT 101</span>
+      </li>
+      <li class="course">
+        <svg class="course-art" viewBox="0 0 160 120" aria-hidden="true"><path class="ca-water" d="M0 90c20-8 40-8 60 0s40 8 60 0 30-8 40-3v33H0z"/><path class="ca-splash" d="M80 84 64 44M80 84l2-48M80 84l18-42M80 84 52 64M80 84l30-20"/></svg>
+        <span class="course-code">FLT 301</span>
+        <h3>Emergency Splash Landing</h3>
+        <p>Everything that goes up comes down. We make sure it comes down wet.</p>
+        <span class="course-meta">4 weeks · FLT 201 · towel required</span>
+      </li>
+    </ol>
+  </section>
+
+  <section class="stats">
+    <div class="stat"><span class="stat-num">3,200</span><span class="stat-label">graduates airborne</span></div>
+    <div class="stat"><span class="stat-num">98.4%</span><span class="stat-label">wing-cert pass rate*</span></div>
+    <div class="stat"><span class="stat-num">47</span><span class="stat-label">species accepted</span></div>
+    <div class="stat"><span class="stat-num">0</span><span class="stat-label">birds consulted</span></div>
+    <p class="stats-note">*Of students who came back down.</p>
+  </section>
+
+  <section class="instructor" id="instructor">
+    <div class="badge-card">
+      <div class="badge-top"><svg class="badge-mark" aria-hidden="true"><use href="#roundel"/></svg><span>Flight instructor · License FFS-0001</span></div>
+      <div class="badge-photo"><svg class="fish" aria-hidden="true"><use href="#bubbles"/></svg></div>
+      <dl class="badge-facts">
+        <div><dt>Name</dt><dd>Capt. Bubbles</dd></div>
+        <div><dt>Hours airborne</dt><dd>4,000</dd></div>
+        <div><dt>Longest flight</dt><dd>11 minutes</dd></div>
+        <div><dt>Fear of heights</dt><dd>Managed</dd></div>
+      </dl>
+    </div>
+    <div class="instructor-copy">
+      <p class="eyebrow">Your instructor</p>
+      <h2>Meet Capt.&nbsp;Bubbles.</h2>
+      <p>First goldfish to clear the treeline. Built her own wings out of a cereal box, and still flies them. Every student gets her personal attention, until she spots a bird.</p>
+    </div>
+  </section>
+
+  <section class="quote">
+    <blockquote>
+      <p>“I used to fear the sky. Now I fear birds, weather, and gravity.”</p>
+      <footer>Gill, salmon · Class of 2024</footer>
+    </blockquote>
+  </section>
+
+  <section class="enroll" id="enroll">
+    <div class="enroll-card">
+      <p class="eyebrow">Applications open · Spring cohort</p>
+      <h2>The sky is waiting.</h2>
+      <p>Next cohort takes off in March. All species welcome. Bring a towel.</p>
+      <a href="#" class="btn btn-primary btn-big">Begin your ascent</a>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span><svg class="brand-mark" aria-hidden="true"><use href="#roundel"/></svg> Fish Flight School</span>
+    <span>Fins up. Wheels up.</span>
+  </footer>
+
+</body>
+</html>

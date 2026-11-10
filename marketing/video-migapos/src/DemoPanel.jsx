@@ -1,5 +1,6 @@
 import React from 'react';
-import {getStaticFiles, Img, staticFile} from 'remotion';
+import {getRemotionEnvironment, getStaticFiles, Img, staticFile} from 'remotion';
+import {capturePath, captures} from './media.mjs';
 
 function Ticket({updated}) {
   return <div className="demo-ui">
@@ -54,9 +55,13 @@ const recreations = {
 };
 
 export function DemoPanel({asset}) {
-  const path = `assets/demo/${asset}.png`;
+  const path = capturePath(asset);
   const hasCapture = getStaticFiles().some(file => file.name === path);
-  return <div className="demo-panel">
+  if (!hasCapture && getRemotionEnvironment().isRendering) {
+    throw Error(`Falta la captura real: ${path}`);
+  }
+  const {label, value} = captures[asset];
+  return <div className={`demo-panel demo-panel--${asset}`}>
     <div className="demo-caption">
       <i />{hasCapture ? 'Datos de demostración' : 'Recreación · datos de demostración'}
     </div>
@@ -64,5 +69,6 @@ export function DemoPanel({asset}) {
       {hasCapture ? <Img src={staticFile(path)} alt="Vista de MigaPOS con datos de demostración" />
         : recreations[asset]}
     </div>
+    <div className="demo-focus"><span>{label}</span><strong>{value}</strong></div>
   </div>;
 }
