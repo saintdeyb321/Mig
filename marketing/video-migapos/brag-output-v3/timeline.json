@@ -1,0 +1,2830 @@
+{
+  "fps": 30,
+  "duration": 3150,
+  "width": 1080,
+  "height": 1920,
+  "chapters": [
+    {
+      "id": "hook",
+      "title": "Tu negocio, en el móvil",
+      "from": 0,
+      "to": 156,
+      "review": 149,
+      "shots": [
+        [
+          0,
+          "hook"
+        ],
+        [
+          93,
+          "hook"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 7,
+          "to": 86,
+          "text": "¿Tienes una tienda, panadería o\npastelería?",
+          "samples": 62464
+        },
+        {
+          "from": 96,
+          "to": 152,
+          "text": "Mira cómo funciona MigaPOS.",
+          "samples": 44544
+        }
+      ]
+    },
+    {
+      "id": "pos",
+      "title": "Prepara el ticket",
+      "from": 156,
+      "to": 456,
+      "review": 350,
+      "shots": [
+        [
+          156,
+          "pos-search"
+        ],
+        [
+          217,
+          "pos-add"
+        ],
+        [
+          254,
+          "pos-ticket"
+        ],
+        [
+          300,
+          "pos-total"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 173,
+          "to": 245,
+          "text": "Busca un producto y añádelo al\nticket.",
+          "samples": 57344
+        },
+        {
+          "from": 257,
+          "to": 353,
+          "text": "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+          "samples": 76288
+        }
+      ]
+    },
+    {
+      "id": "catalog",
+      "title": "Organiza tu catálogo",
+      "from": 456,
+      "to": 726,
+      "review": 637,
+      "shots": [
+        [
+          456,
+          "categories"
+        ],
+        [
+          548,
+          "products"
+        ],
+        [
+          595,
+          "product-search"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 473,
+          "to": 539,
+          "text": "Agrupa tus productos en\ncategorías.",
+          "samples": 52736
+        },
+        {
+          "from": 551,
+          "to": 640,
+          "text": "Busca un artículo y comprueba sus\nexistencias.",
+          "samples": 71168
+        }
+      ]
+    },
+    {
+      "id": "branches",
+      "title": "Inventario por sede",
+      "from": 726,
+      "to": 996,
+      "review": 897,
+      "shots": [
+        [
+          726,
+          "branch-before"
+        ],
+        [
+          770,
+          "branch-after"
+        ],
+        [
+          808,
+          "branch-stock"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 743,
+          "to": 799,
+          "text": "Cambia de sede desde el selector.",
+          "samples": 44032
+        },
+        {
+          "from": 811,
+          "to": 900,
+          "text": "Consulta las existencias del\nlocal seleccionado.",
+          "samples": 71168
+        }
+      ]
+    },
+    {
+      "id": "orders",
+      "title": "Pedidos y clientes",
+      "from": 996,
+      "to": 1308,
+      "review": 1192,
+      "shots": [
+        [
+          996,
+          "orders-active"
+        ],
+        [
+          1055,
+          "orders-debt"
+        ],
+        [
+          1079,
+          "orders-closed"
+        ],
+        [
+          1107,
+          "agenda"
+        ],
+        [
+          1152,
+          "agenda-search"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 1013,
+          "to": 1098,
+          "text": "Revisa pedidos en curso, por\ncobrar y cerrados.",
+          "samples": 67584
+        },
+        {
+          "from": 1110,
+          "to": 1195,
+          "text": "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+          "samples": 67584
+        }
+      ]
+    },
+    {
+      "id": "history",
+      "title": "Historial de ventas",
+      "from": 1308,
+      "to": 1548,
+      "review": 1482,
+      "shots": [
+        [
+          1308,
+          "history"
+        ],
+        [
+          1425,
+          "history-items"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 1325,
+          "to": 1416,
+          "text": "Consulta la fecha y el estado de\nun ticket anterior.",
+          "samples": 72704
+        },
+        {
+          "from": 1428,
+          "to": 1485,
+          "text": "Revisa qué productos incluía.",
+          "samples": 45056
+        }
+      ]
+    },
+    {
+      "id": "reports",
+      "title": "Ventas por período",
+      "from": 1548,
+      "to": 1908,
+      "review": 1801,
+      "shots": [
+        [
+          1548,
+          "report-today"
+        ],
+        [
+          1589,
+          "report-week"
+        ],
+        [
+          1609,
+          "report-month"
+        ],
+        [
+          1629,
+          "report-year"
+        ],
+        [
+          1658,
+          "report-metric"
+        ],
+        [
+          1729,
+          "report-chart"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 1565,
+          "to": 1649,
+          "text": "Elige hoy, esta semana, este mes\no este año.",
+          "samples": 67072
+        },
+        {
+          "from": 1661,
+          "to": 1720,
+          "text": "Consulta los tickets del período.",
+          "samples": 46592
+        },
+        {
+          "from": 1732,
+          "to": 1804,
+          "text": "Y observa cómo evolucionan las\nventas.",
+          "samples": 56832
+        }
+      ]
+    },
+    {
+      "id": "export",
+      "title": "Informes y detalle",
+      "from": 1908,
+      "to": 2208,
+      "review": 2184,
+      "shots": [
+        [
+          1908,
+          "export-pdf"
+        ],
+        [
+          2009,
+          "export-pdf"
+        ],
+        [
+          2106,
+          "export-excel"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 1925,
+          "to": 2000,
+          "text": "Prepara el informe visual para\nimprimirlo.",
+          "samples": 59904
+        },
+        {
+          "from": 2012,
+          "to": 2097,
+          "text": "Desde el navegador puedes\nguardarlo como PDF.",
+          "samples": 67584
+        },
+        {
+          "from": 2109,
+          "to": 2187,
+          "text": "El detalle de movimientos se\ndescarga en Excel.",
+          "samples": 61952
+        }
+      ]
+    },
+    {
+      "id": "cash",
+      "title": "Compara la caja",
+      "from": 2208,
+      "to": 2478,
+      "review": 2420,
+      "shots": [
+        [
+          2208,
+          "cash"
+        ],
+        [
+          2327,
+          "cash-warning"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 2225,
+          "to": 2318,
+          "text": "Compara el efectivo contado con\nla referencia de caja.",
+          "samples": 73728
+        },
+        {
+          "from": 2330,
+          "to": 2423,
+          "text": "Si hay movimientos por verificar,\naparece «Por revisar».",
+          "samples": 73728
+        }
+      ]
+    },
+    {
+      "id": "staff",
+      "title": "Roles y turnos",
+      "from": 2478,
+      "to": 2748,
+      "review": 2681,
+      "shots": [
+        [
+          2478,
+          "staff"
+        ],
+        [
+          2604,
+          "staff-edit"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 2495,
+          "to": 2595,
+          "text": "Como dueño, revisa el rol, la\nsede y el turno del equipo.",
+          "samples": 79360
+        },
+        {
+          "from": 2607,
+          "to": 2684,
+          "text": "Abre la ficha para consultar sus\naccesos.",
+          "samples": 61440
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "title": "Datos del negocio",
+      "from": 2748,
+      "to": 2958,
+      "review": 2937,
+      "shots": [
+        [
+          2748,
+          "settings"
+        ],
+        [
+          2862,
+          "settings-branches"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 2765,
+          "to": 2853,
+          "text": "Consulta los datos comerciales en\nConfiguración.",
+          "samples": 69632
+        },
+        {
+          "from": 2865,
+          "to": 2940,
+          "text": "Desde allí también accedes a\nSucursales.",
+          "samples": 59392
+        }
+      ]
+    },
+    {
+      "id": "cta",
+      "title": "Solicita una demostración",
+      "from": 2958,
+      "to": 3150,
+      "review": 3100,
+      "shots": [
+        [
+          2958,
+          "cta"
+        ],
+        [
+          3024,
+          "cta"
+        ]
+      ],
+      "cues": [
+        {
+          "from": 2975,
+          "to": 3015,
+          "text": "Conoce MigaPOS.",
+          "samples": 31232
+        },
+        {
+          "from": 3027,
+          "to": 3103,
+          "text": "Solicita una demostración para tu\nnegocio.",
+          "samples": 60416
+        }
+      ]
+    }
+  ],
+  "boards": [
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "",
+      7
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "¿Tienes una tienda, panadería o\npastelería?",
+      7
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "",
+      7
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "",
+      0
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "",
+      1
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "",
+      2
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "Mira cómo funciona MigaPOS.",
+      3
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "Mira cómo funciona MigaPOS.",
+      4
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "Mira cómo funciona MigaPOS.",
+      5
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "Mira cómo funciona MigaPOS.",
+      6
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "Mira cómo funciona MigaPOS.",
+      7
+    ],
+    [
+      "hook",
+      "Tu negocio, en el móvil",
+      "hook",
+      "",
+      7
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-search",
+      "",
+      7
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-search",
+      "Busca un producto y añádelo al\nticket.",
+      7
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-add",
+      "Busca un producto y añádelo al\nticket.",
+      0
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-add",
+      "Busca un producto y añádelo al\nticket.",
+      1
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-add",
+      "Busca un producto y añádelo al\nticket.",
+      2
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-add",
+      "Busca un producto y añádelo al\nticket.",
+      3
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-add",
+      "Busca un producto y añádelo al\nticket.",
+      4
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-add",
+      "Busca un producto y añádelo al\nticket.",
+      5
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-add",
+      "Busca un producto y añádelo al\nticket.",
+      6
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-add",
+      "Busca un producto y añádelo al\nticket.",
+      7
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-add",
+      "",
+      7
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-ticket",
+      "",
+      0
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-ticket",
+      "",
+      1
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-ticket",
+      "",
+      2
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-ticket",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      3
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-ticket",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      4
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-ticket",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      5
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-ticket",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      6
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-ticket",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      7
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-total",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      0
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-total",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      1
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-total",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      2
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-total",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      3
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-total",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      4
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-total",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      5
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-total",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      6
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-total",
+      "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+      7
+    ],
+    [
+      "pos",
+      "Prepara el ticket",
+      "pos-total",
+      "",
+      7
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "categories",
+      "",
+      7
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "categories",
+      "Agrupa tus productos en\ncategorías.",
+      7
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "categories",
+      "",
+      7
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "products",
+      "",
+      0
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "products",
+      "",
+      1
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "products",
+      "",
+      2
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "products",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      3
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "products",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      4
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "products",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      5
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "products",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      6
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "products",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      7
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "product-search",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      0
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "product-search",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      1
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "product-search",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      2
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "product-search",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      3
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "product-search",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      4
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "product-search",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      5
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "product-search",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      6
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "product-search",
+      "Busca un artículo y comprueba sus\nexistencias.",
+      7
+    ],
+    [
+      "catalog",
+      "Organiza tu catálogo",
+      "product-search",
+      "",
+      7
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-before",
+      "",
+      7
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-before",
+      "Cambia de sede desde el selector.",
+      7
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-after",
+      "Cambia de sede desde el selector.",
+      0
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-after",
+      "Cambia de sede desde el selector.",
+      1
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-after",
+      "Cambia de sede desde el selector.",
+      2
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-after",
+      "Cambia de sede desde el selector.",
+      3
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-after",
+      "Cambia de sede desde el selector.",
+      4
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-after",
+      "Cambia de sede desde el selector.",
+      5
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-after",
+      "Cambia de sede desde el selector.",
+      6
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-after",
+      "Cambia de sede desde el selector.",
+      7
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-after",
+      "",
+      7
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-stock",
+      "",
+      0
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-stock",
+      "",
+      1
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-stock",
+      "",
+      2
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-stock",
+      "Consulta las existencias del\nlocal seleccionado.",
+      3
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-stock",
+      "Consulta las existencias del\nlocal seleccionado.",
+      4
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-stock",
+      "Consulta las existencias del\nlocal seleccionado.",
+      5
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-stock",
+      "Consulta las existencias del\nlocal seleccionado.",
+      6
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-stock",
+      "Consulta las existencias del\nlocal seleccionado.",
+      7
+    ],
+    [
+      "branches",
+      "Inventario por sede",
+      "branch-stock",
+      "",
+      7
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-active",
+      "",
+      7
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-active",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      7
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-debt",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      0
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-debt",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      1
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-debt",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      2
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-debt",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      3
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-debt",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      4
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-debt",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      5
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-debt",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      6
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-debt",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      7
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-closed",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      0
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-closed",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      1
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-closed",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      2
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-closed",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      3
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-closed",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      4
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-closed",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      5
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-closed",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      6
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-closed",
+      "Revisa pedidos en curso, por\ncobrar y cerrados.",
+      7
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "orders-closed",
+      "",
+      7
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda",
+      "",
+      0
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda",
+      "",
+      1
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda",
+      "",
+      2
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      3
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      4
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      5
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      6
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      7
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda-search",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      0
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda-search",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      1
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda-search",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      2
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda-search",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      3
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda-search",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      4
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda-search",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      5
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda-search",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      6
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda-search",
+      "Busca a tus clientes frecuentes\nen la Agenda VIP.",
+      7
+    ],
+    [
+      "orders",
+      "Pedidos y clientes",
+      "agenda-search",
+      "",
+      7
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history",
+      "",
+      7
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history",
+      "Consulta la fecha y el estado de\nun ticket anterior.",
+      7
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history",
+      "",
+      7
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history-items",
+      "",
+      0
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history-items",
+      "",
+      1
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history-items",
+      "",
+      2
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history-items",
+      "Revisa qué productos incluía.",
+      3
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history-items",
+      "Revisa qué productos incluía.",
+      4
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history-items",
+      "Revisa qué productos incluía.",
+      5
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history-items",
+      "Revisa qué productos incluía.",
+      6
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history-items",
+      "Revisa qué productos incluía.",
+      7
+    ],
+    [
+      "history",
+      "Historial de ventas",
+      "history-items",
+      "",
+      7
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-today",
+      "",
+      7
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-today",
+      "Elige hoy, esta semana, este mes\no este año.",
+      7
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-week",
+      "Elige hoy, esta semana, este mes\no este año.",
+      0
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-week",
+      "Elige hoy, esta semana, este mes\no este año.",
+      1
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-week",
+      "Elige hoy, esta semana, este mes\no este año.",
+      2
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-week",
+      "Elige hoy, esta semana, este mes\no este año.",
+      3
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-week",
+      "Elige hoy, esta semana, este mes\no este año.",
+      4
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-week",
+      "Elige hoy, esta semana, este mes\no este año.",
+      5
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-week",
+      "Elige hoy, esta semana, este mes\no este año.",
+      6
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-week",
+      "Elige hoy, esta semana, este mes\no este año.",
+      7
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-month",
+      "Elige hoy, esta semana, este mes\no este año.",
+      0
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-month",
+      "Elige hoy, esta semana, este mes\no este año.",
+      1
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-month",
+      "Elige hoy, esta semana, este mes\no este año.",
+      2
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-month",
+      "Elige hoy, esta semana, este mes\no este año.",
+      3
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-month",
+      "Elige hoy, esta semana, este mes\no este año.",
+      4
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-month",
+      "Elige hoy, esta semana, este mes\no este año.",
+      5
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-month",
+      "Elige hoy, esta semana, este mes\no este año.",
+      6
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-month",
+      "Elige hoy, esta semana, este mes\no este año.",
+      7
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-year",
+      "Elige hoy, esta semana, este mes\no este año.",
+      0
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-year",
+      "Elige hoy, esta semana, este mes\no este año.",
+      1
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-year",
+      "Elige hoy, esta semana, este mes\no este año.",
+      2
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-year",
+      "Elige hoy, esta semana, este mes\no este año.",
+      3
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-year",
+      "Elige hoy, esta semana, este mes\no este año.",
+      4
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-year",
+      "Elige hoy, esta semana, este mes\no este año.",
+      5
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-year",
+      "Elige hoy, esta semana, este mes\no este año.",
+      6
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-year",
+      "Elige hoy, esta semana, este mes\no este año.",
+      7
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-year",
+      "",
+      7
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-metric",
+      "",
+      0
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-metric",
+      "",
+      1
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-metric",
+      "",
+      2
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-metric",
+      "Consulta los tickets del período.",
+      3
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-metric",
+      "Consulta los tickets del período.",
+      4
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-metric",
+      "Consulta los tickets del período.",
+      5
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-metric",
+      "Consulta los tickets del período.",
+      6
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-metric",
+      "Consulta los tickets del período.",
+      7
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-metric",
+      "",
+      7
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-chart",
+      "",
+      0
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-chart",
+      "",
+      1
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-chart",
+      "",
+      2
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-chart",
+      "Y observa cómo evolucionan las\nventas.",
+      3
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-chart",
+      "Y observa cómo evolucionan las\nventas.",
+      4
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-chart",
+      "Y observa cómo evolucionan las\nventas.",
+      5
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-chart",
+      "Y observa cómo evolucionan las\nventas.",
+      6
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-chart",
+      "Y observa cómo evolucionan las\nventas.",
+      7
+    ],
+    [
+      "reports",
+      "Ventas por período",
+      "report-chart",
+      "",
+      7
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "",
+      7
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "Prepara el informe visual para\nimprimirlo.",
+      7
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "",
+      7
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "",
+      0
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "",
+      1
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "",
+      2
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "Desde el navegador puedes\nguardarlo como PDF.",
+      3
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "Desde el navegador puedes\nguardarlo como PDF.",
+      4
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "Desde el navegador puedes\nguardarlo como PDF.",
+      5
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "Desde el navegador puedes\nguardarlo como PDF.",
+      6
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "Desde el navegador puedes\nguardarlo como PDF.",
+      7
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-pdf",
+      "",
+      7
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-excel",
+      "",
+      0
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-excel",
+      "",
+      1
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-excel",
+      "",
+      2
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-excel",
+      "El detalle de movimientos se\ndescarga en Excel.",
+      3
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-excel",
+      "El detalle de movimientos se\ndescarga en Excel.",
+      4
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-excel",
+      "El detalle de movimientos se\ndescarga en Excel.",
+      5
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-excel",
+      "El detalle de movimientos se\ndescarga en Excel.",
+      6
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-excel",
+      "El detalle de movimientos se\ndescarga en Excel.",
+      7
+    ],
+    [
+      "export",
+      "Informes y detalle",
+      "export-excel",
+      "",
+      7
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash",
+      "",
+      7
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash",
+      "Compara el efectivo contado con\nla referencia de caja.",
+      7
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash",
+      "",
+      7
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash-warning",
+      "",
+      0
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash-warning",
+      "",
+      1
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash-warning",
+      "",
+      2
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash-warning",
+      "Si hay movimientos por verificar,\naparece «Por revisar».",
+      3
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash-warning",
+      "Si hay movimientos por verificar,\naparece «Por revisar».",
+      4
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash-warning",
+      "Si hay movimientos por verificar,\naparece «Por revisar».",
+      5
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash-warning",
+      "Si hay movimientos por verificar,\naparece «Por revisar».",
+      6
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash-warning",
+      "Si hay movimientos por verificar,\naparece «Por revisar».",
+      7
+    ],
+    [
+      "cash",
+      "Compara la caja",
+      "cash-warning",
+      "",
+      7
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff",
+      "",
+      7
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff",
+      "Como dueño, revisa el rol, la\nsede y el turno del equipo.",
+      7
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff",
+      "",
+      7
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff-edit",
+      "",
+      0
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff-edit",
+      "",
+      1
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff-edit",
+      "",
+      2
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff-edit",
+      "Abre la ficha para consultar sus\naccesos.",
+      3
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff-edit",
+      "Abre la ficha para consultar sus\naccesos.",
+      4
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff-edit",
+      "Abre la ficha para consultar sus\naccesos.",
+      5
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff-edit",
+      "Abre la ficha para consultar sus\naccesos.",
+      6
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff-edit",
+      "Abre la ficha para consultar sus\naccesos.",
+      7
+    ],
+    [
+      "staff",
+      "Roles y turnos",
+      "staff-edit",
+      "",
+      7
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings",
+      "",
+      7
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings",
+      "Consulta los datos comerciales en\nConfiguración.",
+      7
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings",
+      "",
+      7
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings-branches",
+      "",
+      0
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings-branches",
+      "",
+      1
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings-branches",
+      "",
+      2
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings-branches",
+      "Desde allí también accedes a\nSucursales.",
+      3
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings-branches",
+      "Desde allí también accedes a\nSucursales.",
+      4
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings-branches",
+      "Desde allí también accedes a\nSucursales.",
+      5
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings-branches",
+      "Desde allí también accedes a\nSucursales.",
+      6
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings-branches",
+      "Desde allí también accedes a\nSucursales.",
+      7
+    ],
+    [
+      "settings",
+      "Datos del negocio",
+      "settings-branches",
+      "",
+      7
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "",
+      7
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "Conoce MigaPOS.",
+      7
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "",
+      7
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "",
+      0
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "",
+      1
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "",
+      2
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "Solicita una demostración para tu\nnegocio.",
+      3
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "Solicita una demostración para tu\nnegocio.",
+      4
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "Solicita una demostración para tu\nnegocio.",
+      5
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "Solicita una demostración para tu\nnegocio.",
+      6
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "Solicita una demostración para tu\nnegocio.",
+      7
+    ],
+    [
+      "cta",
+      "Solicita una demostración",
+      "cta",
+      "",
+      7
+    ]
+  ],
+  "runs": [
+    7,
+    79,
+    7,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    52,
+    4,
+    17,
+    44,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    21,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    39,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    46,
+    103,
+    17,
+    66,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    40,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    38,
+    86,
+    17,
+    27,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    22,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    85,
+    96,
+    17,
+    42,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    17,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    12,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    38,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    36,
+    113,
+    17,
+    91,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    53,
+    63,
+    17,
+    24,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    13,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    13,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    13,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    55,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    68,
+    104,
+    17,
+    75,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    81,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    74,
+    21,
+    17,
+    93,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    89,
+    55,
+    17,
+    100,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    73,
+    64,
+    17,
+    88,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    71,
+    18,
+    17,
+    40,
+    9,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    72,
+    47
+  ],
+  "geometry": {
+    "hook": {
+      "area": [
+        12,
+        261,
+        366,
+        3895
+      ],
+      "focus": [
+        12,
+        393,
+        177,
+        173
+      ]
+    },
+    "categories": {
+      "area": [
+        12,
+        121,
+        366,
+        629
+      ],
+      "focus": [
+        81,
+        152,
+        100,
+        28
+      ]
+    },
+    "branch-before": {
+      "area": [
+        16,
+        92,
+        358,
+        44
+      ],
+      "focus": [
+        16,
+        92,
+        358,
+        44
+      ]
+    },
+    "branch-after": {
+      "area": [
+        16,
+        92,
+        358,
+        44
+      ],
+      "focus": [
+        16,
+        92,
+        358,
+        44
+      ]
+    },
+    "branch-stock": {
+      "area": [
+        12,
+        -119,
+        366,
+        1082
+      ],
+      "focus": [
+        147,
+        322,
+        78,
+        24
+      ]
+    },
+    "orders-active": {
+      "area": [
+        19,
+        631,
+        115,
+        50
+      ],
+      "focus": [
+        19,
+        631,
+        115,
+        50
+      ]
+    },
+    "orders-debt": {
+      "area": [
+        138,
+        629,
+        115,
+        50
+      ],
+      "focus": [
+        138,
+        629,
+        115,
+        50
+      ]
+    },
+    "agenda": {
+      "area": [
+        64,
+        371,
+        286,
+        44
+      ],
+      "focus": [
+        64,
+        371,
+        286,
+        44
+      ]
+    },
+    "agenda-search": {
+      "area": [
+        12,
+        169,
+        366,
+        499
+      ],
+      "focus": [
+        92,
+        501,
+        269,
+        24
+      ]
+    },
+    "history": {
+      "area": [
+        12,
+        237,
+        366,
+        278
+      ],
+      "focus": [
+        12,
+        237,
+        366,
+        278
+      ]
+    },
+    "history-items": {
+      "area": [
+        12,
+        349,
+        366,
+        147
+      ],
+      "focus": [
+        12,
+        349,
+        366,
+        147
+      ]
+    },
+    "report-today": {
+      "area": [
+        25,
+        242,
+        340,
+        108
+      ],
+      "focus": [
+        32,
+        249,
+        160,
+        44
+      ]
+    },
+    "report-week": {
+      "area": [
+        25,
+        239,
+        340,
+        108
+      ],
+      "focus": [
+        198,
+        246,
+        160,
+        44
+      ]
+    },
+    "report-month": {
+      "area": [
+        25,
+        239,
+        340,
+        108
+      ],
+      "focus": [
+        32,
+        296,
+        160,
+        44
+      ]
+    },
+    "report-year": {
+      "area": [
+        25,
+        239,
+        340,
+        108
+      ],
+      "focus": [
+        198,
+        296,
+        160,
+        44
+      ]
+    },
+    "report-metric": {
+      "area": [
+        69,
+        569,
+        74,
+        19
+      ],
+      "focus": [
+        69,
+        569,
+        74,
+        19
+      ]
+    },
+    "report-chart": {
+      "area": [
+        13,
+        294,
+        364,
+        256
+      ],
+      "focus": [
+        13,
+        294,
+        364,
+        256
+      ]
+    },
+    "export-pdf": {
+      "area": [
+        12,
+        169,
+        366,
+        404
+      ],
+      "focus": [
+        28,
+        462,
+        337,
+        50
+      ]
+    },
+    "export-excel": {
+      "area": [
+        12,
+        169,
+        366,
+        404
+      ],
+      "focus": [
+        28,
+        462,
+        337,
+        50
+      ]
+    },
+    "cash": {
+      "area": [
+        33,
+        312,
+        324,
+        232
+      ],
+      "focus": [
+        33,
+        312,
+        324,
+        232
+      ]
+    },
+    "cash-warning": {
+      "area": [
+        33,
+        312,
+        324,
+        232
+      ],
+      "focus": [
+        46,
+        435,
+        298,
+        32
+      ]
+    },
+    "staff": {
+      "area": [
+        12,
+        481,
+        366,
+        245
+      ],
+      "focus": [
+        12,
+        481,
+        366,
+        245
+      ]
+    },
+    "settings": {
+      "area": [
+        42,
+        695,
+        306,
+        20
+      ],
+      "focus": [
+        42,
+        695,
+        306,
+        20
+      ]
+    },
+    "settings-branches": {
+      "area": [
+        29,
+        96,
+        332,
+        852
+      ],
+      "focus": [
+        97,
+        410,
+        144,
+        24
+      ]
+    },
+    "products": {
+      "area": [
+        12,
+        -120,
+        366,
+        1082
+      ],
+      "focus": [
+        64,
+        102,
+        286,
+        44
+      ]
+    },
+    "staff-edit": {
+      "area": [
+        12,
+        12,
+        366,
+        820
+      ],
+      "focus": [
+        33,
+        396,
+        324,
+        45
+      ]
+    },
+    "pos-search": {
+      "area": [
+        12,
+        261,
+        366,
+        385
+      ],
+      "focus": [
+        12,
+        393,
+        177,
+        173
+      ]
+    },
+    "pos-add": {
+      "area": [
+        16,
+        704,
+        358,
+        56
+      ],
+      "focus": [
+        16,
+        704,
+        358,
+        56
+      ]
+    },
+    "pos-ticket": {
+      "area": [
+        0,
+        24,
+        390,
+        820
+      ],
+      "focus": [
+        267,
+        207,
+        44,
+        44
+      ]
+    },
+    "pos-total": {
+      "area": [
+        14,
+        557,
+        362,
+        50
+      ],
+      "focus": [
+        14,
+        557,
+        362,
+        50
+      ]
+    },
+    "product-search": {
+      "area": [
+        12,
+        169,
+        366,
+        575
+      ],
+      "focus": [
+        147,
+        610,
+        83,
+        24
+      ]
+    },
+    "orders-closed": {
+      "area": [
+        256,
+        629,
+        115,
+        50
+      ],
+      "focus": [
+        256,
+        629,
+        115,
+        50
+      ]
+    }
+  }
+}

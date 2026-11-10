@@ -1,0 +1,41 @@
+.ad {
+  overflow: hidden;
+  color: #fbfaff;
+  background:
+    radial-gradient(ellipse at 21% 54%, #28459577 0%, transparent 48%),
+    radial-gradient(ellipse at 76% 49%, #6b45ac8a 0%, transparent 46%),
+    linear-gradient(156deg, #101629, #101124 48%, #211633);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+.orbits { position: absolute; inset: 0; width: 100%; height: 100%; }
+.orbits ellipse { fill: none; stroke: #c9b8ff39; stroke-width: 1.5; }
+.brand {
+  position: absolute; left: 88px; right: 174px; top: 144px;
+  display: flex; align-items: center; gap: 14px; font-size: 32px;
+}
+.brand img { width: 52px; height: 52px; border-radius: 14px; object-fit: cover; }
+.brand span { margin-left: auto; font-size: 26px; font-weight: 650; color: #e4dcfb; }
+.title { position: absolute; top: 216px; left: 88px; right: 174px; margin: 0; font-size: 67px; line-height: 1.05; letter-spacing: -2.7px; }
+.phone {
+  position: absolute; top: 330px; left: 102px; padding: 5px; border-radius: 48px;
+  background: linear-gradient(145deg,#c3b7ef,#575383 26%,#292447 66%,#8580a9);
+  box-shadow: 0 38px 90px #080816b0;
+}
+.rim { background: #131322; border-radius: 44px; padding: 9px; }
+.screen { position: relative; width: 762px; height: 1032px; border-radius: 34px; overflow: hidden; background: #fcfaf7; }
+.capture { position: absolute; inset: 0; }
+.capture img { position: absolute; left: 0; display: block; }
+.focus { position: absolute; box-sizing: border-box; border-radius: 15px; border: 5px solid #6a42d8; box-shadow: 0 0 0 2px #fff8; pointer-events: none; }
+.captions {
+  position: absolute; left: 88px; right: 174px; bottom: 345px;
+  display: flex; justify-content: center; text-align: center;
+  white-space: pre-line; font-size: 46px; line-height: 1.14; font-weight: 690;
+}
+.captions span { padding: 14px 23px 17px; border-radius: 21px; background: #0f1024; border: 1px solid #b39ced60; }
+.closing { position: absolute; left: 88px; right: 174px; top: 474px; display: grid; justify-items: center; text-align: center; }
+.emblem { width: 477px; height: 422px; object-fit: contain; mask-image: radial-gradient(ellipse, #000 47%, transparent 73%); }
+.wordmark { font-size: 111px; font-weight: 810; letter-spacing: -5px; margin-top: -14px; }
+.closing h1 {
+  margin: 30px 0 0; padding: 24px 32px 28px; border-radius: 25px; border: 2px solid #c2affc;
+  background: linear-gradient(105deg,#5e40b8,#294aa5); font-size: 48px; line-height: 1.15;
+}

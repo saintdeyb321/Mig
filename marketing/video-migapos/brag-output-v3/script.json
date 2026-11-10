@@ -1,0 +1,40 @@
+[
+  {"id":"hook","title":"Tu negocio, en el móvil","target":5,"cues":[
+    {"shot":"hook","text":"¿Tienes una tienda, panadería o pastelería?"},
+    {"shot":"hook","text":"Mira cómo funciona MigaPOS.","speech":"Mira cómo funciona Miga Pos."}]},
+  {"id":"pos","title":"Prepara el ticket","target":10,"cues":[
+    {"shot":"pos-search","text":"Busca un producto y añádelo al ticket.","action":"pos-add"},
+    {"shot":"pos-ticket","text":"Ajusta la cantidad y revisa el total antes de cobrar.","action":"pos-total"}]},
+  {"id":"catalog","title":"Organiza tu catálogo","target":9,"cues":[
+    {"shot":"categories","text":"Agrupa tus productos en categorías."},
+    {"shot":"products","text":"Busca un artículo y comprueba sus existencias.","action":"product-search"}]},
+  {"id":"branches","title":"Inventario por sede","target":9,"cues":[
+    {"shot":"branch-before","text":"Cambia de sede desde el selector.","action":"branch-after"},
+    {"shot":"branch-stock","text":"Consulta las existencias del local seleccionado."}]},
+  {"id":"orders","title":"Pedidos y clientes","target":11,"cues":[
+    {"shot":"orders-active","text":"Revisa pedidos en curso, por cobrar y cerrados.","action":"orders-debt"},
+    {"shot":"agenda","text":"Busca a tus clientes frecuentes en la Agenda VIP.","speech":"Busca a tus clientes frecuentes en la agenda vip.","action":"agenda-search"}]},
+  {"id":"history","title":"Historial de ventas","target":8,"cues":[
+    {"shot":"history","text":"Consulta la fecha y el estado de un ticket anterior."},
+    {"shot":"history-items","text":"Revisa qué productos incluía."}]},
+  {"id":"reports","title":"Ventas por período","target":12,"cues":[
+    {"shot":"report-today","text":"Elige hoy, esta semana, este mes o este año.","action":"report-periods"},
+    {"shot":"report-metric","text":"Consulta los tickets del período."},
+    {"shot":"report-chart","text":"Y observa cómo evolucionan las ventas."}]},
+  {"id":"export","title":"Informes y detalle","target":10,"cues":[
+    {"shot":"export-pdf","text":"Prepara el informe visual para imprimirlo."},
+    {"shot":"export-pdf","text":"Desde el navegador puedes guardarlo como PDF.","speech":"Desde el navegador puedes guardarlo como pe de efe."},
+    {"shot":"export-excel","text":"El detalle de movimientos se descarga en Excel.","speech":"El detalle de movimientos se descarga en Éxcel."}]},
+  {"id":"cash","title":"Compara la caja","target":9,"cues":[
+    {"shot":"cash","text":"Compara el efectivo contado con la referencia de caja."},
+    {"shot":"cash-warning","text":"Si hay movimientos por verificar, aparece «Por revisar»."}]},
+  {"id":"staff","title":"Roles y turnos","target":9,"cues":[
+    {"shot":"staff","text":"Como dueño, revisa el rol, la sede y el turno del equipo."},
+    {"shot":"staff-edit","text":"Abre la ficha para consultar sus accesos."}]},
+  {"id":"settings","title":"Datos del negocio","target":7,"cues":[
+    {"shot":"settings","text":"Consulta los datos comerciales en Configuración."},
+    {"shot":"settings-branches","text":"Desde allí también accedes a Sucursales."}]},
+  {"id":"cta","title":"Solicita una demostración","target":6,"cues":[
+    {"shot":"cta","text":"Conoce MigaPOS.","speech":"Conoce Miga Pos."},
+    {"shot":"cta","text":"Solicita una demostración para tu negocio."}]}
+]
