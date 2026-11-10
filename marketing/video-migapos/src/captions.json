@@ -1,0 +1,11 @@
+[
+  {"text":"Tu tienda, bajo control.","startMs":0,"endMs":2800,"timestampMs":null,"confidence":null,"renderAsTitle":true},
+  {"text":"Arma el ticket","startMs":3200,"endMs":5500,"timestampMs":null,"confidence":null},
+  {"text":"y revisa el total antes de cobrar.","startMs":5500,"endMs":7800,"timestampMs":null,"confidence":null},
+  {"text":"Busca un producto y consulta\ncuánto stock queda en tu sede.","startMs":8200,"endMs":12800,"timestampMs":null,"confidence":null},
+  {"text":"Revisa tus ventas del período\ndesde el tablero.","startMs":13200,"endMs":17800,"timestampMs":null,"confidence":null},
+  {"text":"Al cierre, compara\nel efectivo contado","startMs":18200,"endMs":20500,"timestampMs":null,"confidence":null},
+  {"text":"con el monto esperado.","startMs":20500,"endMs":22800,"timestampMs":null,"confidence":null},
+  {"text":"Conoce MigaPOS.","startMs":23200,"endMs":26600,"timestampMs":null,"confidence":null,"renderAsTitle":true},
+  {"text":"Solicita una demostración.","startMs":27000,"endMs":30000,"timestampMs":null,"confidence":null,"renderAsTitle":true}
+]

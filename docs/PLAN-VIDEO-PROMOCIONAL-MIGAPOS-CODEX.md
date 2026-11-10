@@ -28,9 +28,9 @@ npm --version
 ```
 
 **Decisión de rama segura:**
-1. Si la rama activa es `fix/migapos-production-readiness` y `git status --short` está vacío **o únicamente muestra el MD de este plan recién copiado como archivo no rastreado** (`?? docs/PLAN-VIDEO-PROMOCIONAL-MIGAPOS-CODEX.md`), ejecutar `git switch -c marketing/video-promo-migapos` **desde el HEAD local actual**, aunque sea posterior al commit de GitHub. Si ya existe esa rama local, inspeccionarla primero y no sobrescribirla.
+1. Si la rama activa es `fix/migapos-production-readiness` y `git status --short` está vacío o solo muestra archivos nuevos conocidos sin colisión, ejecutar `git switch -c marketing/video-promo-migapos` desde el HEAD local actual. Conservar los archivos preexistentes, incluido `docs/GO-NO-GO-P15-PRODUCCION.md`. Si la rama de marketing ya existe, inspeccionarla antes de reutilizarla. Se aplica el [protocolo de colaboración](PROTOCOLO-COLABORACION-VIDEO-MIGAPOS.md).
 2. Si ya está en `marketing/video-promo-migapos`, continuar ahí tras revisar estado y archivos. No intentar crearla de nuevo.
-3. Si hay modificaciones preexistentes en archivos del proyecto, archivos no rastreados ajenos al plan que puedan interferir, o la rama activa no es ninguna de las dos anteriores, **no cambiar ramas ni tocar archivos existentes**; documentar el estado y pedir al propietario la acción mínima segura. **Prohibidos** `git stash`, `git reset`, `git clean`, `git checkout -f`, `git pull`, `git rebase`, `git merge` y `git push` automáticos.
+3. Si hay modificaciones rastreadas inesperadas, posibles colisiones o una rama activa distinta de las dos anteriores, conservar los archivos y documentar el bloqueo antes de cambiar de rama. Quedan prohibidos `git stash`, `git reset`, `git clean`, `git checkout -f`, `git pull`, `git rebase`, `git merge` y `git push`.
 4. Si `HEAD` no es exactamente `1b5bea4`, registrar la diferencia, pero **nunca reemplazar la versión local con la remota**. La versión local correcta prevalece si estamos en la rama base esperada; solo informar las diferencias.
 5. No consultar `main` ni descargar árboles de GitHub. No hacer `fetch` sin una razón concreta y autorización.
 
@@ -113,7 +113,7 @@ Orden de comprobación para Codex (no leer todos los archivos completos):
 
 ### Hito A — Seguridad + preparación (primer prompt)
 
-**Acciones:** ejecutar comprobación Git/local, crear rama dedicada **solo si el árbol es limpio (excepto el MD nuevo de este plan) y la rama es la esperada**, verificar Node/npm/espacio, detectar assets/skills ya presentes. Registrar resultado y limitaciones. **No** consultar GitHub para reemplazar el estado local.
+**Acciones:** comprobar Git y aplicar la decisión de rama segura de la sección 0. Verificar Node, npm y espacio, detectar recursos y skills locales, y registrar el resultado.
 
 **Hecho cuando:** base local documentada y rama segura definida; entorno viable o bloqueo explicable.
 
@@ -149,7 +149,7 @@ Orden de comprobación para Codex (no leer todos los archivos completos):
 - Antes de descargar dependencias medir `Get-PSDrive C`; revisar herramientas existentes, instalar solo lo imprescindible, prohibido ejecutar `npm install` en raíz de MigaPOS o en `frontend` por este plan.
 - **Al final de cada hito** actualizar `marketing/video-migapos/docs/PROGRESS.md` (máximo 250–300 palabras): base/rama, avance, artefactos, riesgos y siguiente comando. Al reanudar, leer **solo** `PROGRESS.md` + 1–2 archivos indispensables, no todo el repo.
 - Respuesta en español de máximo 12 líneas por hito, con rutas y resultados comprobados. No imprimir árboles completos ni logs extensos.
-- Stop condition: si el árbol está sucio, rama distinta, riesgo de conexión a producción, disco insuficiente, dependencia de pago o material con licencia dudosa, detener **solo la acción riesgosa** y avanzar en documentación segura cuando sea posible; nunca improvisar cambios destructivos.
+- Detener solo la acción riesgosa si la verificación de rama falla, existe riesgo de conectar a producción, el disco es insuficiente, se exige una dependencia de pago o la licencia de un recurso es dudosa. Continuar con el trabajo seguro.
 
 ## 8. Estructura objetivo (no requiere existir hoy)
 
@@ -179,7 +179,7 @@ Al completar instalación, añadir exclusiones para `marketing/video-migapos/nod
 ```text
 Actúa como director creativo de anuncios SaaS y desarrollador senior de React/Remotion. Workspace LOCAL de Windows: C:\Proyectos\MigaPOS. Lee `C:\Proyectos\MigaPOS\docs\PLAN-VIDEO-PROMOCIONAL-MIGAPOS-CODEX.md` y síguelo. No clones el repo ni uses `main`: el código local actual es la fuente de verdad.
 
-Base esperada: `fix/migapos-production-readiness`, commit remoto de referencia `1b5bea4`. Antes de editar, verifica `git branch --show-current`, `git status --short`, `git log -1 --oneline`, Node/npm y espacio libre. Si la rama base está activa y limpia (se admite solamente el MD del plan como archivo nuevo sin seguimiento), crea la rama LOCAL `marketing/video-promo-migapos` desde el HEAD LOCAL; si ya existe, inspecciona y reutiliza con seguridad. Si hay cambios preexistentes distintos del MD nuevo del plan o rama inesperada, no hagas checkout, stash, reset, pull, merge ni sobrescrituras: informa el bloqueo y ejecuta únicamente análisis seguro.
+Base esperada: `fix/migapos-production-readiness`, con el HEAD local como fuente de verdad. Antes de editar, verifica rama, HEAD, estado, Node, npm y espacio libre. Aplica la decisión de rama de la sección 0 y conserva los archivos preexistentes.
 
 Quiero empezar a PRODUCIR un short comercial profesional de MigaPOS: 30 s, 9:16, 1080x1920, 30 fps, estética premium azul oscuro/morado galaxia, pantallas verificadas del programa, subtítulos, hook de 3 s y CTA. Usa skill oficial de Remotion `https://github.com/remotion-dev/skills` (instalarla una sola vez solo si falta) y skills locales de marca si están presentes. Todo el proyecto audiovisual irá aislado en `marketing/video-migapos/`; no modifiques `frontend/`, Firebase, Firestore, funciones ni producción.
 
