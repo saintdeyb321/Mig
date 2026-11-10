@@ -55,6 +55,8 @@ export function createSessionResources({ idleMs = 120000, maxListeners = 8, now 
   };
   const close = () => { active = false; controller.abort(); listeners.forEach(entry => entry.halt()); reads.clear(); values.clear(); cells.clear(); listeners.clear(); };
   return { cell, watch, signal: controller.signal,
+    peekWatch: key => listeners.get(key)?.api.get(),
+    readLoadedAt: key => reads.get(key)?.loadedAt,
     lease() { const revision = ++leaseRevision; return () => queueMicrotask(() => { if (revision === leaseRevision) close(); }); },
     value(key, factory) { if (!values.has(key)) values.set(key, factory()); return values.get(key); },
     clearValue(key) { values.get(key)?.clear?.(); },

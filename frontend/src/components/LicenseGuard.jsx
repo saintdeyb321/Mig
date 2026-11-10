@@ -1,23 +1,16 @@
 import { AssistedAccessContext } from '../core/session/AssistedAccessContext';
 import { FullscreenState } from '../shared/ui';
 import { LicenseContext } from '../features/licenses/context/LicenseContext';
-import React, { useEffect } from 'react';
-import { reportDiagnostic } from '../core/errors/diagnostics.js';
 import { useLicenseAccess } from '../features/licenses/hooks/useLicenseAccess';
 import RestrictedAccess from './RestrictedAccess';
 export default function LicenseGuard({
-  user, handleLogout,
+  user, handleLogout, recheckProfile,
   children
 }) {
   const {
     licenseState,
     expirationDateStr, retry, licenseData
-  } = useLicenseAccess(user);
-  useEffect(() => {
-    if (!['active', 'offline-assisted', 'loading'].includes(licenseState)) reportDiagnostic('license', {
-      code: 'tenant-restricted'
-    }, 'restricted');
-  }, [licenseState]);
+  } = useLicenseAccess(user, recheckProfile);
   if (licenseState === 'loading') {
     return <FullscreenState loading title="Verificando acceso…" />;
   }

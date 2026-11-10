@@ -3,18 +3,19 @@ let profile = null, license = null;
 
 // In-memory server evidence only. Presentation cache never sets either grant.
 export function setProfileAuthority(user, confirmed) {
+  if (!confirmed) license = null;
   if (!user) { if (profile) profile = { ...profile, confirmed: false }; return; }
   const key = getIdentityKey(user);
   if (profile?.key !== key) license = null;
   profile = { uid: user.uid, businessId: user.businessId, role: user.role, key, confirmed: confirmed === true };
 }
 export function resetAccessAuthority() { profile = null; license = null; }
-export function setLicenseAuthority(key, confirmed) {
-  if (profile?.key === key) license = { key, confirmed: confirmed === true };
+export function setLicenseAuthority(key, confirmed, expiresAt) {
+  if (profile?.key === key) license = profile.confirmed && confirmed === true && Number.isFinite(expiresAt) ? { key, expiresAt } : null;
 }
 export function assertConfirmedWrite({ uid, online, profileOnly = false }) {
   if (!online || !uid || profile?.uid !== uid || !profile.confirmed
-    || (!profileOnly && profile.role !== 'superadmin' && (license?.key !== profile.key || !license.confirmed))) {
+    || (!profileOnly && profile.role !== 'superadmin' && (license?.key !== profile.key || license.expiresAt <= Date.now()))) {
     throw Object.assign(new Error('Operación bloqueada: conecta el dispositivo y espera la confirmación de cuenta, negocio y licencia. Los pendientes se conservan.'), { code: 'access-unverified' });
   }
 }

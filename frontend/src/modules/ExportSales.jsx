@@ -3,7 +3,6 @@ import { memo, useEffect, useId, useRef, useState } from 'react';
 import { Alert, Button, Dialog, DialogFooter, Select } from '../shared/ui';
 import { queryErrorDiagnostic } from '../core/firebase/queryErrors.js';
 import { useExportSales } from '../features/reports/hooks/useExportSales';
-import { usePrintJobs } from '../shared/printing/usePrintJobs.js';
 
 const statusMessages = {
   'module-load': 'Cargando módulo Excel…',
@@ -11,10 +10,11 @@ const statusMessages = {
   integrity: 'Verificando el informe…',
   download: 'Iniciando la descarga…',
   started: 'Se solicitó la descarga al navegador.',
-  cooldown: 'Espera unos segundos antes de volver a descargar.',
 };
 
 function errorCopy({ kind, error, offline }, diagnostic) {
+  if (error.code === 'report-timeout') return ['El informe tardó demasiado', 'Vuelve a intentar con el mismo período o selecciona un rango menor.'];
+  if (error.code === 'report-stale') return ['Los datos del informe caducaron', 'Vuelve a preparar el informe para verificar los movimientos.'];
   if (kind === 'module-load') return ['No se pudo preparar Excel', offline
     ? 'Sin conexión. Conéctate para cargar el generador de archivos e intenta nuevamente.'
     : 'Hubo un problema al cargar el generador de archivos. Intenta nuevamente; si continúa, recarga la página.'];
@@ -28,47 +28,66 @@ function errorCopy({ kind, error, offline }, diagnostic) {
     : 'Intenta nuevamente o solicita revisión al administrador.'];
 }
 
-function ReportPreview({ html, onClose }) {
-  const runPrint = usePrintJobs();
+function ReportPreview({ html, expiresAt, expired, onClose }) {
+  const frame = useRef(null);
   const inFlight = useRef(false);
-  const [printing, setPrinting] = useState(false);
-  const [error, setError] = useState(false);
-  const print = async () => {
-    if (inFlight.current) return;
+  const [ready, setReady] = useState(false);
+  const [status, setStatus] = useState('loading');
+  useEffect(() => {
+    if (ready) return;
+    const timeout = setTimeout(() => setStatus('frame-error'), 10000);
+    return () => clearTimeout(timeout);
+  }, [ready]);
+  const print = () => {
+    if (inFlight.current || !ready || Date.now() >= expiresAt) return;
     inFlight.current = true;
-    setPrinting(true);
-    setError(false);
-    try { await runPrint(job => job.print(html), { page: 'a4' }); }
-    catch (error) { if (error.name !== 'AbortError') setError(true); }
-    finally { inFlight.current = false; setPrinting(false); }
+    try {
+      const target = frame.current?.contentWindow;
+      if (!target) throw new Error('La vista previa no está lista.');
+      target.focus();
+      // Keep the loaded document alive for nonblocking dialogs. afterprint is optional.
+      target.print();
+      setStatus('requested');
+    } catch { setStatus('print-error'); }
+    finally { requestAnimationFrame(() => { inFlight.current = false; }); }
   };
-  return <Dialog title="Informe gerencial" description="Revisa la vista previa. En el diálogo de impresión puedes guardar una copia PDF."
-    icon={Printer} className="max-w-5xl" busy={printing} onClose={onClose}>
-    <iframe title="Vista previa del informe gerencial" sandbox="" srcDoc={html} className="h-[58vh] w-full rounded-lg border border-line bg-panel" />
-    {error && <Alert variant="danger">No se pudo abrir la impresión. Vuelve a intentar desde esta vista previa.</Alert>}
-    <DialogFooter>
+  return <Dialog title="Informe gerencial" description="Elige Guardar como PDF en el diálogo del navegador. Si aparece la URL o la fecha automática, desactiva Encabezados y pies de página."
+    icon={Printer} className="max-w-5xl" onClose={onClose}>
+    <iframe ref={frame} title="Vista previa del informe gerencial" sandbox="allow-same-origin allow-modals" srcDoc={html}
+      onLoad={() => {
+        if (!frame.current?.contentDocument?.querySelector('main')) return;
+        setReady(true);
+        setStatus('ready');
+      }} className="h-[52vh] min-h-48 w-full rounded-lg border border-line bg-panel" />
+    {status === 'frame-error' && <Alert variant="danger">La vista previa no pudo cargarse. Ciérrala y vuelve a preparar el informe.</Alert>}
+    {status === 'print-error' && <Alert variant="danger">No se pudo abrir la impresión. Vuelve a intentar desde esta vista previa.</Alert>}
+    {expired && <Alert variant="warning">Los datos caducaron. Cierra esta vista y vuelve a preparar el informe.</Alert>}
+    <p role="status" aria-live="polite" className="text-sm text-muted">
+      {status === 'loading' ? 'Cargando vista previa…' : status === 'requested' ? 'Se solicitó la impresión al navegador.' : ''}
+    </p>
+    <DialogFooter className="items-stretch sm:items-center sm:justify-center">
       <Button variant="secondary" onClick={onClose}>Cerrar vista previa</Button>
-      <Button loading={printing} onClick={print}>Imprimir / Guardar como PDF</Button>
+      <Button disabled={!ready || expired} onClick={print}>Imprimir / Guardar como PDF</Button>
     </DialogFooter>
   </Dialog>;
 }
 
 function ExportSales({ user }) {
   const [timeFilter, setTimeFilter] = useState('hoy');
-  const headingId = useId(), periodId = useId(), noticeId = useId();
-  const downloadRef = useRef(null), retryRef = useRef(null);
-  const { isExporting, failure, phase, html, exportData, closePreview } = useExportSales(user, timeFilter);
+  const [format, setFormat] = useState('pdf');
+  const headingId = useId(), periodId = useId(), formatId = useId(), noticeId = useId();
+  const actionRef = useRef(null);
+  const { isExporting, failure, phase, html, expiresAt, expired, exportData, closePreview, fetchedAt, reused, provisional, branchName } = useExportSales(user, timeFilter, format);
   const diagnostic = failure?.kind === 'data-read' ? queryErrorDiagnostic(failure.error, 'reports') : null;
   const error = failure && errorCopy(failure, diagnostic);
   const admin = ['dueño', 'superadmin'].includes(user?.role) || import.meta.env.DEV;
   useEffect(() => {
-    if (failure) retryRef.current?.focus();
-    else if (phase === 'started' || phase === 'cooldown') downloadRef.current?.focus();
+    if (failure || phase === 'started') actionRef.current?.focus();
   }, [failure, phase]);
 
-  const request = format => event => {
+  const request = event => {
     event.preventDefault();
-    if (!isExporting) void exportData(format, timeFilter);
+    if (!isExporting) void exportData();
   };
 
   return <section aria-labelledby={headingId} className="export-toolbar min-w-0 rounded-card border border-line border-l-4 border-l-success bg-linear-to-br from-panel via-panel to-success-soft/55 p-3 shadow-card sm:px-4">
@@ -77,34 +96,39 @@ function ExportSales({ user }) {
         <FileSpreadsheet aria-hidden="true" className="size-5" />
       </span>
       <div className="min-w-0">
-        <h2 id={headingId} className="text-lg font-extrabold leading-snug tracking-tight text-ink sm:text-xl">Exportar reportes contables</h2>
-        <p className="mt-0.5 text-sm leading-snug text-muted">Prepara un informe gerencial para imprimir o descarga el detalle Excel de movimientos, productos y sucursales.</p>
+        <h2 id={headingId} className="text-xl font-extrabold leading-snug tracking-tight text-ink sm:text-2xl">Informes del negocio</h2>
+        <p className="mt-0.5 text-sm leading-snug text-muted">Revisa los resultados del período o descarga el detalle de los movimientos.</p>
       </div>
     </header>
-    <form onSubmit={request('excel')} className="export-controls mt-3 grid min-w-0 items-end gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:gap-3">
-      <div className="min-w-0">
-        <label className="mb-1 block text-xs font-semibold text-ink" htmlFor={periodId}>Período de exportación</label>
-        <Select id={periodId} value={timeFilter} onChange={event => setTimeFilter(event.target.value)} disabled={isExporting} className="min-h-12 border-line bg-stellar-soft/35">
-          <option value="hoy">Hoy · detalle de tickets</option>
-          <option value="semana">Semana · detalle de tickets</option>
-          <option value="mes">Mes · resumen diario</option>
-          <option value="todo">Año · sujeto al límite de movimientos</option>
-        </Select>
+    <form onSubmit={request} className="mt-4 grid min-w-0 gap-3">
+      <div className="export-controls grid min-w-0 gap-3 sm:grid-cols-2">
+        <div className="min-w-0">
+          <label className="mb-1 block text-sm font-semibold text-ink" htmlFor={periodId}>Período</label>
+          <Select id={periodId} value={timeFilter} onChange={event => setTimeFilter(event.target.value)} className="min-h-12 border-line bg-stellar-soft/35">
+            <option value="hoy">Hoy</option><option value="semana">Semana</option><option value="mes">Mes</option><option value="todo">Año</option>
+          </Select>
+        </div>
+        <div className="min-w-0">
+          <label className="mb-1 block text-sm font-semibold text-ink" htmlFor={formatId}>Formato</label>
+          <Select id={formatId} value={format} onChange={event => setFormat(event.target.value)} className="min-h-12 border-line bg-stellar-soft/35">
+            <option value="pdf">Informe visual (PDF)</option><option value="excel">Detalle Excel</option>
+          </Select>
+        </div>
       </div>
-      <div className="grid gap-2 md:grid-cols-2">
-        <Button ref={downloadRef} aria-describedby={noticeId} type="submit" variant="success" size="lg" disabled={isExporting}>
-          <Download aria-hidden="true" />Descargar Excel
-        </Button>
-        <Button type="button" variant="secondary" size="lg" disabled={isExporting} onClick={request('pdf')}><Printer aria-hidden="true" />Informe PDF</Button>
-      </div>
+      <p id={noticeId} className="text-center text-xs text-muted">{branchName} · {format === 'pdf'
+        ? 'Resumen para imprimir o guardar como PDF.' : 'Detalle y hojas de auditoría por período.'}</p>
+      <Button ref={actionRef} aria-describedby={noticeId} type="submit" variant="success" size="lg" loading={isExporting}
+        className="w-full sm:w-auto sm:min-w-56 sm:justify-self-center">
+        {format === 'pdf' ? <><Printer aria-hidden="true" />Preparar informe PDF</> : <><Download aria-hidden="true" />Descargar detalle Excel</>}
+      </Button>
     </form>
-    <p id={noticeId} className="sr-only">La descarga consulta los movimientos del período seleccionado.</p>
-    <p role="status" aria-atomic="true" className={statusMessages[phase] ? 'mt-2 flex items-center gap-2 text-sm text-muted' : 'sr-only'}>
+    <p role="status" aria-atomic="true" className={statusMessages[phase] || fetchedAt ? 'mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-muted' : 'sr-only'}>
       {phase === 'started' && <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-success" />}{statusMessages[phase]}
+      {fetchedAt && <span>{provisional ? 'Conciliación histórica pendiente' : reused ? 'Datos reutilizados' : 'Datos consultados'}
+        {' · '}{new Date(fetchedAt).toLocaleString('es-PE', { timeZone: 'America/Lima', dateStyle: 'short', timeStyle: 'short' })} (Lima)</span>}
     </p>
     {error && <Alert variant="danger" title={error[0]} className="mt-2">
       <p>{error[1]}</p>
-      <Button ref={retryRef} onClick={request(failure.format)} variant="secondary" size="sm" className="mt-2 sm:min-h-11">Reintentar exportación</Button>
       <details className="mt-1 text-xs">
         <summary className="flex min-h-11 cursor-pointer items-center font-semibold">Detalles técnicos</summary>
         <p>Etapa {failure.kind}{failure.kind === 'module-load' ? ' · xlsx-js-style' : ''}{diagnostic?.code && /^[a-z-]{1,48}$/.test(diagnostic.code) ? ' · ' + diagnostic.code : ''}.</p>
@@ -119,7 +143,7 @@ function ExportSales({ user }) {
         <p>Hoy y semana detallan cada movimiento. Mes y año resumen por día. Máximo 10 000 movimientos y 500 contratos históricos. Si falta información o se excede el límite, reduce el período antes de reintentar.</p>
       </div>
     </details>
-    {html && <ReportPreview html={html} onClose={closePreview} />}
+    {html && <ReportPreview html={html} expiresAt={expiresAt} expired={expired} onClose={closePreview} />}
   </section>;
 }
 export default memo(ExportSales);

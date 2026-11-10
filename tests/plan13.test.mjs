@@ -37,7 +37,7 @@ const compensation = (original, cashAmount, digitalAmount, reason = 'Motivo de e
   id: original.id, saleId: original.id, userId: 'qa13-cajera', authority: 'pos-compensation',
   amount: -original.total, cashAmount, digitalAmount, items: original.items, reason, occurredAt: time('12') });
 const yapeVoid = compensation(yapeSale, 0, -30);
-const rows = (wb, sheet) => XLSX.utils.sheet_to_json(wb.Sheets[sheet], { defval: '' });
+const rows = (wb, sheet) => XLSX.utils.sheet_to_json(wb.Sheets[sheet], { defval: '', range: sheet.startsWith('Detalle_') ? 1 : 0 });
 const roundTrip = wb => XLSX.read(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
 const sumMoney = values => values.reduce((cents, value) => cents + Math.round((value || 0) * 100), 0) / 100;
 
@@ -132,8 +132,9 @@ it('P13 reconciles scenario A before and after one Yape compensation across Dash
   });
   assert.deepEqual([result.netRevenue, result.voidedTicketCount, result.refundCount], [55, 1, 1]);
   const lines = rows(after.wb, 'Detalle_Centro');
-  assert.equal(lines.filter(row => row.Ticket === yapeSale.id && row.Estado === 'COMPLETADA').length, 1);
-  assert.equal(lines.filter(row => row.Ticket === `COMPENSACIÓN POS: ${yapeSale.id}` && row.Cantidad === -1).length, 1);
+  assert.equal(lines.filter(row => row['Medio de pago'] === 'YAPE' && row.Subtotal === 30 && row.Estado === 'COMPLETADA').length, 1);
+  assert.equal(lines.filter(row => row.Estado === 'COMPENSACIÓN POS' && row.Subtotal === -30 && row.Cantidad === -1).length, 1);
+  assert.ok(lines.every(row => !Object.values(row).includes(yapeSale.id)));
   const opening = { openingAmount: 100 };
   const beforeCash = calculateCashTotals(opening, salesA, [advance]);
   const afterCash = calculateCashTotals(opening, salesA, [advance, ...voidCashPayments([yapeVoid, yapeVoid])]);
@@ -202,7 +203,8 @@ it('P13 keeps names and void reasons as XLSX text and refuses an over-limit expo
   const cells = Object.values(result.wb.Sheets.Detalle_Centro).filter(cell => cell?.t === 's');
   for (const name of names) {
     assert.ok(cells.some(cell => String(cell.v).trimStart() === name));
-    assert.ok(cells.some(cell => String(cell.v).trimStart().startsWith(`${name} · UID:`)));
+    assert.ok(cells.some(cell => cell.v === name));
+    assert.ok(cells.every(cell => !String(cell.v).includes('UID:')));
   }
   assert.ok(Object.values(result.wb.Sheets.Detalle_Centro).every(cell => cell?.f == null && cell?.l == null));
   const tooMany = { ...yapeSale, items: Array(MAX_EXPORT_ROWS).fill(yapeSale.items[0]) };
@@ -316,7 +318,7 @@ it('P13 counts a historical void and its matching immutable compensation as one 
   }, { voids: 1, net: 0, qty: 0, productRevenue: 0, excelVoids: 1, excelNet: 0 });
   assert.equal(historical.voided, true);
   const detail = rows(result.wb, 'Detalle_Centro');
-  assert.equal(detail.filter(row => row.Ticket === 'COMPENSACIÓN POS: s2').length, 1);
+  assert.equal(detail.filter(row => row.Estado === 'COMPENSACIÓN POS' && row.Subtotal === -30).length, 1);
   assert.equal(sumMoney(detail.map(row => row.Cantidad)), 0);
   assert.deepEqual(result.dashboard.summary.channels.digital, { collections: 30, posCompensations: -30, contractRefunds: 0, net: 0 });
 });
@@ -329,7 +331,7 @@ it('P13-03 retains unpaired legacy voids without generating money, stock or an E
   assert.deepEqual([summary.netRevenue, summary.posTicketCount, summary.voidedTicketCount, summary.refundCount], [20, 1, 1, 0]);
   assert.deepEqual(products.map(row => [row.id, row.qty, row.revenue]), [[cashSale.items[0].id, 1, 20]]);
   const detail = rows(result.wb, 'Detalle_Centro');
-  const legacy = detail.find(row => row.Ticket === historical.id);
+  const legacy = detail.find(row => row['Medio de pago'] === 'YAPE' && row.Observaciones.includes('Anulación anterior'));
   assert.deepEqual([legacy.Estado, legacy.Cantidad, legacy.Subtotal], ['ANULADA ❌', 0, 0]);
   assert.equal(detail.some(row => row.Estado === 'COMPENSACIÓN POS'), false);
   const stats = salesToDailyStats([historical]);
@@ -449,7 +451,7 @@ it('P13-04 A3/A4 handles historical records with a duplicate same-day receipt or
   assert.equal(pair.dashboard.summary.refundCount, 1);
   assert.equal(unpaired.dashboard.summary.refundCount, 0);
   assert.deepEqual(periodTotals(unpaired), [0, 0, 0, 1, 0, 0]);
-  assert.equal(rows(unpaired.wb, 'Detalle_Centro').find(row => row.Ticket === sale.id).Estado, 'ANULADA ❌');
+  assert.equal(rows(unpaired.wb, 'Detalle_Centro').find(row => row['Medio de pago'] === 'PLIN').Estado, 'ANULADA ❌');
 });
 
 for (const [filter, before, after] of [

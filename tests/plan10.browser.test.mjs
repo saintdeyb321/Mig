@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { runBrowserFixture } from './helpers/browserHarness.mjs';
+import { readBrowserBuildCss, runBrowserFixture } from './helpers/browserHarness.mjs';
 
 const path = name => fileURLToPath(new URL('../frontend/src/' + name, import.meta.url)).replaceAll('\\', '/');
+const artifacts = process.env.MIGAPOS_TEST_ARTIFACT_DIR || '.release/p10-visual';
 const mockHooks = Object.fromEntries([
   ['features/catalog/hooks/useCategories.js', 'useCategories', 'categories'], ['features/catalog/hooks/useProducts.js', 'useProducts', 'products'],
   ['features/customers/hooks/useAgenda.js', 'useAgenda', 'agenda'], ['features/settings/hooks/useSettings.js', 'useSettings', 'settings'],
@@ -17,7 +18,7 @@ const mockHooks = Object.fromEntries([
 const moduleMocks = { ...mockHooks,
   [path('core/firebase/client.js')]: 'export const auth={currentUser:{uid:"p09-user"}};export const db={};',
   [path('features/notifications/hooks/useAlerts.js')]: 'export function useAlerts(){return {alerts:[],canViewNotifications:true};}',
-  [path('features/reports/hooks/useExportSales.js')]: 'import {useSyncExternalStore} from "react"; export function useExportSales(){useSyncExternalStore(next=>window.__p09.watch("export",next),()=>window.__p09.revisions.export??0);return window.__p09.export;}',
+  [path('features/reports/hooks/useExportSales.js')]: 'import {useSyncExternalStore} from "react"; export function useExportSales(_user,period,format){useSyncExternalStore(next=>window.__p09.watch("export",next),()=>window.__p09.revisions.export??0);return {...window.__p09.export,exportData:()=>window.__p09.export.exportData(period,format)};}',
   [path('features/contracts/hooks/useContractImageUrls.js')]: 'export function useContractImageUrls(){return {urls:[],isLoading:false,error:null};}',
   [path('features/payments/infrastructure/paymentRepository.js')]: 'export const getPaymentsByContract=async()=>window.__p09.ledger;',
   [path('features/licenses/infrastructure/platformBusinessRepository.js')]: 'export const readPlatformBusiness=async()=>window.__p09.platformDetail;',
@@ -27,8 +28,7 @@ const moduleMocks = { ...mockHooks,
 };
 
 it('P10 keeps operational UX compact, accessible and financially explicit in isolated Chromium', {timeout:180000}, async () => {
-  const index = await readFile(new URL('../frontend/dist/index.html',import.meta.url),'utf8');
-  const css = await readFile(new URL('../frontend/dist'+index.match(/href="([^"]+\.css)"/)[1],import.meta.url),'utf8');
+  const css = await readBrowserBuildCss();
   const checks=[], metrics=[], captures=[];
   await runBrowserFixture({htmlFile:new URL('./plan09.browser.html',import.meta.url),fixture:{css},moduleMocks,
     setupPage:page=>page.send('Fetch.enable',{patterns:[{urlPattern:'https://*',requestStage:'Request'}]}),
@@ -42,7 +42,7 @@ it('P10 keeps operational UX compact, accessible and financially explicit in iso
       const setInput=(selector,value)=>ev(async(selector,value)=>{const input=document.querySelector(selector);Object.getOwnPropertyDescriptor(input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));await window.__p09.frames();},selector,value);
       const click=label=>ev(async label=>{[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===label).click();await window.__p09.frames();},label);
       const fit=()=>ev(()=>document.documentElement.scrollWidth<=innerWidth+1);
-      const shot=async name=>{await new Promise(r=>setTimeout(r,200));const r=await page.send('Page.captureScreenshot',{format:'png'});await mkdir('.release/p10-visual',{recursive:true});await writeFile('.release/p10-visual/after-'+name+'.png',Buffer.from(r.data,'base64'));captures.push(name);};
+      const shot=async name=>{await new Promise(r=>setTimeout(r,200));const r=await page.send('Page.captureScreenshot',{format:'png'});await mkdir(artifacts,{recursive:true});await writeFile(artifacts+'/after-'+name+'.png',Buffer.from(r.data,'base64'));captures.push(name);};
       const normal=()=>ev(async()=>{const m=window.__p09;m.cash.currentSession={id:'p09-session',userId:'p09-user',serverConfirmed:true};m.cash.isExpired=false;m.setBranch('p09-branch');m.notify('cash');Object.defineProperty(navigator,'onLine',{configurable:true,value:true});dispatchEvent(new Event('online'));await m.frames();});
 
       await size(1280,900);await normal();await show('pos');
@@ -111,10 +111,11 @@ it('P10 keeps operational UX compact, accessible and financially explicit in iso
       await size(1440,900);await show('operationalHistory');
       check(await ev(()=>window.__p09.exportCalls.length===0&&!document.querySelector('.export-toolbar input[type="checkbox"]')&&!document.querySelector('.export-toolbar details').open),'export mount needs no checkbox and performs no query');
       await ev(async()=>{const select=document.querySelector('.export-toolbar select');select.value='mes';select.dispatchEvent(new Event('change',{bubbles:true}));await window.__p09.frames();});
-      check(await ev(()=>window.__p09.exportCalls.length===0),'changing the period does not query');await click('Descargar Excel');
-      check(await ev(()=>JSON.stringify(window.__p09.exportCalls)==='[["all","mes"]]'),'explicit download preserves the exact hook arguments and chosen period');
-      await ev(async()=>{Object.assign(window.__p09.export,{isExporting:true,phase:'integrity'});window.__p09.notify('export');await window.__p09.frames();});await click('Descargar Excel');
-      check(await ev(()=>window.__p09.exportCalls.length===1&&document.querySelector('.export-toolbar select').disabled),'busy export blocks repeat downloads and period changes');
+      await ev(async()=>{const control=document.querySelectorAll('.export-toolbar select')[1];control.value='excel';control.dispatchEvent(new Event('change',{bubbles:true}));await window.__p09.frames();});
+      check(await ev(()=>window.__p09.exportCalls.length===0),'changing period and format does not query');await click('Descargar detalle Excel');
+      check(await ev(()=>JSON.stringify(window.__p09.exportCalls)==='[["mes","excel"]]'),'explicit download uses the chosen period and format');
+      await ev(async()=>{Object.assign(window.__p09.export,{isExporting:true,phase:'integrity'});window.__p09.notify('export');await window.__p09.frames();});await click('Descargar detalle Excel');
+      check(await ev(()=>window.__p09.exportCalls.length===1&&document.querySelector('.export-toolbar button[type="submit"]').disabled),'busy export blocks repeat downloads');
       await ev(async()=>{Object.assign(window.__p09.export,{isExporting:false,phase:'error',failure:{kind:'data-read',error:{code:'permission-denied',message:'isolated-denial'}}});window.__p09.notify('export');await window.__p09.frames();});
       check(await ev(()=>document.querySelector('.export-toolbar').innerText.includes('Tu cuenta no pudo acceder')),'export permission errors remain visible outside the disclosure');
       await ev(()=>{Object.assign(window.__p09.export,{phase:'idle',failure:null});window.__p09.notify('export');const m=window.__p09;m.history.sales=[m.makeSale('confirmed','confirmed'),m.makeSale('draft','draft_offline'),m.makeSale('uncertain','submitted_uncertain'),{...m.makeSale('voided','confirmed'),voided:true,voidReason:'Motivo conservado'},{...m.makeSale('voidPending','confirmed'),voidCheckPending:true}];});await show('operationalHistory');
@@ -153,7 +154,7 @@ it('P10 keeps operational UX compact, accessible and financially explicit in iso
       }
       await normal();await ev(()=>window.__p09.stop());
     }});
-  await writeFile('.release/p10-visual/after-metrics.json',JSON.stringify(metrics,null,2));
+  await writeFile(artifacts+'/after-metrics.json',JSON.stringify(metrics,null,2));
   console.log(JSON.stringify({checks:checks.length,captures:captures.length,financialWrites:0}));
 });
 

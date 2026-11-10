@@ -29,7 +29,7 @@ const payments = [{ ...base, id: 'a', sourceId: 'doc-id', contractNumber: 'PED-1
   { ...base, id: 'c', sourceId: 'doc-id', contractNumber: 'PED-100', type: 'refund', amount: -5, method: 'efectivo', occurredAt: date('13') }];
 const branchesMap = { b1: 'Centro', b2: 'Taller' };
 const build = options => buildSalesWorkbook(XLSX, { ...scope, stats, sales, payments, branchesMap, ...options });
-const rows = (wb, name) => XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' });
+const rows = (wb, name) => XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', range: name.startsWith('Detalle_') ? 1 : 0 });
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 it('Plan05 keeps stale presentation for prefixed network errors and withdraws figures after permission denial', async () => {
@@ -175,7 +175,9 @@ describe('Phase 7 workbooks in memory', () => {
   it('contract audit uses document ID separately from commercial number, payment date and negative refunds', () => {
     const result = buildContractLedgerReport(payments, [{ id: 'doc-id', contractNumber: 'COM-100', total: 1000, updatedAt: '2030-01-01' }], branchesMap);
     assert.equal(result.contractPaymentRows.length, 3);
-    assert.equal(result.contractPaymentRows[0]['ID Pedido'], 'COM-100'); assert.equal(result.contractPaymentRows[0]['Documento Pedido'], 'doc-id');
+    assert.equal(result.contractPaymentRows[0]['N.º de pedido'], 'COM-100');
+    assert.ok(!Object.values(result.contractPaymentRows[0]).includes('doc-id'));
+    assert.ok(!('ID Movimiento' in result.contractPaymentRows[0]) && !('Documento Pedido' in result.contractPaymentRows[0]));
     assert.equal(result.contractPaymentRows[0]['Fecha Pago'], '22/10/2026 09:00');
     assert.equal(result.contractPaymentRows[2]['Reembolso contable (S/)'], -5);
     assert.equal(result.paymentsByBranch.b1[0].method, 'efectivo');

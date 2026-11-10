@@ -6,6 +6,8 @@ export const isServerSnapshot = metadata => metadata?.fromCache === false && met
 export function accessErrorState(error) {
   const code = getFirebaseErrorCode(error);
   if (code === 'permission-denied' || code === 'unauthenticated') return 'permission-denied';
+  if (code === 'user-disabled') return 'suspended';
+  if (['user-token-expired', 'invalid-user-token'].includes(code)) return 'auth-unverified';
   if (['unavailable', 'deadline-exceeded', 'network-request-failed', 'cancelled'].includes(code)) return 'network-error';
   return 'configuration-error';
 }
@@ -21,7 +23,8 @@ export function profileAccess(data, metadata, withinShift) {
 }
 
 export function licenseAccess({ license, tenant, businessId, now = new Date() }) {
-  if (license.error || tenant.error) return accessErrorState(license.error || tenant.error);
+  const errors = [license.error, tenant.error].filter(Boolean).map(accessErrorState);
+  if (errors.length) return errors.includes('permission-denied') ? 'permission-denied' : errors[0];
   if (!license.received || !tenant.received) return 'loading';
   if (!isServerSnapshot(license.metadata) || !isServerSnapshot(tenant.metadata)) return 'offline-unverified';
   if (!license.data) return tenant.data ? 'license-missing-confirmed' : 'tenant-missing-confirmed';
@@ -32,6 +35,7 @@ export function licenseAccess({ license, tenant, businessId, now = new Date() })
   if ((tenant.data && (tenant.data.status !== 'active' || tenant.data.maintenanceJobId))
     || license.data.status !== 'activa' || (license.data.tenantStatus ?? 'active') !== 'active'
     || license.data.maintenanceJobId) return 'suspended';
+  if (tenant.data && tenant.data.businessId !== businessId) return 'configuration-error';
   return expiry <= now ? 'expired' : 'active';
 }
 

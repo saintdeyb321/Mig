@@ -24,7 +24,8 @@ const BORDER = {
   left: { style: "thin", color: { rgb: "000000" } }, right: { style: "thin", color: { rgb: "000000" } }
 };
 
-const HEADER_STYLE = { fill: { fgColor: { rgb: "FCE4D6" } }, font: { bold: true }, alignment: { horizontal: "center" }, border: BORDER }; 
+const HEADER_STYLE = { fill: { fgColor: { rgb: "3E2C63" } }, font: { bold: true, color: { rgb: "FFFFFF" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true } };
 const INFO_STYLE = { fill: { fgColor: { rgb: "9DE0F6" } }, border: BORDER }; 
 const PRODUCT_STYLE = { fill: { fgColor: { rgb: "FFFFA6" } }, border: BORDER }; 
 const VALUE_STYLE = { border: BORDER }; 
@@ -51,17 +52,27 @@ const CASH_AUDIT_STYLE = {
 /* =========================================
     CREACIÓN DE HOJAS Y MONEDAS
 ========================================= */
-export const createSheet = (XLSX, rows, columns) => {
+export const createSheet = (XLSX, rows, columns, title) => {
   const safeRows = rows.length > 0 ? cleanExcelRows(rows) : [{ "Mensaje": "Sin datos en este periodo" }];
-  const ws = XLSX.utils.json_to_sheet(safeRows);
+  const headerRow = title ? 2 : 1;
+  const ws = title ? XLSX.utils.sheet_add_json(XLSX.utils.aoa_to_sheet([[title]]), safeRows, { origin: 'A2' })
+    : XLSX.utils.json_to_sheet(safeRows);
   ws["!cols"] = columns;
-  if (ws["!ref"]) ws["!autofilter"] = { ref: ws["!ref"] };
-  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+  if (ws["!ref"]) {
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    range.s.r = headerRow - 1;
+    ws["!autofilter"] = { ref: XLSX.utils.encode_range(range) };
+    if (title) ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: range.e.c } }];
+  }
+  ws['!rows'] = title ? [{ hpt: 26 }, { hpt: 30 }] : [{ hpt: 30 }];
+  if (title) ws.A1.s = { ...HEADER_STYLE, alignment: { horizontal: 'left', vertical: 'center' }, font: { ...HEADER_STYLE.font, sz: 12 } };
 
   Object.keys(ws).forEach(cell => {
     if (cell[0] === '!') return;
-    if (cell.replace(/[A-Z]/g, '') === '1') {
+    if (Number(cell.replace(/[A-Z]/g, '')) === headerRow) {
       ws[cell].s = { ...ws[cell].s, ...HEADER_STYLE };
+    } else if (title && /^A\d+$/.test(cell) && ws[cell].t === 'n') {
+      ws[cell].z = 'dd/mm/yyyy';
     }
   });
 
@@ -138,7 +149,7 @@ export const styleSummarySheet = (ws, type = 'default') => {
     }
 
     // --- 🚀 2. HOJA DE AUDITORÍA DE CONTRATOS (VISTA PANORÁMICA) ---
-    if (headers['A'] === 'ID Pedido' && headers['D'] === 'Sede Origen') {
+    if (headers['A'] === 'N.º de pedido' && headers['D'] === 'Sede Origen') {
       let rowStyle = VALUE_STYLE;
 
       if (col === 'A' || col === 'B') {
@@ -221,7 +232,7 @@ export const styleSummarySheet = (ws, type = 'default') => {
 /* =========================================
     ESTILOS PARA DETALLES DE TICKETS
 ========================================= */
-export const styleTotalRows = (ws) => {
+export const styleTotalRows = (ws, headerRow = 1) => {
   const COMPLETED_STYLE = { fill: { fgColor: { rgb: "A9F08A" } }, border: BORDER }; 
   const DETAILS_STYLE = { fill: { fgColor: { rgb: "B4C6E7" } }, border: BORDER }; 
   const TOTAL_LABEL_STYLE = { fill: { fgColor: { rgb: "A9F08A" } }, font: { bold: true }, alignment: { horizontal: "right" }, border: BORDER }; 
@@ -236,6 +247,7 @@ export const styleTotalRows = (ws) => {
   Object.keys(ws).forEach(cell => {
     if (cell[0] === '!') return;
     if (ws[cell].v === 'TOTAL TICKET ➔') totalRows.add(cell.replace(/[A-Z]/g, ''));
+    if (ws[cell].v === 'TOTAL COMPENSACIÓN ➔') totalRows.add(cell.replace(/[A-Z]/g, ''));
     if (ws[cell].v === 'TICKET ANULADO ➔') anuladoRows.add(cell.replace(/[A-Z]/g, ''));
     if (ws[cell].v === '▶ AJUSTE CAJA') ajusteRows.add(cell.replace(/[A-Z]/g, ''));
   });
@@ -246,7 +258,7 @@ export const styleTotalRows = (ws) => {
     const col = cell.replace(/[0-9]/g, '');
     const rowNum = cell.replace(/[A-Z]/g, '');
 
-    if (rowNum === '1') return; 
+    if (Number(rowNum) <= headerRow) return;
     if (cellObj.v === undefined || cellObj.v === null || cellObj.v === '') return;
 
     if (ajusteRows.has(rowNum)) {
@@ -286,5 +298,10 @@ export const styleTotalRows = (ws) => {
     }
     else if (col === 'K') ws[cell].s = { ...(ws[cell].s || {}), ...(anuladoRows.has(rowNum) ? ANULADO_VALUE_STYLE : TOTAL_VALUE_STYLE) };
     if (typeof cellObj.v === 'number' && cellObj.v < 0) ws[cell].s = { ...(ws[cell].s || {}), ...DANGER_STYLE };
+    if (['C', 'F', 'J', 'L', 'M'].includes(col) && typeof cellObj.v === 'string') {
+      ws[cell].s = { ...ws[cell].s, alignment: { ...ws[cell].s?.alignment, wrapText: true, vertical: 'center' } };
+      const lines = Math.min(4, Math.ceil(cellObj.v.length / (ws['!cols']?.[col.charCodeAt(0) - 65]?.wch ?? 25)));
+      if (lines > 1) (ws['!rows'] ??= [])[Number(rowNum) - 1] = { hpt: Math.max(ws['!rows'][Number(rowNum) - 1]?.hpt ?? 0, lines * 15) };
+    }
   });
 };

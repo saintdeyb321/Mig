@@ -3,9 +3,10 @@ import { reportDiagnostic } from '../../core/errors/diagnostics.js';
 
 const printPolicy = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src blob: data: https://firebasestorage.googleapis.com https://storage.googleapis.com; base-uri 'none'; form-action 'none'";
 
-function printableDocument(html, document) {
+function printableDocument(html, document, report = false) {
   const parsed = new document.defaultView.DOMParser().parseFromString(html, 'text/html');
   parsed.querySelectorAll('script,iframe,object,embed,link,base,form,svg,math,meta[http-equiv]').forEach(node => node.remove());
+  if (report) parsed.querySelectorAll('img').forEach(node => node.remove());
   for (const node of parsed.querySelectorAll('*')) {
     for (const attribute of [...node.attributes]) {
       if (/^on/i.test(attribute.name) || ['srcdoc', 'href', 'action', 'formaction'].includes(attribute.name)) node.removeAttribute(attribute.name);
@@ -16,10 +17,12 @@ function printableDocument(html, document) {
     }
   }
   const policy = parsed.createElement('meta');
-  policy.httpEquiv = 'Content-Security-Policy'; policy.content = printPolicy;
+  policy.httpEquiv = 'Content-Security-Policy'; policy.content = report ? "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'" : printPolicy;
   parsed.head.prepend(policy);
   return '<!doctype html>' + parsed.documentElement.outerHTML;
 }
+
+export const prepareReportPrint = (html, document) => printableDocument(html, document, true);
 
 export function createPrintJob({ popup = false, compact = false, page, host = window, imageTimeout = 10000, finishTimeout = 60000 } = {}) {
   const target = popup ? host.open('', '', compact ? 'width=350,height=600' : 'width=800,height=900') : host;

@@ -4,6 +4,7 @@ import React, { memo, useCallback } from 'react';
 import { auth } from '../core/firebase/client';
 import { signOut } from 'firebase/auth';
 import { brand } from '../config/brand';
+import { reportDiagnostic } from '../core/errors/diagnostics.js';
 const accessMessages = {
   'profile-not-found-confirmed': ['Perfil no encontrado', 'El servidor no devolvió un perfil de acceso para esta cuenta. Esto no significa que se haya eliminado tu cuenta Google. Solicita al administrador que revise el perfil o la invitación.'],
   'needs-invite': ['Invitación disponible', 'El servidor confirmó una invitación para tu cuenta Google. Puedes aceptarla para crear tu perfil de acceso; no se recreará automáticamente.'],
@@ -11,6 +12,7 @@ const accessMessages = {
   'license-missing-confirmed': ['Licencia no encontrada', 'El servidor no devolvió la licencia de este negocio. El registro del negocio está presente; consulta al administrador antes de realizar operaciones.'],
   'tenant-missing-confirmed': ['Configuración no encontrada', 'El servidor no devolvió los registros de negocio y licencia esperados. Esto no demuestra una eliminación: el administrador debe revisar la configuración y el proyecto.'],
   'permission-denied': ['Lectura no autorizada', 'Firestore rechazó la lectura de acceso. Revisa con el administrador el perfil, negocio y Rules realmente publicadas. Tu sesión Google sigue iniciada.'],
+  'auth-unverified': ['Credenciales sin confirmar', 'No se pudieron confirmar las credenciales de la cuenta. Vuelve a comprobar el acceso. Los datos pendientes del dispositivo se conservan.'],
   'offline-unverified': ['Acceso sin verificar', 'Solo hay información local o cambios sin confirmar. Espera la conexión con el servidor o vuelve a comprobar. Los datos pendientes del dispositivo se conservan.'],
   'network-error': ['Conexión pendiente', 'No se pudo confirmar el acceso con Firestore. Revisa Internet y reintenta; no es una confirmación de que tu cuenta o negocio hayan desaparecido.'],
   'configuration-error': ['Configuración pendiente', 'El acceso no se pudo validar con la configuración recibida. Pide al administrador que revise perfil, negocio y licencia.'],
@@ -27,7 +29,7 @@ const RestrictedAccess = memo(({
     try {
       if (onLogout) await onLogout(); else await signOut(auth);
     } catch (error) {
-      console.error("Error al salir:", error);
+      reportDiagnostic('profile', error);
     }
   }, [onLogout]);
   const [title, message] = licenseState === 'expired' ? ['Suscripción vencida', `Tu suscripción venció el ${expirationDateStr}. Comunícate con el administrador para renovarla.`] : accessMessages[licenseState] ?? ['Acceso sin verificar', 'No se pudo comprobar el acceso. Reintenta o consulta al administrador.'];

@@ -5,16 +5,66 @@ import { Timestamp } from 'firebase/firestore';
 import { createSparkCashRepository, cashLockId } from '../frontend/src/features/cash-register/infrastructure/sparkCashRepository.js';
 import { createCashAuditPeriodReader, createCashStateReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
 import { createSparkCashClosingRepository } from '../frontend/src/features/cash-register/infrastructure/sparkCashClosingRepository.js';
-import { buildSalesWorkbook } from '../frontend/src/features/reports/application/salesWorkbook.js';
+import { buildSalesWorkbook, writeSalesWorkbook } from '../frontend/src/features/reports/application/salesWorkbook.js';
 import { reportViewModel } from '../frontend/src/features/reports/application/reportViewModel.js';
 import { managementReportHtml } from '../frontend/src/features/reports/application/managementReportHtml.js';
 import { aggregateReport } from '../frontend/src/features/reports/domain/reportTotals.js';
 import { reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
+import { createReportExportCache } from '../frontend/src/features/reports/application/reportExportCache.js';
 import { plan08FinancialHarness, unavailable } from './helpers/plan08FinancialHarness.mjs';
 import { pairedTicket, saleDay, voidDay } from './helpers/plan13PeriodHarness.mjs';
 
 const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
 const sheets = (workbook, name) => XLSX.utils.sheet_to_json(workbook.Sheets[name]);
+
+it('P14 UX: report artifacts retain the original snapshot deadline and only live in their owning scope', () => {
+  let now = 100, timer;
+  const options = { now: () => now, schedule: fn => { timer = fn; return fn; }, cancel: () => {} };
+  const first = createReportExportCache(options), anotherIdentity = createReportExportCache(options);
+  const entry = first.put('hoy', { evidence: 'original' }, 220);
+  entry.artifacts.set('pdf', '<p>Prepared</p>');
+  entry.artifacts.set('excel', new Blob(['prepared']));
+  now = 200;
+  assert.equal(first.get('hoy'), entry);
+  assert.equal(anotherIdentity.get('hoy'), null);
+  assert.equal(first.get('semana'), null);
+  now = 220;
+  timer();
+  assert.equal(first.get('hoy'), null);
+  first.put('hoy', { evidence: 'next revision' }, 300);
+  first.clear();
+  assert.equal(first.get('hoy'), null);
+});
+
+it('P14 UX: Dashboard, XLSX and PDF preserve exact cents and the XLSX keeps the Lima day and pane', () => {
+  const createdAt = '2026-11-09T00:01:00-05:00', period = reportPeriod('hoy', createdAt);
+  const businessId = 'negocio', branchId = 'centro', internalId = '21f49f7a-af64-4ad9-b16c-19a245de9e42';
+  const scope = { businessId, branchId, period, branchesMap: { centro: 'Centro' } };
+  const sale = { businessId, branchId, id: internalId, userId: 'ByQjK1Ab0nrIeZ0f6xY9ac1kH7eT', createdAt, payment: 'mixto', total: 10.05,
+    splitPayments: { efectivo: 0.01, yape: 10.04 }, items: [{ id: 'producto', name: '=1+1', qty: 1, price: 10.05 }] };
+  const input = { ...scope, sales: [sale] };
+  const dashboard = aggregateReport(input);
+  const { workbook, view } = buildSalesWorkbook(XLSX, { ...input, model: dashboard });
+  const bytes = writeSalesWorkbook(XLSX, workbook);
+  const restored = XLSX.read(bytes, { type: 'array', cellNF: true });
+  const rows = Object.fromEntries(sheets(restored, 'Resumen_Financiero').map(row => [row.Concepto, row.Valor]));
+  assert.deepEqual([rows['💰 GRAN TOTAL INGRESOS NETOS'], rows['Neto contable · Efectivo'], rows['Neto contable · Yape / Plin']],
+    [dashboard.summary.netRevenue, dashboard.summary.cashRevenue, dashboard.summary.digitalRevenue]);
+  assert.deepEqual([dashboard.summary.netRevenue, dashboard.summary.cashRevenue, dashboard.summary.digitalRevenue].map(value => Math.round(value * 100)),
+    [1005, 1, 1004]);
+  const html = managementReportHtml(view, { period, business: 'Panadería', branch: 'Centro', operator: 'Ana Quispe', generatedAt: new Date(createdAt) });
+  for (const value of ['10.05', '0.01', '10.04']) assert.ok(html.includes(`S/ ${value}`));
+  const detail = restored.Sheets.Detalle_Centro;
+  assert.equal(detail.A3.w, '09/11/2026');
+  assert.equal(detail.A3.z, 'dd/mm/yyyy');
+  assert.equal(detail.C3.v, 'Sin referencia comercial');
+  assert.equal(detail.F3.t, 's');
+  assert.equal(detail.F3.f, undefined);
+  assert.equal(detail.M3.v, 'Empleado no identificado');
+  assert.ok(Object.values(detail).every(cell => cell?.v !== internalId));
+  const xml = XLSX.CFB.find(XLSX.CFB.read(bytes, { type: 'array' }), `/xl/worksheets/sheet${restored.SheetNames.length}.xml`);
+  assert.match(new TextDecoder().decode(new Uint8Array(xml.content)), /<pane ySplit="2" topLeftCell="A3"[^>]+state="frozen"/);
+});
 
 it('P14 C03/C04/C08: recovery replaces exactly one lock and verifies the original command after lost responses', async () => {
   const h = await plan08FinancialHarness();
@@ -78,7 +128,7 @@ it('P14 C09/C10/R01/R02: reimports a Lima opening, overnight expiry and independ
     closeEstimate: { authority: 'client-estimate', expectedCash: 70, difference: 0 } };
   const day = reportPeriod('hoy', old.expiredAt);
   const period = { ...day, start: '2026-11-04', filter: 'semana', end: '2026-11-09' };
-  const options = { businessId, branchId, period, now, sessions: [replacement, old, { ...old, businessId: 'ajeno' }], sales: [
+  const options = { businessId, branchId, period, now, people: new Map([['luis', 'Luis Quispe']]), sessions: [replacement, old, { ...old, businessId: 'ajeno' }], sales: [
     { ...base, id: 's20', createdAt: '2026-11-09T10:00:00-05:00', total: 20, payment: 'efectivo', items: [{ id: 'pan', name: 'Pan', price: 20, qty: 1 }] },
   ] };
   const { workbook, view } = buildSalesWorkbook(XLSX, options);
@@ -91,7 +141,8 @@ it('P14 C09/C10/R01/R02: reimports a Lima opening, overnight expiry and independ
     ['CIERRE MANUAL', 50, 70, 70, 0],
   ]);
   assert.equal(events[1]['Fecha y hora del movimiento (Lima)'], '05/11/2026 06:00');
-  assert.equal(events[1]['Registrado por'], 'luis');
+  assert.equal(events[1]['Registrado por'], 'Luis Quispe');
+  assert.equal(events[0].Responsable, 'Empleado no identificado');
   assert.match(events[1].Observación, /09\/11\/2026 08:00/);
   assert.match(events[3].Observación, /provisionales/);
   assert.equal(view.summary.netRevenue, 20);
@@ -118,7 +169,7 @@ it('P14 R03–R06: Excel and PDF share signed channels, per-branch totals and an
     generatedAt: new Date(voidDay), branchesMap: { centro: 'Centro' } });
   assert.match(html, /provisional y requiere conciliación histórica/);
   assert.match(html, /S\/ -30\.00/);
-  assert.match(html, /sin evidencia de desembolso físico ni de devolución digital/);
+  assert.match(html, /ajustes contables no acreditan una devolución de dinero/);
   assert.doesNotMatch(html, /<img|ajeno/);
 });
 

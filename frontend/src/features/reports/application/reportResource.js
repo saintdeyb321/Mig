@@ -6,6 +6,7 @@ import { getFirebaseErrorCode } from '../../../core/errors/firebaseErrors.js';
 export const REPORT_TTL = 30000;
 export const reportTTL = period => ['mes', 'todo'].includes(period.filter ?? period.key?.split(':')[0]) ? 15 * 60 * 1000 : 2 * 60 * 1000;
 export const reportCacheKey = ({ identityKey, businessId, branchId, period }) => JSON.stringify([identityKey, businessId, branchId, period.key]);
+export const reportRevision = (resources, businessId) => resources.cell(`report-revision:${businessId}`, 0);
 export function createReportCache({ ttl = REPORT_TTL, max = 12, now = Date.now } = {}) {
   const entries = new Map();
   return {
@@ -80,4 +81,5 @@ export function invalidateReportScope(resources, businessId, branchId) {
     return business === businessId && (branchId === 'global' || branch === branchId || branch === 'global');
   });
   resources.value('report:cache', createReportCache).invalidateScope(businessId, branchId);
+  reportRevision(resources, businessId).set(value => value + 1);
 }

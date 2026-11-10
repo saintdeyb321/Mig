@@ -3,6 +3,7 @@ import { readViewPreference, writeViewPreference } from '../frontend/src/core/se
 import { it } from 'node:test';
 import { profileAccess, licenseAccess, accessErrorState } from '../frontend/src/core/session/accessState.js';
 import { createProfileSession } from '../frontend/src/core/session/profileSession.js';
+import { reportAccessDiagnostic } from '../frontend/src/core/errors/diagnostics.js';
 import { salesHistoryPresentation } from '../frontend/src/features/sales/application/recentSales.js';
 import { createNotificationRepository, projectFinancialNotice } from '../frontend/src/features/notifications/infrastructure/notificationQueryRepository.js';
 
@@ -94,8 +95,71 @@ it('distinguishes missing license/tenant, permissions, cache and historical tena
   assert.equal(access(record(license), record({ status: 'suspended' })), 'suspended');
   assert.equal(access(record({ ...license, expiry: '2020-01-01' }), record(null)), 'expired');
   assert.equal(access(record({ ...license, businessId: 'other' }), record(null)), 'configuration-error');
+  assert.equal(access(record(license), record({ businessId: 'other', status: 'active' })), 'configuration-error');
   assert.equal(access({ error: { code: 'permission-denied' } }, record(null)), 'permission-denied');
+  assert.equal(access({ error: { code: 'unavailable' } }, { error: { code: 'permission-denied' } }), 'permission-denied');
   assert.equal(accessErrorState({ code: 'firestore/unavailable' }), 'network-error');
+  assert.equal(accessErrorState({ code: 'auth/user-token-expired' }), 'auth-unverified');
+  assert.equal(accessErrorState({ code: 'auth/user-disabled' }), 'suspended');
+});
+
+it('P15 coalesces verification, forces a token only on demand, and rejects an older profile response', async () => {
+  const states = [];
+  let receive, resolveRead, refreshes = 0, reads = 0, watches = 0;
+  const user = { uid: 'p15-owner' };
+  const session = createProfileSession({ user, subscribe: (_uid, next) => { receive = next; watches++; return () => {}; },
+    readInvite: async () => null, withinShift: () => true, onState: state => states.push(state),
+    refreshCredentials: async () => { refreshes++; },
+    readProfile: () => { reads++; return new Promise(resolve => { resolveRead = resolve; }); } });
+  receive(owner, server);
+  const request = session.recheck({ refresh: true });
+  assert.equal(session.recheck({ refresh: true }), request);
+  assert.equal(states.at(-1).status, 'loading');
+  await Promise.resolve(); await Promise.resolve();
+  receive({ ...owner, businessId: 'changed' }, server);
+  resolveRead({ data: owner, metadata: server });
+  const profile = await request;
+  assert.equal(profile.businessId, 'changed');
+  assert.deepEqual([refreshes, reads, watches], [1, 1, 1]);
+  const pending = session.recheck();
+  await Promise.resolve();
+  session.close();
+  const count = states.length;
+  resolveRead({ data: owner, metadata: server });
+  assert.equal(await pending, null);
+  assert.equal(states.length, count);
+  assert.deepEqual([refreshes, reads, watches], [1, 2, 1]);
+});
+
+it('P15 deadline blocks late token work and a cache-only direct read remains unverified', async () => {
+  let finishRefresh, reads = 0, next;
+  const states = [];
+  const session = createProfileSession({ user: { uid: 'p15-timeout' }, subscribe: (_, receive) => { next = receive; return () => {}; },
+    readInvite: async () => null, withinShift: () => true, onState: state => states.push(state), confirmationMs: 10,
+    refreshCredentials: () => new Promise(resolve => { finishRefresh = resolve; }),
+    readProfile: async () => { reads++; return { data: owner, metadata: cached }; } });
+  next(owner, server);
+  assert.equal(await session.recheck({ refresh: true }), null);
+  assert.equal(states.at(-1).status, 'network-error');
+  finishRefresh();
+  await Promise.resolve();
+  assert.equal(reads, 0);
+  assert.equal(await session.recheck(), null);
+  assert.notEqual(states.at(-1).status, 'ready');
+  session.close();
+});
+
+it('P15 diagnostics retain only bounded status, SDK codes and boolean snapshot evidence', () => {
+  const logs = [], log = { info: (_, event) => logs.push(event) };
+  const record = { received: true, data: { uid: 'private-uid', email: 'private@example.test', token: 'private-token' }, metadata: server };
+  const payload = { license: record, tenant: { error: { code: 'firestore/permission-denied', message: 'private-message' } },
+    identityMatches: true, environment: 'emulator', businessId: 'private-business' };
+  reportAccessDiagnostic('manual', 'permission-denied', payload, { log, now: 2000000000000 });
+  reportAccessDiagnostic('manual', 'permission-denied', payload, { log, now: 2000000000001 });
+  assert.equal(logs.length, 1);
+  assert.deepEqual(logs[0].license, { present: true, fromCache: false, pendingWrites: false, code: null });
+  assert.deepEqual(logs[0].tenant, { present: null, fromCache: null, pendingWrites: null, code: 'permission-denied' });
+  assert.doesNotMatch(JSON.stringify(logs), /private|@example/);
 });
 
 it('requires explicit acceptance and discards callbacks/invitation reads from a closed identity', async () => {
@@ -228,13 +292,20 @@ it('never authorizes writes from assisted cache, offline state or a different id
   const { setProfileAuthority, setLicenseAuthority, resetAccessAuthority, assertConfirmedWrite } = await import('../frontend/src/core/session/operationAccess.js');
   const { getIdentityKey } = await import('../frontend/src/core/session/identity.js');
   const user = { uid: 'owner', ...owner }, request = { uid: 'owner', online: true };
-  resetAccessAuthority(); setProfileAuthority(user, false); setLicenseAuthority(getIdentityKey(user), true);
+  const expiresAt = Date.now() + 60000;
+  resetAccessAuthority(); setProfileAuthority(user, false); setLicenseAuthority(getIdentityKey(user), true, expiresAt);
   assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/);
   setProfileAuthority(user, true); setLicenseAuthority(getIdentityKey(user), false);
   assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/);
-  setLicenseAuthority(getIdentityKey(user), true); assert.doesNotThrow(() => assertConfirmedWrite(request));
+  setLicenseAuthority(getIdentityKey(user), true, expiresAt); assert.doesNotThrow(() => assertConfirmedWrite(request));
   assert.throws(() => assertConfirmedWrite({ ...request, online: false }), /Operación bloqueada/);
   assert.throws(() => assertConfirmedWrite({ ...request, uid: 'other' }), /Operación bloqueada/);
+  setLicenseAuthority(getIdentityKey(user), true, Date.now() - 1);
+  assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/);
+  setLicenseAuthority(getIdentityKey(user), true, expiresAt);
+  setProfileAuthority(user, false); setProfileAuthority(user, true);
+  assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/);
+  setLicenseAuthority(getIdentityKey(user), true, expiresAt);
   setProfileAuthority({ ...user, businessId: 'other' }, true);
   assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/); resetAccessAuthority();
 });

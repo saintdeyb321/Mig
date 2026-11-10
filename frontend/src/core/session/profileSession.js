@@ -1,16 +1,20 @@
 import { isAccessCacheDenied, recordAccessDenial } from './operationAccess.js';
-import { accessErrorState, profileAccess, cachedProfileAccess } from './accessState.js';
+import { accessErrorState, profileAccess, cachedProfileAccess, isServerSnapshot } from './accessState.js';
+import { withAccessDeadline } from './accessDeadline.js';
+import { reportDiagnostic } from '../errors/diagnostics.js';
 
 // Cache supports presentation only. A bounded neutral wait avoids F5 restriction flashes.
-export function createProfileSession({ user, subscribe, readInvite, acceptInvite, readProfile, withinShift, onState,
+export function createProfileSession({ user, subscribe, readInvite, acceptInvite, readProfile, refreshCredentials, withinShift, onState,
   schedule = setTimeout, cancel = clearTimeout, confirmationMs = 10000 }) {
   const denialScope = `profile:${user.uid}`;
   let cached = null;
-  let active = true, revision = 0, accepting = false, currentState = 'loading', timer = null, expired = false;
+  let active = true, revision = 0, accepting = false, currentState = 'loading', currentProfile = null, timer = null, expired = false;
+  let checking = null, watchFailed = false, stop = () => {}, watchGeneration = 0;
   const clearWait = () => { if (timer !== null) cancel(timer); timer = null; expired = false; };
   const publish = (status, extra = {}) => {
     if (!active) return;
     currentState = status;
+    currentProfile = status === 'ready' ? extra.profile : null;
     onState({ uid: user.uid, status, profile: null, ...extra });
   };
   const wait = () => {
@@ -49,16 +53,53 @@ export function createProfileSession({ user, subscribe, readInvite, acceptInvite
       } else publish(status);
     }).catch(error => { if (active && revision === generation) { clearWait(); publish(accessErrorState(error)); } });
   };
-  wait();
-  const unsubscribe = subscribe(user.uid, receive, error => {
-    if (active) {
-      revision++; clearWait();
-      if (cached && !isAccessCacheDenied(denialScope) && accessErrorState(error) === 'network-error') publish('offline-assisted', { profile: { ...cached, uid: user.uid, email: user.email ?? cached.email, accessVerified: false } });
-      else { if (accessErrorState(error) === 'permission-denied') recordAccessDenial(denialScope, true); cached = null; publish(accessErrorState(error)); }
+  const fail = error => {
+    revision++; clearWait();
+    const status = accessErrorState(error);
+    reportDiagnostic('profile', error);
+    if (cached && !isAccessCacheDenied(denialScope) && status === 'network-error') {
+      publish('offline-assisted', { profile: { ...cached, uid: user.uid, email: user.email ?? cached.email, accessVerified: false } });
+    } else {
+      if (['permission-denied', 'suspended', 'auth-unverified'].includes(status)) recordAccessDenial(denialScope, true);
+      cached = null;
+      publish(status);
     }
-  });
+  };
+  const listen = () => {
+    const generation = ++watchGeneration;
+    watchFailed = false;
+    stop = subscribe(user.uid, (data, metadata) => {
+      if (active && generation === watchGeneration && (!checking || isServerSnapshot(metadata))) receive(data, metadata);
+    }, error => {
+      if (!active || generation !== watchGeneration) return;
+      watchFailed = true;
+      fail(error);
+    });
+  };
+  wait();
+  listen();
   return {
-    close() { active = false; revision++; clearWait(); unsubscribe(); },
+    close() { active = false; revision++; clearWait(); stop(); },
+    recheck({ refresh = false } = {}) {
+      if (!active || !readProfile || accepting) return Promise.resolve(null);
+      if (checking) return checking;
+      const generation = ++revision;
+      clearWait();
+      publish('loading');
+      checking = withAccessDeadline(async signal => {
+        if (refresh) await refreshCredentials?.();
+        if (!active || signal.aborted) return null;
+        return readProfile(user.uid);
+      }, confirmationMs).then(snapshot => {
+        if (active && snapshot && generation === revision) receive(snapshot.data, snapshot.metadata);
+        if (active && currentProfile && watchFailed) { stop(); listen(); }
+        return active ? currentProfile : null;
+      }, error => {
+        if (active && generation === revision) fail(error);
+        return null;
+      }).finally(() => { checking = null; });
+      return checking;
+    },
     async accept() {
       if (!active || accepting || currentState !== 'needs-invite') return;
       accepting = true;

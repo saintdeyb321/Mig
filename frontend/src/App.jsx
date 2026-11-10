@@ -39,10 +39,11 @@ const NO_OP_FUNCTION = () => {};
 function SessionGuards({
   user,
   handleLogout,
+  recheckProfile,
   children
 }) {
   if (!isBusinessSession(user)) return children;
-  return <LicenseGuard user={user} handleLogout={handleLogout}>
+  return <LicenseGuard user={user} handleLogout={handleLogout} recheckProfile={recheckProfile}>
     <SessionProviders user={user}>
       <BranchGuard user={user} handleLogout={handleLogout}>{children}</BranchGuard>
     </SessionProviders>
@@ -51,7 +52,7 @@ function SessionGuards({
 function App() {
   const [requestedTab, setTab] = useState('pos');
   const {
-    user,
+    user, recheckProfile,
     authLoading, authIssue, invitation, retryAuth, acceptProfileInvitation,
     handleLogout
   } = useAuthManager();
@@ -121,7 +122,7 @@ function App() {
         </> : user.hasAcceptedTerms !== true ? <>
           <Toaster position="top-center" />
           <TermsModal user={user} onAccepted={() => window.location.reload()} />
-        </> : <SessionGuards key={getIdentityKey(user)} user={user} handleLogout={handleLogout}>
+        </> : <SessionGuards key={getIdentityKey(user)} user={user} handleLogout={handleLogout} recheckProfile={recheckProfile}>
 
               <Toaster position="top-right" reverseOrder={false} toastOptions={{
         style: {

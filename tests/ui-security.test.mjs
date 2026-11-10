@@ -239,7 +239,11 @@ describe('Hosting policy and conservative cleanup', () => {
       'docs/PLAN-13-CIERRE-EXCEL-Y-UX.md', 'docs/PROMPT-CODEX-CIERRE-EXCEL-Y-UX.md', 'docs/CIERRE-EXCEL-UX-RESULTADOS.md',
       'docs/CHECKLIST-QA-PREVENTA-MIGAPOS-2026-11-06.md', 'docs/PLAN-13-RESULTADOS-QA-AUTOMATIZADA.md',
       'docs/PLAN-14-CAJA-VENCIDA-INFORMES-PDF-EXCEL.md', 'docs/PROMPT-CODEX-PLAN-14-IMPLEMENTACION.md',
-      'docs/PROMPT-INICIO-CODEX-PLAN-14.md', 'docs/PLAN-14-RESULTADOS-CAJA-INFORMES.md'];
+      'docs/PROMPT-INICIO-CODEX-PLAN-14.md', 'docs/PLAN-14-RESULTADOS-CAJA-INFORMES.md',
+      'docs/PLAN-14-UX-FINAL-INFORMES-PDF-EXCEL.md', 'docs/PROMPT-CODEX-PLAN-14-UX-FINAL.md',
+      'docs/PROMPT-INICIO-CODEX-P14-UX-FINAL.md', 'docs/PLAN-14-UX-FINAL-RESULTADOS.md',
+      'docs/AUDITORIA-P15-SESION-RECUPERACION.md', 'docs/PROMPT-CODEX-P15-SESION.md', 'docs/P15-RESULTADOS-SESION.md',
+      'docs/DESPLIEGUE-SEGURO-DESPUES-DE-P15.md'];
     assert.deepEqual(markdown.filter(path => !allowedMarkdown.includes(path)), [], 'Documentos Markdown inesperados en el inventario local');
   });
 });

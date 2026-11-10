@@ -46,12 +46,12 @@ export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', f
         import { createSessionReportReads } from '../application/sessionReportReads.js';
         const day = date => new Date(+date - 18000000).toISOString().slice(0, 10);
         export const sessionReportReads = createSessionReportReads({
-          getSalesInPeriod: (_business, start, _end, { branchId }) => window.__excelFixture.read('sales', day(start), branchId),
-          getPaymentsInPeriod: async (_business, start) => (await window.__excelFixture.read('contracts', day(start))).payments,
+          getSalesInPeriod: (business, start, _end, { branchId }) => window.__excelFixture.read('sales', day(start), branchId, business),
+          getPaymentsInPeriod: async (business, start, _end, branchId) => (await window.__excelFixture.read('contracts', day(start), branchId, business)).payments,
           getContractsInPeriod: async () => [],
-          getContractAuditDocuments: async () => [],
-          readVoidsInPeriod: (_business, start) => window.__excelFixture.read('voids', day(start)),
-          getSessionsInPeriod: (_business, start) => window.__excelFixture.read('cash', day(start)),
+          getContractAuditDocuments: business => window.__excelFixture.read('audit', '', 'global', business),
+          readVoidsInPeriod: (business, start, _end, branchId) => window.__excelFixture.read('voids', day(start), branchId, business),
+          getSessionsInPeriod: (business, start, _end, branchId) => window.__excelFixture.read('cash', day(start), branchId, business),
         });`;
     },
   };
