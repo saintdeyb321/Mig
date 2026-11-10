@@ -145,7 +145,9 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
               stripeWidth:style.borderTopWidth,fontFamily:style.fontFamily,headerHeight:h.getBoundingClientRect().height,
               footer:{text:f.innerText,height:f.getBoundingClientRect().height,fontFamily:getComputedStyle(f).fontFamily},
               platform:navigator.platform,userAgent:navigator.userAgent,viewport:[innerWidth,innerHeight],actionEnabled:!a.disabled,
-              columns:getComputedStyle(document.querySelector('.history-grid')).gridTemplateColumns.split(' ').length,excel:document.querySelector('.export-toolbar').clientHeight};
+              columns:getComputedStyle(document.querySelector('.history-grid')).gridTemplateColumns.split(' ').length,
+              excel:document.querySelector('.export-controls').clientHeight,
+              exportDescription:document.querySelector('.export-toolbar header p').getBoundingClientRect().height};
           });
           const dimensions=`${width}x${height}, ${count} tickets`;
           historyMetrics.push({dimensions,...card,renderedFonts:count===1?await platformFonts():undefined,
@@ -162,7 +164,7 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
             &&card.head.includes('Sede de simulación')&&card.label.endsWith('p1006-0')&&!card.body.includes('p1006-0')&&card.body.includes('Ana Pérez')&&card.actionEnabled,
           `date, branch, amount, accessible ID, responsible and discrete void action ${width}: ${JSON.stringify(card)}`);
           check(card.columns===(width>=1280?3:width>=1024?2:1),'legible columns '+width);
-          if(width===1440){check(card.excel<100,'Excel is a single compact desktop band');metrics.push({case:'history-'+count,...card});}
+          if(width===1440){check(card.excel<100&&card.exportDescription>0,'Excel keeps a compact desktop action row and a visible description');metrics.push({case:'history-'+count,...card});}
           await shot(`history-${count}-${width}`);
         }
         await ev(()=>{const m=window.__p09;m.history.sales=[m.makeSale('draft','draft_offline'),m.makeSale('uncertain','submitted_uncertain'),{...m.makeSale('voided','confirmed'),voided:true,voidReason:'Motivo conservado'},{...m.makeSale('voidPending','confirmed'),voidCheckPending:true}];});await show('operationalHistory');

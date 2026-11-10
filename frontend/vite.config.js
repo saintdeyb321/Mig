@@ -12,6 +12,8 @@ export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), 'VITE_'), ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith('VITE_'))) };
   validateWebEnvironment(env);
   return {
+  // Stabilize the CommonJS optimizer entry without requesting Excel at startup.
+  optimizeDeps: { include: ['xlsx-js-style'] },
   plugins: [
     { name: 'global-brand', transformIndexHtml: html => html
       .replaceAll('__BRAND_NAME__', brand.name).replaceAll('__BRAND_LOGO__', brand.logo).replaceAll('__THEME_COLOR__', brand.themeColor) },
@@ -30,7 +32,12 @@ export default defineConfig(({ mode }) => {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         // Excel is already lazy-loaded: avoid downloading 870 kB during the first PWA installation.
         globIgnores: ['**/xlsx*.js'],
-        runtimeCaching: [{ urlPattern: /\/assets\/xlsx[^/]*\.js$/, handler: 'CacheFirst', options: { cacheName: 'migapos-excel-v1', expiration: { maxEntries: 2, maxAgeSeconds: 31536000, purgeOnQuotaError: true } } }]
+        runtimeCaching: [{
+          // Explicit retries use a new module identity, but the hashed asset is the same.
+          urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/assets\/xlsx[^/]*\.js$/.test(url.pathname),
+          handler: 'CacheFirst',
+          options: { cacheName: 'migapos-excel-v1', expiration: { maxEntries: 2, maxAgeSeconds: 31536000, purgeOnQuotaError: true } },
+        }]
       },
       
       manifest: {

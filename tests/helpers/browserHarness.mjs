@@ -49,21 +49,41 @@ async function connectCDP(url, onEvent) {
     socket.addEventListener('open', () => { clearTimeout(timeout); resolve(); }, { once: true });
     socket.addEventListener('error', error => { clearTimeout(timeout); reject(error); }, { once: true });
   });
-  return { close: () => socket.close(), send: (method, params = {}) => new Promise((resolve, reject) => {
+  return { close: () => socket.close(), send: (method, params = {}, timeoutMs = 3000) => new Promise((resolve, reject) => {
     const id = ++sequence;
-    const timeout = setTimeout(() => { pending.delete(id); reject(Error(`DevTools ${method} timed out.`)); }, 3000);
+    const timeout = setTimeout(() => { pending.delete(id); reject(Error(`DevTools ${method} timed out.`)); }, timeoutMs);
     pending.set(id, { resolve, reject, timeout }); socket.send(JSON.stringify({ id, method, params }));
   }) };
 }
 
-export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, inspectPage, mockPng, verifyDownload, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
+export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, inspectPage, onPageEvent, createFixtureServer, mockPng, verifyDownload, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
   const browser = findBrowser();
   const root = fileURLToPath(new URL('../../frontend/', import.meta.url));
-  const html = (await readFile(htmlFile, 'utf8')).replaceAll('__WORKSPACE__', workspace.replaceAll('\\', '/'));
+  const html = htmlFile && (await readFile(htmlFile, 'utf8')).replaceAll('__WORKSPACE__', workspace.replaceAll('\\', '/'));
   const profile = await mkdtemp(resolve(tmpdir(), 'migapos-isolated-browser-'));
   let complete, finished = false, stderr = '', requests = 0;
   const report = new Promise(resolve => { complete = value => { if (!finished) { finished = true; resolve(value); } }; });
-  const server = await createServer({ root, configFile: false, envFile: false, clearScreen: false, logLevel: 'error',
+  const fixtureMiddleware = server => {
+    server.middlewares.use((request, response, next) => {
+      // This server is also Chromium's deny-only proxy.
+      if (!request.url?.startsWith('/')) { response.writeHead(403).end(); return; }
+      requests++;
+      for (const [key, value] of Object.entries(headers)) response.setHeader(key, value);
+      next();
+    });
+    server.middlewares.use('/__phase4-report', (request, response) => {
+      let body = ''; request.on('data', chunk => { body += chunk; });
+      request.on('end', () => {
+        try { const result = JSON.parse(body); response.end('OK', () => complete(result)); }
+        catch { response.statusCode = 400; response.end(); complete({ ok: false, error: 'Invalid browser result.' }); }
+      });
+    });
+  };
+  let server;
+  let child, childClosed, page, browserControl, browserPid;
+  const timeout = setTimeout(() => complete({ ok: false, error: `Browser fixture timed out after 60s (${requests} HTTP requests). ${stderr.slice(-1200)}` }), 60000);
+  try {
+    server = createFixtureServer ? await createFixtureServer(fixtureMiddleware) : await createServer({ root, configFile: false, envFile: false, clearScreen: false, logLevel: 'error',
     esbuild: { jsx: 'automatic' },
     resolve: { alias: { react: resolve(root, 'node_modules/react'), 'react-dom': resolve(root, 'node_modules/react-dom'), 'xlsx-js-style': resolve(root, 'node_modules/xlsx-js-style'), firebase: resolve(root, 'node_modules/firebase') } },
     // Discovery is disabled for isolated/mocked fixtures. Radix also imports the CJS
@@ -74,33 +94,17 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
       resolveId: id => id === 'virtual:browser-fixture' ? '\0browser-fixture' : Object.hasOwn(moduleMocks, id) ? id : undefined,
       load: id => id === '\0browser-fixture' ? 'export default ' + JSON.stringify(fixture || {}) + ';' : moduleMocks[id],
       configureServer(server) {
-      server.middlewares.use((request, response, next) => {
-        // Chromium sends absolute URLs when using this server as its deny-only proxy.
-        if (!request.url?.startsWith('/')) { response.writeHead(403).end(); return; }
-        requests++;
-        for (const [key, value] of Object.entries(headers)) response.setHeader(key, value);
-        next();
-      });
+      fixtureMiddleware(server);
       server.middlewares.use('/__ui-sw.js', (_request, response) => {
         response.setHeader('Content-Type', 'text/javascript');
         response.end('self.addEventListener("install", () => self.skipWaiting());');
-      });
-      server.middlewares.use('/__phase4-report', (request, response) => {
-        let body = ''; request.on('data', chunk => { body += chunk; });
-        request.on('end', () => {
-          try { const result = JSON.parse(body); response.end('OK', () => complete(result)); }
-          catch { response.statusCode = 400; response.end(); complete({ ok: false, error: 'Invalid browser result.' }); }
-        });
       });
       server.middlewares.use(route, async (_request, response) => {
         response.setHeader('Content-Type', 'text/html');
         response.end(await server.transformIndexHtml(route, html));
       });
     } }] });
-  let child, childClosed, page, browserControl, browserPid;
-  const timeout = setTimeout(() => complete({ ok: false, error: `Browser fixture timed out after 60s (${requests} HTTP requests). ${stderr.slice(-1200)}` }), 60000);
-  try {
-    await server.listen();
+    if (!server.httpServer.listening) await server.listen();
     const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
     const localHosts = [new URL(origin).host, ...(firebaseSdk ? [8080, 9099, 5001].map(port => `127.0.0.1:${port}`) : [])];
     server.httpServer.on('connect', (_request, socket) => socket.destroy());
@@ -130,6 +134,7 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
       const target = targets.find(target => target.type === 'page');
       assert.ok(target, 'Browser did not create an isolated page.');
       page = await connectCDP(target.webSocketDebuggerUrl, event => {
+        onPageEvent?.(event);
         if (event.method === 'Fetch.requestPaused') {
           const {requestId, request} = event.params;
           const url = new URL(request.url);
@@ -149,11 +154,11 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
       await page.send('Runtime.enable');
       if (setupPage) await setupPage(page);
       await page.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] });
-      await page.send('Page.navigate', { url: `${origin}${route}` });
+      await page.send('Page.navigate', { url: `${origin}${route}` }, 15000);
     }
     const result = await report;
     assert.equal(result.ok, true, result.error);
-    if (inspectPage) await inspectPage(page, result);
+    if (inspectPage) await inspectPage(page, result, join(profile, 'downloads'));
     if (mockPng) {
       let workbook;
       for (let attempt = 0; attempt < 20; attempt++) {
@@ -177,7 +182,7 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
       await Promise.race([childClosed, delay(2000, undefined, { ref: false })]);
     }
     child?.stderr?.destroy();
-    await server.close();
+    await server?.close();
     const target = resolve(profile);
     assert.ok(target.startsWith(resolve(tmpdir()) + sep) && basename(target).startsWith('migapos-isolated-browser-'));
     await rm(target, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });

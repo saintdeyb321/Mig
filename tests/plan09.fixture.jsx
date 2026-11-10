@@ -73,7 +73,7 @@ for (const key of ['agenda', 'branches', 'products', 'categories', 'users']) {
 }
 model.ledger = [{id:'p0907-payment',method:'efectivo',type:'advance',amount:20,occurredAt:'2026-11-04T13:00:00Z',cashierName:'Responsable de simulación'}];
 model.exportCalls = [];
-model.export = {isExporting:false, queryError:null, exportData:async (...args) => {model.exportCalls.push(args);}};
+model.export = {isExporting:false, phase:'idle', failure:null, exportData:async (...args) => {model.exportCalls.push(args);}};
 model.makeSale = sale;
 model.platformDetail = { complete: true, branches: [branch], warnings: [], licenses: model.admin.filteredLicenses[0], tenants: {businessName:'Negocio de simulación',status:'active'},
   sections: [{name:'users',status:'complete',count:1},{name:'invites',status:'complete',count:0}], people: {users:[owner],invites:[]}, inventory:[{name:'contracts',status:'sample-only',count:1}] };

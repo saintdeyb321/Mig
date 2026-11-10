@@ -113,11 +113,11 @@ it('P10 keeps operational UX compact, accessible and financially explicit in iso
       await ev(async()=>{const select=document.querySelector('.export-toolbar select');select.value='mes';select.dispatchEvent(new Event('change',{bubbles:true}));await window.__p09.frames();});
       check(await ev(()=>window.__p09.exportCalls.length===0),'changing the period does not query');await click('Descargar Excel');
       check(await ev(()=>JSON.stringify(window.__p09.exportCalls)==='[["all","mes"]]'),'explicit download preserves the exact hook arguments and chosen period');
-      await ev(async()=>{window.__p09.export.isExporting=true;window.__p09.notify('export');await window.__p09.frames();});await click('Generando Excel…');
+      await ev(async()=>{Object.assign(window.__p09.export,{isExporting:true,phase:'integrity'});window.__p09.notify('export');await window.__p09.frames();});await click('Descargar Excel');
       check(await ev(()=>window.__p09.exportCalls.length===1&&document.querySelector('.export-toolbar select').disabled),'busy export blocks repeat downloads and period changes');
-      await ev(async()=>{window.__p09.export.isExporting=false;window.__p09.export.queryError={code:'permission-denied',message:'isolated-denial'};window.__p09.notify('export');await window.__p09.frames();});
+      await ev(async()=>{Object.assign(window.__p09.export,{isExporting:false,phase:'error',failure:{kind:'data-read',error:{code:'permission-denied',message:'isolated-denial'}}});window.__p09.notify('export');await window.__p09.frames();});
       check(await ev(()=>document.querySelector('.export-toolbar').innerText.includes('Tu cuenta no pudo acceder')),'export permission errors remain visible outside the disclosure');
-      await ev(()=>{window.__p09.export.queryError=null;window.__p09.notify('export');const m=window.__p09;m.history.sales=[m.makeSale('confirmed','confirmed'),m.makeSale('draft','draft_offline'),m.makeSale('uncertain','submitted_uncertain'),{...m.makeSale('voided','confirmed'),voided:true,voidReason:'Motivo conservado'},{...m.makeSale('voidPending','confirmed'),voidCheckPending:true}];});await show('operationalHistory');
+      await ev(()=>{Object.assign(window.__p09.export,{phase:'idle',failure:null});window.__p09.notify('export');const m=window.__p09;m.history.sales=[m.makeSale('confirmed','confirmed'),m.makeSale('draft','draft_offline'),m.makeSale('uncertain','submitted_uncertain'),{...m.makeSale('voided','confirmed'),voided:true,voidReason:'Motivo conservado'},{...m.makeSale('voidPending','confirmed'),voidCheckPending:true}];});await show('operationalHistory');
       check(await ev(()=>['Venta registrada','Sin cobrar','Por comprobar','Venta anulada','Comprobando anulación'].every(text=>[...document.querySelectorAll('article header')].some(h=>h.textContent.includes(text)))),'all five active financial states retain distinct labels');
       check(await ev(()=>document.querySelector('article[aria-label$="draft"]').innerText.includes('Importe guardado')&&document.querySelector('article[aria-label$="voided"]').innerText.includes('Motivo conservado')&&document.querySelector('.sales-history').innerText.includes('no suman ingresos')),'drafts are not income and void reasons remain visible');
       check(await ev(()=>[...document.querySelectorAll('.sales-history>details')].some(d=>!d.open&&d.textContent.includes('Revisión local'))),'historical rejections remain in secondary local review');
@@ -133,7 +133,7 @@ it('P10 keeps operational UX compact, accessible and financially explicit in iso
 
       for(const width of [320,390,768,1024,1280,1440]){
         await size(width,700);await ev(()=>{const m=window.__p09;m.history.sales=Array.from({length:10},(_,i)=>m.makeSale('grid-'+i,'confirmed'));});await show('operationalHistory');
-        const b=await ev(()=>({columns:getComputedStyle(document.querySelector('.history-grid')).gridTemplateColumns.split(' ').length,excel:document.querySelector('.export-toolbar').clientHeight,first:document.querySelector('article').getBoundingClientRect().top}));
+        const b=await ev(()=>({columns:getComputedStyle(document.querySelector('.history-grid')).gridTemplateColumns.split(' ').length,excel:document.querySelector('.export-controls').clientHeight,first:document.querySelector('article').getBoundingClientRect().top}));
         check(await fit(),`history/Excel reflow ${width}`);
         check(b.columns===(width>=1280?3:width>=1024?2:width>=768?2:1),`history uses the actual content width at ${width}: ${b.columns} columns`);
         check(b.excel<=(width>=768?160:240),`compact Excel height ${width}: ${b.excel}`);

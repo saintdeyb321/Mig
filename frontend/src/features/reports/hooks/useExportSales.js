@@ -1,54 +1,90 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import toast from 'react-hot-toast';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getSessionsInPeriod } from '../../cash-register/infrastructure/cashRegisterRepository';
-import { buildSalesWorkbook } from '../application/salesWorkbook.js';
-import { reportPeriod } from '../domain/reportPeriod.js';
 import { useTenantData } from '../../branches/context/TenantContext';
-import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
-
 import { useSessionResources } from '../../../core/session/sessionResourceHooks.js';
+import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
+import { buildSalesWorkbook } from '../application/salesWorkbook.js';
+import { loadExcelModule } from '../application/excelModule.js';
+import { reportPeriod } from '../domain/reportPeriod.js';
 import { sessionReportReads } from '../infrastructure/sessionReportReads.js';
 
-export const useExportSales = user => {
+const labels = { hoy: 'Diario_Detallado', semana: 'Semanal_Detallado', mes: 'Mensual_Resumen', todo: 'Anual_Resumen' };
+const activePhases = ['module-load', 'data-read', 'integrity', 'download'];
+const waitForPaint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+function startDownload(bytes, filename) {
+  const file = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  if (file.size === 0) throw new Error('El archivo generado está vacío.');
+  const link = document.createElement('a');
+  if (!('download' in link)) throw new Error('El navegador no admite la descarga de archivos Blob.');
+  const url = URL.createObjectURL(file);
+  try {
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+  } finally {
+    link.remove();
+    // Give the browser time to consume the Blob even after the component unmounts.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+
+export const useExportSales = (user, filter = 'hoy') => {
   const resources = useSessionResources();
   const { businessBranches, activeBranchId, identityKey } = useTenantData();
-  const scope = useMemo(() => ({ active: true, identityKey, branchId: activeBranchId }), [identityKey, activeBranchId]);
-  useEffect(() => { scope.active = true; return () => { scope.active = false; }; }, [scope]);
-  const [failure, setFailure] = useState(null);
+  const businessId = user?.businessId;
+  const scope = useMemo(() => ({ active: false, identityKey, businessId, branchId: activeBranchId, filter, resources }),
+    [identityKey, businessId, activeBranchId, filter, resources]);
+  useLayoutEffect(() => { scope.active = true; return () => { scope.active = false; }; }, [scope]);
   const [state, setState] = useState(null);
-  const processing = useRef(false), lastExport = useRef(0);
-  const exportData = useCallback(async (_type, timeFilter = 'hoy') => {
-    if (!user?.businessId || !activeBranchId || processing.current || !scope.active) return;
-    if (Date.now() - lastExport.current < 5000) { toast.error('Espera unos segundos antes de exportar.'); return; }
-    setFailure(null);
-    lastExport.current = Date.now(); processing.current = true; setState(scope);
-    const toastId = toast.loading('Generando Excel financiero...');
+  const processing = useRef(null), lastDownload = useRef(null);
+  const exportData = useCallback(async (_type, timeFilter = scope.filter) => {
+    const { businessId, branchId: activeBranchId, identityKey, filter, resources } = scope;
+    if (!businessId || !activeBranchId || timeFilter !== filter || !Object.hasOwn(labels, filter) || processing.current === scope || !scope.active) return;
+    if (lastDownload.current?.identityKey === identityKey && Date.now() - lastDownload.current.at < 5000) {
+      setState({ scope, phase: 'cooldown' });
+      return;
+    }
+    processing.current = scope;
+    let phase = 'module-load';
+    setState({ scope, phase });
     try {
-      const period = reportPeriod(timeFilter), detailed = ['hoy', 'semana'].includes(timeFilter);
-      const reads = sessionReportReads(resources, user.businessId, activeBranchId, period);
-      const branchesMap = Object.fromEntries((businessBranches ?? []).map(branch => [branch.id, branch.name]));
-      const [XLSX, sales, contractData, sessions, voids] = await Promise.all([
-        import('xlsx-js-style'),
-        reads.sales(),
-        reads.exportContracts(),
-        detailed ? getSessionsInPeriod(user.businessId, period.startDate.toISOString(), period.endDate.toISOString(), activeBranchId) : [],
+      const XLSX = await loadExcelModule();
+      if (!scope.active) return;
+      phase = 'data-read';
+      setState({ scope, phase });
+      const period = reportPeriod(filter), detailed = ['hoy', 'semana'].includes(filter);
+      const reads = sessionReportReads(resources, businessId, activeBranchId, period);
+      const [sales, contractData, sessions, voids] = await Promise.all([
+        reads.sales(), reads.exportContracts(),
+        detailed ? getSessionsInPeriod(businessId, period.startDate.toISOString(), period.endDate.toISOString(), activeBranchId) : [],
         reads.voids(),
       ]);
-      if (!scope.active) { toast.dismiss(toastId); return; }
-      const { workbook } = buildSalesWorkbook(XLSX, { period, detailed, businessId: user.businessId, branchId: activeBranchId, branchesMap,
+      if (!scope.active) return;
+      phase = 'integrity';
+      setState({ scope, phase });
+      await waitForPaint();
+      if (!scope.active) return;
+      const branchesMap = Object.fromEntries((businessBranches ?? []).map(branch => [branch.id, branch.name]));
+      const { workbook } = buildSalesWorkbook(XLSX, { period, detailed, businessId, branchId: activeBranchId, branchesMap,
         sales, payments: contractData.payments, voids, contracts: contractData.contracts, sessions });
+      phase = 'download';
+      setState({ scope, phase });
       const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-      const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-      try {
-        const label = { hoy: 'Diario_Detallado', semana: 'Semanal_Detallado', mes: 'Mensual_Resumen', todo: 'Anual_Resumen' }[timeFilter];
-        const link = document.createElement('a'); link.href = url; link.download = `Reporte_${label}_${period.start}.xlsx`;
-        document.body.appendChild(link); link.click(); link.remove();
-      } finally { URL.revokeObjectURL(url); }
-      toast.success('Excel financiero descargado', { id: toastId });
+      await waitForPaint();
+      if (!scope.active) return;
+      startDownload(buffer, `Reporte_${labels[filter]}_${period.start}.xlsx`);
+      lastDownload.current = { identityKey, at: Date.now() };
+      setState({ scope, phase: 'started' });
     } catch (error) {
+      if (!scope.active) return;
       reportDiagnostic('report', error);
-      if (scope.active) { setFailure({ scope, error }); toast.error(error.message || 'No se pudo generar el Excel.', { id: toastId }); } else toast.dismiss(toastId);
-    } finally { processing.current = false; setState(previous => previous === scope ? null : previous); }
-  }, [user?.businessId, activeBranchId, scope, businessBranches, resources]);
-  return { queryError: failure?.scope === scope ? failure.error : null, isExporting: state === scope, exportData };
+      setState({ scope, phase: 'error', failure: { kind: phase, error, offline: !navigator.onLine } });
+    } finally {
+      if (processing.current === scope) processing.current = null;
+    }
+  }, [scope, businessBranches]);
+  const current = state?.scope === scope ? state : null;
+  return { phase: current?.phase ?? 'idle', failure: current?.failure, isExporting: activePhases.includes(current?.phase), exportData };
 };
