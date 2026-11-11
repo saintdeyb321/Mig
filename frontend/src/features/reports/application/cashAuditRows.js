@@ -42,7 +42,7 @@ export function cashAuditEvents(sessions, scope, { branchesMap = {}, people } = 
 
 export function cashAuditRows(events) {
   return events.map(event => ({
-    'Fecha y hora del movimiento (Lima)': `${visibleDay(event.day)} ${reportTime(event.date)}`,
+    'Fecha y hora del movimiento': `${visibleDay(event.day)} ${reportTime(event.date)}`,
     Turno: eventTitles[event.kind],
     Sede: event.branch,
     Responsable: event.cashier,

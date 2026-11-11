@@ -1,0 +1,124 @@
+1
+00:00:00,233 --> 00:00:02,867
+¿Tienes una tienda, panadería o
+pastelería?
+
+2
+00:00:03,267 --> 00:00:05,133
+Mira cómo funciona MigaPOS.
+
+3
+00:00:06,033 --> 00:00:08,433
+Busca un producto y añádelo al
+ticket.
+
+4
+00:00:08,967 --> 00:00:12,167
+Ajusta la cantidad y revisa el
+total antes de cobrar.
+
+5
+00:00:18,033 --> 00:00:20,233
+Agrupa tus productos en
+categorías.
+
+6
+00:00:20,767 --> 00:00:23,733
+Busca un artículo y comprueba sus
+existencias.
+
+7
+00:00:27,033 --> 00:00:28,900
+Cambia de sede desde el selector.
+
+8
+00:00:29,433 --> 00:00:32,400
+Consulta las existencias del
+local seleccionado.
+
+9
+00:00:36,033 --> 00:00:38,867
+Revisa pedidos en curso, por
+cobrar y cerrados.
+
+10
+00:00:39,400 --> 00:00:42,200
+Busca un pedido por cliente y
+revisa su estado.
+
+11
+00:00:48,033 --> 00:00:51,067
+Consulta la fecha y el estado de
+un ticket anterior.
+
+12
+00:00:51,600 --> 00:00:53,500
+Revisa qué productos incluía.
+
+13
+00:00:56,033 --> 00:00:58,833
+Elige hoy, esta semana, este mes
+o este año.
+
+14
+00:00:59,367 --> 00:01:01,333
+Consulta los tickets del período.
+
+15
+00:01:01,867 --> 00:01:04,267
+Y observa cómo evolucionan las
+ventas.
+
+16
+00:01:09,033 --> 00:01:11,533
+Prepara el informe visual para
+imprimirlo.
+
+17
+00:01:12,067 --> 00:01:14,900
+Desde el navegador puedes
+guardarlo como PDF.
+
+18
+00:01:15,433 --> 00:01:18,033
+El detalle de movimientos se
+descarga en Excel.
+
+19
+00:01:19,467 --> 00:01:22,567
+Compara el efectivo contado con
+la referencia de caja.
+
+20
+00:01:23,100 --> 00:01:26,200
+Si hay movimientos por verificar,
+aparece «Por revisar».
+
+21
+00:01:28,467 --> 00:01:31,800
+Como dueño, revisa el rol, la
+sede y el turno del equipo.
+
+22
+00:01:32,333 --> 00:01:34,900
+Abre la ficha para consultar sus
+accesos.
+
+23
+00:01:38,467 --> 00:01:41,400
+Consulta los datos comerciales en
+Configuración.
+
+24
+00:01:41,933 --> 00:01:44,433
+Desde allí también accedes a
+Sucursales.
+
+25
+00:01:45,867 --> 00:01:47,200
+Conoce MigaPOS.
+
+26
+00:01:47,733 --> 00:01:50,267
+Solicita una demostración para tu
+negocio.

@@ -379,7 +379,10 @@ describe('SPARK-4 integrated financial Rules', () => {
     const workbook = buildSalesWorkbook(XLSX, { period, sales: receipts, voids: refunds, businessId, branchId }).workbook;
     const copy = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
     assert.ok(copy.SheetNames.filter(name => name.startsWith('Detalle_'))
-      .some(name => XLSX.utils.sheet_to_json(copy.Sheets[name], { range: 1 }).some(row => row['Total movimiento (S/)'] === -10)));
+      .some(name => {
+        const sheet = copy.Sheets[name], header = XLSX.utils.decode_range(sheet['!autofilter'].ref).s.r;
+        return XLSX.utils.sheet_to_json(sheet, { range: header }).some(row => row.Movimiento === 'COMPENSACIÓN POS' && row['Importe movimiento (S/)'] === -10);
+      }));
     assert.ok(XLSX.utils.sheet_to_json(copy.Sheets.Resumen_Financiero).some(row => row.Concepto === 'Alcance de las compensaciones POS' && row.Valor.includes('sin evidencia de desembolso físico')));
     await assertFails(reader.inPeriod('foreign', from, to, branchId));
     const adjustedStock = { [branchId]: 11, other: 7 };

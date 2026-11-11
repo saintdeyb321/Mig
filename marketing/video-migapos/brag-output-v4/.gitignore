@@ -1,0 +1,9 @@
+/.cache/
+/public/
+/review/
+/preview-v4.mp4
+/master-voice-v4.mp4
+/master-clean-v4.mp4
+/narration-v4.wav
+/cover-v4.jpg
+/node_modules/

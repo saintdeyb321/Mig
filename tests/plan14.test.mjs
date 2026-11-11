@@ -55,15 +55,18 @@ it('P14 UX: Dashboard, XLSX and PDF preserve exact cents and the XLSX keeps the 
   const html = managementReportHtml(view, { period, business: 'Panadería', branch: 'Centro', operator: 'Ana Quispe', generatedAt: new Date(createdAt) });
   for (const value of ['10.05', '0.01', '10.04']) assert.ok(html.includes(`S/ ${value}`));
   const detail = restored.Sheets.Detalle_Centro;
-  assert.equal(detail.A3.w, '09/11/2026');
-  assert.equal(detail.A3.z, 'dd/mm/yyyy');
-  assert.equal(detail.C3.v, 'Sin referencia comercial');
-  assert.equal(detail.F3.t, 's');
-  assert.equal(detail.F3.f, undefined);
-  assert.equal(detail.M3.v, 'Empleado no identificado');
+  const header = XLSX.utils.decode_range(detail['!autofilter'].ref).s.r;
+  const labels = XLSX.utils.sheet_to_json(detail, { header: 1, range: header })[0];
+  const cell = name => detail[XLSX.utils.encode_cell({ r: header + 1, c: labels.indexOf(name) })];
+  assert.equal(cell('Fecha').w, '09/11/2026');
+  assert.equal(cell('Fecha').z, 'dd/mm/yyyy');
+  assert.equal(cell('Referencia').v, 'Venta de mostrador');
+  assert.equal(cell('Producto / concepto').t, 's');
+  assert.equal(cell('Producto / concepto').f, undefined);
+  assert.equal(cell('Responsable').v, 'Empleado no identificado');
   assert.ok(Object.values(detail).every(cell => cell?.v !== internalId));
   const xml = XLSX.CFB.find(XLSX.CFB.read(bytes, { type: 'array' }), `/xl/worksheets/sheet${restored.SheetNames.length}.xml`);
-  assert.match(new TextDecoder().decode(new Uint8Array(xml.content)), /<pane ySplit="2" topLeftCell="A3"[^>]+state="frozen"/);
+  assert.match(new TextDecoder().decode(new Uint8Array(xml.content)), new RegExp(`<pane ySplit="${header + 1}" topLeftCell="A${header + 2}"[^>]+state="frozen"`));
 });
 
 it('P14 C03/C04/C08: recovery replaces exactly one lock and verifies the original command after lost responses', async () => {
@@ -140,7 +143,7 @@ it('P14 C09/C10/R01/R02: reimports a Lima opening, overnight expiry and independ
     ['APERTURA', 50, 'No aplica', 'No aplica', 'No aplica'],
     ['CIERRE MANUAL', 50, 70, 70, 0],
   ]);
-  assert.equal(events[1]['Fecha y hora del movimiento (Lima)'], '05/11/2026 06:00');
+  assert.equal(XLSX.SSF.format('dd/mm/yyyy hh:mm', events[1]['Fecha y hora del movimiento']), '05/11/2026 06:00');
   assert.equal(events[1]['Registrado por'], 'Luis Quispe');
   assert.equal(events[0].Responsable, 'Empleado no identificado');
   assert.match(events[1].Observación, /09\/11\/2026 08:00/);

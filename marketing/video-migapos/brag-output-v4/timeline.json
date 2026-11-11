@@ -1,0 +1,1411 @@
+{
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "duration": 3337,
+  "chapters": [
+    {
+      "id": "hook",
+      "title": "Tu negocio, en el móvil",
+      "from": 0,
+      "duration": 162,
+      "cues": [
+        {
+          "from": 7,
+          "to": 86,
+          "text": "¿Tienes una tienda, panadería o\npastelería?",
+          "samples": 62464
+        },
+        {
+          "from": 98,
+          "to": 154,
+          "text": "Mira cómo funciona MigaPOS.",
+          "samples": 44544
+        }
+      ],
+      "beats": [
+        {
+          "shot": "hook",
+          "from": 0,
+          "mode": "full",
+          "clip": null,
+          "to": 162,
+          "play": 0
+        }
+      ],
+      "review": [
+        5,
+        81,
+        22
+      ]
+    },
+    {
+      "id": "pos",
+      "title": "Prepara el ticket",
+      "from": 162,
+      "duration": 360,
+      "cues": [
+        {
+          "from": 19,
+          "to": 91,
+          "text": "Busca un producto y añádelo al\nticket.",
+          "samples": 57344
+        },
+        {
+          "from": 107,
+          "to": 203,
+          "text": "Ajusta la cantidad y revisa el\ntotal antes de cobrar.",
+          "samples": 76288
+        }
+      ],
+      "beats": [
+        {
+          "shot": "hook",
+          "from": 0,
+          "mode": "full",
+          "clip": null,
+          "to": 11,
+          "play": 0
+        },
+        {
+          "shot": "pos-search",
+          "from": 11,
+          "mode": "full",
+          "clip": {
+            "from": "hook",
+            "frames": 41,
+            "distinct": 16,
+            "taps": [
+              {
+                "x": 195,
+                "y": 285,
+                "frame": 1
+              }
+            ]
+          },
+          "to": 53,
+          "play": 34
+        },
+        {
+          "shot": "pos-add",
+          "from": 53,
+          "mode": "full",
+          "clip": {
+            "from": "pos-search",
+            "frames": 19,
+            "distinct": 5,
+            "taps": [
+              {
+                "x": 101,
+                "y": 479,
+                "frame": 0
+              }
+            ]
+          },
+          "to": 84,
+          "play": 19
+        },
+        {
+          "shot": "pos-ticket",
+          "from": 84,
+          "mode": "detail",
+          "clip": {
+            "from": "pos-add",
+            "frames": 26,
+            "distinct": 15,
+            "taps": [
+              {
+                "x": 195,
+                "y": 732,
+                "frame": 0
+              }
+            ]
+          },
+          "to": 127,
+          "play": 26
+        },
+        {
+          "shot": "pos-quantity",
+          "from": 127,
+          "mode": "filter",
+          "clip": {
+            "from": "pos-ticket",
+            "frames": 27,
+            "distinct": 6,
+            "taps": [
+              {
+                "x": 289,
+                "y": 229,
+                "frame": 1
+              }
+            ]
+          },
+          "to": 167,
+          "play": 27
+        },
+        {
+          "shot": "pos-total",
+          "from": 167,
+          "mode": "detail",
+          "clip": {
+            "from": "pos-quantity",
+            "frames": 15,
+            "distinct": 4,
+            "taps": []
+          },
+          "to": 360,
+          "play": 15
+        }
+      ],
+      "review": [
+        167,
+        342,
+        366
+      ]
+    },
+    {
+      "id": "catalog",
+      "title": "Organiza tu catálogo",
+      "from": 522,
+      "duration": 270,
+      "cues": [
+        {
+          "from": 19,
+          "to": 85,
+          "text": "Agrupa tus productos en\ncategorías.",
+          "samples": 52736
+        },
+        {
+          "from": 101,
+          "to": 190,
+          "text": "Busca un artículo y comprueba sus\nexistencias.",
+          "samples": 71168
+        }
+      ],
+      "beats": [
+        {
+          "shot": "categories",
+          "from": 0,
+          "mode": "detail",
+          "clip": null,
+          "to": 86,
+          "play": 0
+        },
+        {
+          "shot": "products",
+          "from": 86,
+          "mode": "full",
+          "clip": {
+            "from": "categories",
+            "frames": 46,
+            "distinct": 16,
+            "taps": [
+              {
+                "x": 340,
+                "y": 812,
+                "frame": 15
+              },
+              {
+                "x": 254,
+                "y": 563,
+                "frame": 24
+              }
+            ]
+          },
+          "to": 118,
+          "play": 24
+        },
+        {
+          "shot": "product-search",
+          "from": 118,
+          "mode": "detail",
+          "clip": {
+            "from": "products",
+            "frames": 38,
+            "distinct": 28,
+            "taps": [
+              {
+                "x": 207,
+                "y": 412.5,
+                "frame": 0
+              }
+            ]
+          },
+          "to": 270,
+          "play": 38
+        }
+      ],
+      "review": [
+        527,
+        657,
+        700
+      ]
+    },
+    {
+      "id": "branches",
+      "title": "Inventario por sede",
+      "from": 792,
+      "duration": 270,
+      "cues": [
+        {
+          "from": 19,
+          "to": 75,
+          "text": "Cambia de sede desde el selector.",
+          "samples": 44032
+        },
+        {
+          "from": 91,
+          "to": 180,
+          "text": "Consulta las existencias del\nlocal seleccionado.",
+          "samples": 71168
+        }
+      ],
+      "beats": [
+        {
+          "shot": "branch-before",
+          "from": 0,
+          "mode": "full",
+          "clip": null,
+          "to": 33,
+          "play": 0
+        },
+        {
+          "shot": "branch-after",
+          "from": 33,
+          "mode": "full",
+          "clip": {
+            "from": "branch-before",
+            "frames": 21,
+            "distinct": 5,
+            "taps": [
+              {
+                "x": 350,
+                "y": 114,
+                "frame": 0
+              }
+            ]
+          },
+          "to": 84,
+          "play": 21
+        },
+        {
+          "shot": "branch-stock",
+          "from": 84,
+          "mode": "detail",
+          "clip": {
+            "from": "branch-after",
+            "frames": 12,
+            "distinct": 4,
+            "taps": []
+          },
+          "to": 270,
+          "play": 12
+        }
+      ],
+      "review": [
+        797,
+        927,
+        910
+      ]
+    },
+    {
+      "id": "orders",
+      "title": "Gestión de pedidos",
+      "from": 1062,
+      "duration": 360,
+      "cues": [
+        {
+          "from": 19,
+          "to": 104,
+          "text": "Revisa pedidos en curso, por\ncobrar y cerrados.",
+          "samples": 67584
+        },
+        {
+          "from": 120,
+          "to": 204,
+          "text": "Busca un pedido por cliente y\nrevisa su estado.",
+          "samples": 66560
+        }
+      ],
+      "beats": [
+        {
+          "shot": "orders-active",
+          "from": 0,
+          "mode": "detail",
+          "clip": null,
+          "to": 42,
+          "play": 0
+        },
+        {
+          "shot": "orders-debt",
+          "from": 42,
+          "mode": "filter",
+          "clip": {
+            "from": "orders-active",
+            "frames": 22,
+            "distinct": 14,
+            "taps": [
+              {
+                "x": 196,
+                "y": 654,
+                "frame": 1
+              }
+            ]
+          },
+          "to": 68,
+          "play": 18
+        },
+        {
+          "shot": "orders-closed",
+          "from": 68,
+          "mode": "filter",
+          "clip": {
+            "from": "orders-debt",
+            "frames": 22,
+            "distinct": 15,
+            "taps": [
+              {
+                "x": 315,
+                "y": 654,
+                "frame": 1
+              }
+            ]
+          },
+          "to": 110,
+          "play": 22
+        },
+        {
+          "shot": "orders-search",
+          "from": 110,
+          "mode": "full",
+          "clip": {
+            "from": "orders-closed",
+            "frames": 22,
+            "distinct": 14,
+            "taps": [
+              {
+                "x": 75,
+                "y": 654,
+                "frame": 1
+              }
+            ]
+          },
+          "to": 140,
+          "play": 22
+        },
+        {
+          "shot": "orders-result",
+          "from": 140,
+          "mode": "detail",
+          "clip": {
+            "from": "orders-search",
+            "frames": 47,
+            "distinct": 44,
+            "taps": [
+              {
+                "x": 207,
+                "y": 506.5,
+                "frame": 1
+              }
+            ]
+          },
+          "to": 360,
+          "play": 47
+        }
+      ],
+      "review": [
+        1067,
+        1242,
+        1271
+      ]
+    },
+    {
+      "id": "history",
+      "title": "Historial de ventas",
+      "from": 1422,
+      "duration": 240,
+      "cues": [
+        {
+          "from": 19,
+          "to": 110,
+          "text": "Consulta la fecha y el estado de\nun ticket anterior.",
+          "samples": 72704
+        },
+        {
+          "from": 126,
+          "to": 183,
+          "text": "Revisa qué productos incluía.",
+          "samples": 45056
+        }
+      ],
+      "beats": [
+        {
+          "shot": "history",
+          "from": 0,
+          "mode": "detail",
+          "clip": null,
+          "to": 114,
+          "play": 0
+        },
+        {
+          "shot": "history-items",
+          "from": 114,
+          "mode": "detail",
+          "clip": {
+            "from": "history",
+            "frames": 21,
+            "distinct": 15,
+            "taps": [
+              {
+                "x": 321,
+                "y": 364,
+                "frame": 0
+              }
+            ]
+          },
+          "to": 240,
+          "play": 21
+        }
+      ],
+      "review": [
+        1427,
+        1542,
+        1579
+      ]
+    },
+    {
+      "id": "reports",
+      "title": "Ventas por período",
+      "from": 1662,
+      "duration": 390,
+      "cues": [
+        {
+          "from": 19,
+          "to": 103,
+          "text": "Elige hoy, esta semana, este mes\no este año.",
+          "samples": 67072
+        },
+        {
+          "from": 119,
+          "to": 178,
+          "text": "Consulta los tickets del período.",
+          "samples": 46592
+        },
+        {
+          "from": 194,
+          "to": 266,
+          "text": "Y observa cómo evolucionan las\nventas.",
+          "samples": 56832
+        }
+      ],
+      "beats": [
+        {
+          "shot": "report-today",
+          "from": 0,
+          "mode": "detail",
+          "clip": null,
+          "to": 37,
+          "play": 0
+        },
+        {
+          "shot": "report-week",
+          "from": 37,
+          "mode": "filter",
+          "clip": {
+            "from": "report-today",
+            "frames": 22,
+            "distinct": 8,
+            "taps": [
+              {
+                "x": 278,
+                "y": 268,
+                "frame": 0
+              }
+            ]
+          },
+          "to": 58,
+          "play": 13
+        },
+        {
+          "shot": "report-month",
+          "from": 58,
+          "mode": "filter",
+          "clip": {
+            "from": "report-week",
+            "frames": 21,
+            "distinct": 14,
+            "taps": [
+              {
+                "x": 112,
+                "y": 318,
+                "frame": 1
+              }
+            ]
+          },
+          "to": 80,
+          "play": 14
+        },
+        {
+          "shot": "report-year",
+          "from": 80,
+          "mode": "filter",
+          "clip": {
+            "from": "report-month",
+            "frames": 25,
+            "distinct": 10,
+            "taps": [
+              {
+                "x": 278,
+                "y": 318,
+                "frame": 0
+              }
+            ]
+          },
+          "to": 107,
+          "play": 19
+        },
+        {
+          "shot": "report-metric",
+          "from": 107,
+          "mode": "detail",
+          "clip": {
+            "from": "report-year",
+            "frames": 28,
+            "distinct": 11,
+            "taps": [
+              {
+                "x": 278,
+                "y": 268,
+                "frame": 2
+              }
+            ]
+          },
+          "to": 183,
+          "play": 28
+        },
+        {
+          "shot": "report-chart",
+          "from": 183,
+          "mode": "detail",
+          "clip": {
+            "from": "report-metric",
+            "frames": 30,
+            "distinct": 18,
+            "taps": []
+          },
+          "to": 390,
+          "play": 30
+        }
+      ],
+      "review": [
+        1667,
+        1857,
+        1897
+      ]
+    },
+    {
+      "id": "export",
+      "title": "Informes y detalle",
+      "from": 2052,
+      "duration": 313,
+      "cues": [
+        {
+          "from": 19,
+          "to": 94,
+          "text": "Prepara el informe visual para\nimprimirlo.",
+          "samples": 59904
+        },
+        {
+          "from": 110,
+          "to": 195,
+          "text": "Desde el navegador puedes\nguardarlo como PDF.",
+          "samples": 67584
+        },
+        {
+          "from": 211,
+          "to": 289,
+          "text": "El detalle de movimientos se\ndescarga en Excel.",
+          "samples": 61952
+        }
+      ],
+      "beats": [
+        {
+          "shot": "export-pdf",
+          "from": 0,
+          "mode": "detail",
+          "clip": null,
+          "to": 203,
+          "play": 0
+        },
+        {
+          "shot": "export-excel",
+          "from": 203,
+          "mode": "detail",
+          "clip": {
+            "from": "export-pdf",
+            "frames": 23,
+            "distinct": 5,
+            "taps": [
+              {
+                "x": 341,
+                "y": 398,
+                "frame": 1
+              }
+            ]
+          },
+          "to": 313,
+          "play": 23
+        }
+      ],
+      "review": [
+        2057,
+        2208,
+        2300
+      ]
+    },
+    {
+      "id": "cash",
+      "title": "Compara la caja",
+      "from": 2365,
+      "duration": 270,
+      "cues": [
+        {
+          "from": 19,
+          "to": 112,
+          "text": "Compara el efectivo contado con\nla referencia de caja.",
+          "samples": 73728
+        },
+        {
+          "from": 128,
+          "to": 221,
+          "text": "Si hay movimientos por verificar,\naparece «Por revisar».",
+          "samples": 73728
+        }
+      ],
+      "beats": [
+        {
+          "shot": "cash-entry",
+          "from": 0,
+          "mode": "full",
+          "clip": null,
+          "to": 20,
+          "play": 0
+        },
+        {
+          "shot": "cash-input",
+          "from": 20,
+          "mode": "full",
+          "clip": {
+            "from": "cash-entry",
+            "frames": 22,
+            "distinct": 16,
+            "taps": [
+              {
+                "x": 159,
+                "y": 227,
+                "frame": 0
+              }
+            ]
+          },
+          "to": 60,
+          "play": 22
+        },
+        {
+          "shot": "cash",
+          "from": 60,
+          "mode": "detail",
+          "clip": {
+            "from": "cash-input",
+            "frames": 34,
+            "distinct": 28,
+            "taps": [
+              {
+                "x": 195,
+                "y": 422.5,
+                "frame": 0
+              },
+              {
+                "x": 195,
+                "y": 514,
+                "frame": 12
+              }
+            ]
+          },
+          "to": 128,
+          "play": 34
+        },
+        {
+          "shot": "cash-warning",
+          "from": 128,
+          "mode": "detail",
+          "clip": {
+            "from": "cash",
+            "frames": 13,
+            "distinct": 4,
+            "taps": []
+          },
+          "to": 270,
+          "play": 13
+        }
+      ],
+      "review": [
+        2370,
+        2500,
+        2528
+      ]
+    },
+    {
+      "id": "staff",
+      "title": "Roles y turnos",
+      "from": 2635,
+      "duration": 300,
+      "cues": [
+        {
+          "from": 19,
+          "to": 119,
+          "text": "Como dueño, revisa el rol, la\nsede y el turno del equipo.",
+          "samples": 79360
+        },
+        {
+          "from": 135,
+          "to": 212,
+          "text": "Abre la ficha para consultar sus\naccesos.",
+          "samples": 61440
+        }
+      ],
+      "beats": [
+        {
+          "shot": "staff",
+          "from": 0,
+          "mode": "detail",
+          "clip": null,
+          "to": 125,
+          "play": 0
+        },
+        {
+          "shot": "staff-edit",
+          "from": 125,
+          "mode": "detail",
+          "clip": {
+            "from": "staff",
+            "frames": 27,
+            "distinct": 16,
+            "taps": [
+              {
+                "x": 199,
+                "y": 687,
+                "frame": 2
+              }
+            ]
+          },
+          "to": 167,
+          "play": 27
+        },
+        {
+          "shot": "staff-shift",
+          "from": 167,
+          "mode": "detail",
+          "clip": {
+            "from": "staff-edit",
+            "frames": 14,
+            "distinct": 5,
+            "taps": []
+          },
+          "to": 300,
+          "play": 14
+        }
+      ],
+      "review": [
+        2640,
+        2785,
+        2838
+      ]
+    },
+    {
+      "id": "settings",
+      "title": "Datos del negocio",
+      "from": 2935,
+      "duration": 222,
+      "cues": [
+        {
+          "from": 19,
+          "to": 107,
+          "text": "Consulta los datos comerciales en\nConfiguración.",
+          "samples": 69632
+        },
+        {
+          "from": 123,
+          "to": 198,
+          "text": "Desde allí también accedes a\nSucursales.",
+          "samples": 59392
+        }
+      ],
+      "beats": [
+        {
+          "shot": "settings",
+          "from": 0,
+          "mode": "detail",
+          "clip": null,
+          "to": 115,
+          "play": 0
+        },
+        {
+          "shot": "settings-branches",
+          "from": 115,
+          "mode": "detail",
+          "clip": {
+            "from": "settings",
+            "frames": 50,
+            "distinct": 34,
+            "taps": [
+              {
+                "x": 118,
+                "y": 434,
+                "frame": 2
+              }
+            ]
+          },
+          "to": 222,
+          "play": 50
+        }
+      ],
+      "review": [
+        2940,
+        3046,
+        3122
+      ]
+    },
+    {
+      "id": "cta",
+      "title": "Solicita una demostración",
+      "from": 3157,
+      "duration": 180,
+      "cues": [
+        {
+          "from": 19,
+          "to": 59,
+          "text": "Conoce MigaPOS.",
+          "samples": 31232
+        },
+        {
+          "from": 75,
+          "to": 151,
+          "text": "Solicita una demostración para tu\nnegocio.",
+          "samples": 60416
+        }
+      ],
+      "beats": [],
+      "review": [
+        3162,
+        3247,
+        3247
+      ]
+    }
+  ],
+  "geometry": {
+    "hook": {
+      "area": [
+        12,
+        261,
+        366,
+        3895
+      ],
+      "focus": [
+        12,
+        393,
+        177,
+        173
+      ]
+    },
+    "pos-search": {
+      "area": [
+        12,
+        261,
+        366,
+        385
+      ],
+      "focus": [
+        12,
+        393,
+        177,
+        173
+      ]
+    },
+    "pos-add": {
+      "area": [
+        16,
+        704,
+        358,
+        56
+      ],
+      "focus": [
+        16,
+        704,
+        358,
+        56
+      ]
+    },
+    "pos-ticket": {
+      "area": [
+        28,
+        172,
+        334,
+        90
+      ],
+      "focus": [
+        28,
+        172,
+        334,
+        90
+      ]
+    },
+    "pos-total": {
+      "area": [
+        14,
+        557,
+        362,
+        50
+      ],
+      "focus": [
+        14,
+        557,
+        362,
+        50
+      ]
+    },
+    "cash-entry": {
+      "area": [
+        105,
+        205,
+        108,
+        44
+      ],
+      "focus": [
+        105,
+        205,
+        108,
+        44
+      ]
+    },
+    "categories": {
+      "area": [
+        12,
+        505,
+        366,
+        269
+      ],
+      "focus": [
+        12,
+        505,
+        366,
+        269
+      ]
+    },
+    "products": {
+      "area": [
+        12,
+        169,
+        366,
+        1082
+      ],
+      "focus": [
+        64,
+        391,
+        286,
+        44
+      ]
+    },
+    "product-search": {
+      "area": [
+        12,
+        563,
+        366,
+        157
+      ],
+      "focus": [
+        12,
+        563,
+        366,
+        157
+      ]
+    },
+    "branch-before": {
+      "area": [
+        16,
+        92,
+        358,
+        44
+      ],
+      "focus": [
+        16,
+        92,
+        358,
+        44
+      ]
+    },
+    "branch-after": {
+      "area": [
+        16,
+        92,
+        358,
+        44
+      ],
+      "focus": [
+        16,
+        92,
+        358,
+        44
+      ]
+    },
+    "branch-stock": {
+      "area": [
+        12,
+        563,
+        366,
+        157
+      ],
+      "focus": [
+        12,
+        563,
+        366,
+        157
+      ]
+    },
+    "orders-active": {
+      "area": [
+        12,
+        622,
+        366,
+        64
+      ],
+      "focus": [
+        12,
+        622,
+        366,
+        64
+      ]
+    },
+    "orders-debt": {
+      "area": [
+        12,
+        622,
+        366,
+        64
+      ],
+      "focus": [
+        12,
+        622,
+        366,
+        64
+      ]
+    },
+    "orders-closed": {
+      "area": [
+        12,
+        622,
+        366,
+        64
+      ],
+      "focus": [
+        12,
+        622,
+        366,
+        64
+      ]
+    },
+    "orders-search": {
+      "area": [
+        64,
+        485,
+        286,
+        44
+      ],
+      "focus": [
+        64,
+        485,
+        286,
+        44
+      ]
+    },
+    "orders-result": {
+      "area": [
+        12,
+        225,
+        366,
+        499
+      ],
+      "focus": [
+        12,
+        225,
+        366,
+        499
+      ]
+    },
+    "history": {
+      "area": [
+        12,
+        283,
+        366,
+        278
+      ],
+      "focus": [
+        12,
+        283,
+        366,
+        278
+      ]
+    },
+    "history-items": {
+      "area": [
+        12,
+        349,
+        366,
+        147
+      ],
+      "focus": [
+        12,
+        349,
+        366,
+        147
+      ]
+    },
+    "report-today": {
+      "area": [
+        25,
+        239,
+        340,
+        108
+      ],
+      "focus": [
+        32,
+        246,
+        160,
+        44
+      ]
+    },
+    "report-week": {
+      "area": [
+        25,
+        239,
+        340,
+        108
+      ],
+      "focus": [
+        198,
+        246,
+        160,
+        44
+      ]
+    },
+    "report-month": {
+      "area": [
+        25,
+        239,
+        340,
+        108
+      ],
+      "focus": [
+        32,
+        296,
+        160,
+        44
+      ]
+    },
+    "report-year": {
+      "area": [
+        25,
+        239,
+        340,
+        108
+      ],
+      "focus": [
+        198,
+        296,
+        160,
+        44
+      ]
+    },
+    "report-metric": {
+      "area": [
+        12,
+        545,
+        366,
+        133
+      ],
+      "focus": [
+        12,
+        545,
+        366,
+        133
+      ]
+    },
+    "report-chart": {
+      "area": [
+        12,
+        281,
+        366,
+        306
+      ],
+      "focus": [
+        12,
+        299,
+        366,
+        306
+      ]
+    },
+    "export-pdf": {
+      "area": [
+        12,
+        169,
+        366,
+        404
+      ],
+      "focus": [
+        28,
+        462,
+        337,
+        50
+      ]
+    },
+    "export-excel": {
+      "area": [
+        12,
+        169,
+        366,
+        404
+      ],
+      "focus": [
+        28,
+        462,
+        337,
+        50
+      ]
+    },
+    "cash-input": {
+      "area": [
+        12,
+        240,
+        366,
+        365
+      ],
+      "focus": [
+        12,
+        240,
+        366,
+        365
+      ]
+    },
+    "cash": {
+      "area": [
+        29,
+        207,
+        332,
+        212
+      ],
+      "focus": [
+        29,
+        207,
+        332,
+        212
+      ]
+    },
+    "cash-warning": {
+      "area": [
+        29,
+        207,
+        332,
+        212
+      ],
+      "focus": [
+        42,
+        330,
+        306,
+        32
+      ]
+    },
+    "staff": {
+      "area": [
+        12,
+        479,
+        366,
+        245
+      ],
+      "focus": [
+        12,
+        479,
+        366,
+        245
+      ]
+    },
+    "staff-edit": {
+      "area": [
+        33,
+        370,
+        324,
+        158
+      ],
+      "focus": [
+        33,
+        370,
+        324,
+        158
+      ]
+    },
+    "staff-shift": {
+      "area": [
+        33,
+        544,
+        324,
+        220
+      ],
+      "focus": [
+        33,
+        544,
+        324,
+        220
+      ]
+    },
+    "settings": {
+      "area": [
+        42,
+        693,
+        306,
+        20
+      ],
+      "focus": [
+        42,
+        693,
+        306,
+        20
+      ]
+    },
+    "settings-branches": {
+      "area": [
+        29,
+        287,
+        332,
+        271
+      ],
+      "focus": [
+        29,
+        287,
+        332,
+        271
+      ]
+    },
+    "pos-quantity": {
+      "area": [
+        28,
+        172,
+        334,
+        90
+      ],
+      "focus": [
+        28,
+        172,
+        334,
+        90
+      ]
+    }
+  }
+}

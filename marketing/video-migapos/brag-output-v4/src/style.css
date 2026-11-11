@@ -1,0 +1,39 @@
+.ad {
+  overflow: hidden;
+  background: #101328;
+  color: #fbfaff;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+.galaxy {
+  position: absolute; inset: -140px;
+  background: radial-gradient(ellipse at 72% 52%, #5c3a9d88, transparent 49%),
+    radial-gradient(ellipse at 23% 63%, #243e9077, transparent 54%),
+    linear-gradient(145deg, #0f152a 0%, #141427 65%, #221638 100%);
+}
+.brand { position: absolute; left: 87px; top: 106px; display: flex; align-items: center; gap: 14px; font-size: 31px; }
+.brand img { width: 48px; height: 48px; object-fit: cover; border: 1px solid #bcaaf86a; border-radius: 13px; }
+.chapter-name { position: absolute; left: 87px; right: 176px; top: 165px; }
+.chapter-name span { position: absolute; right: 0; top: -45px; font-size: 26px; font-weight: 650; color: #e4dafb; }
+.chapter-name h1 { margin: 0; font-size: 59px; line-height: 1; letter-spacing: -2.7px; font-weight: 780; }
+.phone-body {
+  position: absolute; box-sizing: border-box; border-radius: 20px;
+  background: linear-gradient(145deg, #a59bcf, #383254 27%, #151522 59%, #8175a4);
+  border: 2px solid #a79bd168; box-shadow: 0 44px 83px #090915c9, 0 0 38px #9a7aff2d;
+}
+.phone-button { position: absolute; width: 5px; background: #716590; border-radius: 3px; }
+.volume { left: -5px; top: 180px; height: 70px; box-shadow: 0 81px #716590; }
+.power { right: -5px; top: 260px; height: 89px; }
+.screen { position: absolute; overflow: hidden; background: #fffdfb; isolation: isolate; }
+.ui-media { display: block; position: absolute; object-fit: contain; }
+.detail-frame { position: absolute; outline: 2px solid #cbb7fc80; box-shadow: 0 25px 70px #070711a0; }
+.detail-frame span { position: absolute; left: 14px; top: -43px; font-size: 26px; font-weight: 670; color: #e8d9ff; }
+.tap { position: absolute; translate: -50% -50%; width: 46px; height: 46px; border: 4px solid #eee2ff;
+  border-radius: 50%; box-shadow: 0 0 0 4px #6941ceaa; background: #9d64f251; pointer-events: none; }
+.caption { position: absolute; left: 87px; right: 176px; bottom: 355px; display: flex; justify-content: center;
+  text-align: center; white-space: pre-line; font-size: 46px; font-weight: 680; line-height: 1.14; }
+.caption span { padding: 14px 20px 16px; border-radius: 17px; background: #0e0f22; border: 1px solid #9887cd60; }
+.closing { position: absolute; top: 443px; left: 87px; right: 176px; display: grid; justify-items: center; text-align: center; }
+.emblem { width: 475px; height: 420px; object-fit: contain; mask-image: radial-gradient(ellipse, #000 48%, transparent 73%); }
+.closing b { margin-top: -14px; font-size: 106px; font-weight: 820; letter-spacing: -5px; }
+.closing h1 { margin: 30px 0 0; padding: 23px 32px 27px; border: 2px solid #baa8fa; border-radius: 24px;
+  background: linear-gradient(105deg, #5e40b8, #294aa5); font-size: 48px; }

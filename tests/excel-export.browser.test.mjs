@@ -61,31 +61,49 @@ async function workbook(downloads, previous, { net, cash, digital, label, artifa
   assert.match(filename, new RegExp(`^Reporte_${label}_\\d{4}-\\d{2}-\\d{2}\\.xlsx$`));
   const bytes = await readFile(join(downloads, filename));
   assert.deepEqual([...bytes.subarray(0, 2)], [0x50, 0x4b]);
-  const book = XLSX.read(bytes, { type: 'buffer' });
+  const book = XLSX.read(bytes, { type: 'buffer', cellNF: true, cellStyles: true });
   const summary = Object.fromEntries(XLSX.utils.sheet_to_json(book.Sheets.Resumen_Financiero).map(row => [row.Concepto, row.Valor]));
   assert.equal(summary['💰 GRAN TOTAL INGRESOS NETOS'], net);
   assert.equal(summary['Neto contable · Efectivo'], cash);
   assert.equal(summary['Neto contable · Yape / Plin'], digital);
   if (empty) assert.deepEqual(book.SheetNames, ['Resumen_Financiero']);
   else {
-    for (const name of ['Comparativa_Sedes', 'Productos_Global', 'Productos_Sedes', 'Auditoría_Pedidos']) assert.ok(book.SheetNames.includes(name), name);
+    for (const name of ['Productos_Global', 'Auditoría_Pedidos']) assert.ok(book.SheetNames.includes(name), name);
+    for (const name of ['Comparativa_Sedes', 'Productos_Sedes']) assert.equal(book.SheetNames.includes(name), branches.length > 1, name);
     assert.equal(book.SheetNames.includes('Auditoría_Cajas'), detailed);
-    const column = detailed ? 'Total movimiento (S/)' : 'Ingreso';
+    const column = detailed ? 'Importe movimiento (S/)' : 'Ingreso';
     const movementSheets = branches.map(branch => book.Sheets[(detailed ? 'Detalle_' : 'Resum_') + branch]);
     assert.ok(movementSheets.every(Boolean));
-    assert.equal(movementSheets.flatMap(sheet => XLSX.utils.sheet_to_json(sheet, { range: detailed ? 1 : 0 })).reduce((sum, row) => sum + (row[column] || 0), 0), net);
+    const headerOf = sheet => XLSX.utils.decode_range(sheet['!autofilter'].ref).s.r;
+    const movements = sheet => XLSX.utils.sheet_to_json(sheet, { range: headerOf(sheet), defval: '' });
+    const totalCents = rows => rows.reduce((sum, row) => sum + Math.round((row[column] || 0) * 100), 0);
+    assert.equal(totalCents(movementSheets.flatMap(movements)), Math.round(net * 100));
+    if (branches.length > 1) {
+      const compared = XLSX.utils.sheet_to_json(book.Sheets.Comparativa_Sedes);
+      for (const [index, branch] of branches.entries()) {
+        assert.equal(totalCents(movements(movementSheets[index])), Math.round(compared.find(row => row.Sucursal === branch)['Ventas Sistema (S/)'] * 100));
+      }
+    }
     if (detailed) for (const sheet of movementSheets) {
-      assert.match(sheet.A1.v, /^Detalle · .+ \(Lima\)$/);
-      assert.equal(sheet.A2.v, 'Fecha');
-      assert.equal(sheet.A3.t, 'n');
-      assert.equal(sheet.A3.w, sheet.A1.v.match(/\d{2}\/\d{2}\/\d{4}/)[0]);
+      assert.match(sheet.A1.v, /^Detalle · .+ · \d{2}\/\d{2}\/\d{4}(?: a \d{2}\/\d{2}\/\d{4})?$/);
+      const header = headerOf(sheet), labels = XLSX.utils.sheet_to_json(sheet, { header: 1, range: header })[0];
+      const cell = name => sheet[XLSX.utils.encode_cell({ r: header + 1, c: labels.indexOf(name) })];
+      assert.ok(!labels.includes('Sucursal'));
+      assert.equal(cell('Fecha').t, 'n');
+      assert.equal(cell('Fecha').w, sheet.A1.v.match(/\d{2}\/\d{2}\/\d{4}/)[0]);
+      assert.equal(cell(column).t, 'n');
+      assert.match(cell(column).z, /S\//);
+      for (const row of movements(sheet).filter(row => /PEDIDO$/.test(row.Movimiento))) {
+        assert.deepEqual([row.Cantidad, row['Precio unitario'], row['Subtotal producto']], ['', '', '']);
+      }
       const number = book.SheetNames.findIndex(name => book.Sheets[name] === sheet) + 1;
       const file = XLSX.CFB.find(XLSX.CFB.read(bytes, { type: 'buffer' }), `/xl/worksheets/sheet${number}.xml`);
       const xml = Buffer.from(file.content).toString('utf8');
-      assert.match(xml, /<pane ySplit="2" topLeftCell="A3"[^>]+state="frozen"/);
-      assert.match(xml, /<autoFilter ref="A2:M\d+"/);
+      assert.match(xml, new RegExp(`<pane ySplit="${header + 1}" topLeftCell="A${header + 2}"[^>]+state="frozen"`));
+      assert.ok(xml.includes(`<autoFilter ref="${sheet['!autofilter'].ref}"`));
+      assert.equal(XLSX.utils.decode_range(sheet['!autofilter'].ref).e.c, labels.length - 1);
     }
-    const cells = Object.values(book.Sheets.Productos_Sedes);
+    const cells = Object.values(book.Sheets.Productos_Global);
     assert.ok(cells.some(cell => cell.t === 's' && cell.v.includes('=1+1')));
     assert.ok(Object.values(book.Sheets).flatMap(sheet => Object.values(sheet)).every(cell => cell?.f == null && cell?.l == null));
     assert.ok(Object.values(book.Sheets).flatMap(sheet => Object.values(sheet)).every(cell =>
