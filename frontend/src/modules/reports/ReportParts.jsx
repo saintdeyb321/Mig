@@ -37,7 +37,7 @@ export function ReportPanel({ title, headingId, icon: Icon, children }) {
 
 export function ChannelBreakdown({ channels, formatMoney }) {
   const entries = Object.entries(REPORT_CHANNELS);
-  return <ReportPanel title="Desglose contable por canal" headingId="report-channels-heading" icon={WalletCards}>
+  return <ReportPanel title="Cobros y ajustes por medio de pago" headingId="report-channels-heading" icon={WalletCards}>
     <div className="space-y-3 p-3 sm:p-4">
       <table className="w-full table-fixed text-xs sm:text-sm">
         <caption className="sr-only">Cobros, contramovimientos y neto contable del período</caption>
@@ -58,7 +58,7 @@ export function ChannelBreakdown({ channels, formatMoney }) {
         </tbody>
       </table>
       <div className="space-y-1 text-xs leading-relaxed text-muted">
-        <p>El neto suma los cobros y los contramovimientos con su signo, por fecha de registro.</p>
+        <p>El neto incluye cobros, compensaciones POS y reembolsos contables por fecha de registro. Verifica caja y billeteras con el arqueo y los comprobantes.</p>
         <p>{CHANNEL_NEGATIVE_NOTE}</p>
         <p>{CHANNEL_EVIDENCE_NOTE}</p>
       </div>

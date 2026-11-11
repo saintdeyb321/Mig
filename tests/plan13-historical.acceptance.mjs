@@ -13,8 +13,8 @@ it('P13-04 A2/A10 acceptance: historical days must add to the union with bounded
       await view.dashboard.ready;
       const { summary, products } = view.state.model;
       const excel = await view.excel();
-      assert.equal(excel.summary['💰 GRAN TOTAL INGRESOS NETOS'], summary.netRevenue);
-      assert.equal(excel.summary['Tickets POS Anulados'], summary.voidedTicketCount);
+      assert.equal(excel.summary['Total neto registrado (S/)'], summary.netRevenue);
+      assert.equal(excel.summary['Ventas anuladas'], summary.voidedTicketCount);
       assert.deepEqual(excel.model.products, products);
       totals.push([summary.netRevenue, summary.digitalRevenue, summary.voidedTicketCount,
         products.reduce((qty, row) => qty + row.qty, 0), products.reduce((amount, row) => amount + row.revenue, 0)]);

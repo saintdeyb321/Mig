@@ -46,6 +46,13 @@ fixture.read = async (kind, day, branchId, businessId = user.businessId) => {
     ? [{ ...base, id: yape.id, saleId: yape.id, userId: user.uid, authority: 'pos-compensation', amount: -30,
       cashAmount: 0, digitalAmount: fixture.fault === 'integrity' ? -29 : -30, items: yape.items, occurredAt: at(day, '12'), reason: 'Motivo de ensayo' }] : [];
   if (fixture.negative) return [];
+  if (Number.isInteger(fixture.reviewCount)) return Array.from({ length: fixture.reviewCount }, (_, index) => {
+    const openedAt = at(day, '08'), endedAt = at(day, String(12 + index).padStart(2, '0'));
+    const session = { ...base, id: 'review-' + index, openedAt, openingAmount: 100 };
+    if (index === 3) return { ...session, status: 'expired_unreconciled', expiredAt: endedAt, recoveredBy };
+    return { ...session, status: 'closed', closedAt: endedAt, closedBy: unknown, declaredAmount: index === 2 ? null : index ? 100 : 196,
+      reconciliationPending: index < 2, difference: index === 4 ? 2 : index === 5 ? -2 : null };
+  });
   const cash = [{ ...base, id: 'cash-session', openingAmount: 100, declaredAmount: 128, status: 'closed', reconciliationPending: true, closedBy: unknown,
     openedAt: at(day, '08'), closedAt: at(day, '13') }];
   if (fixture.multi) cash.push({ ...base, id: 'cash-expired', branchId: secondBranch.id, openingAmount: 50, status: 'expired_unreconciled',

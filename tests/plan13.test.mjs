@@ -37,7 +37,10 @@ const compensation = (original, cashAmount, digitalAmount, reason = 'Motivo de e
   id: original.id, saleId: original.id, userId: 'qa13-cajera', authority: 'pos-compensation',
   amount: -original.total, cashAmount, digitalAmount, items: original.items, reason, occurredAt: time('12') });
 const yapeVoid = compensation(yapeSale, 0, -30);
-const rows = (wb, sheet) => XLSX.utils.sheet_to_json(wb.Sheets[sheet], { defval: '', range: sheet.startsWith('Detalle_') ? 1 : 0 });
+const rows = (wb, name) => {
+  const sheet = wb.Sheets[name];
+  return XLSX.utils.sheet_to_json(sheet, { defval: '', range: XLSX.utils.decode_range(sheet['!autofilter'].ref).s.r });
+};
 const roundTrip = wb => XLSX.read(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
 const sumMoney = values => values.reduce((cents, value) => cents + Math.round((value || 0) * 100), 0) / 100;
 
@@ -60,41 +63,51 @@ function assertReconciled({ dashboard, model, wb, summary }) {
   assert.deepEqual(model.summary, metrics);
   assert.deepEqual(model.days, dashboard.days);
   assert.deepEqual(model.products, dashboard.products);
-  assert.equal(summary['💰 GRAN TOTAL INGRESOS NETOS'], metrics.netRevenue);
-  assert.equal(summary['🛒 VENTAS MOSTRADOR NETAS'], metrics.posRevenue);
-  assert.equal(summary['🎂 INGRESOS NETOS PEDIDOS ESPECIALES'], metrics.contractRevenue);
+  assert.equal(summary['Total neto registrado (S/)'], metrics.netRevenue);
+  assert.equal(summary['Neto de ventas en mostrador (S/)'], metrics.posRevenue);
+  assert.equal(summary['Neto de pagos de pedidos (S/)'], metrics.contractRevenue);
   for (const [key, label] of [['cash', 'Efectivo'], ['digital', 'Yape / Plin']]) {
     const channel = metrics.channels[key];
     assert.equal(summary[`Cobros registrados · ${label}`], channel.collections);
     assert.equal(summary[`Compensaciones POS · ${label}`], channel.posCompensations);
     assert.equal(summary[`Reembolsos contables de pedidos · ${label}`], channel.contractRefunds);
-    assert.equal(summary[`Neto contable · ${label}`], channel.net);
+    assert.equal(summary[key === 'cash' ? 'Neto en efectivo (S/)' : 'Neto por Yape/Plin (S/)'], channel.net);
     assert.equal(sumMoney([channel.collections, channel.posCompensations, channel.contractRefunds]), channel.net);
   }
   assert.equal(sumMoney([metrics.cashRevenue, metrics.digitalRevenue]), metrics.netRevenue);
-  const branchRows = rows(wb, 'Comparativa_Sedes');
-  assert.equal(sumMoney(branchRows.map(row => row['Ventas Sistema (S/)'])), metrics.netRevenue);
+  const compareBranches = dashboard.branches.size > 1;
+  assert.equal(wb.SheetNames.includes('Comparativa_Sedes'), compareBranches);
+  const branchRows = compareBranches ? rows(wb, 'Comparativa_Sedes') : [];
+  if (compareBranches) assert.equal(sumMoney(branchRows.map(row => row['Total neto registrado (S/)'])), metrics.netRevenue);
   for (const branch of dashboard.branches.values()) {
     const name = branchesMap[branch.branchId] ?? branch.branchId;
-    const row = branchRows.find(row => row.Sucursal === name);
-    assert.deepEqual([row['Ventas Sistema (S/)'], row.Efectivo, row['Yape/Plin'], row.Anulados],
-      [branch.netRevenue, branch.cashRevenue, branch.digitalRevenue, branch.voidedTicketCount]);
+    if (compareBranches) {
+      const row = branchRows.find(row => row.Sucursal === name);
+      assert.deepEqual([row['Total neto registrado (S/)'], row['Neto en efectivo (S/)'], row['Neto por Yape/Plin (S/)'], row['Ventas anuladas']],
+        [branch.netRevenue, branch.cashRevenue, branch.digitalRevenue, branch.voidedTicketCount]);
+    }
+    if (wb.Sheets['Detalle_' + name]) {
+      assert.equal(sumMoney(rows(wb, 'Detalle_' + name).map(row => row['Importe movimiento (S/)'])), branch.netRevenue);
+    }
     if (wb.Sheets['Resum_' + name]) {
-      assert.deepEqual(rows(wb, 'Resum_' + name).map(row => [row.Fecha, row.Ingreso, row.Efectivo, row['Yape/Plin'], row.Anulados]),
+      assert.deepEqual(rows(wb, 'Resum_' + name).map(row => [XLSX.SSF.format('dd/mm/yyyy', row.Fecha), row['Total neto registrado (S/)'], row['Neto en efectivo (S/)'], row['Neto por Yape/Plin (S/)'], row['Ventas anuladas']]),
         dashboard.days.filter(day => day.branchId === branch.branchId)
           .map(day => [visibleDay(day.day), day.netRevenue, day.cashRevenue, day.digitalRevenue, day.voidedTicketCount]));
     }
   }
   if (dashboard.products.length) {
-    assert.deepEqual(rows(wb, 'Productos_Sedes').map(row => [row.Producto, row.Sucursal, row.Cantidad, row.Ingreso]),
+    assert.equal(wb.SheetNames.includes('Productos_Sedes'), compareBranches);
+    if (compareBranches) assert.deepEqual(rows(wb, 'Productos_Sedes').map(row => [row.Producto, row.Sucursal, row.Cantidad, row['Importe neto de productos POS (S/)']]),
       dashboard.products.map(row => [row.name, branchesMap[row.branchId] ?? row.branchId, row.qty, row.revenue]));
+    else assert.deepEqual(rows(wb, 'Productos_Global').map(row => [row.Producto, row.Cantidad, row['Importe neto de productos POS (S/)']]),
+      [...dashboard.products].sort((a, b) => b.qty - a.qty).map(row => [row.name, row.qty, row.revenue]));
   }
   const detailSheets = wb.SheetNames.filter(name => name.startsWith('Detalle_'));
   const periodRows = detailSheets.length ? detailSheets.flatMap(name => rows(wb, name))
     : wb.SheetNames.filter(name => name.startsWith('Resum_')).flatMap(name => rows(wb, name));
-  const totalColumn = detailSheets.length ? 'Total movimiento (S/)' : 'Ingreso';
+  const totalColumn = detailSheets.length ? 'Importe movimiento (S/)' : 'Total neto registrado (S/)';
   assert.equal(sumMoney(periodRows.map(row => row[totalColumn])), metrics.netRevenue);
-  if (detailSheets.length) assert.equal(sumMoney(periodRows.map(row => row.Subtotal)), metrics.netRevenue);
+  if (detailSheets.length) assert.equal(sumMoney(periodRows.map(row => row['Subtotal producto'])), metrics.posRevenue);
   assert.match(summary['Alcance de las compensaciones POS'], /sin evidencia de desembolso físico ni de devolución digital/);
 }
 
@@ -132,8 +145,8 @@ it('P13 reconciles scenario A before and after one Yape compensation across Dash
   });
   assert.deepEqual([result.netRevenue, result.voidedTicketCount, result.refundCount], [55, 1, 1]);
   const lines = rows(after.wb, 'Detalle_Centro');
-  assert.equal(lines.filter(row => row['Medio de pago'] === 'YAPE' && row.Subtotal === 30 && row.Estado === 'COMPLETADA').length, 1);
-  assert.equal(lines.filter(row => row.Estado === 'COMPENSACIÓN POS' && row.Subtotal === -30 && row.Cantidad === -1).length, 1);
+  assert.equal(lines.filter(row => row['Medio de pago'] === 'YAPE' && row['Subtotal producto'] === 30 && row.Movimiento === 'VENTA POS').length, 1);
+  assert.equal(lines.filter(row => row.Movimiento === 'COMPENSACIÓN POS' && row['Subtotal producto'] === -30 && row.Cantidad === -1).length, 1);
   assert.ok(lines.every(row => !Object.values(row).includes(yapeSale.id)));
   const opening = { openingAmount: 100 };
   const beforeCash = calculateCashTotals(opening, salesA, [advance]);
@@ -187,7 +200,7 @@ it('P13 verifies order total, balance, payments and signed accounting refund in 
   const result = await simulate({ payments: [...paid, ...canceled] });
   assertReconciled(result);
   assert.deepEqual(result.dashboard.summary.channels.digital, { collections: 120, posCompensations: 0, contractRefunds: -15, net: 105 });
-  assert.deepEqual(rows(result.wb, 'Auditoría_Pedidos').map(row => [row['Fecha Pago'], row['Adelanto (S/)'], row['Abono (S/)'],
+  assert.deepEqual(rows(result.wb, 'Auditoría_Pedidos').map(row => [XLSX.SSF.format('dd/mm/yyyy hh:mm', row['Fecha Pago']), row['Adelanto (S/)'], row['Abono (S/)'],
     row['Reembolso contable (S/)'], row['Neto Movimiento (S/)']]), [
     ['22/10/2026 09:00', 20, 0, 0, 20], ['22/10/2026 10:00', 0, 85, 0, 85],
     ['22/10/2026 11:00', 15, 0, 0, 15], ['22/10/2026 12:00', 0, 0, -15, -15],
@@ -202,12 +215,12 @@ it('P13 keeps names and void reasons as XLSX text and refuses an over-limit expo
   assertReconciled(result);
   const cells = Object.values(result.wb.Sheets.Detalle_Centro).filter(cell => cell?.t === 's');
   for (const name of names) {
-    assert.ok(cells.some(cell => String(cell.v).trimStart() === name));
+    assert.ok(cells.some(cell => String(cell.v).trimStart().startsWith(name + ' · Compensación')));
     assert.ok(cells.some(cell => cell.v === name));
     assert.ok(cells.every(cell => !String(cell.v).includes('UID:')));
   }
   assert.ok(Object.values(result.wb.Sheets.Detalle_Centro).every(cell => cell?.f == null && cell?.l == null));
-  const tooMany = { ...yapeSale, items: Array(MAX_EXPORT_ROWS).fill(yapeSale.items[0]) };
+  const tooMany = { ...yapeSale, items: Array(MAX_EXPORT_ROWS + 1).fill(yapeSale.items[0]) };
   assert.throws(() => buildSalesWorkbook(XLSX, { ...scope, sales: [tooMany], now }), /Demasiadas filas de detalle/);
 });
 
@@ -253,7 +266,7 @@ it('P13 preserves one cash lock and immutable declarations across double open, c
     const period = reportPeriod('hoy', plan08Timestamp().toDate());
     const { workbook } = buildSalesWorkbook(XLSX, { businessId, branchId, period, sessions: [saved], now: plan08Timestamp().toDate() });
     const audit = rows(roundTrip(workbook), 'Auditoría_Cajas').find(row => row.Turno.startsWith('CIERRE'));
-    assert.deepEqual([audit['Contado Real (S/)'], audit['Referencia calculada (S/)'], audit['Diferencia (S/)'], audit.Estado],
+    assert.deepEqual([audit['Efectivo declarado (S/)'], audit['Referencia calculada (S/)'], audit['Diferencia (S/)'], audit.Estado],
       [declared, 128, difference, 'Conciliación pendiente']);
     assert.match(audit.Observación, /provisionales/);
     assert.equal(h.writes.length, 4);
@@ -314,11 +327,11 @@ it('P13 counts a historical void and its matching immutable compensation as one 
   assert.deepEqual({
     voids: summary.voidedTicketCount, net: summary.netRevenue,
     qty: sumMoney(products.map(row => row.qty)), productRevenue: sumMoney(products.map(row => row.revenue)),
-    excelVoids: result.summary['Tickets POS Anulados'], excelNet: result.summary['💰 GRAN TOTAL INGRESOS NETOS'],
+    excelVoids: result.summary['Ventas anuladas'], excelNet: result.summary['Total neto registrado (S/)'],
   }, { voids: 1, net: 0, qty: 0, productRevenue: 0, excelVoids: 1, excelNet: 0 });
   assert.equal(historical.voided, true);
   const detail = rows(result.wb, 'Detalle_Centro');
-  assert.equal(detail.filter(row => row.Estado === 'COMPENSACIÓN POS' && row.Subtotal === -30).length, 1);
+  assert.equal(detail.filter(row => row.Movimiento === 'COMPENSACIÓN POS' && row['Subtotal producto'] === -30).length, 1);
   assert.equal(sumMoney(detail.map(row => row.Cantidad)), 0);
   assert.deepEqual(result.dashboard.summary.channels.digital, { collections: 30, posCompensations: -30, contractRefunds: 0, net: 0 });
 });
@@ -332,8 +345,8 @@ it('P13-03 retains unpaired legacy voids without generating money, stock or an E
   assert.deepEqual(products.map(row => [row.id, row.qty, row.revenue]), [[cashSale.items[0].id, 1, 20]]);
   const detail = rows(result.wb, 'Detalle_Centro');
   const legacy = detail.find(row => row['Medio de pago'] === 'YAPE' && row.Observaciones.includes('Anulación anterior'));
-  assert.deepEqual([legacy.Estado, legacy.Cantidad, legacy.Subtotal], ['ANULADA ❌', 0, 0]);
-  assert.equal(detail.some(row => row.Estado === 'COMPENSACIÓN POS'), false);
+  assert.deepEqual([legacy.Movimiento, legacy.Cantidad, legacy['Subtotal producto'], legacy['Importe movimiento (S/)']], ['VENTA POS ANULADA', 0, 0, 0]);
+  assert.equal(detail.some(row => row.Movimiento === 'COMPENSACIÓN POS'), false);
   const stats = salesToDailyStats([historical]);
   assert.throws(() => aggregateReport({ ...scope, stats, voids: [yapeVoid] }), /agregado histórico no identifica/);
   assert.throws(() => buildSalesWorkbook(XLSX, { ...scope, stats, voids: [yapeVoid], detailed: false }), /agregado histórico no identifica/);
@@ -349,7 +362,7 @@ it('P13-03 separates original and compensation dates across bounded queries and 
   for (const result of [originalOnly, compensationOnly]) assertReconciled(result);
   assert.equal(originalOnly.dashboard.summary.netRevenue, 30);
   assert.equal(compensationOnly.dashboard.summary.netRevenue, -30);
-  assert.equal(rows(compensationOnly.wb, 'Detalle_Centro').some(row => row.Estado === 'COMPLETADA'), false);
+  assert.equal(rows(compensationOnly.wb, 'Detalle_Centro').some(row => row.Movimiento === 'VENTA POS'), false);
   const unknownPrior = await simulate({ sales: [historical], period: priorPeriod });
   assert.equal(unknownPrior.dashboard.summary.netRevenue, 0);
   const evidencedPrior = await simulate({ sales: [historical], voids: [yapeVoid], period: priorPeriod });
@@ -451,7 +464,7 @@ it('P13-04 A3/A4 handles historical records with a duplicate same-day receipt or
   assert.equal(pair.dashboard.summary.refundCount, 1);
   assert.equal(unpaired.dashboard.summary.refundCount, 0);
   assert.deepEqual(periodTotals(unpaired), [0, 0, 0, 1, 0, 0]);
-  assert.equal(rows(unpaired.wb, 'Detalle_Centro').find(row => row['Medio de pago'] === 'PLIN').Estado, 'ANULADA ❌');
+  assert.equal(rows(unpaired.wb, 'Detalle_Centro').find(row => row['Medio de pago'] === 'PLIN').Movimiento, 'VENTA POS ANULADA');
 });
 
 for (const [filter, before, after] of [

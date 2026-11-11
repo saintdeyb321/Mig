@@ -61,31 +61,49 @@ async function workbook(downloads, previous, { net, cash, digital, label, artifa
   assert.match(filename, new RegExp(`^Reporte_${label}_\\d{4}-\\d{2}-\\d{2}\\.xlsx$`));
   const bytes = await readFile(join(downloads, filename));
   assert.deepEqual([...bytes.subarray(0, 2)], [0x50, 0x4b]);
-  const book = XLSX.read(bytes, { type: 'buffer' });
+  const book = XLSX.read(bytes, { type: 'buffer', cellNF: true, cellStyles: true });
   const summary = Object.fromEntries(XLSX.utils.sheet_to_json(book.Sheets.Resumen_Financiero).map(row => [row.Concepto, row.Valor]));
-  assert.equal(summary['💰 GRAN TOTAL INGRESOS NETOS'], net);
-  assert.equal(summary['Neto contable · Efectivo'], cash);
-  assert.equal(summary['Neto contable · Yape / Plin'], digital);
+  assert.equal(summary['Total neto registrado (S/)'], net);
+  assert.equal(summary['Neto en efectivo (S/)'], cash);
+  assert.equal(summary['Neto por Yape/Plin (S/)'], digital);
   if (empty) assert.deepEqual(book.SheetNames, ['Resumen_Financiero']);
   else {
-    for (const name of ['Comparativa_Sedes', 'Productos_Global', 'Productos_Sedes', 'Auditoría_Pedidos']) assert.ok(book.SheetNames.includes(name), name);
+    for (const name of ['Productos_Global', 'Auditoría_Pedidos']) assert.ok(book.SheetNames.includes(name), name);
+    for (const name of ['Comparativa_Sedes', 'Productos_Sedes']) assert.equal(book.SheetNames.includes(name), branches.length > 1, name);
     assert.equal(book.SheetNames.includes('Auditoría_Cajas'), detailed);
-    const column = detailed ? 'Total movimiento (S/)' : 'Ingreso';
+    const column = detailed ? 'Importe movimiento (S/)' : 'Total neto registrado (S/)';
     const movementSheets = branches.map(branch => book.Sheets[(detailed ? 'Detalle_' : 'Resum_') + branch]);
     assert.ok(movementSheets.every(Boolean));
-    assert.equal(movementSheets.flatMap(sheet => XLSX.utils.sheet_to_json(sheet, { range: detailed ? 1 : 0 })).reduce((sum, row) => sum + (row[column] || 0), 0), net);
+    const headerOf = sheet => XLSX.utils.decode_range(sheet['!autofilter'].ref).s.r;
+    const movements = sheet => XLSX.utils.sheet_to_json(sheet, { range: headerOf(sheet), defval: '' });
+    const totalCents = rows => rows.reduce((sum, row) => sum + Math.round((row[column] || 0) * 100), 0);
+    assert.equal(totalCents(movementSheets.flatMap(movements)), Math.round(net * 100));
+    if (branches.length > 1) {
+      const compared = XLSX.utils.sheet_to_json(book.Sheets.Comparativa_Sedes);
+      for (const [index, branch] of branches.entries()) {
+        assert.equal(totalCents(movements(movementSheets[index])), Math.round(compared.find(row => row.Sucursal === branch)['Total neto registrado (S/)'] * 100));
+      }
+    }
     if (detailed) for (const sheet of movementSheets) {
-      assert.match(sheet.A1.v, /^Detalle · .+ \(Lima\)$/);
-      assert.equal(sheet.A2.v, 'Fecha');
-      assert.equal(sheet.A3.t, 'n');
-      assert.equal(sheet.A3.w, sheet.A1.v.match(/\d{2}\/\d{2}\/\d{4}/)[0]);
+      assert.match(sheet.A1.v, /^Detalle · .+ · \d{2}\/\d{2}\/\d{4}(?: a \d{2}\/\d{2}\/\d{4})?$/);
+      const header = headerOf(sheet), labels = XLSX.utils.sheet_to_json(sheet, { header: 1, range: header })[0];
+      const cell = name => sheet[XLSX.utils.encode_cell({ r: header + 1, c: labels.indexOf(name) })];
+      assert.ok(!labels.includes('Sucursal'));
+      assert.equal(cell('Fecha').t, 'n');
+      assert.equal(cell('Fecha').w, sheet.A1.v.match(/\d{2}\/\d{2}\/\d{4}/)[0]);
+      assert.equal(cell(column).t, 'n');
+      assert.match(cell(column).z, /S\//);
+      for (const row of movements(sheet).filter(row => /PEDIDO$/.test(row.Movimiento))) {
+        assert.deepEqual([row.Cantidad, row['Precio unitario'], row['Subtotal producto']], ['', '', '']);
+      }
       const number = book.SheetNames.findIndex(name => book.Sheets[name] === sheet) + 1;
       const file = XLSX.CFB.find(XLSX.CFB.read(bytes, { type: 'buffer' }), `/xl/worksheets/sheet${number}.xml`);
       const xml = Buffer.from(file.content).toString('utf8');
-      assert.match(xml, /<pane ySplit="2" topLeftCell="A3"[^>]+state="frozen"/);
-      assert.match(xml, /<autoFilter ref="A2:M\d+"/);
+      assert.match(xml, new RegExp(`<pane ySplit="${header + 1}" topLeftCell="A${header + 2}"[^>]+state="frozen"`));
+      assert.ok(xml.includes(`<autoFilter ref="${sheet['!autofilter'].ref}"`));
+      assert.equal(XLSX.utils.decode_range(sheet['!autofilter'].ref).e.c, labels.length - 1);
     }
-    const cells = Object.values(book.Sheets.Productos_Sedes);
+    const cells = Object.values(book.Sheets.Productos_Global);
     assert.ok(cells.some(cell => cell.t === 's' && cell.v.includes('=1+1')));
     assert.ok(Object.values(book.Sheets).flatMap(sheet => Object.values(sheet)).every(cell => cell?.f == null && cell?.l == null));
     assert.ok(Object.values(book.Sheets).flatMap(sheet => Object.values(sheet)).every(cell =>
@@ -380,8 +398,8 @@ it('Plan14 previews the authorized scope, prints sanitized A4 and reuses its sna
       if (scenario === 'negativo') assert.match(preview.html, /class="bar negative" style="left:0%;width:50%"/);
       if (scenario === 'dos-sedes') {
         assert.match(preview.html, /<td class="bounded">Taller<\/td>/);
-        assert.match(preview.html, /Contado no declarado/);
-        assert.match(preview.html, /Pendiente de arqueo/);
+        assert.match(preview.html, /Efectivo contado<\/dt> <dd>No declarado/);
+        assert.match(preview.html, /Turno vencido sin arqueo/);
         assert.match(preview.html, /Luis Quispe/);
       }
       const reads = await ev(() => window.__excelFixture.reads);
@@ -413,6 +431,46 @@ it('Plan14 previews the authorized scope, prints sanitized A4 and reuses its sna
       assert.equal(pageCount, expectedPages, scenario);
       await writeFile(resolve(out, `informe-${scenario}.pdf`), pdf);
       console.log(JSON.stringify({ scenario, net, cash, digital, pageCount, coldReads: reads, warmExtraReads: 0, excelExtra }));
+    }
+  } });
+});
+
+it('P14-RC prints A4 with 0, 1, 6 and 8 cash incidents and keeps the complete Excel audit', { timeout: 180000 }, async () => {
+  const output = resolve(artifacts, '../qa-p14-rc');
+  await mkdir(output, { recursive: true });
+  await runExcelFixture({ async inspectPage(page, { downloads }) {
+    const ev = evaluate(page), press = click(page);
+    for (const count of [0, 1, 6, 8]) {
+      if (count) await reload(page, ev, { ignoreCache: true });
+      await ev(count => { window.__excelFixture.reviewCount = count; }, count);
+      assert.equal(await ev(() => window.__excelFixture.reads), 0);
+      await press(primary);
+      const preview = await previewReady(ev);
+      assert.equal([...preview.html.matchAll(/<article class="review-row /g)].length, Math.min(count, 6));
+      assert.equal(preview.html.includes('Cajas que requieren revisión'), count > 0);
+      assert.doesNotMatch(preview.html, /Alertas operativas|Notificaciones/);
+      if (count === 8) assert.match(preview.html, /6 incidencias más recientes de 8/);
+      assert.equal(await ev(() => window.__excelFixture.reads), 4);
+      await closePreview(ev);
+      await press(primary);
+      assert.equal((await previewReady(ev)).html, preview.html);
+      assert.equal(await ev(() => window.__excelFixture.reads), 4);
+      if (count === 8) {
+        await closePreview(ev);
+        await select(ev, 1)('excel');
+        await press(primary);
+        const names = await workbook(downloads, [], { net: 85, cash: 28, digital: 57, label: 'Diario_Detallado' });
+        const book = XLSX.read(await readFile(join(downloads, names[0])), { type: 'buffer' });
+        const audit = XLSX.utils.sheet_to_json(book.Sheets.Auditoría_Cajas);
+        assert.equal(audit.length, 16);
+        assert.equal(audit.filter(row => row.Turno !== 'APERTURA').length, 8);
+        assert.deepEqual(await ev(() => window.__excelFixture.calls.slice(4).map(call => call.kind)), ['audit']);
+      }
+      await ev(html => { document.open(); document.write('<!doctype html>' + html); document.close(); }, preview.html);
+      const pdf = Buffer.from((await page.send('Page.printToPDF', { preferCSSPageSize: true, printBackground: false }, 15000)).data, 'base64');
+      assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
+      await writeFile(resolve(output, `informe-caja-${count}.pdf`), pdf);
+      assert.equal([...pdf.toString('latin1').matchAll(/\/Type\s*\/Page\b/g)].length, 1, `PDF con ${count} incidencias`);
     }
   } });
 });

@@ -8,6 +8,35 @@ const cell = (value, className) => `<td${className ? ` class="${className}"` : '
 const table = (headers, rows) => `<div class="table-wrap"><table><thead><tr>${headers.map(heading =>
   `<th scope="col">${text(heading)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.join('')}</tr>`).join('')}</tbody></table></div>`;
 
+export function cashReviewPresentation(events) {
+  const incidents = [];
+  for (const event of events) {
+    if (!['expiry', 'closing'].includes(event.kind)) continue;
+    const declared = event.kind === 'closing' && Number.isFinite(event.counted);
+    const difference = declared && !event.estimated && Number.isFinite(event.difference) ? event.difference : null;
+    let title, explanation, severity = 'warning';
+    if (event.kind === 'expiry') {
+      title = 'Turno vencido sin arqueo';
+      explanation = 'Revisa el turno anterior y sus comprobantes.';
+    } else if (event.estimated) {
+      title = 'Cierre pendiente de conciliación';
+      explanation = 'La referencia de caja es provisional. Coteja el cierre con los comprobantes.';
+    } else if (difference === null) {
+      title = 'Cierre sin diferencia calculable';
+      explanation = 'Revisa los importes pendientes del cierre.';
+    } else if (difference !== 0) {
+      severity = difference < 0 ? 'danger' : 'warning';
+      title = difference < 0 ? 'Faltante registrado' : 'Sobrante registrado';
+      explanation = 'Coteja la diferencia registrada con el conteo y los comprobantes.';
+    } else continue;
+    incidents.push({ title, explanation, severity, branch: event.branch, occurredAt: event.date,
+      responsible: event.cashier, recordedBy: event.actor !== event.cashier ? event.actor : null,
+      moneyLabel: declared ? 'Efectivo declarado' : 'Efectivo contado', moneyValueText: declared ? money(event.counted) : 'No declarado', difference });
+  }
+  incidents.sort((a, b) => b.occurredAt - a.occurredAt);
+  return { totalCount: incidents.length, visible: incidents.slice(0, 6) };
+}
+
 function signedBars(rows) {
   const max = Math.max(1, ...rows.map(row => Math.abs(row.value)));
   return `<div class="chart">${rows.map(({ name, value }) => {
@@ -23,15 +52,13 @@ export function managementReportHtml(view, { period, business, branch, operator,
   const { summary, collections, contractCounts, topProducts, comparisons, cashEvents, warning } = view;
   const { cash, digital } = summary.channels;
   const sites = comparisons.slice(0, 6);
-  const alerts = cashEvents.filter(event => event.kind === 'expiry' || event.kind === 'closing'
-    && (event.estimated || event.difference !== 0));
-  const shownAlerts = alerts.slice(-6).reverse();
+  const cashReview = cashReviewPresentation(cashEvents);
   const financial = summary.posTicketCount || summary.contractPaymentCount || summary.voidedTicketCount || summary.refundCount;
   const hasActivity = financial || view.orderCount || cashEvents.length;
   const channelRows = [{ name: 'Efectivo', value: cash.net }, { name: 'Yape / Plin', value: digital.net }];
   const cards = [
     ['Cobros registrados', money(collections)], ['Ajustes contables', money(summary.refunds)],
-    ['Neto contable', money(summary.netRevenue)], ['Tickets POS', summary.posTicketCount],
+    ['Total neto registrado', money(summary.netRevenue)], ['Tickets de venta válidos', summary.posTicketCount],
   ];
   const counts = [['Pendientes', contractCounts.pending], ['Entregados', contractCounts.delivered],
     ['Cancelados', contractCounts.cancelled], ['Con saldo', contractCounts.withDebt]];
@@ -43,7 +70,7 @@ export function managementReportHtml(view, { period, business, branch, operator,
     h1,h2,p{margin:0} h1{font-size:23pt;line-height:1.12;letter-spacing:-.035em} h2{font-size:13pt;line-height:1.2;margin-bottom:6px}
     .masthead{border-top:5px solid #52368a;border-bottom:1px solid #cec2df;padding:9px 0 10px;break-inside:avoid}
     .eyebrow{font-size:9pt;letter-spacing:.16em;text-transform:uppercase;color:#543c89;font-weight:800;margin-bottom:3px}
-    .subtitle{margin:4px 0}.meta,.muted,footer{font-size:9pt;color:#52485e}
+    .subtitle{margin:4px 0}.meta,.muted{font-size:9pt;color:#52485e}
     .section{margin-top:13px} .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
     .card,.pill{border:1px solid #c7bdd6;background:#f6f2fc;border-radius:6px;padding:7px 8px;break-inside:avoid}
     .card.net{background:#ecf7f0;border-color:#7fa994;border-left:4px solid #1b684c}
@@ -60,21 +87,28 @@ export function managementReportHtml(view, { period, business, branch, operator,
     thead{display:table-header-group} th,td{text-align:left;padding:4px 5px;border-bottom:1px solid #d6ccdf}
     th{background:#f2edf8} tr{break-inside:avoid}.bounded{max-width:52mm}
     .notice{padding:8px 10px;border-left:3px solid #6b4ba2;background:#f6f2fc;margin-top:8px;break-inside:avoid}
-    .warning{border-color:#905a23;background:#fff5e3} .alert-row{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:5px 0;border-bottom:1px solid #ded5e7;font-size:9pt;break-inside:avoid}
-    .alert-row span:last-child{text-align:right} footer{border-top:1px solid #cec2df;margin-top:12px;padding-top:6px;break-inside:avoid}
-    @media screen and (max-width:520px){body{padding:9px} .cards{grid-template-columns:repeat(2,minmax(0,1fr))}.card strong{font-size:13pt}.bar-row{grid-template-columns:1fr 1fr}.track{order:3;grid-column:1/-1;margin-bottom:3px}}
+    .warning{border-color:#905a23;background:#fff5e3}
+    .cash-review h2{color:#412767}.cash-review-intro{break-after:avoid}
+    .cash-review-mark{display:inline-grid;place-items:center;width:1.2em;height:1.2em;margin-right:.45em;border-radius:4px;background:#fff1da;color:#75471a;font-size:.9em}
+    .review-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);gap:2px 9px;margin-top:4px;padding:4px 7px;border:1px solid #e9ded1;border-left:3px solid #9a6125;border-radius:4px;background:#fffaf3;font-size:8.5pt;line-height:1.23;break-inside:avoid}
+    .review-row.danger{border-left-color:#973b43}.review-row h3{margin:0;color:#43265d;font-size:9.5pt}
+    .review-amounts{margin:0;text-align:right;font-variant-numeric:tabular-nums}.review-amounts dt,.review-amounts dd{display:inline;margin:0}
+    .review-amounts dd{font-weight:700}.review-action{grid-column:1/-1;color:#514451}
+    @media screen and (max-width:520px){body{padding:9px} .cards{grid-template-columns:repeat(2,minmax(0,1fr))}.card strong{font-size:13pt}.bar-row{grid-template-columns:1fr 1fr}.track{order:3;grid-column:1/-1;margin-bottom:3px}.review-row{grid-template-columns:1fr}.review-amounts{text-align:left}}
     @media print{body{padding:0;background:#fff;print-color-adjust:exact;-webkit-print-color-adjust:exact}
-      .table-wrap{overflow:visible}h2{break-after:avoid}.next-page{break-before:page}.section{orphans:2;widows:2}}
+      .masthead{padding-block:6px}.section{margin-top:8px;orphans:2;widows:2}.card,.pill{padding-block:5px}
+      .chart{padding-block:4px;margin-block:4px 5px}th,td{padding-block:3px}.review-row{padding-block:2px;margin-top:3px}
+      .table-wrap{overflow:visible}h2{break-after:avoid}.next-page{break-before:page}}
   </style></head><body><main>
     <header class="masthead"><p class="eyebrow">MigaPOS · Reporte gerencial</p><h1>Informe del negocio</h1>
       <p class="subtitle"><strong>${text(business)}</strong> · ${text(branch)}</p>
-      <p>${text(visibleDay(period.start))} al ${text(visibleDay(period.end))} · America/Lima</p>
+      <p>${text(visibleDay(period.start))} al ${text(visibleDay(period.end))} · America/Lima <span class="meta">· Movimientos contables del período</span></p>
       <p class="meta">Datos consultados ${text(dateTime(fetchedAt))} · Generado ${text(dateTime(generatedAt))} · ${text(operator)}</p>
     </header>
     ${warning ? `<p class="notice warning">${text(warning)}</p>` : ''}
     ${financial ? `<section class="section"><h2>Panorama financiero</h2>
       <div class="cards">${cards.map(([label, value], i) => `<div class="card ${i === 2 ? 'net' : ''}">${text(label)}<strong>${text(value)}</strong></div>`).join('')}</div>
-      <p class="muted">Neto POS ${text(money(summary.posRevenue))} · Neto pedidos ${text(money(summary.contractRevenue))}
+      <p class="muted">Neto de ventas en mostrador ${text(money(summary.posRevenue))} · Neto de pagos de pedidos ${text(money(summary.contractRevenue))}
         · ${summary.voidedTicketCount} tickets anulados · ${summary.contractPaymentCount} pagos de pedidos</p>
     </section>
     <section class="section"><h2>Neto por canal</h2>${signedBars(channelRows)}
@@ -82,7 +116,7 @@ export function managementReportHtml(view, { period, business, branch, operator,
         [cell(label), cell(money(cash[key]), 'num'), cell(money(digital[key]), 'num')]))}
       ${channelRows.some(row => row.value < 0) ? '<p class="muted">El neto negativo incluye ajustes cuyos cobros pueden pertenecer a otro período.</p>' : ''}
     </section>` : `<div class="notice"><strong>${hasActivity ? 'Sin cobros ni ajustes contables en el período' : 'No se registraron movimientos confirmados en este período'}</strong>
-      <p>Neto contable ${text(money(summary.netRevenue))}</p></div>`}
+      <p>Total neto registrado ${text(money(summary.netRevenue))}</p></div>`}
     ${financial && sites.length ? `<section class="section"><h2>${sites.length > 1 ? 'Comparativa de sucursales' : 'Desempeño de la sede'}</h2>
       ${sites.length > 1 ? signedBars(sites.map(site => ({ name: site.name, value: site.net }))) : ''}
       ${table(['Sucursal', 'Neto POS', 'Neto pedidos', 'Neto total'], sites.map(site =>
@@ -97,13 +131,16 @@ export function managementReportHtml(view, { period, business, branch, operator,
         [cell(row.name, 'bounded'), cell(row.qty, 'num'), cell(money(row.revenue), 'num')]))}</section>` : ''}
     ${view.orderCount ? `<section class="section"><h2>Pedidos del período</h2><div class="cards">${counts.map(([label, value]) =>
       `<div class="pill">${text(label)}<strong>${value}</strong></div>`).join('')}</div></section>` : ''}
-    ${shownAlerts.length || summary.refundCount ? `<section class="section"><h2>Alertas operativas</h2>
-      ${shownAlerts.map(row => `<div class="alert-row"><span><strong>${text(row.state)}</strong> · ${text(row.branch)}<br>
-        ${text(row.actor)} · ${text(dateTime(row.date))} (Lima)</span>
-        <span>${text(row.counted === null ? 'Contado no declarado' : `Contado ${money(row.counted)}`)}</span></div>`).join('')}
-      ${alerts.length > shownAlerts.length ? '<p class="muted">Se muestran las seis alertas más recientes del período.</p>' : ''}
-      ${summary.refundCount ? '<p class="muted">Los ajustes contables no acreditan una devolución de dinero.</p>' : ''}
+    ${cashReview.visible.length ? `<section class="section cash-review" aria-labelledby="cash-review-title">
+      <div class="cash-review-intro"><h2 id="cash-review-title"><span class="cash-review-mark" aria-hidden="true">!</span>Cajas que requieren revisión</h2>
+      <p class="muted">Incidencias de turnos de caja. Compara el efectivo declarado con tus comprobantes.</p></div>
+      ${cashReview.visible.map(row => `<article class="review-row ${row.severity}"><div><h3>${text(row.title)}</h3>
+        <p>${text(row.branch)} · ${text(dateTime(row.occurredAt))} · Responsable: ${text(row.responsible)}${row.recordedBy ? ` · Registró: ${text(row.recordedBy)}` : ''}</p></div>
+        <dl class="review-amounts"><div><dt>${text(row.moneyLabel)}</dt> <dd>${text(row.moneyValueText)}</dd></div>
+        ${row.difference === null ? '' : `<div><dt>Diferencia registrada</dt> <dd>${text(money(row.difference))}</dd></div>`}</dl>
+        <p class="review-action">${text(row.explanation)}</p></article>`).join('')}
+      ${cashReview.totalCount > cashReview.visible.length ? `<p class="muted">Se muestran las 6 incidencias más recientes de ${cashReview.totalCount} detectadas en el período.</p>` : ''}
     </section>` : ''}
-    <footer>MigaPOS · El neto contable no equivale a ganancia ni a dinero disponible.</footer>
+    ${summary.refundCount ? '<p class="muted section">Los ajustes contables no acreditan una devolución de dinero.</p>' : ''}
   </main></body></html>`;
 }

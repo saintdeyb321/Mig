@@ -3,7 +3,7 @@
 
 @layer base {
   html { min-width: 0; background: var(--color-canvas); }
-  body { margin: 0; font-family: var(--font-sans); color: var(--color-ink); line-height: 1.5; }
+  body { margin: 0; font-family: var(--font-sans); color: var(--color-ink); background-color: var(--color-canvas); line-height: 1.5; }
   #root { min-height: 100dvh; }
   button, input, textarea, select { font: inherit; }
   button, select, summary { touch-action: manipulation; }
@@ -31,8 +31,8 @@
   .nebula-brand {
     background-color: var(--color-sidebar);
     background-image:
-      radial-gradient(ellipse at 0% 18%, color-mix(in srgb, var(--color-nebula) 22%, transparent), transparent 60%),
-      radial-gradient(ellipse at 100% 100%, color-mix(in srgb, var(--color-stellar) 22%, transparent), transparent 60%),
+      radial-gradient(ellipse at 0% 18%, color-mix(in srgb, var(--color-nebula) 17%, transparent), transparent 60%),
+      radial-gradient(ellipse at 100% 100%, color-mix(in srgb, var(--color-stellar) 13%, transparent), transparent 60%),
       linear-gradient(165deg, var(--color-sidebar), var(--color-brand-deep) 58%, var(--color-sidebar-end));
   }
   .workspace-page { width: 100%; min-width: 0; margin-inline: auto; display: grid; gap: 1.25rem; padding-bottom: 1.5rem; }
@@ -83,6 +83,7 @@
 
 /* These viewport adaptations must also override per-view utility padding. */
 .nebula-brand :focus-visible { outline-color: var(--color-sidebar-glow); }
+.nebula-brand nav [aria-current="page"] { background-color: var(--color-sidebar-active); border-color: var(--color-sidebar-active-line); }
 @media (min-width: 64rem) {
   /* Include the real shell notices and padding, rather than assuming a header height. */
   #main-content:has(> .pos-workspace) {

@@ -26,6 +26,135 @@ const moduleMocks = { ...mockHooks,
     export const subscribeSaleAcknowledgement=()=>()=>{};export const reviewDraftSaleTransaction=()=>window.__p09.forbidden();export const confirmDraftSaleTransaction=()=>window.__p09.forbidden();`,
 };
 
+it('P14-RC compares the shared palette in actual modules and keeps checkout and keyboard focus visible', { timeout: 180000 }, async () => {
+  const css = await readBrowserBuildCss();
+  const phase = process.env.MIGAPOS_TEST_CREAM_PHASE === 'before' ? 'before' : 'after';
+  const output = `.release/qa-p14-rc/${phase}`;
+  await mkdir(output, { recursive: true });
+  const measurements = [];
+  await runBrowserFixture({ htmlFile: new URL('./plan09.browser.html', import.meta.url), route: '/p14-cream', fixture: { css }, moduleMocks,
+    async inspectPage(page) {
+      const evaluate = async (fn, ...args) => {
+        const result = await page.send('Runtime.evaluate', { expression: `(${fn})(...${JSON.stringify(args)})`, awaitPromise: true, returnByValue: true });
+        assert.ok(!result.exceptionDetails, result.exceptionDetails?.exception?.description);
+        return result.result.value;
+      };
+      const viewport = (width, height) => page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 768 });
+      const show = (name) => evaluate(async name => { await window.__p09.show(name); scrollTo(0, 0); await window.__p09.frames(); }, name);
+      const capture = async name => {
+        await evaluate(async () => {
+          await Promise.allSettled(document.getAnimations().filter(animation => Number.isFinite(animation.effect.getComputedTiming().endTime)).map(animation => animation.finished));
+        });
+        const shot = await page.send('Page.captureScreenshot', { format: 'png' }, 15000);
+        await writeFile(`${output}/${name}.png`, Buffer.from(shot.data, 'base64'));
+      };
+      const views = ['reports', 'pos', 'history', 'contracts', 'cash-close', 'users', 'settings', 'export', 'products', 'categories'];
+      for (const [width, height] of [[375, 667], [768, 1024], [1280, 560], [1440, 900]]) {
+        await viewport(width, height);
+        for (const view of views) {
+          await show(view);
+          const actual = await evaluate(() => {
+            const main = document.querySelector('#main-content');
+            const sidebar = document.querySelector('.nebula-brand');
+            const active = sidebar.querySelector('[aria-current="page"]');
+            return { error: window.__p09.renderError, width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+              canvas: getComputedStyle(main.closest('.bg-canvas')).backgroundColor,
+              panel: getComputedStyle(document.documentElement).getPropertyValue('--color-panel').trim(),
+              sidebar: getComputedStyle(sidebar).backgroundImage, active: active && getComputedStyle(active).backgroundColor };
+          });
+          assert.ok(!actual.error && actual.width === width && actual.scrollWidth <= width + 1, JSON.stringify({ view, width, actual }));
+          if (phase === 'after') {
+            assert.equal(actual.canvas, 'rgb(255, 249, 241)');
+            assert.equal(actual.panel, '#fffefc');
+            assert.match(actual.sidebar, /linear-gradient/);
+          }
+          measurements.push({ view, width, height, ...actual });
+          if (width === 1440 || width === 375) await capture(`${view}-${width}`);
+          if (view === 'cash-close') await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+        }
+      }
+      await viewport(1280, 560);
+      await show('pos');
+      await evaluate(async () => {
+        const products = [...document.querySelectorAll('[aria-label="Catálogo de productos"] button')].filter(el => el.title.startsWith('Producto'));
+        for (const button of products.slice(0, 8)) { button.click(); await window.__p09.frames(); }
+      });
+      const checkout = await evaluate(async () => {
+        const ticket = document.querySelector('aside[aria-label="Ticket"] .pos-ticket');
+        const input = ticket.querySelector('input[inputmode="decimal"]');
+        input.focus();
+        await window.__p09.frames();
+        const field = input.getBoundingClientRect(), payment = ticket.querySelector('.pos-ticket-payment').getBoundingClientRect();
+        return { total: ticket.querySelector('.pos-ticket-total').getBoundingClientRect().bottom, charge: ticket.querySelector('.pos-ticket-actions').getBoundingClientRect().bottom,
+          field: [field.top, field.bottom], payment: [payment.top, payment.bottom], items: ticket.querySelectorAll('button[aria-label^="Quitar"]').length, scroll: scrollY };
+      });
+      assert.ok(checkout.total <= 560 && checkout.charge <= 560 && checkout.items === 8 && checkout.scroll === 0
+        && checkout.field[0] >= checkout.payment[0] - 1 && checkout.field[1] <= checkout.payment[1] + 1, JSON.stringify(checkout));
+      assert.ok(await evaluate(async () => {
+        const ticket = document.querySelector('aside[aria-label="Ticket"] .pos-ticket');
+        const button = ticket.querySelector('.pos-ticket-actions button');
+        const wasDisabled = button.disabled;
+        const input = ticket.querySelector('input[inputmode="decimal"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '40.00');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await window.__p09.frames();
+        return wasDisabled && !button.disabled;
+      }), 'Checkout becomes available after the exact amount is entered');
+      await capture('pos-1280x560');
+      await viewport(375, 667);
+      const drawer = await evaluate(async () => {
+        const trigger = document.querySelector('.pos-cart-launcher');
+        trigger.focus();
+        trigger.click();
+        await window.__p09.frames();
+        const panel = document.querySelector('[role="dialog"]');
+        return { total: panel.querySelector('.pos-ticket-total').getBoundingClientRect().bottom,
+          charge: panel.querySelector('.pos-ticket-actions').getBoundingClientRect().bottom, focus: panel.contains(document.activeElement) };
+      });
+      assert.ok(drawer.total <= 667 && drawer.charge <= 667 && drawer.focus, JSON.stringify(drawer));
+      await capture('pos-drawer-375');
+      await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+      const returnedFocus = await evaluate(async () => {
+        for (let frame = 0; frame < 30; frame++) {
+          if (!document.querySelector('[role="dialog"]') && document.activeElement.matches('.pos-cart-launcher')) return { restored: true };
+          await window.__p09.frames();
+        }
+        return { restored: false, dialog: Boolean(document.querySelector('[role="dialog"]')), active: document.activeElement.outerHTML };
+      });
+      assert.ok(returnedFocus.restored, 'Escape closes the drawer and restores focus to the focused launch button ' + JSON.stringify(returnedFocus));
+      await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+      await show('reports');
+      assert.ok(await evaluate(() => getComputedStyle(document.querySelector('.workspace-page')).animationName === 'none'));
+      await viewport(1440, 900);
+      const accessibility = await evaluate(() => {
+        const tokens = getComputedStyle(document.documentElement);
+        const rgb = name => tokens.getPropertyValue(`--color-${name}`).trim().match(/\w\w/g).map(hex => parseInt(hex, 16));
+        const mix = (base, overlay, weight) => base.map((value, index) => value * (1 - weight) + overlay[index] * weight);
+        const luminance = color => color.map(value => value / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+          .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+        const ratio = (a, b) => { const [low, high] = [luminance(a), luminance(b)].sort((x, y) => x - y); return (high + 0.05) / (low + 0.05); };
+        const hasSelectionColor = Boolean(tokens.getPropertyValue('--color-sidebar-active').trim());
+        const lightSidebar = mix(mix(rgb('sidebar-end'), rgb('stellar'), hasSelectionColor ? 0.13 : 0.22), rgb('nebula'), hasSelectionColor ? 0.17 : 0.22);
+        const active = document.querySelector('.nebula-brand [aria-current="page"]');
+        active.focus();
+        const pairs = [['ink', 'canvas', 4.5], ['muted', 'subtle', 4.5], ['muted', 'panel', 4.5], ['control', 'panel', 3],
+          ['focus', 'panel', 3], ['success', 'success-soft', 4.5], ['warning', 'warning-soft', 4.5], ['danger', 'danger-soft', 4.5]];
+        const measured = pairs.map(([a, b, minimum]) => ({ name: `${a}/${b}`, ratio: ratio(rgb(a), rgb(b)), minimum }));
+        measured.push({ name: 'sidebar text/gradient bound', ratio: ratio(rgb('sidebar-muted'), lightSidebar), minimum: 4.5 },
+          { name: 'white/primary', ratio: ratio([255, 255, 255], rgb('primary')), minimum: 4.5 },
+          { name: 'sidebar focus/gradient bound', ratio: ratio(rgb('sidebar-glow'), lightSidebar), minimum: 3 });
+        if (hasSelectionColor) measured.push(
+          { name: 'white/selected sidebar', ratio: ratio([255, 255, 255], rgb('sidebar-active')), minimum: 4.5 },
+          { name: 'selection border/gradient bound', ratio: ratio(rgb('sidebar-active-line'), lightSidebar), minimum: 3 });
+        return { measured, focus: getComputedStyle(active).outlineWidth, selected: active.getAttribute('aria-current') };
+      });
+      assert.ok(accessibility.selected === 'page' && parseFloat(accessibility.focus) >= 2, JSON.stringify(accessibility));
+      for (const pair of accessibility.measured) assert.ok(pair.ratio >= pair.minimum, JSON.stringify(pair));
+      await writeFile(`${output}/measurements.json`, JSON.stringify({ measurements, checkout, drawer, accessibility }, null, 2));
+      await evaluate(() => window.__p09.stop());
+    } });
+});
+
 it('P09 verifies actual views, viewport-bound checkout, dialog focus/busy, role navigation and contrast in isolated Chromium', { timeout: 180000 }, async () => {
   const css = await readBrowserBuildCss();
   const artifacts = process.env.MIGAPOS_TEST_ARTIFACT_DIR || '.release';

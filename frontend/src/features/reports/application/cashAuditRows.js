@@ -42,14 +42,14 @@ export function cashAuditEvents(sessions, scope, { branchesMap = {}, people } = 
 
 export function cashAuditRows(events) {
   return events.map(event => ({
-    'Fecha y hora del movimiento (Lima)': `${visibleDay(event.day)} ${reportTime(event.date)}`,
+    'Fecha y hora del movimiento': `${visibleDay(event.day)} ${reportTime(event.date)}`,
     Turno: eventTitles[event.kind],
     Sede: event.branch,
     Responsable: event.cashier,
     'Registrado por': event.actor,
     'Fondo inicial (S/)': event.opening ?? 'No registrado',
     'Referencia calculada (S/)': event.reference ?? (event.kind === 'opening' ? 'No aplica' : 'Sin referencia'),
-    'Contado Real (S/)': event.counted ?? (event.kind === 'opening' ? 'No aplica' : 'No declarado'),
+    'Efectivo declarado (S/)': event.counted ?? (event.kind === 'opening' ? 'No aplica' : 'No declarado'),
     'Diferencia (S/)': event.difference ?? (event.kind === 'opening' ? 'No aplica' : 'No calculable'),
     Estado: event.state,
     Observación: (event.estimated ? 'Referencia y diferencia disponibles son provisionales. ' : '') + event.note,
