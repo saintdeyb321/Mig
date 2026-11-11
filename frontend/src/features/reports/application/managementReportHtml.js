@@ -98,6 +98,10 @@ export function managementReportHtml(view, { period, business, branch, operator,
     @media print{body{padding:0;background:#fff;print-color-adjust:exact;-webkit-print-color-adjust:exact}
       .masthead{padding-block:6px}.section{margin-top:8px;orphans:2;widows:2}.card,.pill{padding-block:5px}
       .chart{padding-block:4px;margin-block:4px 5px}th,td{padding-block:3px}.review-row{padding-block:2px;margin-top:3px}
+      main:has(.cash-review) .channel-breakdown{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:8px;align-items:center}
+      main:has(.cash-review) .channel-breakdown .bar-row{grid-template-columns:minmax(0,1fr) auto;gap:2px 6px;padding-block:3px}
+      main:has(.cash-review) .channel-breakdown .track{grid-area:2/1/3/-1}
+      .review-heading{display:contents}.review-amounts{grid-area:1/2}.review-context{grid-area:2/1/3/-1}
       .table-wrap{overflow:visible}h2{break-after:avoid}.next-page{break-before:page}}
   </style></head><body><main>
     <header class="masthead"><p class="eyebrow">MigaPOS · Reporte gerencial</p><h1>Informe del negocio</h1>
@@ -111,9 +115,9 @@ export function managementReportHtml(view, { period, business, branch, operator,
       <p class="muted">Neto de ventas en mostrador ${text(money(summary.posRevenue))} · Neto de pagos de pedidos ${text(money(summary.contractRevenue))}
         · ${summary.voidedTicketCount} tickets anulados · ${summary.contractPaymentCount} pagos de pedidos</p>
     </section>
-    <section class="section"><h2>Neto por canal</h2>${signedBars(channelRows)}
+    <section class="section"><h2>Neto por canal</h2><div class="channel-breakdown">${signedBars(channelRows)}
       ${table(['Movimiento', 'Efectivo', 'Yape / Plin'], CHANNEL_BREAKDOWN_ROWS.map(({ key, label }) =>
-        [cell(label), cell(money(cash[key]), 'num'), cell(money(digital[key]), 'num')]))}
+        [cell(label), cell(money(cash[key]), 'num'), cell(money(digital[key]), 'num')]))}</div>
       ${channelRows.some(row => row.value < 0) ? '<p class="muted">El neto negativo incluye ajustes cuyos cobros pueden pertenecer a otro período.</p>' : ''}
     </section>` : `<div class="notice"><strong>${hasActivity ? 'Sin cobros ni ajustes contables en el período' : 'No se registraron movimientos confirmados en este período'}</strong>
       <p>Total neto registrado ${text(money(summary.netRevenue))}</p></div>`}
@@ -134,8 +138,8 @@ export function managementReportHtml(view, { period, business, branch, operator,
     ${cashReview.visible.length ? `<section class="section cash-review" aria-labelledby="cash-review-title">
       <div class="cash-review-intro"><h2 id="cash-review-title"><span class="cash-review-mark" aria-hidden="true">!</span>Cajas que requieren revisión</h2>
       <p class="muted">Incidencias de turnos de caja. Compara el efectivo declarado con tus comprobantes.</p></div>
-      ${cashReview.visible.map(row => `<article class="review-row ${row.severity}"><div><h3>${text(row.title)}</h3>
-        <p>${text(row.branch)} · ${text(dateTime(row.occurredAt))} · Responsable: ${text(row.responsible)}${row.recordedBy ? ` · Registró: ${text(row.recordedBy)}` : ''}</p></div>
+      ${cashReview.visible.map(row => `<article class="review-row ${row.severity}"><div class="review-heading"><h3>${text(row.title)}</h3>
+        <p class="review-context">${text(row.branch)} · ${text(dateTime(row.occurredAt))} · Responsable: ${text(row.responsible)}${row.recordedBy ? ` · Registró: ${text(row.recordedBy)}` : ''}</p></div>
         <dl class="review-amounts"><div><dt>${text(row.moneyLabel)}</dt> <dd>${text(row.moneyValueText)}</dd></div>
         ${row.difference === null ? '' : `<div><dt>Diferencia registrada</dt> <dd>${text(money(row.difference))}</dd></div>`}</dl>
         <p class="review-action">${text(row.explanation)}</p></article>`).join('')}

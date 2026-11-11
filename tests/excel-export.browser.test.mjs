@@ -440,6 +440,8 @@ it('P14-RC prints A4 with 0, 1, 6 and 8 cash incidents and keeps the complete Ex
   await mkdir(output, { recursive: true });
   await runExcelFixture({ async inspectPage(page, { downloads }) {
     const ev = evaluate(page), press = click(page);
+    const printA4 = async () => Buffer.from((await page.send('Page.printToPDF', { preferCSSPageSize: true, printBackground: false }, 15000)).data, 'base64');
+    const pageCount = pdf => [...pdf.toString('latin1').matchAll(/\/Type\s*\/Page\b/g)].length;
     for (const count of [0, 1, 6, 8]) {
       if (count) await reload(page, ev, { ignoreCache: true });
       await ev(count => { window.__excelFixture.reviewCount = count; }, count);
@@ -467,10 +469,19 @@ it('P14-RC prints A4 with 0, 1, 6 and 8 cash incidents and keeps the complete Ex
         assert.deepEqual(await ev(() => window.__excelFixture.calls.slice(4).map(call => call.kind)), ['audit']);
       }
       await ev(html => { document.open(); document.write('<!doctype html>' + html); document.close(); }, preview.html);
-      const pdf = Buffer.from((await page.send('Page.printToPDF', { preferCSSPageSize: true, printBackground: false }, 15000)).data, 'base64');
+      const pdf = await printA4();
       assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
       await writeFile(resolve(output, `informe-caja-${count}.pdf`), pdf);
-      assert.equal([...pdf.toString('latin1').matchAll(/\/Type\s*\/Page\b/g)].length, 1, `PDF con ${count} incidencias`);
+      assert.equal(pageCount(pdf), 1, `PDF con ${count} incidencias`);
+      if (count >= 6) {
+        // Reserve vertical space for wrapping differences across system fonts.
+        await ev(() => {
+          const margin = document.createElement('style');
+          margin.textContent = '@page{margin-bottom:18mm}';
+          document.head.append(margin);
+        });
+        assert.equal(pageCount(await printA4()), 1, `PDF con ${count} incidencias y 8 mm menos de altura disponible`);
+      }
     }
   } });
 });
