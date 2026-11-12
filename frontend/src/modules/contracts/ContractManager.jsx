@@ -16,6 +16,7 @@ import ContractCard from './components/ContractCard';
 import ContractDetailsModal from './components/ContractDetailsModal';
 import ContractFormModal from './components/ContractFormModal';
 import ContractCancelModal from './components/ContractCancelModal';
+import ContractPickupPanel from './components/ContractPickupPanel.jsx';
 import { generateContractReceiptHTML } from '../../utils/contractReceiptTemplate';
 import { generateContractProductionHTML, generateContractTextOnlyHTML } from '../../utils/contractProductionTemplate';
 import { withResolvedContractImages } from '../../features/contracts/infrastructure/contractImages';
@@ -151,12 +152,11 @@ function ContractManager({
   }, [addPayment, canCollect]);
   const dismissCashModal = () => setCashModal(request => request === cashModal ? null : request);
   const showCashOpening = () => setCashModal({ mode: 'open' });
-  const showCashRecovery = () => setCashModal({ mode: 'open', recoverSessionId: cash.recoverySession.id });
   const showCashClosing = () => setCashModal({ mode: 'close', sessionId: cash.currentSession.id });
   const cashModals = <CashRegisterModals {...cash}
-    key={cashModal?.mode === 'open' ? `${cashScope}:open:${cashModal.recoverSessionId ?? 'new'}` : `${cashScope}:${cash.currentSession?.id ?? 'closed'}`}
-    showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal} recoverSessionId={cashModal?.recoverSessionId}
-    showCloseModal={cashModal?.mode === 'close' && cashModal.sessionId === cash.currentSession?.id} setShowCloseModal={dismissCashModal}
+    key={cashModal?.mode === 'open' ? `${cashScope}:open` : `${cashScope}:${cash.currentSession?.id ?? 'closed'}`}
+    showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal}
+    showCloseModal={cashModal?.mode === 'close' && !cash.isExpired && cashModal.sessionId === cash.currentSession?.id} setShowCloseModal={dismissCashModal}
   />;
   if (isLoading) {
     return <><div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none flex justify-center items-center min-h-64">
@@ -169,7 +169,7 @@ function ContractManager({
   return <><div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none">
       <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." className="to-primary-soft/60" actions={<>
         {canManageCash && <CashStatus readOnly={false} session={cash.currentSession} isExpired={cash.isExpired} expiresAt={cash.expiresAt} remainingMinutes={cash.remainingMinutes} />}
-        {canManageCash && !cash.currentSession && !cash.readError && <Button variant="secondary" disabled={cash.isLoadingSession} onClick={showCashOpening}>Abrir caja</Button>}
+        {canManageCash && !cash.currentSession && !cash.readError && <Button variant="secondary" disabled={cash.isLoadingSession} onClick={showCashOpening}>{cash.expiryState?.finalized ? 'Abrir caja nueva' : 'Abrir caja'}</Button>}
         {canManageCash && !cash.isExpired && cash.currentSession && (!cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button variant="secondary" onClick={showCashClosing}>Cerrar caja</Button>}
         <Button onClick={() => {
         if (!activeBranchId || activeBranchId === 'global') return toast.error('Selecciona una sede física.');
@@ -180,11 +180,12 @@ function ContractManager({
         </Button></>} />
 
       {canManageCash && <CashRecoveryStatus session={cash.currentSession} isExpired={cash.isExpired} expiresAt={cash.expiresAt}
-        recoverySession={cash.recoverySession} lastRecovery={cash.lastRecovery} online={navigator.onLine} onRecover={showCashRecovery} onCheck={cash.checkSession} />}
-      {cash.currentSession?.needsForceClose && !cash.isExpired && canManageCash && <Alert variant="warning" title="Turno anterior pendiente">Solicita al administrador el cierre del turno anterior antes de cobrar.</Alert>}
+        recoverySession={cash.recoverySession} expiryState={cash.expiryState} online={navigator.onLine} onFinalize={cash.finalizeTurn} onCheck={cash.checkSession} />}
+      {cash.currentSession?.needsForceClose && !cash.isExpired && canManageCash && <Alert variant="warning" title="Turno anterior pendiente">{cash.currentSession.canForceClose ? 'Puedes revisar y cerrar el turno desde esta sede.' : 'Solicita al dueño el cierre del turno anterior antes de cobrar.'}</Alert>}
       <FirestoreQueryError error={cash.readError} area="cash-open" user={user} onRetry={cash.checkSession} />
       <p role="status" className="text-sm text-muted">{isStale ? 'Agenda en caché, pendiente de servidor.' : `Agenda recibida: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`}{historyUpdatedAt > 0 && ` Historial leído: ${new Date(historyUpdatedAt).toLocaleTimeString('es-PE')}.`}</p>
       <FirestoreQueryError error={error} area="contracts-active" user={user} onRetry={retry} />
+      {canManageCash && user.role === 'cajero' && <ContractPickupPanel user={user} branchId={activeBranchId} branches={businessBranches} />}
 
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-primary/15 bg-linear-to-r from-panel to-primary-soft/45 p-3.5 shadow-card">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por cliente, teléfono o ID..." />
@@ -227,8 +228,6 @@ function ContractManager({
       setContractToEdit(null);
     }} onSubmit={handleFormSubmit} isProcessing={isProcessing} cashAction={!canCollect && <Alert variant="warning" title="Los cobros requieren caja vigente">
         Puedes guardar el pedido sin anticipo.
-        {canManageCash && cash.recoverySession && <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={!navigator.onLine}
-          onClick={showCashRecovery}>Recuperar y abrir nueva caja</Button>}
         {canManageCash && !cash.isExpired && !cash.readError && (!cash.currentSession || !cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={cash.isLoadingSession}
           onClick={cash.currentSession ? showCashClosing : showCashOpening}>{cash.currentSession ? 'Cerrar turno anterior' : 'Abrir caja'}</Button>}
       </Alert>} />}

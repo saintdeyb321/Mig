@@ -64,12 +64,14 @@ export const createSession = confirmedWrite(async data => {
     openingAmount: data.openingAmount, notes: data.openingNote }));
 });
 const closing = createSparkCashClosingRepository(db, { currentUser: () => auth.currentUser,
-  readSales: getSessionSales, readPayments: async session => {
-    const [payments, voids] = await Promise.all([getPaymentsBySession(session.businessId, session.id, session.branchId, { sparkOnly: session.runtime === 'spark' }), posVoids.bySession(session)]);
+  readSales: getSessionSales, readPayments: async (session, options) => {
+    const [payments, voids] = await Promise.all([getPaymentsBySession(session.businessId, session.id, session.branchId, { sparkOnly: session.runtime === 'spark', ...options }), posVoids.bySession(session, options)]);
     return [...payments, ...voidCashPayments(voids)];
   } });
 export const previewSessionClose = (id, declaredAmount) => closing.preview(id, declaredAmount);
+export const readExpiredCashDetail = closing.inspectExpiry;
 export const updateSession = confirmedWrite(async (id, data) => sessionDTO(await closing.close(id, data.declaredAmount, data.closingNote)));
+export const finalizeExpiredCash = confirmedWrite(data => sparkCash.finalizeExpired(data));
 export async function syncLocalSession(id, session, acknowledgedData) {
   requireCapability('offlineSync', 'Sincronizar caja histórica');
   const saved = session.status === 'open'

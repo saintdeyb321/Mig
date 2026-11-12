@@ -25,7 +25,27 @@ export function createSparkCashClosingRepository(database, { currentUser, readSa
       requiresOwnerReview: totals.expectedCash < 0 || totals.hasUnverifiedDisbursements || declaredAmount !== totals.expectedCash,
       reconciliationPending: true, authority: 'client-estimate' };
   }
-  return { preview, async close(id, declaredAmount, notes = '') {
+  async function inspectExpiry({ businessId, branchId, sessionId }) {
+    const uid = who();
+    const saved = await getDocFromServer(doc(database, 'cash_sessions', sessionId));
+    const session = { ...saved.data(), id: sessionId };
+    const start = toMillisSafe(session.openedAt), end = toMillisSafe(session.expiredAt);
+    if (who() !== uid || saved.metadata?.fromCache || saved.metadata?.hasPendingWrites || session.businessId !== businessId
+      || session.branchId !== branchId || session.runtime !== 'spark' || session.durationHours !== 10
+      || session.status !== 'expired_unreconciled' || !start || end - start !== 36000000
+      || toMillisSafe(session.recoveredAt) < end || !Number.isFinite(session.openingAmount)) throw new Error('Turno vencido sin evidencia verificable.');
+    const budget = { maxRows: 500 };
+    const [sales, payments] = await Promise.all([readSales(session, budget), readPayments(session, budget)]);
+    const inTurn = (row, date) => row.businessId === businessId && row.branchId === branchId && row.sessionId === sessionId
+      && toMillisSafe(date) >= start && toMillisSafe(date) < end;
+    if (who() !== uid || sales.some(sale => sale.status !== 'confirmed' || sale.voided || !inTurn(sale, sale.confirmedAt))
+      || payments.some(payment => payment.runtime !== 'spark' || !inTurn(payment, payment.occurredAt))) {
+      throw new Error('Hay movimientos sin evidencia suficiente para este turno.');
+    }
+    const totals = calculateCashTotals(session, sales, payments);
+    return { ...totals, posCashNet: money(totals.posCash + totals.posCompensationCash) };
+  }
+  return { preview, inspectExpiry, async close(id, declaredAmount, notes = '') {
     const actorId = who(); contractAmount(declaredAmount);
     if (notes.length > 2000) throw new Error('Máximo 2000 caracteres de cierre.');
     const ref = doc(database, 'cash_sessions', id);

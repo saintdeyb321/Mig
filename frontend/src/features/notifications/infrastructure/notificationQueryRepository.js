@@ -81,9 +81,12 @@ export function createNotificationRepository(database, { sdk = firestoreSDK, cur
           if (confirmed) legacyConfirmed = true;
           metadata.set('legacy', snapshot.metadata); publish();
         }, error => { if (!closed) { failure = true; onError(withQueryContext(error, 'notifications-unread')); } }));
-      if (owner) for (const [type, name, field] of [['pos-void','pos_voids','occurredAt'], ['cash-close','cash_sessions','closedAt']]) {
+      if (owner) for (const [type, name, field, size] of [
+        ['pos-void','pos_voids','occurredAt', NOTIFICATION_LIMIT], ['cash-close','cash_sessions','closedAt', NOTIFICATION_LIMIT],
+        ['cash-expiry','cash_sessions','recoveredAt', 10],
+      ]) {
         metadata.set(type, { fromCache: true });
-        stops.push(onSnapshot(query(collection(database, name), where('businessId','==',businessId), orderBy(field,'desc'), limit(NOTIFICATION_LIMIT)),
+        stops.push(onSnapshot(query(collection(database, name), where('businessId','==',businessId), orderBy(field,'desc'), limit(size)),
           { includeMetadataChanges: true }, snapshot => {
             if (closed || failure) return;
             evidence.set(type, snapshot.docs.filter(row=>row.metadata.hasPendingWrites===false).map(row=>projectFinancialNotice(type, { ...row.data(), id: row.id }, businessId, userId)).filter(Boolean));
@@ -107,6 +110,14 @@ export function projectFinancialNotice(type, source, businessId, userId) {
     title = 'Ticket anulado'; createdAt = source.occurredAt;
     message = `Compensación contable de S/ ${(-source.amount).toFixed(2)}. No acredita entrega física de dinero; requiere revisión.`;
     metadata = { reason:source.reason, amount:-source.amount, ticketId:source.saleId, actorId:source.userId };
+  } else if (type === 'cash-expiry') {
+    const openedAt = toMillisSafe(source.openedAt), expiredAt = toMillisSafe(source.expiredAt);
+    if (source.runtime !== 'spark' || source.status !== 'expired_unreconciled' || !source.recoveredBy || !openedAt
+      || expiredAt - openedAt !== 36000000 || toMillisSafe(source.recoveredAt) < expiredAt) return null;
+    title = 'Caja vencida sin conteo'; createdAt = source.recoveredAt;
+    message = 'El turno finalizó por vencimiento. Efectivo contado: no declarado. Diferencia: no calculable.';
+    metadata = { actorId: source.recoveredBy, responsibleId: source.userId, openedAt: source.openedAt, expiredAt: source.expiredAt,
+      openingAmount: Number.isFinite(source.openingAmount) ? source.openingAmount : null };
   } else {
     if (type !== 'cash-close' || source.runtime !== 'spark' || !['closed','closed_with_discrepancy'].includes(source.status) || !source.closedBy || !toMillisSafe(source.closedAt)) return null;
     const difference = source.closeEstimate?.difference;

@@ -24,7 +24,7 @@ function POS({ user }) {
   const { error: catalogError, retry: retryCatalog } = useCatalogData();
 
   const {
-    currentSession, isExpired, expiresAt, recoverySession, lastRecovery, remainingMinutes, readError, checkSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
+    currentSession, isExpired, expiresAt, recoverySession, expiryState, finalizeTurn, remainingMinutes, readError, checkSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
   } = useCashRegister(user, activeBranchId);
 
   const {
@@ -104,11 +104,10 @@ function POS({ user }) {
 
   const dismissCashModal = () => setCashModal(request => request === cashModal ? null : request);
   const showCashClosing = () => setCashModal({ mode: 'close', sessionId: currentSession.id });
-  const showCashRecovery = () => setCashModal({ mode: 'open', recoverSessionId: recoverySession.id });
   const cashModals = <CashRegisterModals
-    key={cashModal?.mode === 'open' ? `${modalScope}:open:${cashModal.recoverSessionId ?? 'new'}` : `${modalScope}:${currentSession?.id ?? 'closed'}`}
-    showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal} recoverSessionId={cashModal?.recoverSessionId}
-    showCloseModal={cashModal?.mode === 'close' && cashModal.sessionId === currentSession?.id} setShowCloseModal={dismissCashModal}
+    key={cashModal?.mode === 'open' ? `${modalScope}:open` : `${modalScope}:${currentSession?.id ?? 'closed'}`}
+    showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal}
+    showCloseModal={cashModal?.mode === 'close' && !isExpired && cashModal.sessionId === currentSession?.id} setShowCloseModal={dismissCashModal}
     currentSession={currentSession} isLoadingSession={isLoadingSession} checkSession={checkSession}
     openRegister={openRegister} authorizeOffline={authorizeOffline} calculateClose={calculateClose} confirmClose={confirmClose}
   />;
@@ -125,7 +124,7 @@ function POS({ user }) {
     handleCheckoutClick();
   };
   const action = readError && isOnline ? <Button variant="secondary" onClick={checkSession}>Reintentar lectura de caja</Button> : isOnline&&!currentSession&&!branchStatus.isReadOnly
-    ? <Button className="w-full" onClick={() => setCashModal({ mode: 'open' })}><UnlockKeyhole />Abrir caja para vender</Button>
+    ? <Button className="w-full" onClick={() => setCashModal({ mode: 'open' })}><UnlockKeyhole />{expiryState?.finalized ? 'Abrir caja nueva' : 'Abrir caja para vender'}</Button>
     : isOnline&&currentSession?.needsForceClose&&!isExpired
       ? currentSession.canForceClose ? <Button variant="danger" className="w-full" onClick={showCashClosing}>Revisar y cerrar turno anterior</Button>
         : <Button variant="secondary" className="w-full" onClick={checkSession}>Comprobar disponibilidad</Button>
@@ -143,7 +142,7 @@ function POS({ user }) {
   return <><div className="pos-workspace min-w-0 space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0">
     {!isOnline && <Alert variant="info">Sin conexión: puedes guardar un ticket sin cobrar. No se moverá inventario ni se enviará automáticamente al reconectar.</Alert>}
     {!branchStatus.isReadOnly && <CashRecoveryStatus session={currentSession} isExpired={isExpired} expiresAt={expiresAt}
-      recoverySession={recoverySession} lastRecovery={lastRecovery} online={isOnline} onRecover={showCashRecovery} onCheck={checkSession} />}
+      recoverySession={recoverySession} expiryState={expiryState} online={isOnline} onFinalize={finalizeTurn} onCheck={checkSession} />}
     <FirestoreQueryError error={readError} area="cash-open" user={user} onRetry={checkSession} />
     <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
     <header className="pos-toolbar flex shrink-0 flex-wrap items-center justify-between gap-2">
@@ -154,7 +153,7 @@ function POS({ user }) {
       </div>
     </header>
     {branchStatus.isReadOnly&&<p role="status" className="flex shrink-0 items-start gap-2 rounded-xl border border-warning/25 bg-warning-soft px-3 py-2 text-sm text-warning"><Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><span>{branchStatus.reason==='global'?<><strong>Vista global · Solo lectura.</strong> Elige una sucursal en el selector de sede para vender.</>:<><strong>Solo lectura.</strong> La sucursal {branchStatus.name} está inactiva.</>}</span></p>}
-    {currentSession?.needsForceClose&&!isExpired&&!branchStatus.isReadOnly&&<Alert variant="warning" title="Caja a cargo de otro responsable"><p>{businessBranches?.find(branch=>branch.id===currentSession.branchId)?.name??'Esta sede'} · {currentSession.cashierName||'Responsable'} · UID: {currentSession.userId}</p><p>{currentSession.canForceClose?'Revisa los movimientos y realiza el arqueo antes de cerrar este turno.':'Solicita al dueño que realice el arqueo y cierre el turno anterior. Te avisaremos al quedar disponible; también puedes comprobarlo aquí.'}</p></Alert>}
+    {currentSession?.needsForceClose&&!isExpired&&!branchStatus.isReadOnly&&<Alert variant="warning" title="Caja a cargo de otro responsable"><p>{businessBranches?.find(branch=>branch.id===currentSession.branchId)?.name??'Esta sede'} · {currentSession.cashierName||'Responsable sin nombre registrado'}</p><p>{currentSession.canForceClose?'Revisa los movimientos y realiza el arqueo antes de cerrar este turno.':'Solicita al dueño que realice el arqueo y cierre el turno anterior.'}</p></Alert>}
     <div className="grid min-w-0 items-start gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
       <section aria-label="Catálogo de productos" className="pos-catalog min-w-0 space-y-3 pb-20 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-0">
         <div className="pos-catalog-tools sticky top-0 z-10 space-y-1 bg-canvas pb-2">

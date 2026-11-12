@@ -59,8 +59,17 @@
   .pos-payment-methods { container: payment-methods / inline-size; }
 }
 
-@container ticket-payment (max-width: 14rem) {
+.pos-cash-payment > * {
+  align-self: stretch;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+}
+.pos-cash-payment > :first-child:has([role="alert"]) { grid-row: span 3; }
+.pos-cash-payment > dl { grid-column: 2; grid-row: 1 / span 2; }
+
+@container ticket-payment (max-width: 11rem) {
   .pos-cash-payment { grid-template-columns: minmax(0, 1fr); }
+  .pos-cash-payment > :is(div, dl, :first-child:has([role="alert"])) { grid-row: auto; grid-column: auto; grid-template-rows: auto; }
 }
 
 @container payment-methods (max-width: 17rem) {

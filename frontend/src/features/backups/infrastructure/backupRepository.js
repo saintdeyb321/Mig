@@ -7,7 +7,7 @@ const single = ['tenants', 'licenses', 'settings'];
 const summaryCollections = ['tenants', 'licenses', 'branches', 'categories', 'products', 'users', 'invites'];
 export const BACKUP_COLLECTIONS = [...single, 'branches', 'categories', 'products', 'customers', 'sales', 'contracts', 'payments',
   'cash_sessions', 'active_cash_sessions', 'users', 'invites', 'spark_contract_operations', 'alerts', 'audit_events',
-  'daily_stats', 'notifications', 'platform_jobs', 'platform_operations', 'platform_audit', 'owner_email_claims', 'pos_sale_groups', 'pos_voids', 'pos_void_groups'];
+  'daily_stats', 'notifications', 'platform_jobs', 'platform_operations', 'platform_audit', 'owner_email_claims', 'pos_sale_groups', 'pos_voids', 'pos_void_groups', 'contract_pickups'];
 export function createBackupRepository(database, { sdk = firestoreSDK, currentUser, withAccess = createPlatformDataAccess(database, { sdk, currentUser }) } = {}) {
   const { doc, getDocFromServer, collection, query, where, orderBy, documentId, startAfter, limit, getDocsFromServer } = sdk;
   return async ({ businessId, actorId, maxRecords = 2000, signal, purpose = 'export', summary = false, onProgress = () => {} }) => {

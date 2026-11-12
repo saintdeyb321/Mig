@@ -22,9 +22,9 @@ export function cashAuditEvents(sessions, scope, { branchesMap = {}, people } = 
     add(session.openedAt, 'opening', { actor: employeeReportName(people, session.userId, session.cashierName),
       state: 'Fondo registrado', note: reportNote(session.openingNote, session.id, session.userId) });
     if (session.status === 'expired_unreconciled') {
-      const recovered = toDateSafe(session.recoveredAt);
-      add(session.expiredAt, 'expiry', { actor: employeeReportName(people, session.recoveredBy, session.recoveredByName), state: 'Pendiente de arqueo',
-        note: 'Límite de 10 horas desde apertura.' + (recovered ? ` Recuperado el ${visibleDay(reportDay(recovered))} ${reportTime(recovered)} (Lima).` : '') });
+      const finalizedAt = toDateSafe(session.recoveredAt);
+      add(session.expiredAt, 'expiry', { actor: employeeReportName(people, session.recoveredBy, session.recoveredByName), state: 'Finalizado por vencimiento · sin arqueo',
+        finalizedAt, note: 'Venció 10 horas después de la apertura.' + (finalizedAt ? ` Finalización confirmada el ${visibleDay(reportDay(finalizedAt))} ${reportTime(finalizedAt)} (Lima).` : ' Hora de finalización no registrada.') });
     }
     if (['closed', 'closed_with_discrepancy'].includes(session.status)) {
       const counted = monetaryValue(session.declaredAmount);

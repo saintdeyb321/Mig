@@ -1,5 +1,6 @@
 import { planLegacyPayments } from '../functions/src/contracts/domain/legacyPaymentPlan.js';
 import { createContractPeriodReader } from '../frontend/src/features/contracts/infrastructure/contractPeriodRepository.js';
+import { createContractQueryRepository } from '../frontend/src/features/contracts/infrastructure/contractQueryRepository.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { before, beforeEach, after, describe, it } from 'node:test';
@@ -636,6 +637,160 @@ describe('SPARK-4 integrated financial Rules', () => {
     await assertFails(updateDoc(doc(database(), 'payments', installment.operationId), { amount: 99 }));
     await assertFails(updateDoc(doc(database(), 'contracts', contractId), { paidTotal: 100 }));
   });
+  it('P17 isolates complete contracts by origin and permits only the minimal, bounded pickup projection', async () => {
+    const b = 'p17-branch-b', c = 'p17-branch-c';
+    await env.withSecurityRulesDisabled(async ctx => {
+      const batch = writeBatch(ctx.firestore());
+      for (const id of [b, c]) {
+        batch.set(doc(ctx.firestore(), 'branches', id), { businessId, status: 'activo', sparkCashVersion: 1 });
+        batch.set(doc(ctx.firestore(), 'users', id), { businessId, branchId: id, role: 'cajero', status: 'activo' });
+      }
+      batch.set(doc(ctx.firestore(), 'users', 'p17-owner'), { businessId, role: 'dueño', status: 'activo' });
+      batch.set(doc(ctx.firestore(), 'users', 'p17-foreign'), { businessId: 'foreign', role: 'dueño', status: 'activo' });
+      batch.set(doc(ctx.firestore(), 'users', 'p17-admin'), { businessId: 'platform-admin', role: 'superadmin', status: 'activo' });
+      batch.set(doc(ctx.firestore(), 'contracts', 'p17-historical-b'), { businessId, branchId: b, clientName: 'Histórico B', status: 'pendiente' });
+      batch.set(doc(ctx.firestore(), 'contracts', 'p17-legacy-cross'), { businessId, branchId, deliveryType: b, clientName: 'Legado A', status: 'pendiente' });
+      await batch.commit();
+    });
+    const aDb = database(), bDb = env.authenticatedContext(b).firestore(), cDb = env.authenticatedContext(c).firestore();
+    const ownerDb = env.authenticatedContext('p17-owner').firestore();
+    const repo = createSparkContractsRepository(aDb, { sdk, currentUser: () => ({ uid }) });
+    const repoB = createSparkContractsRepository(bDb, { sdk, currentUser: () => ({ uid: b }) });
+    const first = 'a1170001-1111-4111-8111-111111111111', cross = 'a1170002-1111-4111-8111-111111111111';
+    const input = { branchId, clientName: 'Cliente reservado', clientPhone: '999123456', details: 'Contenido reservado',
+      subtotal: 40, total: 40, deliveryCost: 0 };
+    const invalid = 'a1170003-1111-4111-8111-111111111111';
+    await assert.rejects(repo.create({ ...input, contractId: invalid, operationId: crypto.randomUUID(), deliveryType: 'no-existe' }));
+    assert.equal((await inspect('contracts/' + invalid)).exists(), false);
+    await repo.create({ ...input, contractId: first, operationId: crypto.randomUUID(), deliveryType: branchId });
+    const command = { ...input, contractId: cross, operationId: crypto.randomUUID(), deliveryType: b,
+      initialPayment: { operationId: crypto.randomUUID(), amount: 5, method: 'efectivo' } };
+    await repo.create(command); await repo.create(command);
+    await assertFails(getDoc(doc(aDb, 'contracts', 'p17-historical-b')));
+    await assertFails(getDoc(doc(bDb, 'contracts', first)));
+    await assertFails(getDoc(doc(bDb, 'contracts', 'p17-legacy-cross')));
+    await assertFails(getDoc(doc(bDb, 'contracts', cross)));
+    await assertFails(getDoc(doc(bDb, 'payments', command.initialPayment.operationId)));
+    const contracts = (db, branch) => sdk.getDocs(sdk.query(sdk.collection(db, 'contracts'),
+      sdk.where('businessId', '==', businessId), ...(branch ? [sdk.where('branchId', '==', branch)] : []), sdk.limit(100)));
+    assert.equal((await contracts(aDb, branchId)).size, 3);
+    assert.equal((await contracts(bDb, b)).size, 1);
+    assert.equal((await contracts(ownerDb)).size, 4);
+    await assertFails(contracts(aDb));
+    await assertFails(contracts(bDb, branchId));
+    for (const actor of ['p17-admin','p17-foreign','p17-invited']) await assertFails(contracts(env.authenticatedContext(actor).firestore()));
+    const pickups = (db, branch, size = 51) => sdk.getDocs(sdk.query(sdk.collection(db, 'contract_pickups'),
+      sdk.where('businessId', '==', businessId), sdk.where('pickupBranchId', '==', branch), sdk.orderBy('deliveryDate'), sdk.orderBy(sdk.documentId()), sdk.limit(size)));
+    const view = await pickups(bDb, b);
+    assert.equal(view.size, 1);
+    assert.deepEqual(view.docs[0].data(), { businessId, originBranchId: branchId, pickupBranchId: b, contractNumber: 'PED-A1170002', deliveryDate: null });
+    await assertFails(pickups(bDb, b, 52));
+    await assertFails(getDoc(doc(cDb, 'contract_pickups', cross)));
+    await assertFails(updateDoc(doc(bDb, 'contract_pickups', cross), { clientPhone: input.clientPhone }));
+    await assertFails(updateDoc(doc(bDb, 'contracts', cross), { deliveryType: b, paidTotal: 0 }));
+    await assert.rejects(repoB.addPayment({ contractId: cross, branchId: b, operationId: crypto.randomUUID(), amount: 1, method: 'yape' }));
+    await assert.rejects(repoB.cancel({ contractId: cross, branchId: b, operationId: crypto.randomUUID(), reason: 'No permitido' }));
+    await assert.rejects(repoB.deliver(cross));
+    await assertFails(updateDoc(doc(aDb, 'contracts', cross), { deliveryType: c, updatedAt: serverTimestamp() }));
+    const reassignment = await Promise.allSettled([repo.update(cross, { deliveryType: c }), repoB.deliver(cross)]);
+    assert.deepEqual(reassignment.map(result => result.status), ['fulfilled', 'rejected']);
+    assert.equal((await pickups(bDb, b)).size, 0);
+    assert.equal((await pickups(cDb, c)).size, 1);
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'branches', c), { status: 'inactivo' }));
+    await assertFails(pickups(cDb, c));
+    await assert.rejects(repo.update(cross, { deliveryDate: new Date(Date.now() + 3600000).toISOString() }));
+    await repo.deliver(cross);
+    assert.equal((await inspect('contract_pickups/' + cross)).data().pickupBranchId, null);
+    assert.equal((await inspect('contracts/' + cross)).data().paidTotal, 5);
+    assert.equal((await inspect('payments/' + command.initialPayment.operationId)).data().branchId, branchId);
+    await assert.rejects(repo.update(cross, { deliveryType: b }));
+    // Synthetic backlog only for exercising the query budget. The transaction checks are above.
+    await env.withSecurityRulesDisabled(async ctx => {
+      const batch = writeBatch(ctx.firestore());
+      for (let i = 0; i < 101; i++) batch.set(doc(ctx.firestore(), 'contract_pickups', 'backlog-' + i), {
+        businessId, originBranchId: branchId, pickupBranchId: b, contractNumber: 'PED-ABCD0000', deliveryDate: null,
+      });
+      await batch.commit();
+    });
+    const backlog = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { stop(); reject(new Error('Agenda de recojos sin confirmar.')); }, 8000);
+      const stop = createContractQueryRepository(bDb, { sdk }).subscribeContractPickups(businessId, b, (rows, info) => {
+        if (!info.fromCache) { clearTimeout(timeout); stop(); resolve({ rows, info }); }
+      }, error => { clearTimeout(timeout); stop(); reject(error); });
+    });
+    assert.equal(backlog.rows.length, 50);
+    assert.equal(backlog.info.limited, true);
+  });
+  it('P17 permits the owner to close the cashier shift from its physical branch even outside cashier hours', async () => {
+    const minutes = (new Date().getUTCHours() * 60 + new Date().getUTCMinutes() + 1140) % 1440;
+    const hhmm = value => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+    await env.withSecurityRulesDisabled(async ctx => {
+      await updateDoc(doc(ctx.firestore(), 'users', uid), { shiftStart: hhmm((minutes + 120) % 1440), shiftEnd: hhmm((minutes + 180) % 1440) });
+      await setDoc(doc(ctx.firestore(), 'users', 'p17-owner'), { businessId, role: 'dueño', status: 'activo' });
+      await updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), { durationHours: 10 });
+    });
+    const close = (db, actor) => createSparkCashClosingRepository(db, { sdk, currentUser: () => ({ uid: actor }), readSales: async () => [], readPayments: async () => [] });
+    await assertFails(close(database(), uid).close(sessionId, 10));
+    const saved = await close(env.authenticatedContext('p17-owner').firestore(), 'p17-owner').close(sessionId, 10);
+    assert.equal(saved.closedBy, 'p17-owner');
+    assert.equal(saved.userId, uid);
+    assert.equal(saved.branchId, branchId);
+    assert.equal(saved.declaredAmount, 10);
+  });
+  it('P17 projects one owner expiry notice, keeps its acknowledgement separate and reads only that turn ledger', async () => {
+    const started = Date.now() - 39600000, occurredAt = Timestamp.fromMillis(started + 3600000);
+    const scope = { businessId, branchId, sessionId, userId: uid };
+    await env.withSecurityRulesDisabled(async ctx => {
+      const db = ctx.firestore(), batch = writeBatch(db);
+      batch.update(doc(db, 'cash_sessions', sessionId), { durationHours: 10, openedAt: Timestamp.fromMillis(started) });
+      batch.set(doc(db, 'users', 'p17-owner'), { businessId, role: 'dueño', status: 'activo' });
+      batch.set(doc(db, 'sales', 'p17-cash'), { ...scope, status: 'confirmed', confirmedAt: occurredAt, total: 20, payment: 'efectivo' });
+      batch.set(doc(db, 'sales', 'p17-digital'), { ...scope, status: 'confirmed', confirmedAt: occurredAt, total: 30, payment: 'yape' });
+      batch.set(doc(db, 'sales', 'p17-other-branch'), { ...scope, branchId: 'otra', status: 'confirmed', confirmedAt: occurredAt, total: 500, payment: 'efectivo' });
+      batch.set(doc(db, 'payments', 'p17-advance'), { ...scope, runtime: 'spark', occurredAt, amount: 6, type: 'advance', method: 'efectivo' });
+      batch.set(doc(db, 'payments', 'p17-other-turn'), { ...scope, sessionId: 'p17-next', runtime: 'spark', occurredAt, amount: 100, type: 'payment', method: 'efectivo' });
+      batch.set(doc(db, 'pos_voids', 'p17-cash'), { ...scope, authority: 'pos-compensation', protocol: 1, saleId: 'p17-cash',
+        occurredAt, cashAmount: -5, digitalAmount: 0, amount: -5 });
+      await batch.commit();
+    });
+    const cashierDb = database(), ownerDb = env.authenticatedContext('p17-owner').firestore();
+    const lostReply = { ...sdk, runTransaction: async (...args) => {
+      await sdk.runTransaction(...args);
+      throw Object.assign(new Error('Lost commit response'), { code: 'unavailable' });
+    } };
+    await createSparkCashRepository(cashierDb, { sdk: lostReply, currentUser: () => ({ uid }) }).finalizeExpired(scope);
+    const saved = (await inspect('cash_sessions/' + sessionId)).data();
+    const notice = projectFinancialNotice('cash-expiry', { ...saved, id: sessionId }, businessId, 'p17-owner');
+    assert.equal(notice.metadata.openingAmount, 10);
+    assert.equal(notice.id, 'read_cash-expiry_' + sessionId + '_p17-owner');
+    assert.equal(projectFinancialNotice('cash-expiry', { ...saved, id: sessionId }, 'foreign', 'p17-owner'), null);
+    const notices = createNotificationRepository(ownerDb, { sdk, currentUser: () => ({ uid: 'p17-owner' }) });
+    const watch = expectExpiry => new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { stop(); reject(new Error('El aviso no se confirmó.')); }, 8000);
+      const stop = notices.subscribeUnreadNotifications(businessId, 'p17-owner', (rows, state) => {
+        if (state.fromCache) return;
+        const expiries = rows.filter(row => row.sourceType === 'cash-expiry');
+        if (expiries.length === expectExpiry) { clearTimeout(timeout); stop(); resolve(expiries); }
+      }, error => { clearTimeout(timeout); stop(); reject(error); }, { owner: true });
+    });
+    const first = await Promise.all([watch(1), watch(1)]);
+    assert.deepEqual(first.map(rows => rows[0].id), [notice.id, notice.id]);
+    await assertFails(setDoc(doc(cashierDb, 'notifications', notice.id), { ...notice.readMarker, authority: 'read-marker', readAt: serverTimestamp() }));
+    await notices.markNotificationRead(notice);
+    await watch(0);
+    assert.ok((await inspect('cash_sessions/' + sessionId)).data().recoveredAt.isEqual(saved.recoveredAt));
+    const payments = createPaymentRepository(ownerDb, { sdk }), voids = createPosVoidReader(ownerDb, { sdk });
+    const reader = createSparkCashClosingRepository(ownerDb, { sdk, currentUser: () => ({ uid: 'p17-owner' }),
+      readSales: createSalesSessionReader(ownerDb, { sdk }),
+      readPayments: async (session, options) => [
+        ...await payments.getPaymentsBySession(businessId, session.id, branchId, options),
+        ...voidCashPayments(await voids.bySession(session, options)),
+      ],
+    });
+    const totals = await reader.inspectExpiry(scope);
+    assert.deepEqual([totals.posCash, totals.posCashNet, totals.contractCash, totals.digitalTotal, totals.posCompensationCash, totals.expectedCash], [20, 15, 6, 30, -5, 31]);
+    await assert.rejects(reader.inspectExpiry({ ...scope, branchId: 'otra' }));
+  });
   it('closes a Spark session operationally, releases only its lock and bars subsequent sales and repeated changes', async () => {
     const closing = createSparkCashClosingRepository(database(), { sdk, currentUser: () => ({ uid }), readSales: async () => [], readPayments: async () => [] });
     const result = await closing.close(sessionId, 12, 'Diferencia declarada');
@@ -665,11 +820,15 @@ describe('SPARK-4 integrated financial Rules', () => {
     await assertFails(commit(payload('unsafe-version', 1)));
     assert.equal((await inspect('products/bread')).data().posStockVersion[branchId], Number.MAX_SAFE_INTEGER);
   });
-  it('serializes concurrent installments, rejects aggregate forgery, partial ledgers and historical writes; refunds three methods once', async () => {
-    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'dueño' }));
+  it('serializes concurrent installments, rejects aggregate forgery, partial ledgers and historical writes; refunds three methods once with a pickup', async () => {
+    const pickup = 'p17-refunds-branch';
+    await env.withSecurityRulesDisabled(async ctx => {
+      await updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'dueño' });
+      await setDoc(doc(ctx.firestore(), 'branches', pickup), { businessId, status: 'activo', sparkCashVersion: 1 });
+    });
     const db = database(), contracts = createSparkContractsRepository(db, { sdk, currentUser: () => ({ uid }) });
     const id = '11111111-1111-4111-8111-111111111111';
-    await contracts.create({ contractId: id, operationId: '22222222-2222-4222-8222-222222222222', branchId, total: 10, subtotal: 10, deliveryCost: 0, clientName: 'Prueba' });
+    await contracts.create({ contractId: id, operationId: '22222222-2222-4222-8222-222222222222', branchId, deliveryType: pickup, total: 10, subtotal: 10, deliveryCost: 0, clientName: 'Prueba' });
     await contracts.update(id, { details: 'Edición permitida', subtotal: 10, total: 10 });
     const command = (op, amount, method = 'efectivo') => ({ contractId: id, branchId, operationId: op, amount, method });
     await contracts.addPayment(command('33333333-3333-4333-8333-333333333333', 2));
@@ -685,6 +844,7 @@ describe('SPARK-4 integrated financial Rules', () => {
     await assertFails(updateDoc(doc(db, 'contracts', 'legacy-contract'), { details: 'Forbidden', updatedAt: serverTimestamp() }));
     await contracts.cancel({ contractId: id, branchId, operationId: '88888888-8888-4888-8888-888888888888', reason: 'Tres métodos' });
     assert.equal((await inspect(`contracts/${id}`)).data().paidTotal, 0);
+    assert.equal((await inspect(`contract_pickups/${id}`)).data().pickupBranchId, null);
     const payments = await createPaymentRepository(db, { sdk }).getPaymentsByContract(businessId, id, branchId);
     assert.equal(payments.filter(row => row.type === 'refund').length, 3);
     assert.equal(payments.reduce((sum, row) => sum + row.amount, 0), 0);
@@ -792,7 +952,7 @@ it('Plan03 rejects sales and new contracts on an inactive or unknown-status bran
   }
 });
 
-it('Plan04 expires new ten-hour cash sessions using server time, refuses financial writes and permits authorized late closing', async () => {
+it('P17 expires new ten-hour cash sessions using server time and refuses financial writes and a late manual count', async () => {
   await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'dueño' }));
   const db = database(), contracts = createSparkContractsRepository(db, { sdk, currentUser: () => ({ uid }) });
   const contractId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -820,7 +980,12 @@ it('Plan04 expires new ten-hour cash sessions using server time, refuses financi
   assert.equal((await inspect('payments/88888888-8888-4888-8888-888888888888')).exists(), false);
   const payment = (await inspect('payments/' + paymentId)).data();
   const closing = createSparkCashClosingRepository(db, { sdk, currentUser: () => ({ uid }), readSales: async () => [], readPayments: async () => [payment] });
-  assert.equal((await closing.close(sessionId, 12)).status, 'closed');
+  await assert.rejects(closing.close(sessionId, 12));
+  await createSparkCashRepository(db, { sdk, currentUser: () => ({ uid }) }).finalizeExpired({ businessId, branchId, sessionId });
+  const expired = (await inspect('cash_sessions/' + sessionId)).data();
+  assert.equal(expired.status, 'expired_unreconciled');
+  assert.equal(expired.declaredAmount, null);
+  assert.equal(expired.closedBy, undefined);
   assert.equal((await inspect('payments/' + paymentId)).data().amount, 2);
 });
 it('Plan04 preserves old-session policy and accepts new sessions before expiry; no-advance orders do not need cash', async () => {

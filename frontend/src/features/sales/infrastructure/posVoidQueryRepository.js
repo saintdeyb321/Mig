@@ -18,6 +18,7 @@ export function createPosVoidReader(database, { sdk = firestore } = {}) {
       const size = Math.min(200, maxRows - rows.length + 1);
       const result = await page(query(collection(database, 'pos_voids'), ...base, ...filters, orderBy('occurredAt'), orderBy(documentId()),
         ...(cursor ? [startAfter(cursor)] : []), limit(size)));
+      if (result.metadata?.fromCache || result.metadata?.hasPendingWrites) throw new Error('Hay compensaciones sin confirmación del servidor.');
       rows.push(...mapDocuments(result));
       if (rows.length > maxRows) throw new Error('Compensaciones por encima del límite: reduce el período. No se exporta un resultado parcial.');
       cursor = result.size === size ? result.docs.at(-1) : null;
@@ -25,7 +26,7 @@ export function createPosVoidReader(database, { sdk = firestore } = {}) {
     return rows;
   }
   return {
-    bySession: session => read(session.businessId, session.branchId, [where('sessionId', '==', session.id)]),
+    bySession: (session, options) => read(session.businessId, session.branchId, [where('sessionId', '==', session.id)], options),
     inPeriod: (businessId, start, end, branchId = 'global', options) => {
       start = toDateSafe(start); end = toDateSafe(end);
       if (!start || !end || end < start) throw new Error('Período de compensaciones inválido.');

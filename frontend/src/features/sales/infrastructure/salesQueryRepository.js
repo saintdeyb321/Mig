@@ -39,16 +39,18 @@ export function createSalesPeriodReader(database, { sdk = firestoreSDK } = {}) {
 
 export function createSalesSessionReader(database, { sdk = firestoreSDK } = {}) {
   const { getDocsFromServer, query, collection, where, orderBy, documentId, startAfter, limit } = sdk;
-  return async session => {
+  return async (session, { maxRows = 10000 } = {}) => {
     const rows = [];
     let cursor;
     do {
+      const size = Math.min(SALES_PAGE_SIZE, maxRows - rows.length + 1);
       const page = await getDocsFromServer(query(collection(database, 'sales'), where('businessId', '==', session.businessId),
         where('branchId', '==', session.branchId), where('sessionId', '==', session.id), orderBy(documentId()),
-        ...(cursor ? [startAfter(cursor)] : []), limit(200)));
+        ...(cursor ? [startAfter(cursor)] : []), limit(size)));
+      if (page.metadata?.fromCache || page.metadata?.hasPendingWrites) throw new Error('Los tickets del turno no están confirmados por el servidor.');
       rows.push(...mapDocuments(page));
-      if (rows.length > 10000) throw new Error('La caja supera 10000 tickets; cierre pendiente de revisión.');
-      cursor = page.size === 200 ? page.docs.at(-1) : null;
+      if (rows.length > maxRows) throw new Error(`La caja supera ${maxRows} tickets; requiere revisión.`);
+      cursor = page.size === size ? page.docs.at(-1) : null;
     } while (cursor);
     return rows;
   };

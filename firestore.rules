@@ -473,7 +473,8 @@ service cloud.firestore {
     function cashActor(businessId, branchId) {
       let profile = currentUser();
       let branch = get(/databases/$(database)/documents/branches/$(branchId)).data;
-      return activeUser() && profile.role in ['dueño', 'cajero'] && profile.businessId == businessId
+      return authenticated() && profile.get('status', 'activo') == 'activo'
+        && profile.role in ['dueño', 'cajero'] && profile.businessId == businessId
         && businessId != 'platform-admin' && branchId != 'global' && businessId.matches('^[A-Za-z0-9_-]{1,128}$')
         && branchId.matches('^[A-Za-z0-9_-]{1,128}$') && tenantEnabled(businessId)
         && branch.businessId == businessId && branch.get('status', null) == 'activo'
@@ -524,7 +525,6 @@ service cloud.firestore {
       let after = request.resource.data;
       let lockPath = /databases/$(database)/documents/active_cash_sessions/$(cashLockId(before.businessId, before.branchId));
       let oldLock = get(lockPath).data;
-      let newLock = getAfter(lockPath).data;
       return cashActor(before.businessId, before.branchId)
         && before.runtime == 'spark' && before.status == 'open' && before.openedAt is timestamp
         && before.durationHours is int && before.durationHours == 10
@@ -540,8 +540,9 @@ service cloud.firestore {
         && oldLock.sessionId == sessionId && oldLock.userId == before.userId
         && oldLock.businessId == before.businessId && oldLock.branchId == before.branchId
         && oldLock.status == 'open' && oldLock.runtime == 'spark'
-        && newLock.sessionId != sessionId && newLock.sessionId == after.recoverySessionId
-        && newLock.userId == request.auth.uid && newLock.updatedAt == request.time;
+        && (after.recoverySessionId == null ? !existsAfter(lockPath)
+          : getAfter(lockPath).data.sessionId == after.recoverySessionId && after.recoverySessionId != sessionId
+            && getAfter(lockPath).data.userId == request.auth.uid && getAfter(lockPath).data.updatedAt == request.time);
     }
 
     function cashClosing(sessionId) {
@@ -549,6 +550,8 @@ service cloud.firestore {
       let previous = resource.data;
       let lockPath = /databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, d.branchId));
       return cashActor(previous.businessId, previous.branchId) && previous.runtime == 'spark' && previous.status == 'open'
+        && (!previous.keys().hasAny(['durationHours']) || (previous.durationHours is int && previous.durationHours == 10
+          && request.time < previous.openedAt + duration.value(10, 'h')))
         && (previous.userId == request.auth.uid || currentRole() == 'dueño')
         && d.diff(previous).affectedKeys().hasOnly(['status', 'declaredAmount', 'closingNote', 'closedAt', 'closedBy', 'reconciliationPending', 'closeEstimate'])
         && d.closedAt == request.time && d.closedBy == request.auth.uid && d.reconciliationPending == true
@@ -563,8 +566,11 @@ service cloud.firestore {
     function releaseCashLock() {
       let before = get(/databases/$(database)/documents/cash_sessions/$(resource.data.sessionId)).data;
       let after = getAfter(/databases/$(database)/documents/cash_sessions/$(resource.data.sessionId)).data;
-      return before.status == 'open' && before.runtime == 'spark' && after.closedAt == request.time
-        && after.closedBy == request.auth.uid && after.status in ['closed', 'closed_with_discrepancy']
+      return authenticated() && before.status == 'open' && before.runtime == 'spark'
+        && ((after.status in ['closed', 'closed_with_discrepancy'] && after.closedAt == request.time && after.closedBy == request.auth.uid)
+          || (after.status == 'expired_unreconciled' && after.recoveredAt == request.time && after.recoveredBy == request.auth.uid
+            && after.recoverySessionId == null && resource.data.userId == before.userId
+            && resource.data.status == 'open' && resource.data.runtime == 'spark'))
         && after.reconciliationPending == true && after.businessId == resource.data.businessId
         && after.branchId == resource.data.branchId;
     }
@@ -771,6 +777,52 @@ service cloud.firestore {
         && d.paidTotal == (math.round(d.paidByMethod.efectivo * 100) + math.round(d.paidByMethod.yape * 100) + math.round(d.paidByMethod.plin * 100)) / 100.0
         && d.paidTotal <= d.total && d.balance == (math.round(d.total * 100) - math.round(d.paidTotal * 100)) / 100.0;
     }
+    function contractTerminal(d) {
+      return d.status in ['cancelado', 'entregado', 'entregado_con_deuda'];
+    }
+    function crossPickup(d) {
+      return !(d.deliveryType in ['domicilio', 'recojo_local', d.branchId]);
+    }
+    function pickupBranch(d) {
+      return crossPickup(d) && !contractTerminal(d) ? d.deliveryType : null;
+    }
+    function pickupRecord(d, destination) {
+      return {'businessId': d.businessId, 'originBranchId': d.branchId, 'pickupBranchId': destination,
+        'contractNumber': d.contractNumber, 'deliveryDate': d.deliveryDate};
+    }
+    function pickupChanged(before, after) {
+      let target = pickupBranch(after);
+      return pickupBranch(before) != target || (target != null && before.deliveryDate != after.deliveryDate);
+    }
+    function pickupSynchronized(id, contract, target) {
+      let path = /databases/$(database)/documents/contract_pickups/$(id);
+      // The projection write rule binds every field. Here only prove the change was applied.
+      return target == null ? (!exists(path) || getAfter(path).data.pickupBranchId == null)
+        : getAfter(path).data.pickupBranchId == target && getAfter(path).data.deliveryDate == contract.deliveryDate;
+    }
+    function validPickupDestination(businessId, target) {
+      let branch = get(/databases/$(database)/documents/branches/$(target)).data;
+      return target.matches('^[A-Za-z0-9_-]{1,128}$') && target != 'global'
+        && branch.businessId == businessId && branch.status == 'activo';
+    }
+    function pickupWrite(id) {
+      let path = /databases/$(database)/documents/contracts/$(id);
+      let before = get(path);
+      let after = getAfter(path).data;
+      let target = pickupBranch(after);
+      return authenticated() && after.sparkContractVersion == 1 && after.updatedAt == request.time
+        && request.resource.data == pickupRecord(after, target)
+        && (target == null || validPickupDestination(after.businessId, target))
+        && (before == null ? after.createdAt == request.time && target != null
+          : pickupChanged(before.data, after) && (resource != null || target != null));
+    }
+    function assignedContractBranch(branchId) {
+      return currentRole() == 'cajero' && branchId == currentUser().branchId
+        && branchBelongsTo(currentBusiness(), currentUser().branchId);
+    }
+    function originContractReader() {
+      return tenantReader() && (currentRole() == 'dueño' || assignedContractBranch(resource.data.branchId));
+    }
     function initialContractPayment(d, id) {
       let p = getAfter(/databases/$(database)/documents/payments/$(d.lastPaymentId)).data;
       return d.ledgerVersion == 1 && p.sourceId == id && p.type == 'advance' && p.userId == d.createdBy
@@ -790,7 +842,8 @@ service cloud.firestore {
         && !exists(/databases/$(database)/documents/spark_contract_operations/$(d.createOperationId))
         && d.creatorName is string && d.creatorName.size() <= 250 && d.contractNumber.matches('^PED-[A-F0-9]{8}$') && d.contractId == d.contractNumber
         && contractFields(d, id) && contractBalance(d) && d.status == projectedContractStatus(d.balance, 'pendiente')
-        && (d.lastPaymentId == null ? d.ledgerVersion == 0 && d.paidTotal == 0 : initialContractPayment(d, id));
+        && (d.lastPaymentId == null ? d.ledgerVersion == 0 && d.paidTotal == 0 : initialContractPayment(d, id))
+        && (!crossPickup(d) || pickupSynchronized(id, d, d.deliveryType));
     }
     function positiveContractPayment(id, d, old) {
       let p = getAfter(/databases/$(database)/documents/payments/$(d.lastPaymentId)).data;
@@ -820,12 +873,14 @@ service cloud.firestore {
       let old = resource.data;
       return old.get('sparkContractVersion', 0) == 1 && old.status != 'cancelado' && cashActor(old.businessId, old.branchId)
         && d.updatedAt == request.time
+        && (!contractTerminal(old) || d.deliveryType == old.deliveryType)
         && (positiveContractPayment(id, d, old) || cancelSparkContract(id, d, old)
           || (d.diff(old).affectedKeys().hasOnly(['clientName', 'clientPhone', 'deliveryDate', 'details', 'deliveryType', 'deliveryAddress', 'deliveryCost', 'subtotal', 'total', 'referenceImages', 'balance', 'status', 'updatedAt'])
             && contractFields(d, id) && contractBalance(d) && d.status == projectedContractStatus(d.balance, old.status))
           || (d.diff(old).affectedKeys().hasOnly(['balance', 'status', 'deliveredAt', 'deliveredBy', 'updatedAt'])
             && !old.keys().hasAny(['deliveredAt']) && d.deliveredAt == request.time && d.deliveredBy == request.auth.uid
-            && d.status == projectedContractStatus(d.balance, 'entregado') && d.balance == old.balance));
+            && d.status == projectedContractStatus(d.balance, 'entregado') && d.balance == old.balance))
+        && (!pickupChanged(old, d) || pickupSynchronized(id, d, pickupBranch(d)));
     }
     function sparkPayment(id) {
       let p = request.resource.data;
@@ -939,11 +994,20 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     match /contracts/{contractId} {
-      // Cleanup can confirm an absent new contract; existing documents remain tenant scoped.
-      allow get: if activeUser() && (resource == null || tenantReader() || platformDataReader());
-      allow list: if superadmin() ? platformDataReader() : tenantReader();
+      // An absent document is used by the idempotent creation flow.
+      allow get: if activeUser() && (resource == null || originContractReader() || platformDataReader());
+      allow list: if superadmin() ? platformDataReader() : originContractReader();
       allow create: if createSparkContract(contractId);
       allow update: if updateSparkContract(contractId);
+      allow delete: if false;
+    }
+    match /contract_pickups/{contractId} {
+      allow get: if activeUser() && (resource == null || platformDataReader()
+        || (tenantReader() && (currentRole() == 'dueño' || assignedContractBranch(resource.data.originBranchId)
+          || assignedContractBranch(resource.data.pickupBranchId))));
+      allow list: if superadmin() ? platformDataReader()
+        : tenantReader() && (currentRole() == 'dueño' || (request.query.limit <= 51 && assignedContractBranch(resource.data.pickupBranchId)));
+      allow create, update: if pickupWrite(contractId);
       allow delete: if false;
     }
 
@@ -1035,13 +1099,15 @@ service cloud.firestore {
       let n = request.resource.data;
       let source = n.sourceType == 'pos-void' ? get(/databases/$(database)/documents/pos_voids/$(n.sourceId)).data
         : get(/databases/$(database)/documents/cash_sessions/$(n.sourceId)).data;
-      return owner() && tenantEnabled(currentBusiness()) && n.sourceType in ['pos-void', 'cash-close']
+      return owner() && tenantEnabled(currentBusiness()) && n.sourceType in ['pos-void', 'cash-close', 'cash-expiry']
         && id == 'read_' + n.sourceType + '_' + n.sourceId + '_' + request.auth.uid
         && n == {'businessId': currentBusiness(), 'userId': request.auth.uid, 'sourceType': n.sourceType,
           'sourceId': n.sourceId, 'authority': 'read-marker', 'readAt': request.time}
         && source.businessId == currentBusiness()
         && (n.sourceType == 'pos-void' ? source.authority == 'pos-compensation' && source.protocol == 1 && source.saleId == n.sourceId && source.occurredAt is timestamp
-          : source.runtime == 'spark' && source.status in ['closed','closed_with_discrepancy'] && source.closedAt is timestamp);
+          : source.runtime == 'spark' && (n.sourceType == 'cash-expiry'
+            ? source.status == 'expired_unreconciled' && source.expiredAt is timestamp && source.recoveredAt is timestamp
+            : source.status in ['closed','closed_with_discrepancy'] && source.closedAt is timestamp));
     }
     match /notifications/{notificationId} {
       // An absent per-owner acknowledgement discloses no financial document.

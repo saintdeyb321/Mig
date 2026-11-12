@@ -26,6 +26,7 @@ export function createPaymentRepository(database, { sdk = firestoreSDK } = {}) {
     while (true) {
       const page = await readPage(query(collection(database, 'payments'), ...constraints,
         ...(cursor ? [startAfter(cursor)] : []), limit(Math.min(PAYMENT_PAGE_SIZE, maxRows - rows.length + 1))));
+      if (page.metadata?.fromCache || page.metadata?.hasPendingWrites) throw new Error('Hay pagos sin confirmación del servidor.');
       rows.push(...mapDocuments(page));
       if (rows.length > maxRows) throw new Error('Demasiados movimientos. Selecciona un período menor.');
       if (page.size < PAYMENT_PAGE_SIZE) return rows;
@@ -36,9 +37,9 @@ export function createPaymentRepository(database, { sdk = firestoreSDK } = {}) {
   return {
     getPaymentsByContract: (businessId, contractId, branchId = 'global') =>
       readPayments(businessId, [where('sourceType', '==', 'contract'), where('sourceId', '==', requiredId(contractId))], branchId),
-    getPaymentsBySession: (businessId, sessionId, branchId) => {
+    getPaymentsBySession: (businessId, sessionId, branchId, options) => {
       requiredId(branchId);
-      return readPayments(businessId, [where('sessionId', '==', requiredId(sessionId))], branchId);
+      return readPayments(businessId, [where('sessionId', '==', requiredId(sessionId))], branchId, options);
     },
     getPaymentsInPeriod: (businessId, startDate, endDate, branchId = 'global', options = {}) => {
       const start = toDateSafe(startDate), end = toDateSafe(endDate);

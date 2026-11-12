@@ -405,6 +405,38 @@ describe('Plan 14: recovery of an expired Spark cash lock', () => {
     assert.deepEqual(sessions.docs.map(doc => doc.id), [winner.id]);
   });
 
+  it('P17 denies early/unscoped release and serializes independent expiry, retry and later opening', async () => {
+    const setup = await prepare(35940000), cashier = 'next-cashier';
+    const command = { businessId: setup.businessId, branchId: setup.branchId, sessionId: oldId };
+    const repo = cashRepository(dbFor(cashier), cashier);
+    await assertFails(repo.finalizeExpired(command));
+    await assertFails(deleteDoc(doc(dbFor(cashier), setup.lockPath)));
+    await assertUntouched(setup);
+    const old = Timestamp.fromMillis(Date.now() - 36060000);
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), setup.oldPath), { openedAt: old }));
+    for (const uid of ['other-branch', 'suspended', 'other-business', 'admin']) {
+      await assertFails(cashRepository(dbFor(uid), uid).finalizeExpired(command));
+    }
+    await Promise.all([repo.finalizeExpired(command), cashRepository(setup.database).finalizeExpired(command)]);
+    const expired = (await dump(setup.oldPath)).data();
+    assert.equal(expired.status, 'expired_unreconciled');
+    assert.equal(expired.expiredAt.toMillis(), old.toMillis() + 36000000);
+    assert.ok(expired.recoveredAt.toMillis() > expired.expiredAt.toMillis());
+    assert.equal(expired.recoverySessionId, null);
+    assert.equal(expired.openingAmount, 100);
+    assert.equal(expired.declaredAmount, null);
+    assert.equal(expired.difference, null);
+    assert.equal((await dump(setup.lockPath)).exists(), false);
+    const next = { ...command, sessionId: newId, openingAmount: 22.35 };
+    const opens = await Promise.allSettled([repo.open(next), cashRepository(setup.database).open({ ...next, sessionId: 'p17-concurrent-opening' })]);
+    assert.equal(opens.filter(item => item.status === 'fulfilled').length, 1);
+    await repo.finalizeExpired(command);
+    const winner = opens.find(item => item.status === 'fulfilled').value;
+    assert.equal((await dump(setup.lockPath)).data().sessionId, winner.id);
+    assert.equal(winner.openingAmount, 22.35);
+    assert.ok((await dump(setup.oldPath)).data().recoveredAt.isEqual(expired.recoveredAt));
+  });
+
   it('rejects partial, forged, cross-scope and historical recovery bundles', async () => {
     const setup = await prepare(5 * 86400000), actor = 'next-cashier', database = dbFor(actor);
     for (const omit of ['previous', 'lock', 'new']) await assertFails(rawRecovery(database, setup, actor, { omit }));

@@ -17,6 +17,29 @@ import { pairedTicket, saleDay, voidDay } from './helpers/plan13PeriodHarness.mj
 const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
 const sheets = (workbook, name) => XLSX.utils.sheet_to_json(workbook.Sheets[name]);
 
+it('P17 measures direct SDK reads and writes for expiry, new opening and replay', async () => {
+  const expiry = Date.parse('2026-11-05T06:00:00-05:00');
+  const measure = async () => {
+    const h = await plan08FinancialHarness();
+    h.documents.get('cash_sessions/p08-cash-session').openedAt = Timestamp.fromMillis(expiry - 36000000);
+    h.documents.get('cash_sessions/p08-cash-session').openingAmount = 100;
+    const sdk = { ...h.sdk, Timestamp, serverTimestamp: () => Timestamp.fromMillis(expiry + 3600000) };
+    const repository = createSparkCashRepository({}, { sdk, currentUser: h.currentUser });
+    return { h, repository, scope: { businessId: h.actor.businessId, branchId: h.actor.branchId },
+      counts: () => [h.reads.length, h.writes.length] };
+  };
+  const old = await measure(), next = await measure();
+  const opening = { ...old.scope, sessionId: 'p17-new-cash-session', openingAmount: 35 };
+  await old.repository.open({ ...opening, recoverSessionId: 'p08-cash-session' });
+  assert.deepEqual(old.counts(), [8, 3]);
+  await next.repository.finalizeExpired({ ...next.scope, sessionId: 'p08-cash-session' });
+  assert.deepEqual(next.counts(), [2, 2]);
+  await next.repository.open(opening);
+  assert.deepEqual(next.counts(), [7, 4]);
+  await next.repository.finalizeExpired({ ...next.scope, sessionId: 'p08-cash-session' });
+  assert.deepEqual(next.counts(), [9, 4]);
+});
+
 it('P14-RC reimports the October net totals per day and branch with semantic number formats', () => {
   const businessId = 'octubre', branchesMap = { centro: 'Centro', taller: 'Taller' };
   const first = '2026-10-24T10:00:00-05:00', second = '2026-10-27T10:00:00-05:00';

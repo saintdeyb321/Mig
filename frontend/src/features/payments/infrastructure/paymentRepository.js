@@ -8,7 +8,7 @@ const ledger = createPaymentRepository(db);
 const compatiblePayments = (businessId, input, readLedger, options = {}) => readCompatiblePayments(input, readLedger, async data => ({ payments: await readLegacy(businessId, data, options), nextCursor: null }), options);
 export const getPaymentsByContract = (businessId, contractId, branchId = 'global') =>
   compatiblePayments(businessId, { contractId, branchId }, () => ledger.getPaymentsByContract(businessId, contractId, branchId));
-export const getPaymentsBySession = (businessId, sessionId, branchId, { sparkOnly = false } = {}) => sparkOnly ? ledger.getPaymentsBySession(businessId, sessionId, branchId) :
+export const getPaymentsBySession = (businessId, sessionId, branchId, { sparkOnly = false, ...options } = {}) => sparkOnly ? ledger.getPaymentsBySession(businessId, sessionId, branchId, options) :
   compatiblePayments(businessId, { sessionId, branchId }, () => ledger.getPaymentsBySession(businessId, sessionId, branchId));
 export const getPaymentsInPeriod = (businessId, startDate, endDate, branchId = 'global', options = {}) =>
   compatiblePayments(businessId, { startDate: new Date(startDate).toISOString(), endDate: new Date(endDate).toISOString(), branchId },

@@ -96,6 +96,7 @@ export default function Reports({
 
     <HelpDisclosure title="Alcance de este informe">
       <p>Incluye movimientos contables confirmados y excluye pendientes locales. Las compensaciones POS se descuentan una vez por el método original. No certifican saldo físico, desembolsos ni devoluciones digitales. Los cierres operativos conservan conciliación pendiente.</p>
+      <p>Una caja vencida conserva el fondo inicial y los cobros de su turno. Consulta la campana o la auditoría de caja para distinguir el vencimiento efectivo de la finalización confirmada. Sin conteo no hay diferencia calculable.</p>
       <p>La lectura se limita a 10 000 movimientos y 500 contratos por negocio.</p>
     </HelpDisclosure>
   </div>;

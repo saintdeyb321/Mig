@@ -22,7 +22,8 @@ for (const [id, module, collection, feature, file, anchor, priority] of [
 ]) add(id, module, collection, source(feature, file), anchor, [eq('businessId')], [], priority, 'automatic');
 const contracts = source('contracts', 'contractQueryRepository');
 scoped('contracts-active', 'Contratos activos', 'contracts', contracts, 'subscribeActiveContracts', [['status', 'in']], [asc('deliveryDate'), asc('__name__')]);
-scoped('contracts-history', 'Contratos históricos', 'contracts', contracts, 'getContractHistoryPage', [['status', 'in']], [desc('createdAt'), desc('__name__')], 1, 'Sede repetida en el builder histórico: mismo filtro, no otro índice.');
+scoped('contracts-history', 'Contratos históricos', 'contracts', contracts, 'getContractHistoryPage', [['status', 'in']], [desc('createdAt'), desc('__name__')]);
+add('contracts-pickup', 'Recojos logísticos', 'contract_pickups', contracts, 'subscribeContractPickups', [eq('businessId'), eq('pickupBranchId')], [asc('deliveryDate'), asc('__name__')], 1, 'composite', 'Solo al abrir el panel: 50 fichas más un centinela.');
 for (const field of ['confirmedAt', 'createdAt']) {
   scoped(`sales-recent-${field}`, 'Historial POS', 'sales', source('sales', 'salesRepository'), 'subscribeRecentSales', [], [desc(field)]);
   scoped(`sales-period-${field}`, 'Reportes/Excel POS', 'sales', source('sales', 'salesQueryRepository'), 'createSalesPeriodReader', period(field), [asc(field), asc('__name__')], 2, 'createdAt se consulta como Timestamp e ISO; cambia el tipo de valor, no el índice.');
@@ -43,6 +44,7 @@ const notices = source('notifications', 'notificationQueryRepository');
 add('notifications-unread', 'Notificaciones', 'notifications', notices, 'subscribeUnreadNotifications', [eq('businessId'), eq('userId'), eq('readAt')], [desc('createdAt')]);
 add('notifications-evidence-voids', 'Avisos al dueño: anulaciones', 'pos_voids', notices, 'subscribeUnreadNotifications', [eq('businessId')], [desc('occurredAt')]);
 add('notifications-evidence-closes', 'Avisos al dueño: cierres', 'cash_sessions', notices, 'subscribeUnreadNotifications', [eq('businessId')], [desc('closedAt')]);
+add('notifications-evidence-expiry', 'Avisos al dueño: vencimientos', 'cash_sessions', notices, 'subscribeUnreadNotifications', [eq('businessId')], [desc('recoveredAt')], 1, 'composite', 'Máximo 10 evidencias de vencimiento y acuse separado por dueño.');
 scoped('audit-period', 'Auditoría histórica', 'audit_events', source('notifications', 'auditQueryRepository'), 'createAuditRepository', period('occurredAt'), [desc('occurredAt'), desc('__name__')], 2);
 add('alerts-unread', 'Avisos históricos', 'alerts', source('notifications', 'alertRepository'), 'subscribeUnreadAlerts', [eq('businessId'), eq('read')], [], 3, 'equality-merge');
 const admin = source('licenses', 'sparkAdministrationRepository');
@@ -52,7 +54,7 @@ add('admin-email', 'SaaS alta negocio', 'users', admin, 'createTenant', [eq('ema
 add('admin-detail-branches', 'Cupo SaaS', 'branches', source('licenses', 'platformBusinessRepository'), 'createPlatformBusinessReader', [eq('businessId')], [], 3, 'automatic', 'Solo al abrir cupo: hasta 200 sedes con detección de inventario parcial.');
 scoped('pos-voids-period', 'Compensaciones POS', 'pos_voids', source('sales', 'posVoidQueryRepository'), 'inPeriod', period('occurredAt'), [asc('occurredAt'), asc('__name__')], 2);
 add('pos-voids-session', 'Devoluciones por caja', 'pos_voids', source('sales', 'posVoidQueryRepository'), 'bySession', [eq('businessId'), eq('branchId'), eq('sessionId')], [asc('occurredAt'), asc('__name__')]);
-const inventoryCollections = ['branches', 'categories', 'products', 'customers', 'sales', 'contracts', 'payments', 'cash_sessions', 'active_cash_sessions', 'users', 'invites', 'spark_contract_operations', 'alerts', 'audit_events', 'daily_stats', 'notifications', 'platform_jobs', 'platform_operations', 'platform_audit', 'owner_email_claims', 'pos_sale_groups', 'pos_voids', 'pos_void_groups'];
+const inventoryCollections = ['branches', 'categories', 'products', 'customers', 'sales', 'contracts', 'payments', 'cash_sessions', 'active_cash_sessions', 'users', 'invites', 'spark_contract_operations', 'alerts', 'audit_events', 'daily_stats', 'notifications', 'platform_jobs', 'platform_operations', 'platform_audit', 'owner_email_claims', 'pos_sale_groups', 'pos_voids', 'pos_void_groups', 'contract_pickups'];
 for (const collection of inventoryCollections) add(`backup-${collection}`, 'Inventario/exportación SaaS', collection, source('backups', 'backupRepository'), 'createBackupRepository', [eq('businessId')], [asc('__name__')], 3, 'automatic', 'Colecciones declaradas; settings/tenants/licenses se leen por ID. No collectionGroup.');
 add('backup-job-children', 'Subcolecciones conocidas', 'scopes / asset_sources', source('backups', 'backupRepository'), 'const path =', [], [asc('__name__')], 3, 'automatic', 'Ruta platform_jobs/{id}/(scopes|asset_sources), colección concreta; no colección group ni rutas desconocidas.');
 export const firestoreQueryCatalog = records;
@@ -60,7 +62,7 @@ export const firestoreQueryCatalog = records;
 export const reviewedSDKQueryCounts = {
   [source('catalog', 'catalogRepository')]: 2, [source('users', 'userRepository')]: 2,
   [source('branches', 'branchRepository')]: 1, [source('cash-register', 'cashRegisterRepository')]: 1,
-  [source('cash-register', 'cashQueryRepository')]: 2, [source('contracts', 'contractQueryRepository')]: 2,
+  [source('cash-register', 'cashQueryRepository')]: 2, [source('contracts', 'contractQueryRepository')]: 3,
   [source('contracts', 'contractPeriodRepository')]: 1, [source('sales', 'salesRepository')]: 1,
   [source('sales', 'salesQueryRepository')]: 2, [source('payments', 'paymentQueryRepository')]: 2,
   [source('sales', 'posVoidQueryRepository')]: 1,
@@ -75,8 +77,8 @@ export const dynamicQueryReviews = {
   [source('sales', 'salesRepository')]: 'field: confirmedAt/createdAt; sede opcional.',
   [source('sales', 'salesQueryRepository')]: 'ranges: confirmedAt Timestamp, createdAt Timestamp/ISO; sede y cursor opcionales.',
   [source('payments', 'paymentQueryRepository')]: 'filters se construye únicamente en getPaymentsByContract, getPaymentsBySession y getPaymentsInPeriod; sede/cursor opcionales.',
-  [source('notifications', 'notificationQueryRepository')]: 'unread() aporta businessId/userId/readAt. Dueño: hasta 30 pos_voids por occurredAt DESC y 30 cash_sessions por closedAt DESC; acuses por ID, sin list global. Marcar visibles limita la escritura a las 30 tarjetas presentes.',
-  [source('contracts', 'contractQueryRepository')]: 'status in constantes activas/cerradas, sede opcional; builder histórico repite branchId idéntico.',
+  [source('notifications', 'notificationQueryRepository')]: 'unread() aporta businessId/userId/readAt. Dueño: 30 anulaciones, 30 cierres y 10 vencimientos por recoveredAt DESC; acuses por ID y hasta 30 tarjetas visibles.',
+  [source('contracts', 'contractQueryRepository')]: 'status in constantes activas/cerradas, sede opcional para dueño; recojos por negocio y sede de recogida.',
   [source('contracts', 'contractPeriodRepository')]: 'Mismo createdAt ASC, valores Timestamp/ISO y sede/cursor opcionales.',
   [source('notifications', 'auditQueryRepository')]: 'Sede/cursor opcionales; verificar reachability en esta versión.',
   [source('licenses', 'sparkAdministrationRepository')]: 'Cursor documental de licencias; propietario users/invites con filtros literales iguales.',

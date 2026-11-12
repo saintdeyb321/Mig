@@ -18,6 +18,8 @@ const emptyHistory = scopeKey => ({ scopeKey, contracts: [], cursor: null, hasMo
 export const useContracts = (user, { historyEnabled = false } = {}) => {
   const { activeBranchId, identityKey, businessBranches } = useTenantData();
   const businessId = user?.businessId;
+  const branchVerified = user?.role === 'dueño' || (user?.role === 'cajero' && activeBranchId === user.branchId
+    && businessBranches?.some(branch => branch.id === user.branchId && isBranchOperational(branch)));
   const resources = useSessionResources();
   const [isProcessing, setIsProcessing] = useSessionState('contracts:busy', false);
   const processing = resources.value('contracts:mutex', () => ({ current: false }));
@@ -36,17 +38,20 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     return () => { scope.active = false; };
   }, [scope]);
 
-  const watchContracts = useCallback((onData, onError) => subscribeActiveContracts(businessId, onData, error => {
-    toast.error(firebaseErrorMessage(error), { id: 'agenda-err' });
-    onError(error);
-  }, { branchId: activeBranchId }), [businessId, activeBranchId]);
+  const watchContracts = useCallback((onData, onError) => {
+    if (!branchVerified) { onData([], { fromCache: true }); return () => {}; }
+    return subscribeActiveContracts(businessId, onData, error => {
+      toast.error(firebaseErrorMessage(error), { id: 'agenda-err' });
+      onError(error);
+    }, { branchId: activeBranchId });
+  }, [businessId, activeBranchId, branchVerified]);
   const { data: activeContracts, isLoading, isStale, updatedAt, error, retry } = useSharedSubscription(`contracts:active:${activeBranchId}`, watchContracts);
   const [currentHistory, setHistory, historyCell] = useSessionState(`contracts:history:${activeBranchId}`, () => emptyHistory(identityKey));
   const contracts = useMemo(() => mergeContractPages(currentHistory.contracts, activeContracts), [currentHistory.contracts, activeContracts]);
 
   const loadMoreHistory = useCallback(async () => {
     const history = historyCell.get();
-    if (!businessId || !resources.active || !history.hasMore || historyRequest.current) return;
+    if (!businessId || !branchVerified || !resources.active || !history.hasMore || historyRequest.current) return;
     const request = { revision: history.revision };
     historyRequest.current = request;
     setHistory(previous => ({ ...previous, loading: true, started: true, error: null }));
@@ -64,7 +69,7 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     } finally {
       if (historyRequest.current === request) historyRequest.current = null;
     }
-  }, [businessId, activeBranchId, resources, historyRequest, historyCell, setHistory]);
+  }, [businessId, activeBranchId, branchVerified, resources, historyRequest, historyCell, setHistory]);
 
   // Paged snapshots are display data. Expire them on re-entry, never use them to authorize payments.
   useEffect(() => {

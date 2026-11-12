@@ -10,6 +10,43 @@ export async function cashLockId(businessId, branchId) {
 export function createSparkCashRepository(database, { currentUser, sdk = firestore } = {}) {
   const { doc, runTransaction, getDocFromServer, serverTimestamp, Timestamp } = sdk;
   return {
+    async finalizeExpired({ sessionId, businessId, branchId }) {
+      const actorId = currentUser()?.uid;
+      if (!actorId || branchId === 'global' || typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(sessionId)) throw new Error('Turno o identidad no verificados.');
+      const lockRef = doc(database, 'active_cash_sessions', await cashLockId(businessId, branchId));
+      const ref = doc(database, 'cash_sessions', sessionId);
+      const active = () => { if (currentUser()?.uid !== actorId) throw new Error('La sesión cambió.'); };
+      const sameScope = data => data?.businessId === businessId && data.branchId === branchId && data.runtime === 'spark';
+      const isFinal = data => sameScope(data) && data.status === 'expired_unreconciled' && data.durationHours === 10
+        && data.openedAt instanceof Timestamp && data.expiredAt instanceof Timestamp && data.recoveredAt instanceof Timestamp
+        && data.expiredAt.seconds === data.openedAt.seconds + 36000 && data.expiredAt.nanoseconds === data.openedAt.nanoseconds
+        && data.recoveredAt.toMillis() >= data.expiredAt.toMillis() && data.declaredAmount === null && data.difference === null;
+      try {
+        await runTransaction(database, async tx => {
+          const [session, lock] = await Promise.all([tx.get(ref), tx.get(lockRef)]);
+          active();
+          const data = session.data(), pointer = lock.data();
+          if (isFinal(data) && pointer?.sessionId !== sessionId) return;
+          if (!sameScope(data) || data.status !== 'open' || data.durationHours !== 10 || !(data.openedAt instanceof Timestamp)
+            || !sameScope(pointer) || pointer.status !== 'open' || pointer.sessionId !== sessionId || pointer.userId !== data.userId) {
+            throw new Error('El turno o su candado requieren revisión.');
+          }
+          // Rules check request.time and require both writes in the same commit.
+          tx.update(ref, { status: 'expired_unreconciled', expiredAt: new Timestamp(data.openedAt.seconds + 36000, data.openedAt.nanoseconds),
+            recoveredAt: serverTimestamp(), recoveredBy: actorId, recoverySessionId: null, recoveryReason: 'shift-time-limit',
+            reconciliationPending: true, declaredAmount: null, difference: null });
+          tx.delete(lockRef);
+        });
+      } catch (error) {
+        if (!['permission-denied', 'aborted', 'deadline-exceeded', 'unavailable', 'unknown'].includes(error.code)) throw error;
+        // A competing tab or an ambiguous commit can already have finalized this same turn.
+        const proof = await Promise.all([getDocFromServer(ref), getDocFromServer(lockRef)]).catch(() => null);
+        active();
+        if (!proof || proof.some(row => row.metadata?.fromCache || row.metadata?.hasPendingWrites)
+          || !isFinal(proof[0].data()) || proof[1].data()?.sessionId === sessionId) throw error;
+      }
+      active();
+    },
     async open({ sessionId, businessId, branchId, openingAmount, openingNote = '', recoverSessionId }) {
       const userId = currentUser()?.uid;
       if (!userId) throw new Error('Inicia sesión de nuevo.');

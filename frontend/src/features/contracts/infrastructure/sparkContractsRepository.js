@@ -10,6 +10,9 @@ const emptyMethods = () => ({ efectivo: 0, yape: 0, plin: 0 });
 const projection = (total, byMethod, status) => financialProjection(total,
   Object.values(byMethod).filter(value => value > 0).map(amount => ({ type: 'payment', amount })), status);
 const fail = message => { throw new Error(message); };
+const terminal = status => ['cancelado', 'entregado', 'entregado_con_deuda'].includes(status);
+const pickupBranch = contract => !terminal(contract.status) && !['domicilio', 'recojo_local'].includes(contract.deliveryType)
+  && contract.deliveryType !== contract.branchId ? contract.deliveryType : null;
 const signature = async command => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(command)))))
   .map(value => value.toString(16).padStart(2, '0')).join('');
 
@@ -43,6 +46,16 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
   const payment = (context, id, contract, op, amount, method, type) => ({ ...context, sourceType: 'contract', sourceId: id,
     contractNumber: contract.contractNumber, clientName: contract.clientName, operationId: op,
     amount, method, type, runtime: 'spark', occurredAt: serverTimestamp(), createdAt: serverTimestamp() });
+  async function syncPickup(tx, id, next, previous = null) {
+    const destination = pickupBranch(next), oldDestination = previous ? pickupBranch(previous) : null;
+    const sameDate = next.deliveryDate === previous?.deliveryDate || next.deliveryDate?.isEqual?.(previous?.deliveryDate);
+    if (destination === oldDestination && (!destination || sameDate)) return;
+    const ref = doc(database, 'contract_pickups', id);
+    // A historical contract may never have had a pickup projection.
+    if (!destination && !(await tx.get(ref)).exists()) return;
+    tx.set(ref, { businessId: next.businessId, originBranchId: next.branchId, pickupBranchId: destination,
+      contractNumber: next.contractNumber, deliveryDate: next.deliveryDate });
+  }
   async function change(id, work) {
     const uid = who();
     await runTransaction(database, async tx => {
@@ -80,6 +93,7 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
           startDate: serverTimestamp(), createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
           paymentsMigrated: true, createOperationId: op, createRequestHash: hash };
         if (who() !== uid) fail('La sesión cambió.');
+        await syncPickup(tx, id, contract);
         tx.set(ref, contract);
         tx.set(operationRef, { businessId: context.businessId, branchId: context.branchId, userId: uid, contractId: id, requestHash: hash, createdAt: serverTimestamp() });
         if (initial) { tx.set(doc(database, 'payments', payId), payment(context, id, contract, payId, amount, initial.method, 'advance'));
@@ -92,7 +106,10 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
       if (contract.status === 'cancelado') fail('El pedido está cancelado.');
       const fields = commercial({ ...contract, ...changes }, contract.businessId, id, contract.referenceImages);
       if (fields.total < contract.paidTotal) fail('El nuevo total no puede ser menor al importe ya abonado.');
-      tx.update(ref, { ...fields, ...projection(fields.total, contract.paidByMethod, contract.status), updatedAt: serverTimestamp() });
+      if (terminal(contract.status) && fields.deliveryType !== contract.deliveryType) fail('La sede de recojo no se puede cambiar después de la entrega.');
+      const update = { ...fields, ...projection(fields.total, contract.paidByMethod, contract.status), updatedAt: serverTimestamp() };
+      await syncPickup(tx, id, { ...contract, ...update }, contract);
+      tx.update(ref, update);
     }),
     addPayment: input => change(input.contractId, async (tx, ref, contract) => {
       const op = operationId(input.operationId), amount = contractAmount(input.amount, { positive: true }), method = paymentMethod(input.method);
@@ -123,6 +140,7 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
       const context = await actor(tx, input.branchId, { cashRequired: methods.length > 0 });
       const refs = methods.map(([method]) => doc(database, 'payments', `${op}_${method}`));
       if ((await Promise.all(refs.map(r => tx.get(r)))).some(row => row.exists())) fail('ID de devolución ocupado.');
+      await syncPickup(tx, ref.id, { ...contract, status: 'cancelado' }, contract);
       methods.forEach(([method, amount], index) => { tx.set(refs[index], {
         ...payment(context, ref.id, contract, op, -amount, method, 'refund'), reason, reversalScope: 'contract-method-balance' }); writeOperationNotice(tx, database, sdk, 'payment', refs[index].id, context); });
       tx.update(ref, { ...projection(contract.total, emptyMethods(), 'cancelado'), paidByMethod: emptyMethods(),
@@ -133,8 +151,10 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
       if (contract.status === 'cancelado') fail('El pedido está cancelado.');
       if (contract.deliveredAt) return;
       await actor(tx, contract.branchId, { cashRequired: false });
-      tx.update(ref, { ...projection(contract.total, contract.paidByMethod, 'entregado'),
-        deliveredAt: serverTimestamp(), deliveredBy: who(), updatedAt: serverTimestamp() });
+      const update = { ...projection(contract.total, contract.paidByMethod, 'entregado'),
+        deliveredAt: serverTimestamp(), deliveredBy: who(), updatedAt: serverTimestamp() };
+      await syncPickup(tx, id, { ...contract, ...update }, contract);
+      tx.update(ref, update);
     }),
   };
 }

@@ -17,7 +17,7 @@ export function cashReviewPresentation(events) {
     let title, explanation, severity = 'warning';
     if (event.kind === 'expiry') {
       title = 'Turno vencido sin arqueo';
-      explanation = 'Revisa el turno anterior y sus comprobantes.';
+      explanation = `Diferencia no calculable.${event.finalizedAt ? ` Finalización confirmada ${dateTime(event.finalizedAt)}.` : ''}`;
     } else if (event.estimated) {
       title = 'Cierre pendiente de conciliación';
       explanation = 'La referencia de caja es provisional. Coteja el cierre con los comprobantes.';
@@ -30,7 +30,7 @@ export function cashReviewPresentation(events) {
       explanation = 'Coteja la diferencia registrada con el conteo y los comprobantes.';
     } else continue;
     incidents.push({ title, explanation, severity, branch: event.branch, occurredAt: event.date,
-      responsible: event.cashier, recordedBy: event.actor !== event.cashier ? event.actor : null,
+      responsible: event.cashier, recordedBy: event.actor !== event.cashier ? event.actor : null, opening: event.kind === 'expiry' ? event.opening : null,
       moneyLabel: declared ? 'Efectivo declarado' : 'Efectivo contado', moneyValueText: declared ? money(event.counted) : 'No declarado', difference });
   }
   incidents.sort((a, b) => b.occurredAt - a.occurredAt);
@@ -141,6 +141,7 @@ export function managementReportHtml(view, { period, business, branch, operator,
       ${cashReview.visible.map(row => `<article class="review-row ${row.severity}"><div class="review-heading"><h3>${text(row.title)}</h3>
         <p class="review-context">${text(row.branch)} · ${text(dateTime(row.occurredAt))} · Responsable: ${text(row.responsible)}${row.recordedBy ? ` · Registró: ${text(row.recordedBy)}` : ''}</p></div>
         <dl class="review-amounts"><div><dt>${text(row.moneyLabel)}</dt> <dd>${text(row.moneyValueText)}</dd></div>
+        ${Number.isFinite(row.opening) ? `<div><dt>Fondo inicial</dt> <dd>${text(money(row.opening))}</dd></div>` : ''}
         ${row.difference === null ? '' : `<div><dt>Diferencia registrada</dt> <dd>${text(money(row.difference))}</dd></div>`}</dl>
         <p class="review-action">${text(row.explanation)}</p></article>`).join('')}
       ${cashReview.totalCount > cashReview.visible.length ? `<p class="muted">Se muestran las 6 incidencias más recientes de ${cashReview.totalCount} detectadas en el período.</p>` : ''}

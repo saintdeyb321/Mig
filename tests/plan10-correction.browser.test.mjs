@@ -294,6 +294,16 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
           && !ticket.querySelector('.pos-ticket-actions button').disabled;
       }), 'long product name and high payment amount do not overflow or alter exact values');
       await shot('pos-nombre-largo-320x640');
+      const narrow = await ev(() => {
+        const ticket = document.querySelector('[role="dialog"] .pos-ticket');
+        const pane = ticket.querySelector('.pos-ticket-payment');
+        pane.style.inlineSize = '13.75rem';
+        const grid = pane.querySelector('.pos-cash-payment');
+        const received = grid.querySelector('input').getBoundingClientRect(), change = grid.querySelector('dd').getBoundingClientRect();
+        return { aligned: received.right < change.left && Math.abs(received.top - change.top) <= 1,
+          fits: pane.scrollWidth <= pane.clientWidth + 1, charge: ticket.querySelector('.pos-ticket-actions').getBoundingClientRect().bottom <= innerHeight };
+      });
+      check(narrow.aligned && narrow.fits && narrow.charge, `cash alignment with a narrower content box: ${JSON.stringify(narrow)}`);
       await ev(()=>window.__p09.stop());
     }});
   } finally {

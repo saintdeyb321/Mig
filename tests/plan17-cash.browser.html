@@ -1,0 +1,54 @@
+<!doctype html><meta charset="utf-8"><div id="root"></div>
+<script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {useCashRegister} from '/src/features/cash-register/hooks/useCashRegister.js';
+import CashRecoveryStatus from '/src/modules/CashRecoveryStatus.jsx';
+import {createSessionResources} from '/src/core/session/sessionResources.js';
+import {SessionResourcesContext} from '/src/core/session/sessionResourceHooks.js';
+import offlineDB from '/src/offlineDB.js';
+import {encrypt} from '/src/crypto.js';
+
+const uid = 'p17-cashier', businessId = 'p17-tenant', branchId = 'p17-branch', id = 'p17-private-turn-id';
+const user = {uid,businessId,branchId,role:'cajero'};
+const openedAt = new Date(Date.now() - 36000000 - 1000).toISOString();
+const model = globalThis.__p17 = {turn:{ id,businessId,branchId,userId:uid,openedAt,durationHours:10,runtime:'spark',status:'open' }, reads:0, writes:0, online:true};
+const resources = createSessionResources(), root = createRoot(document.getElementById('root'));
+const check = (ok, message) => { if (!ok) throw new Error(message); };
+const until = async predicate => {
+  for (let i=0; i<250; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve,20)); }
+  throw new Error('Tiempo de espera P17: ' + document.body.innerText);
+};
+function Probe() {
+  const cash = useCashRegister(user, branchId);
+  return React.createElement(CashRecoveryStatus, {
+    session:cash.currentSession, isExpired:cash.isExpired, expiresAt:cash.expiresAt,
+    recoverySession:cash.recoverySession, expiryState:cash.expiryState,
+    onFinalize:cash.finalizeTurn, onCheck:cash.checkSession, online:navigator.onLine,
+  });
+}
+let report;
+try {
+  const ciphertext = await encrypt(JSON.stringify({businessId,branchId,userId:uid,sessionId:id}),uid);
+  await offlineDB.sales.put({localId:'pending-p17',businessId,branchId,userId:uid,status:'pending',financialState:'submitted_uncertain',data:ciphertext});
+  root.render(React.createElement(SessionResourcesContext.Provider,{value:resources},React.createElement(Probe)));
+  await until(() => document.body.innerText.includes('Comprueba los tickets pendientes'));
+  check(model.writes===0 && document.body.innerText.includes('Comprobar estado') && !document.body.innerText.includes(id), 'Pending receipt blocks expiry and UI hides technical identifiers');
+  await offlineDB.sales.update('pending-p17',{status:'synced',financialAck:true});
+  const toggle = online => {
+    Object.defineProperty(navigator,'onLine',{configurable:true,value:online});
+    model.online=online;
+    dispatchEvent(new Event(online ? 'online' : 'offline'));
+  };
+  toggle(false);
+  await until(() => document.body.innerText.includes('Conéctate'));
+  check(model.writes===0,'Offline cannot release the turn');
+  toggle(true);
+  await until(() => document.body.innerText.includes('Turno finalizado por vencimiento'));
+  check(model.writes===1 && model.reads>=2 && !document.body.innerText.includes('Comprobar estado'), 'Reconnect finalizes exactly once and removes unnecessary retry');
+  check((await offlineDB.sales.get('pending-p17')).data===ciphertext,'Pending record ciphertext is preserved');
+  report={ok:true,checks:4};
+} catch(error) { report={ok:false,error:error.stack}; }
+finally { root.unmount();resources.close();offlineDB.close(); }
+await fetch('/__phase4-report',{method:'POST',body:JSON.stringify(report)});
+</script>
