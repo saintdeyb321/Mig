@@ -220,7 +220,7 @@ const ContractFormModal = ({
                       <span aria-hidden="true" className="pointer-events-none text-xs font-semibold">Añadir fotos</span>
                     </div>}
                   </div>
-                  <p className="text-xs leading-relaxed text-muted">Hasta {MAX_CONTRACT_IMAGES} fotos · JPEG, PNG o WebP · 5 MB por foto. Se guardan comprimidas solo en este dispositivo y cuenta.</p>
+                  <p className="text-xs leading-relaxed text-muted">Hasta {MAX_CONTRACT_IMAGES} fotos · JPEG, PNG o WebP · archivo original de hasta 5 MiB por foto.</p>
                   <p className="text-xs text-muted">Las fotos nuevas estarán disponibles en otros dispositivos autorizados cuando se confirme su subida. Si se interrumpe, reintenta desde el pedido en este dispositivo.</p>
                   {imageError && <p role="status" className="text-xs text-warning">{imageError.message}</p>}
                   {overImageLimit && <p className="rounded-lg bg-warning-soft px-2 py-1.5 text-xs text-warning">Puedes conservar las fotos anteriores. Para cambiar la selección, redúcela a {MAX_CONTRACT_IMAGES} como máximo.</p>}

@@ -845,6 +845,12 @@ service cloud.firestore {
         && (currentRole() == 'dueño' || assignedContractBranch(contract.branchId))
         && (mediaId in contract.get('mediaIds', []) || (contract.get('pendingMedia', null) != null && contract.pendingMedia.id == mediaId));
     }
+    function mediaHeaderMatches(data, contentType) {
+      // Verify raster signatures before reserving a slot. Rules cannot decode the full image.
+      let hex = data.toHexString();
+      return contentType == 'image/jpeg' ? hex.matches('(?i)^ffd8ff.*$')
+        : hex.matches('(?i)^52494646[0-9a-f]{8}57454250.*$');
+    }
     function validMediaData(d, parent) {
       return d.keys().hasOnly(['businessId', 'originBranchId', 'contentType', 'data', 'byteLength',
           'width', 'height', 'sha256', 'version', 'createdAt', 'createdBy'])
@@ -852,6 +858,7 @@ service cloud.firestore {
         && d.version is int && d.version == 1 && d.createdAt == request.time && d.createdBy == request.auth.uid
         && d.contentType in ['image/webp', 'image/jpeg'] && d.data is bytes
         && d.byteLength is int && d.byteLength > 0 && d.byteLength <= 163840 && d.data.size() == d.byteLength
+        && mediaHeaderMatches(d.data, d.contentType)
         && d.width is int && d.height is int && d.width > 0 && d.height > 0 && d.width <= 960 && d.height <= 960
         && d.sha256 is string && d.sha256.matches('^[a-f0-9]{64}$') && hashing.sha256(d.data).toHexString().lower() == d.sha256;
     }

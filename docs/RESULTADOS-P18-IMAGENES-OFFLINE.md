@@ -76,3 +76,30 @@ Una futura exportación binaria requeriría autorización operativa del dueño, 
 3. Validar el piloto autorizado con dos dispositivos, dueño y cajeros de origen/recojo, un QR real, reconexión, caída a mitad de carga y borradores pendientes. Medir el uso de Firestore antes de ampliar el piloto.
 
 La publicación queda pendiente de CI Ubuntu y de aceptación en dispositivos reales.
+
+## Cierre local del SHA auditado `53db60c2`
+
+La ejecución 43322608346 informó 79 pruebas aprobadas y dos errores de infraestructura Chromium, en el respaldo y la recuperación de sesión P15. El harness esperaba `DevToolsActivePort` y abría conexiones WebSocket separadas al navegador y a la página. Ahora abre Chromium con CDP por pipes, espera la respuesta a `Browser.getVersion` y adjunta una página propia en el mismo canal. Se conserva el presupuesto de arranque de 20 segundos. Se limita el uso de memoria compartida, se desactivan extensiones del entorno y cada fixture Vite usa su propia caché dentro del perfil temporal. Se reprodujo un fallo por ejecución paralela con caché compartida y la repetición aislada aprobó ambas pruebas. La causa exacta del cierre de Chromium en el runner Ubuntu queda sin confirmar.
+
+La revisión detectó que un cliente autorizado podía reservar una foto usando bytes ajenos a JPEG/WebP con un MIME declarado válido y un SHA-256 correcto. `firestore.rules` ahora verifica la firma raster, además del tipo `Bytes`, los 160 KiB, el tamaño declarado y el hash. Firestore Rules verifican la cabecera y el cliente valida y decodifica las fotos al prepararlas. La regresión también exige que escribir solo el binario o solo su reserva deje ambos documentos intactos. Se conservan los permisos P17-RC, el protocolo de manifiesto y el hotfix de `syncPickup`. Se corrigió el texto del formulario para diferenciar las fotos confirmadas de las pendientes en el dispositivo. El respaldo sigue marcado como parcial para los binarios excluidos.
+
+Archivos del cierre: `tests/helpers/browserHarness.mjs`, `firestore.rules`, `tests/spark-financial.rules.test.mjs`, `frontend/src/modules/contracts/components/ContractFormModal.jsx` y este documento.
+
+| Verificación de cierre | Resultado |
+| --- | --- |
+| `npm run test:spark` con Node 22 y Chromium Windows | PASS · 81/81 |
+| Backup y P15 en paralelo con cachés aisladas | PASS · 2/2. El ensayo anterior con caché compartida falló en la fase de la fixture, después de conectar CDP. |
+| `npm run test:spark:rules` en `demo-migapos` | PASS · 82/82, incluidos 3 casos P18 con rechazo de binarios o manifiestos inválidos. |
+| Regresiones Node P07/P08/P13 | PASS · 53/53 |
+| Chromium Windows adicional | PASS · 9/9, con IndexedDB real, P08, POS móvil, caja de 14 h y exportaciones PDF/Excel. |
+| Lint, build/PWA e inventario local | PASS · 45 archivos precacheados, 2,94 MiB, 53 compuestos, 33 requeridos y una exención. |
+| Chromium Ubuntu y CI del SHA final | BLOCKED · Ubuntu local carece de Chromium y Node. |
+| QR auténtico y piloto con dispositivos físicos | BLOCKED · aceptación del propietario pendiente. |
+
+**Rules locales READY. Índices locales READY. Código local READY para revisión. Publicación NOT READY** hasta confirmar CI del SHA final y la aceptación del propietario.
+
+### Configuración que debe verificar el propietario
+
+1. En Firebase Console, proyecto `migapos`, base Firestore `(default)`, conservar una copia de las Rules publicadas y contrastar el inventario activo con `firestore.indexes.json`. El cierre no requiere compuestos nuevos ni eliminar compuestos existentes.
+2. Verificar la exención de campo único con ID de colección `media`, ruta de campo `data` y modos de indexación desactivados. Su definición exacta es `{"collectionGroup":"media","fieldPath":"data","indexes":[]}`. Conservar los índices I51, I52 e I53 del [inventario local](INDICES-FIRESTORE-MIGAPOS.md).
+3. Tras comprobar la CI del SHA final y autorizar la publicación, publicar el contenido de `firestore.rules` en esa base y coordinar la versión web de Hosting `migapos-peru`. El inventario activo y la aceptación del piloto deben comprobarse por separado.

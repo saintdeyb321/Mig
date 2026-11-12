@@ -33,27 +33,50 @@ function findBrowser() {
   assert.ok(browser, 'Chromium/Edge was not found. Install a browser or set MIGAPOS_TEST_BROWSER to its executable.');
   return browser;
 }
-async function connectCDP(url, onEvent) {
-  const socket = new WebSocket(url), pending = new Map();
-  let sequence = 0;
-  socket.addEventListener('message', message => {
-    const data = JSON.parse(message.data);
-    if (data.id) {
-      const request = pending.get(data.id); pending.delete(data.id); clearTimeout(request?.timeout);
-      if (data.error) request?.reject(Error(data.error.message)); else request?.resolve(data.result);
-    } else onEvent(data);
+function connectCDP(child, onPageEvent) {
+  // Chromium speaks null-delimited JSON over inherited descriptors 3 and 4.
+  // No discovery file, TCP port or separate target WebSocket is needed.
+  const [, , , input, output] = child.stdio;
+  const pending = new Map();
+  let sequence = 0, buffer = '', failure;
+  const disconnect = error => {
+    failure ??= error;
+    for (const request of pending.values()) {
+      clearTimeout(request.timeout);
+      request.reject(failure);
+    }
+    pending.clear();
+  };
+  input.on('error', disconnect);
+  output.on('error', disconnect);
+  output.once('close', () => disconnect(Error('DevTools pipe closed.')));
+  output.setEncoding('utf8');
+  output.on('data', chunk => {
+    buffer += chunk;
+    let boundary;
+    while ((boundary = buffer.indexOf('\0')) >= 0) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 1);
+      if (!frame) continue;
+      const data = JSON.parse(frame);
+      if (data.id) {
+        const request = pending.get(data.id);
+        if (!request) continue;
+        pending.delete(data.id);
+        clearTimeout(request.timeout);
+        if (data.error) request.reject(Error(data.error.message));
+        else request.resolve(data.result);
+      } else onPageEvent(data);
+    }
   });
-  socket.addEventListener('close', () => { for (const request of pending.values()) { clearTimeout(request.timeout); request.reject(Error('Browser disconnected.')); } pending.clear(); });
-  await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { socket.close(); reject(Error('DevTools connection timed out.')); }, 3000);
-    socket.addEventListener('open', () => { clearTimeout(timeout); resolve(); }, { once: true });
-    socket.addEventListener('error', error => { clearTimeout(timeout); reject(error); }, { once: true });
-  });
-  return { close: () => socket.close(), send: (method, params = {}, timeoutMs = 3000) => new Promise((resolve, reject) => {
+  const channel = sessionId => ({ send: (method, params = {}, timeoutMs = 3000) => new Promise((resolve, reject) => {
+    if (failure) { reject(failure); return; }
     const id = ++sequence;
     const timeout = setTimeout(() => { pending.delete(id); reject(Error(`DevTools ${method} timed out.`)); }, timeoutMs);
-    pending.set(id, { resolve, reject, timeout }); socket.send(JSON.stringify({ id, method, params }));
-  }) };
+    pending.set(id, { resolve, reject, timeout });
+    input.write(JSON.stringify({ id, method, params, ...(sessionId && { sessionId }) }) + '\0');
+  }) });
+  return { browser: channel(), page: channel };
 }
 
 export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, inspectPage, onPageEvent, createFixtureServer, mockPng, verifyDownload, firebaseSdk = false, excel = false, fixture, moduleMocks = {} } = {}) {
@@ -83,14 +106,14 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
   let child, childClosed, page, browserControl, browserPid;
   const timeout = setTimeout(() => complete({ ok: false, error: `Browser fixture timed out after 60s (${requests} HTTP requests). ${stderr.slice(-1200)}` }), 60000);
   try {
-    server = createFixtureServer ? await createFixtureServer(fixtureMiddleware) : await createServer({ root, configFile: false, envFile: false, clearScreen: false, logLevel: 'error',
+    server = createFixtureServer ? await createFixtureServer(fixtureMiddleware) : await createServer({ root, cacheDir: join(profile, 'vite-cache'), configFile: false, envFile: false, clearScreen: false, logLevel: 'error',
     esbuild: { jsx: 'automatic' },
     resolve: { alias: { react: resolve(root, 'node_modules/react'), 'react-dom': resolve(root, 'node_modules/react-dom'), 'xlsx-js-style': resolve(root, 'node_modules/xlsx-js-style'), firebase: resolve(root, 'node_modules/firebase') } },
     // Discovery is disabled for isolated/mocked fixtures. Radix also imports the CJS
     // react-dom root (portals/flushSync), so prebundle it alongside react-dom/client.
     optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom', 'react-dom/client', ...(mockPng || firebaseSdk || excel ? ['xlsx-js-style'] : []), ...(firebaseSdk ? ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'] : [])] },
     // saleModel imports the shared Functions domain outside frontend/. Default Vite fs policy denies it.
-    server: { host: '127.0.0.1', port: 0, hmr: false, headers, fs: { allow: [workspace] } }, plugins: [{ name: 'isolated-indexeddb-test',
+    server: { host: '127.0.0.1', port: 0, hmr: false, headers, fs: { allow: [workspace, profile] } }, plugins: [{ name: 'isolated-indexeddb-test',
       resolveId: id => id === 'virtual:browser-fixture' ? '\0browser-fixture' : Object.hasOwn(moduleMocks, id) ? id : undefined,
       load: id => id === '\0browser-fixture' ? 'export default ' + JSON.stringify(fixture || {}) + ';' : moduleMocks[id],
       configureServer(server) {
@@ -108,54 +131,54 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
     const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
     const localHosts = [new URL(origin).host, ...(firebaseSdk ? [8080, 9099, 5001].map(port => `127.0.0.1:${port}`) : [])];
     server.httpServer.on('connect', (_request, socket) => socket.destroy());
-    child = spawn(browser, ['--headless=new', '--disable-gpu', '--disable-background-networking', '--disable-popup-blocking', '--no-first-run', '--no-default-browser-check',
+    child = spawn(browser, ['--headless=new', '--disable-dev-shm-usage', '--disable-extensions', '--disable-gpu', '--disable-background-networking', '--disable-popup-blocking', '--no-first-run', '--no-default-browser-check',
       // Prevent outbound connections even from workers outside the page's DevTools interception.
       `--proxy-server=${origin}`, `--proxy-bypass-list=<-loopback>;${localHosts.join(';')}`, '--disable-quic',
       ...(process.platform === 'linux' && process.getuid?.() === 0 ? ['--no-sandbox'] : []),
-      '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+      '--remote-debugging-pipe', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
     childClosed = new Promise(resolve => child.once('close', resolve));
     child.stderr.on('data', data => { stderr = (stderr + data).slice(-4000); });
     child.on('error', error => complete({ ok: false, error: `Browser launch failed: ${error.message}` }));
     // Edge may exit its launcher successfully and hand the isolated profile to a new process.
     child.on('exit', code => { if (!finished && code !== 0) complete({ ok: false, error: `Browser exited before reporting (${code}). ${stderr.slice(-1200)}` }); });
-    let debug;
-    const startup = Date.now() + 20000;
-    while (!finished && Date.now() < startup) {
-      try { debug = (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).trim().split(/\r?\n/); break; } catch { await delay(100); }
-    }
-    if (!debug && !finished) complete({ ok: false, error: `Browser did not expose DevTools. ${stderr.slice(-1200)}` });
-    if (debug) {
-      browserControl = await connectCDP(`ws://127.0.0.1:${debug[0]}${debug[1]}`, () => {});
-      await browserControl.send('Browser.setDownloadBehavior', mockPng || verifyDownload
-        ? { behavior: 'allow', downloadPath: join(profile, 'downloads') } : { behavior: 'deny' });
+    let sessionId;
+    const cdp = connectCDP(child, event => {
+      if (!sessionId || event.sessionId !== sessionId) return;
+      onPageEvent?.(event);
+      if (event.method === 'Fetch.requestPaused') {
+        const {requestId, request} = event.params;
+        const url = new URL(request.url);
+        if (!mockPng) {
+          void page.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }).catch(() => {});
+          complete({ ok: false, error: `Unexpected request to ${url.origin} blocked by the browser fixture.` }); return;
+        }
+        const image = url.hostname === 'firebasestorage.googleapis.com' || url.hostname === 'storage.googleapis.com' || url.hostname === 'www.gstatic.com';
+        const script = url.hostname === 'apis.google.com';
+        const frame = url.pathname === '/__/auth/iframe';
+        const text = image ? mockPng : script ? 'window.__authScriptLoaded = true;' : frame ? '<!doctype html><title>Local auth helper fixture</title>' : JSON.stringify({fixture: true});
+        const responseHeaders = [{name:'Content-Type',value:image ? 'image/png' : script ? 'text/javascript' : frame ? 'text/html' : 'application/json'}, {name:'Access-Control-Allow-Origin',value:'*'}];
+        void page.send('Fetch.fulfillRequest', {requestId, responseCode:200, responseHeaders, body:image ? text : Buffer.from(text).toString('base64')}).catch(error => complete({ok:false,error:error.message}));
+      }
+      if (event.method === 'Runtime.exceptionThrown') complete({ ok: false, error: event.params.exceptionDetails.exception?.description ?? event.params.exceptionDetails.text });
+    });
+    browserControl = cdp.browser;
+    try {
+      // Apply the existing 20-second startup budget to a real CDP exchange.
+      await browserControl.send('Browser.getVersion', {}, 20000);
       const info = await browserControl.send('SystemInfo.getProcessInfo').catch(() => null);
       browserPid = info?.processInfo?.find(process => process.type === 'browser')?.id;
-      const targets = await (await fetch(`http://127.0.0.1:${debug[0]}/json/list`, { signal: AbortSignal.timeout(3000) })).json();
-      const target = targets.find(target => target.type === 'page');
-      assert.ok(target, 'Browser did not create an isolated page.');
-      page = await connectCDP(target.webSocketDebuggerUrl, event => {
-        onPageEvent?.(event);
-        if (event.method === 'Fetch.requestPaused') {
-          const {requestId, request} = event.params;
-          const url = new URL(request.url);
-          if (!mockPng) {
-            void page.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }).catch(() => {});
-            complete({ ok: false, error: `Unexpected request to ${url.origin} blocked by the browser fixture.` }); return;
-          }
-          const image = url.hostname === 'firebasestorage.googleapis.com' || url.hostname === 'storage.googleapis.com' || url.hostname === 'www.gstatic.com';
-          const script = url.hostname === 'apis.google.com';
-          const frame = url.pathname === '/__/auth/iframe';
-          const text = image ? mockPng : script ? 'window.__authScriptLoaded = true;' : frame ? '<!doctype html><title>Local auth helper fixture</title>' : JSON.stringify({fixture: true});
-          const responseHeaders = [{name:'Content-Type',value:image ? 'image/png' : script ? 'text/javascript' : frame ? 'text/html' : 'application/json'}, {name:'Access-Control-Allow-Origin',value:'*'}];
-          void page.send('Fetch.fulfillRequest', {requestId, responseCode:200, responseHeaders, body:image ? text : Buffer.from(text).toString('base64')}).catch(error => complete({ok:false,error:error.message}));
-        }
-        if (event.method === 'Runtime.exceptionThrown') complete({ ok: false, error: event.params.exceptionDetails.exception?.description ?? event.params.exceptionDetails.text });
-      });
-      await page.send('Runtime.enable');
-      if (setupPage) await setupPage(page);
-      await page.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] });
-      await page.send('Page.navigate', { url: `${origin}${route}` }, 15000);
+      await browserControl.send('Browser.setDownloadBehavior', mockPng || verifyDownload
+        ? { behavior: 'allow', downloadPath: join(profile, 'downloads') } : { behavior: 'deny' });
+      const { targetId } = await browserControl.send('Target.createTarget', { url: 'about:blank' });
+      ({ sessionId } = await browserControl.send('Target.attachToTarget', { targetId, flatten: true }));
+      page = cdp.page(sessionId);
+    } catch (error) {
+      throw new Error(`Chromium CDP startup failed: ${error.message}. ${stderr.slice(-1200)}`, { cause: error });
     }
+    await page.send('Runtime.enable');
+    if (setupPage) await setupPage(page);
+    await page.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] });
+    await page.send('Page.navigate', { url: `${origin}${route}` }, 15000);
     const result = await report;
     assert.equal(result.ok, true, result.error);
     if (inspectPage) await inspectPage(page, result, join(profile, 'downloads'));
@@ -170,15 +193,16 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
     return result;
   } finally {
     clearTimeout(timeout); finished = true;
-    page?.close();
-    if (browserControl) { await browserControl.send('Browser.close').catch(() => {}); browserControl.close(); }
+    await browserControl?.send('Browser.close').catch(() => {});
     if (childClosed) await Promise.race([childClosed, delay(3000, undefined, { ref: false })]);
     const isRunning = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
     const remainingPid = browserPid && browserPid !== process.pid && isRunning(browserPid) ? browserPid
       : child && child.exitCode === null && child.signalCode === null ? child.pid : null;
     if (remainingPid) {
       if (process.platform === 'win32') await new Promise(resolve => execFile('taskkill', ['/PID', String(remainingPid), '/T', '/F'], { windowsHide: true }, resolve));
-      else process.kill(remainingPid, 'SIGKILL');
+      else {
+        try { process.kill(remainingPid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      }
       await Promise.race([childClosed, delay(2000, undefined, { ref: false })]);
     }
     child?.stderr?.destroy();

@@ -1175,9 +1175,19 @@ describe('P18 private contract media', () => {
       return batch.commit();
     };
     await assertFails(raw({}, {}, true));
+    await assertFails(setDoc(image, { businessId, originBranchId:branchId, version:1, contentType:'image/webp',
+      createdAt:serverTimestamp(), createdBy:uid, width:1, height:1, sha256:job.sha256, byteLength:job.blob.size,
+      data:sdk.Bytes.fromUint8Array(new Uint8Array(await job.blob.arrayBuffer())) }));
+    assert.equal((await inspect(image.path)).exists(), false);
+    assert.equal((await getDoc(parent)).data().pendingMedia, undefined);
     await assertFails(raw({ byteLength: 163841 }));
     await assertFails(raw({ data: sdk.Bytes.fromUint8Array(new Uint8Array(163841)), byteLength: 163841 }));
     await assertFails(raw({ data:'AAAA' }));
+    // A valid hash over the wrong bytes cannot reserve an unusable photo slot.
+    const fake = new Uint8Array(20);
+    const fakeHash = await imageHash(fake);
+    await assertFails(raw({ data:sdk.Bytes.fromUint8Array(fake), byteLength:fake.length, sha256:fakeHash }, { sha256:fakeHash }));
+    await assertFails(raw({ contentType:'image/jpeg' }));
     await assertFails(raw({ contentType:'image/svg+xml' }));
     await assertFails(raw({ originBranchId:target }));
     await assertFails(raw({ sha256:'a'.repeat(64) }, { sha256:'a'.repeat(64) }));
