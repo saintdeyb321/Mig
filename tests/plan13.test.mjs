@@ -1,3 +1,4 @@
+import { completeContractPhotos } from '../frontend/src/features/contracts/application/contractPhotoCompletion.js';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { it } from 'node:test';
@@ -222,6 +223,16 @@ it('P13 keeps names and void reasons as XLSX text and refuses an over-limit expo
   assert.ok(Object.values(result.wb.Sheets.Detalle_Centro).every(cell => cell?.f == null && cell?.l == null));
   const tooMany = { ...yapeSale, items: Array(MAX_EXPORT_ROWS + 1).fill(yapeSale.items[0]) };
   assert.throws(() => buildSalesWorkbook(XLSX, { ...scope, sales: [tooMany], now }), /Demasiadas filas de detalle/);
+});
+
+it('P18 keeps the confirmed order result when the photo stage throws after the advance', async () => {
+  const order = { contractId:'original', contractNumber:'PED-00000001', paidTotal:20 };
+  const result = await completeContractPhotos(order, 4, async () => {
+    throw new DOMException('IndexedDB unavailable','InvalidStateError');
+  });
+  assert.deepEqual(result, { ...order, remaining:4, photosNeedReview:true });
+  assert.deepEqual(await completeContractPhotos(order, 4, async () => ({ remaining:3 })),
+    { ...order, remaining:3, photosNeedReview:false });
 });
 
 it('P18 supports twenty contract photos and keeps unchanged historical references', () => {

@@ -91,13 +91,21 @@ export const voidRecovery = createVoidRecovery({ store: {
 }, encrypt, decrypt, repository: sparkVoids, currentIdentity: identity => auth.currentUser?.uid === identity.uid });
 
 export const subscribeSaleAcknowledgement = (saleId, onData, onError) => {
-  const subscription = liveQuery(async () => {
-    const record = await offlineDB.sales.get(saleId);
-    if (!record || record.userId !== auth.currentUser?.uid) return null;
-    const verifiedPayload = canonicalSale(await decodeQueuedSale(record, { uid: record.userId, businessId: record.businessId }, decrypt));
-    return { ...record, verifiedPayload };
-  }).subscribe({ next: onData, error: onError });
-  return () => subscription.unsubscribe();
+  let revision = 0;
+  const subscription = liveQuery(() => offlineDB.sales.get(saleId)).subscribe({
+    async next(record) {
+      const token = ++revision;
+      if (!record || record.userId !== auth.currentUser?.uid) { onData(null); return; }
+      try {
+        const verifiedPayload = canonicalSale(await decodeQueuedSale(record, { uid: record.userId, businessId: record.businessId }, decrypt));
+        if (token === revision && record.userId === auth.currentUser?.uid) onData({ ...record, verifiedPayload });
+      } catch {
+        if (token === revision && record.userId === auth.currentUser?.uid) onData(null);
+      }
+    },
+    error: onError,
+  });
+  return () => { revision++; subscription.unsubscribe(); };
 };
 export const subscribeVoidAttempts = (identity, onData, onError) => {
   const subscription = liveQuery(() => voidRecovery.list(identity)).subscribe({ next: onData, error: onError });

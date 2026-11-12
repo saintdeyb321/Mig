@@ -33,6 +33,9 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
   async function confirmed(id, uid) {
     const saved = await getDocFromServer(doc(database, 'contracts', id));
     if (who() !== uid) fail('La sesión cambió.');
+    if (!saved.exists() || saved.metadata?.fromCache || saved.metadata?.hasPendingWrites) {
+      throw Object.assign(new Error('El pedido aún no se confirmó en el servidor.'), { code: 'unavailable' });
+    }
     return result(id, saved.data());
   }
   const commercial = (input, businessId, id, savedImages) => {
@@ -76,7 +79,7 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
     async create(input) {
       const id = operationId(input.contractId), op = operationId(input.operationId), uid = who();
       const hash = await signature(input);
-      await runTransaction(database, async tx => {
+      try { await runTransaction(database, async tx => {
         const ref = doc(database, 'contracts', id), previous = await tx.get(ref);
         if (previous.exists()) {
           if (previous.data().createRequestHash !== hash || previous.data().createdBy !== uid) fail('ID de contrato utilizado con otros datos.');
@@ -104,7 +107,16 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
         tx.set(operationRef, { businessId: context.businessId, branchId: context.branchId, userId: uid, contractId: id, requestHash: hash, createdAt: serverTimestamp() });
         if (initial) { tx.set(doc(database, 'payments', payId), payment(context, id, contract, payId, amount, initial.method, 'advance'));
           writeOperationNotice(tx, database, sdk, 'payment', payId, context); }
-      });
+      }); } catch (error) {
+        if (!['aborted', 'deadline-exceeded', 'unavailable', 'unknown', 'internal'].includes(error.code)) throw error;
+        // Recover an ambiguous commit only by its immutable creation identity and original request.
+        const saved = await getDocFromServer(doc(database, 'contracts', id)).catch(() => null);
+        if (who() !== uid) fail('La sesión cambió.');
+        const previous = saved?.data();
+        if (saved?.metadata?.fromCache || saved?.metadata?.hasPendingWrites || previous?.createRequestHash !== hash
+          || previous?.createdBy !== uid || previous?.createOperationId !== op) throw error;
+        return result(id, previous);
+      }
       return confirmed(id, uid);
     },
     update: (id, changes) => change(id, async (tx, ref, contract) => {

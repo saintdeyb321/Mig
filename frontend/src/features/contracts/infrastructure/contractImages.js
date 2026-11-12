@@ -48,6 +48,25 @@ function assertActive(scope, signal) {
   if (!scope.uid || auth.currentUser?.uid !== scope.uid) throw new Error('La cuenta cambió.');
 }
 
+export async function rememberPhotoOrder(scope, command, signal) {
+  assertActive(scope, signal);
+  const hash = await imageHash(new TextEncoder().encode(command.signature));
+  const id = `contract-media-order:${scope.uid}:${scope.businessId}:${scope.branchId}:${hash}`;
+  return offlineDB.transaction('rw', offlineDB.settings, async () => {
+    const existing = await offlineDB.settings.get(id);
+    assertActive(scope, signal);
+    if (existing) return existing;
+    const order = { id, contractId: command.contractId, operationId: command.operationId,
+      initialOperationId: command.initialOperationId };
+    await offlineDB.settings.add(order);
+    return order;
+  });
+}
+
+export async function forgetPhotoOrder(id) {
+  if (id) await offlineDB.settings.delete(id);
+}
+
 async function legacyPhoto(scope, reference, thumbnails = false) {
   const match = LOCAL_IMAGE.exec(reference);
   if (!scope.uid || auth.currentUser?.uid !== scope.uid || (scope.businessId && scope.businessId !== match?.[1])
@@ -58,29 +77,39 @@ async function legacyPhoto(scope, reference, thumbnails = false) {
   return (thumbnails ? saved.thumbnail : null) ?? saved.main;
 }
 
-export async function stageContractMediaJobs(scope, { files = [], removeIds = [], migration = [] }, signal) {
+export async function stageContractMediaJobs(scope, { files = [], removeIds = [], migration = [], orderId }, signal) {
   assertActive(scope, signal);
   if (files.length + migration.length > MAX_CONTRACT_IMAGES || removeIds.length > MAX_CONTRACT_IMAGES) {
     throw new Error(`Máximo ${MAX_CONTRACT_IMAGES} fotos por pedido.`);
   }
   const prefix = jobPrefix(scope), jobs = [];
+  if (orderId) {
+    const staged = await readContractMediaJobs(scope);
+    if (staged.length) return staged;
+  }
   for (const input of [...files.map(file => ({ file })), ...migration.map(legacyRef => ({ legacyRef }))]) {
     assertActive(scope, signal);
     const file = input.file ?? await legacyPhoto(scope, input.legacyRef);
     if (!file) throw new Error('Foto histórica no disponible; vuelve a adjuntarla desde el archivo original.');
     const mediaId = crypto.randomUUID(), data = await compressContractPhoto(file);
-    jobs.push({ ...scope, id: prefix + mediaId, mediaId, legacyRef: input.legacyRef ?? null, ...data });
+    jobs.push({ ...scope, id: prefix + mediaId, mediaId, legacyRef: input.legacyRef ?? null, ...(orderId && { orderId }), ...data });
   }
   for (const mediaId of removeIds) jobs.push({ ...scope, id: prefix + 'remove:' + mediaId, mediaId, remove: true });
   assertActive(scope, signal);
   if (jobs.length) {
     try {
-      await offlineDB.transaction('rw', offlineDB.settings, async () => {
+      return await offlineDB.transaction('rw', offlineDB.settings, async () => {
+        assertActive(scope, signal);
+        if (orderId) {
+          const staged = await readContractMediaJobs(scope);
+          if (staged.length) return staged;
+        }
         const existing = await offlineDB.settings.where('id').startsWith(prefix).limit(41).count();
         if (existing + jobs.length > MAX_CONTRACT_IMAGES * 2) {
           throw Object.assign(new Error('Revisa las fotos pendientes de este pedido antes de adjuntar más.'), { code: 'media-pending-limit' });
         }
         await offlineDB.settings.bulkPut(jobs);
+        return jobs;
       });
     } catch (error) {
       if (error.code === 'media-pending-limit') throw error;
@@ -127,6 +156,14 @@ export async function finishContractMediaJobs(scope, { jobs, pending, signal } =
       await offlineDB.settings.delete(job.id);
       remaining--;
     } catch (cause) { error = cause; break; }
+  }
+  if (!signal?.aborted) {
+    for (const id of new Set(local.map(job => job.orderId).filter(Boolean))) {
+      // Detail may have finalized every photo from the original operation after a reload.
+      const unprocessed = await offlineDB.settings.where('id').startsWith(jobPrefix(scope))
+        .filter(job => job.orderId === id).first().catch(() => true);
+      if (!unprocessed) await forgetPhotoOrder(id).catch(() => {});
+    }
   }
   return { remaining, error, manifest: parent && { mediaIds: parent.mediaIds,
     referenceImages: parent.referenceImages, pendingMedia: parent.pendingMedia, mediaRevision: parent.mediaRevision } };

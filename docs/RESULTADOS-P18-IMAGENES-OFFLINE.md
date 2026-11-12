@@ -15,6 +15,12 @@ La prueba previa reprodujo la limitación de las fotos históricas. El contrato 
 
 Se conservan el hotfix de `syncPickup` para fechas ausentes, la caja de 14 horas, las reglas P17 y el cifrado compatible de pendientes. La clave local derivada del UID protege la separación en la aplicación. Un UID no es un secreto frente a alguien con acceso al perfil o almacenamiento del dispositivo.
 
+## Corrección posterior a la auditoría
+
+El fallo de P08 se reprodujo en Windows. La espera exacta era la que debía mostrar «Copia local no disponible» después de borrar el borrador de la fixture. El estado seguía en `draft_offline`, con el último registro aún marcado como disponible. Se separó la lectura observable por clave primaria de Dexie del descifrado asíncrono. La aplicación invalida también respuestas antiguas del descifrado. La fixture espera que el observador vea el borrador antes de simular su eliminación, comprueba la eliminación y conserva la aserción que bloquea su confirmación. El tiempo de espera sigue igual.
+
+Se corrigió el manejo de excepciones después de confirmar el pedido. Una subida interrumpida o un fallo posterior de IndexedDB dejan el pedido confirmado y ofrecen reanudar las fotos en el detalle. Los identificadores de creación se conservan en IndexedDB mientras el pedido o sus fotos estén pendientes. Un reenvío de los mismos datos tras recargar conserva esos IDs, incluso si el usuario vuelve a seleccionar las fotos. Si Firestore aplicó el comando y se pierde la respuesta, se comprueba su huella, creador e ID de operación en el servidor. El reproceso conserva los IDs de las fotos y omite las ya asociadas. Un cambio de cuenta cancela la vista anterior. Las tareas que ya se confirmaron en servidor siguen recuperables.
+
 ## Métricas y límites
 
 En Chromium, cuatro imágenes sintéticas de 1200×800 con letras y ornamentos produjeron 32 910, 42 636, 46 712 y 50 310 bytes WebP. La media fue de **42,1 KiB** y el mayor archivo fue de **49,1 KiB**. El JPEG de producto midió **6 195 caracteres Base64** y el PNG de QR **13 954**. Las fotos y QR de ensayo quedan en `.release/qa-p18/`.
@@ -31,17 +37,37 @@ En el emulador, por foto publicada se contaron **2 lecturas transaccionales del 
 
 ## Verificación y límites de aceptación
 
+| Requisito | Estado local | Evidencia |
+| --- | --- | --- |
+| 0, 1 y 4 fotos, recogida en otra sede y anticipo único | PASS | Transacciones reales en `demo-migapos`, con fecha de entrega, confirmación perdida y un solo recibo de anticipo. |
+| Reanudación y cambios de fotos | PASS | Reserva interrumpida, mismo ID tras reabrir Dexie, migración con Blob disponible, límite de 20 y retiro de referencia y binario en la misma transacción. |
+| Privacidad e integridad | PASS | Dueño y cajero de origen permitidos. Sede de recojo y otro negocio rechazados. Listados, binarios excesivos, modificaciones directas y SHA-256 falso rechazados. |
+| Carga bajo demanda y límites de imágenes | PASS | Cero lecturas de fotos en listado, cuatro en detalle frío, cero en reutilización dentro de la vista, tres solicitudes concurrentes como máximo y URLs revocadas. Tope binario probado en el emulador. |
+| Continuidad offline | PASS | Borradores durables, revisión manual con precios actualizados, recibos consultados por ID original, reconexión intermitente, lease de pestañas, cambio de sede, pérdida de respuesta, cuota local, borrado simulado y caja vencida. |
+| Reportes y respaldo | PASS | Descargas y reimportación PDF/Excel de P17-RC y backup cifrado. Los medios privados figuran como excluidos. |
+| Aceptación física | BLOCKED | Falta probar un QR auténtico de Yape/Plin, fotos de tortas y el uso en dos dispositivos físicos. |
+| Chromium Ubuntu y CI del próximo SHA | BLOCKED | Ubuntu local carece de Chromium, navegador Playwright y Node disponibles. La CI remota queda pendiente. |
+
+Comprobaciones ejecutadas en el árbol local:
+
+- Node: **203 aprobadas**. Incluye recuperación con reconexión intermitente, rechazo de borradores nunca enviados en la verificación de recibos, cuota, cifrado corrupto, idempotencia y exportaciones.
+- Firestore Rules y transacciones en `demo-migapos`: **82 aprobadas**. Reejecución P18 de **3 aprobadas**, con rechazos explícitos a un usuario anónimo y a un cajero suspendido.
+- Chromium Windows: **12 aprobadas** en las dos pasadas finales. Incluye IndexedDB real, ambas regresiones P08, imágenes P18, caja P17, POS 320×640 y 1280×560, backup cifrado y PDF/Excel. La primera ejecución extensa tuvo un fallo P08. Las pasadas focalizada y final pasaron con la corrección.
+- Lint, build/PWA e inventario de índices: **PASS**. Inventario local con 53 índices compuestos, 33 requeridos y una exención de campo. La compilación conserva el aviso de tamaño de algunos chunks. El inventario desplegado queda pendiente de revisión.
+
 La evidencia de acceso entre cuentas usa sesiones autenticadas separadas en el emulador. La evidencia de carga parcial, caché y compresión usa Chromium aislado con fallos controlados. Se requiere aceptación con dos dispositivos físicos, fotos reales de tortas y la aplicación lectora del QR de Yape/Plin. El QR sintético se decodificó en OpenCV a 600 y 200 px.
 
 El respaldo general exporta las referencias y advierte que el contenido privado de `media` y las fotos históricas del navegador quedan fuera. PDF y Excel gerenciales no exponen fotos. Los borradores POS y fotos aún pendientes de subir dependen del dispositivo. Si se borra IndexedDB antes de confirmar la escritura, se puede perder la copia local.
 
+Una futura exportación binaria requeriría autorización operativa del dueño, enumeración desde los manifiestos verificados, lectura paginada por IDs con límites de bytes y documentos, comprobación de hashes y archivo cifrado. El manifiesto tendría que declarar separadamente fotos confirmadas, reservas, referencias históricas y contenido no disponible. La autorización temporal de SuperAdmin no concede acceso a los binarios.
+
 ## Archivos
 
 - Rules e índices en `firestore.rules`, `firestore.indexes.json`, `scripts/firestore-index-inventory.mjs` y `docs/INDICES-FIRESTORE-MIGAPOS.md`.
-- Contratos en `contractImagePolicy.js`, `contractImages.js`, `contractMediaRepository.js`, `useContractImageUrls.js`, `useContracts.js`, `ContractManager.jsx`, `ContractFormModal.jsx`, `ContractDetailsModal.jsx`, `ContractMediaActions.jsx` y `printDocument.js`.
-- Productos, QR y respaldo en `shared/images/raster.js`, `ProductCatalog.jsx`, `useBranches.js`, `QRPaymentCard.jsx` y `backupRepository.js`.
+- Contratos en `contractImagePolicy.js`, `contractPhotoCompletion.js`, `contractImages.js`, `contractMediaRepository.js`, `sparkContractsRepository.js`, `useContractImageUrls.js`, `useContracts.js`, `ContractManager.jsx`, `ContractFormModal.jsx`, `ContractDetailsModal.jsx`, `ContractMediaActions.jsx` y `printDocument.js`.
+- Productos, QR y respaldo en `shared/images/raster.js`, `ProductCatalog.jsx`, `useBranches.js`, `QRPaymentCard.jsx`, `backupRepository.js`, `remoteBackup.js` y `serverReadDatabase.js`.
 - POS en `receiptRecovery.js`, `saleQueue.js`, `saleQueueStore.js`, `saleTransactions.js`, `pendingSalesCache.js`, `useRecentSales.js`, `usePOS.js`, `TicketParts.jsx` y `SalesHistory.jsx`.
-- Regresiones en `spark-financial.rules.test.mjs`, `spark-local.browser.{html,test.mjs}`, `plan07.test.mjs`, `plan08.test.mjs`, `plan08-pos.browser.html`, `plan08.browser.test.mjs`, `plan13.test.mjs` y `ui-security.test.mjs`.
+- Regresiones en `spark-financial.rules.test.mjs`, `spark-local.browser.{html,test.mjs}`, `plan07.test.mjs`, `plan08.test.mjs`, `plan08-pos.browser.html`, `plan08.browser.test.mjs`, `plan13.test.mjs` y `ui-security.test.mjs`. `verify.yml` ejecuta también las regresiones P07/P08.
 
 ## Publicación manual
 

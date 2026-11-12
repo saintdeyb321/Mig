@@ -23,7 +23,14 @@ import { encrypt, decrypt } from '/src/crypto.js';
 const rootElement = document.getElementById('root');
 const checks = [], check = (ok, name) => { if (!ok) throw Error(name); checks.push(name); };
 const pause = () => new Promise(resolve => setTimeout(resolve, 25));
-const wait = async predicate => { for (let i = 0; i < 180; i++) { if (predicate()) return; await pause(); } throw Error('POS state timed out'); };
+const wait = async (predicate, state = predicate.toString()) => {
+  for (let i = 0; i < 180; i++) { if (predicate()) return; await pause(); }
+  throw Error('POS state timed out: ' + state + ' ' + JSON.stringify({
+    online: api?.isOnline, branch: model.branch, cart: api?.cart.length, paymentValid: api?.isPaymentValid,
+    catalogBlocked: api?.catalogBlocked, processing: api?.isProcessing, lastSale: api?.lastSale?.financialState,
+    localRecordMissing: api?.lastSale?.localRecordMissing, localWatch: model.localWatch, writes: model.writes, failLocal: model.failLocal,
+  }));
+};
 const text = () => [rootElement, ...document.querySelectorAll('[role="dialog"]')].map(el => el.innerText).join('\n');
 const button = (label, parent = document) => [...parent.querySelectorAll('button')].find(el => el.textContent.trim() === label);
 const user = { uid: 'p08-pos-cashier', businessId: 'p08-pos-tenant', branchId: 'p08-pos-branch', role: 'cajero' };
@@ -82,7 +89,14 @@ window.__p08Transactions = {
     return queue.submit({ ...sale, items, origin: 'offline', queuedAt: new Date().toISOString() }, user, { isolated: true, products });
   },
   subscribe(id, callback, onError) {
-    const watcher = liveQuery(async () => { const record = await db.sales.get(id); return record ? { ...record, verifiedPayload: await decodeQueuedSale(record, user, decrypt) } : null; }).subscribe({ next: callback, error: onError });
+    const watcher = liveQuery(() => db.sales.get(id)).subscribe({
+      async next(record) {
+        model.localWatch = record ? 'present' : 'absent';
+        try { callback(record ? { ...record, verifiedPayload: await decodeQueuedSale(record, user, decrypt) } : null); }
+        catch (error) { onError(error); }
+      },
+      error: onError,
+    });
     return () => watcher.unsubscribe();
   },
   review: (sale, identity, active) => drafts.review(sale.saleId, identity, active), confirm: (...args) => drafts.confirm(...args),
@@ -103,7 +117,7 @@ function Probe() {
 }
 function Fixture() {
   const [products, update] = useState(projectQueuedStock([model.raw], [], user.businessId).products); setCatalog = update;
-  const [branchId, updateBranch] = useState(user.branchId); setBranch = updateBranch;
+  const [branchId, updateBranch] = useState(user.branchId); setBranch = id => { model.branch = id; updateBranch(id); };
   return React.createElement(SessionResourcesContext.Provider, { value: resources }, React.createElement(TenantContext.Provider,
     { value: { activeBranchId: branchId, businessBranches: [{ id: user.branchId, status: 'activo' }], settings: {} } },
     React.createElement(CatalogContext.Provider, { value: { products, categories: [] } }, React.createElement(Probe))));
@@ -182,7 +196,10 @@ try {
   check(!api.lastSale && api.cart.length===1 && model.writes===2,'local quota failure preserves the cart and never claims a draft or charge');
   model.failLocal=false; await api.processSale();
   await wait(()=>api.lastSale?.financialState==='draft_offline');
-  await db.sales.delete(api.lastSale.saleId);
+  const removedId = api.lastSale.saleId;
+  await wait(() => api.lastSale?.localRecordMissing === false && model.localWatch === 'present', 'local watcher observes durable draft before deletion');
+  await db.sales.delete(removedId);
+  check(!(await db.sales.get(removedId)), 'the fixture removed exactly the saved local draft');
   await wait(()=>text().includes('Copia local no disponible'));
   check(button('Revisar y confirmar').disabled && model.writes===2,'a deleted local draft is marked unavailable and cannot be resubmitted');
   result = { ok: true, checks, remoteWrites: model.writes, warningsDuringProcessing };

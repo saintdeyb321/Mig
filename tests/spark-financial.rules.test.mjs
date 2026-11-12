@@ -1058,9 +1058,13 @@ it('Plan14 verifies a committed recovery after a lost response and accepts sales
 describe('P18 private contract media', () => {
   const origin = { uid, businessId, branchId };
   const target = 'p18-pickup';
-  const create = async (suffix, { initialPayment = false, referenceImages = [] } = {}) => {
+  const create = async (suffix, { initialPayment = false, referenceImages = [], lostResponse = false } = {}) => {
     const contractId = `aaaaaaaa-1111-4111-8111-${suffix.padStart(12, '0')}`;
-    const repo = createSparkContractsRepository(database(), { sdk, currentUser: () => ({ uid }) });
+    const injected = lostResponse ? { ...sdk, async runTransaction(...args) {
+      await sdk.runTransaction(...args);
+      throw Object.assign(new Error('P18 lost creation response'), { code:'unavailable' });
+    } } : sdk;
+    const repo = createSparkContractsRepository(database(), { sdk: injected, currentUser: () => ({ uid }) });
     await repo.create({ contractId, operationId: `bbbbbbbb-1111-4111-8111-${suffix.padStart(12, '0')}`,
       branchId, clientName: 'Pedido con fotos', clientPhone: '987654321', deliveryDate: '2026-11-14T17:00:00.000Z',
       deliveryType: target, total: 100, subtotal: 100, deliveryCost: 0, referenceImages,
@@ -1076,6 +1080,7 @@ describe('P18 private contract media', () => {
     batch.set(doc(db, 'branches', target), { businessId, status:'activo', sparkCashVersion:1 });
     batch.set(doc(db, 'users', 'p18-owner'), { businessId, status:'activo', role:'dueño' });
     batch.set(doc(db, 'users', 'p18-other'), { businessId, branchId:target, status:'activo', role:'cajero' });
+    batch.set(doc(db, 'users', 'p18-suspended'), { businessId, branchId, status:'inactivo', role:'cajero' });
     batch.set(doc(db, 'users', 'p18-foreign'), { businessId:'foreign', status:'activo', role:'dueño' });
     await batch.commit();
   });
@@ -1090,7 +1095,7 @@ describe('P18 private contract media', () => {
     })), getDocFromServer: ref => { counts.serverReads++; return sdk.getDocFromServer(ref); } };
     const repo = createContractMediaRepository(db, { sdk: counted, currentUser: () => ({ uid }) });
     for (const count of [0, 1, 4]) {
-      const scope = await create(String(count), { initialPayment: count === 4 });
+      const scope = await create(String(count), { initialPayment: count === 4, lostResponse: count === 4 });
       const ids = [];
       for (let i = 0; i < count; i++) {
         const job = await photo();
@@ -1118,6 +1123,8 @@ describe('P18 private contract media', () => {
       assert.equal((await getDoc(doc(other, 'contract_pickups', scope.contractId))).data().pickupBranchId, target);
       await assertFails(getDoc(doc(other, 'contracts', scope.contractId)));
       await assertFails(getDoc(doc(other, path)));
+      await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), path)));
+      await assertFails(getDoc(doc(env.authenticatedContext('p18-suspended').firestore(), path)));
       await assertFails(getDoc(doc(env.authenticatedContext('p18-foreign').firestore(), path)));
       await assertFails(sdk.getDocs(sdk.collection(freshOwner, 'contracts', scope.contractId, 'media')));
       await assertFails(updateDoc(doc(db, path), { width: 2 }));

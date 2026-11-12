@@ -37,7 +37,7 @@ export function ContractMediaActions({ scope, contract, onManifest }) {
         missing = historical.length - available.length;
         selected = await stageContractMediaJobs(scope, { migration: available }, controller.signal);
       }
-      const result = await finishContractMediaJobs(scope, { jobs: selected, pending, signal: controller.signal });
+      const result = await finishContractMediaJobs(scope, { jobs: migrate ? selected : undefined, pending, signal: controller.signal });
       if (!controller.signal.aborted && result.manifest) onManifest(result.manifest);
       if (operation.current !== controller) return;
       setProgress({ key, message: controller.signal.aborted ? 'Carga detenida. Las fotos pendientes pueden reanudarse.'

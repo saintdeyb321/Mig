@@ -72,15 +72,17 @@ export const usePOS = (user, currentSession) => {
     setAmountPaid(''); setSplitEfectivo(''); setSplitYape(''); setShowQrModal(false);
   }, [total]);
   const pendingSaleId = lastSale?.isOffline ? lastSale.saleId : null;
+  const pendingLocalDraft = lastSale?.financialState === 'draft_offline';
   useEffect(() => {
     if (!pendingSaleId) return;
     let active = true;
+    const markLocalUnavailable = () => {
+      if (active && resources.active && pendingLocalDraft) setLastSale(previous =>
+        previous?.saleId === pendingSaleId ? { ...previous, localRecordMissing: true } : previous);
+    };
     const stop = subscribeSaleAcknowledgement(pendingSaleId, record => {
       if (!active || !resources.active) return;
-      if (record === null) {
-        setLastSale(previous => previous?.saleId === pendingSaleId ? { ...previous, localRecordMissing: true } : previous);
-        return;
-      }
+      if (record === null) { markLocalUnavailable(); return; }
       if (record?.userId !== user.uid || record.businessId !== user.businessId || record.branchId !== activeBranchId) return;
       if (record.status !== 'synced' || record.financialAck !== true) {
         setLastSale(previous => previous?.saleId === pendingSaleId ? { ...previous, ...(record.verifiedPayload ?? {}),
@@ -91,9 +93,9 @@ export const usePOS = (user, currentSession) => {
       setLastSale(previous => previous?.saleId === pendingSaleId && hasVerifiedSaleReceipt({ status: 'ALREADY_APPLIED', saleId: pendingSaleId,
         syncedAt: record.syncedAt, stockVersions: record.stockVersions }, previous)
         ? { ...previous, ...(record.verifiedPayload ?? {}), isOffline: false, localRecordMissing: false, financialState: 'confirmed', status: 'confirmed', receiptState: 'confirmed', verificationMessage: null, confirmedAt: record.syncedAt } : previous);
-    }, () => {});
+    }, markLocalUnavailable);
     return () => { active = false; stop(); };
-  }, [pendingSaleId, user.uid, user.businessId, activeBranchId, resources]);
+  }, [pendingSaleId, pendingLocalDraft, user.uid, user.businessId, activeBranchId, resources]);
   const prevBranchId = useRef(activeBranchId);
   const removeFromCart = useCallback((id) => {
     if (processingRef.current) return;

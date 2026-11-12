@@ -263,3 +263,19 @@ it('P18 reports a failed durable write without attempting any charge or discardi
   assert.equal(writes, 0);
   assert.equal(base.rows.get(sale.saleId).localId, sale.saleId);
 });
+
+it('P18 preserves corrupted attempted ciphertext without reading a receipt or triggering any financial write', async () => {
+  const store = plan08MemoryStore(), sale = plan08Sale('p18-corrupted', { origin:'offline' });
+  let remoteReads = 0, remoteWrites = 0;
+  const queue = createSaleQueue({ store, encrypt, decrypt, withLock: async callback => callback(),
+    online: () => true, receiptOnlyRetries: true, verifyReceipt: async () => { remoteReads++; },
+    apply: async () => { remoteWrites++; } });
+  await queue.enqueue(sale, plan08Identity);
+  await store.update(sale.saleId, { attempted: true, data:'corrupted-ciphertext', financialState:'submitted_uncertain' });
+  const reports = await queue.reconcile(plan08Identity);
+  assert.equal(reports[0].error.code, 'decryption-failed');
+  assert.equal(reports[0].state, 'uncertain');
+  assert.equal((await store.get(sale.saleId)).data, 'corrupted-ciphertext');
+  assert.equal((await store.get(sale.saleId)).requiresReceiptReview, true);
+  assert.deepEqual([remoteReads, remoteWrites], [0,0]);
+});

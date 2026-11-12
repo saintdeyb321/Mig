@@ -2,7 +2,7 @@
 <script type="module">
 import db from '/src/offlineDB.js';
 import { auth } from '/src/core/firebase/client.js';
-import { availableLegacyPhotos, contractImageList, finishContractMediaJobs, readContractMediaJobs, resolveContractImageUrls, stageContractMediaJobs, withResolvedContractImages } from '/src/features/contracts/infrastructure/contractImages.js';
+import { availableLegacyPhotos, contractImageList, finishContractMediaJobs, rememberPhotoOrder, readContractMediaJobs, resolveContractImageUrls, stageContractMediaJobs, withResolvedContractImages } from '/src/features/contracts/infrastructure/contractImages.js';
 import { createSaleQueue } from '/src/features/sales/application/saleQueue.js';
 import { dexieSaleStore, createQueueLock } from '/src/features/sales/infrastructure/saleQueueStore.js';
 import { encrypt, decrypt } from '/src/crypto.js';
@@ -32,18 +32,23 @@ try {
   }
   const parent = { id:contractId, businessId, branchId, referenceImages:[] };
   check(contractImageList(parent).length === 0 && model.reads === 0, 'listing a contract does not read photos');
-  const jobs = await stageContractMediaJobs(scope,{files});
+  const order = await rememberPhotoOrder(scope, { signature:'same-order', contractId, operationId:'op-1', initialOperationId:'advance-1' });
+  db.close(); await db.open();
+  const replayed = await rememberPhotoOrder(scope, { signature:'same-order', contractId:'other', operationId:'op-2', initialOperationId:'advance-2' });
+  check(replayed.contractId===order.contractId && replayed.initialOperationId===order.initialOperationId,
+    'reopening the device retains the same unresolved financial command and advance ID');
+  const jobs = await stageContractMediaJobs(scope,{files,orderId:order.id});
   check(jobs.length===4 && jobs.every(job=>job.blob.type==='image/webp' && job.width===960 && job.height===640
     && job.blob.size<=163840 && job.sha256.length===64), 'Chrome encodes four photos into bounded WebP documents');
   let partial = await finishContractMediaJobs(scope,{jobs});
-  check(partial.remaining===3 && model.photos.size===1,'interruption after first image reports partial success');
+  check(partial.remaining===3 && model.photos.size===1 && (await db.settings.get(order.id)).contractId===contractId,'interruption after first image reports partial success');
   db.close(); await db.open();
   const saved = await readContractMediaJobs(scope);
   check(saved.length===3 && saved.every(job=>jobs.find(original=>original.mediaId===job.mediaId)?.sha256===job.sha256),
     'reopening Dexie retains verified local IDs and hashes for retry');
   model.networkFailure=0;
   const complete = await finishContractMediaJobs(scope,{jobs:saved});
-  check(complete.remaining===0 && model.photos.size===4 && (await readContractMediaJobs(scope)).length===0,
+  check(complete.remaining===0 && model.photos.size===4 && (await readContractMediaJobs(scope)).length===0 && !(await db.settings.get(order.id)),
     'retry attaches the three remaining images without duplicating the first');
   const refs = contractImageList({...parent,mediaIds:model.manifest});
   const verifiedBlobs=new Map();

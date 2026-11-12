@@ -107,7 +107,7 @@ const ContractFormModal = ({
       return toast.error(`Máximo ${MAX_CONTRACT_IMAGES} imágenes de referencia por pedido.`);
     }
     if (files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || !/\.(jpe?g|png|webp)$/i.test(file.name) || file.size > 5 * 1024 * 1024)) {
-      return toast.error('Usa imágenes JPEG, PNG o WebP de hasta 5 MB. Se comprimen antes de adjuntarlas al pedido.');
+      return toast.error('Usa imágenes JPEG, PNG o WebP de hasta 5 MB. Se comprimen para adjuntarlas al pedido.');
     }
     const newImages = files.map(file => {
       const url = URL.createObjectURL(file);
@@ -221,6 +221,7 @@ const ContractFormModal = ({
                     </div>}
                   </div>
                   <p className="text-xs leading-relaxed text-muted">Hasta {MAX_CONTRACT_IMAGES} fotos · JPEG, PNG o WebP · 5 MB por foto. Se guardan comprimidas solo en este dispositivo y cuenta.</p>
+                  <p className="text-xs text-muted">Las fotos nuevas estarán disponibles en otros dispositivos autorizados cuando se confirme su subida. Si se interrumpe, reintenta desde el pedido en este dispositivo.</p>
                   {imageError && <p role="status" className="text-xs text-warning">{imageError.message}</p>}
                   {overImageLimit && <p className="rounded-lg bg-warning-soft px-2 py-1.5 text-xs text-warning">Puedes conservar las fotos anteriores. Para cambiar la selección, redúcela a {MAX_CONTRACT_IMAGES} como máximo.</p>}
                 </div>

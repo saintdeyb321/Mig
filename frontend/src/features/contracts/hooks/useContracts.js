@@ -7,7 +7,8 @@ import {
   subscribeActiveContracts, getContractHistoryPage, createContractDocument, updateContractDocument,
   addContractPayment, cancelContractDocument, markContractDelivered, ACTIVE_CONTRACT_LIMIT,
 } from '../infrastructure/contractRepository';
-import { finishContractMediaJobs, stageContractMediaJobs } from '../infrastructure/contractImages.js';
+import { finishContractMediaJobs, forgetPhotoOrder, rememberPhotoOrder, stageContractMediaJobs } from '../infrastructure/contractImages.js';
+import { completeContractPhotos } from '../application/contractPhotoCompletion.js';
 import { contractMediaId } from '../application/contractImagePolicy.js';
 import { commercialContractFields, contractCommandSignature, createContractCommandRegistry, mergeContractPages } from '../application/contractCommands';
 import { useSessionResources, useSessionState, useSharedSubscription } from '../../../core/session/sessionResourceHooks.js';
@@ -15,9 +16,9 @@ import { firebaseErrorMessage } from '../../../core/errors/firebaseErrors.js';
 
 const emptyHistory = scopeKey => ({ scopeKey, contracts: [], cursor: null, hasMore: true, loading: false, started: false, loadedAt: 0, revision: 0 });
 
-const prepareMedia = async (command, mediaScope, data, signal) => {
+const prepareMedia = async (command, mediaScope, data, signal, orderId) => {
   if (!command.images) command.images = await stageContractMediaJobs(mediaScope, {
-    files: data.newImages ?? [], removeIds: data.removeMediaIds ?? [],
+    files: data.newImages ?? [], removeIds: data.removeMediaIds ?? [], orderId,
   }, signal);
   signal.throwIfAborted();
   return command.images;
@@ -119,24 +120,32 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
     const branchId = physicalBranch();
     if (!branchId || !data) return false;
     const fields = commercialContractFields(data);
-    const signature = contractCommandSignature({ ...fields, branchId, initialPayment: data.initialPayment, newImages: data.newImages });
+    const signature = contractCommandSignature({ ...fields, branchId, initialPayment: data.initialPayment });
     const command = commands.retain('create', signature);
     return runCommand('Registrando pedido...', async signal => {
-      const mediaScope = { uid: user.uid, businessId, branchId, contractId: command.contractId };
-      const jobs = await prepareMedia(command, mediaScope, data, signal);
-      const result = await createContractDocument({ ...fields, contractId: command.contractId,
-        operationId: command.operationId, branchId, referenceImages: [],
+      const origin = { uid: user.uid, businessId, branchId };
+      // Preserve the financial command across F5. File selection may change independently.
+      const order = await rememberPhotoOrder(origin, command, signal);
+      const mediaScope = { ...origin, contractId: order.contractId };
+      const jobs = await prepareMedia(command, mediaScope, data, signal, order.id);
+      const result = await createContractDocument({ ...fields, contractId: order.contractId,
+        operationId: order.operationId, branchId, referenceImages: [],
         ...(data.initialPayment ? { initialPayment: {
-          amount: data.initialPayment.amount, method: data.initialPayment.method, operationId: command.initialOperationId,
+          amount: data.initialPayment.amount, method: data.initialPayment.method, operationId: order.initialOperationId,
         } } : {}),
       });
       // The financial command is complete even if any later upload fails.
       commands.complete('create', command);
-      const { remaining } = await finishContractMediaJobs(mediaScope, { jobs, signal });
-      return { ...result, remaining, count: jobs.length };
-    }, result => result.remaining
-      ? `Pedido guardado; ${result.remaining}/${result.count} fotos pendientes. Abre el pedido para reintentar.`
-      : `Pedido ${result.contractNumber || 'registrado'} confirmado`);
+      return completeContractPhotos({ ...result, count: jobs.length }, jobs.length, async () => {
+        // Keep the ID if this view disappeared before it could acknowledge the order.
+        signal.throwIfAborted();
+        const completion = await finishContractMediaJobs(mediaScope, { jobs, signal });
+        if (!jobs.length && !signal.aborted) await forgetPhotoOrder(order.id).catch(() => {});
+        return completion;
+      });
+    }, result => result.photosNeedReview ? 'Pedido guardado; falta comprobar las fotos. Abre el pedido para revisarlas.'
+      : result.remaining ? `Pedido guardado; ${result.remaining}/${result.count} fotos pendientes. Abre el pedido para reintentar.`
+        : `Pedido ${result.contractNumber || 'registrado'} confirmado`);
   }, [physicalBranch, commands, runCommand, user.uid, businessId]);
 
   const updateContract = useCallback(async (contractId, data) => {
@@ -152,9 +161,10 @@ export const useContracts = (user, { historyEnabled = false } = {}) => {
       const jobs = await prepareMedia(command, mediaScope, data, signal);
       await updateContractDocument(contractId, { ...fields, referenceImages });
       commands.complete(key, command);
-      const { remaining } = await finishContractMediaJobs(mediaScope, { jobs, pending: previous.pendingMedia, signal });
-      return { remaining };
-    }, result => result.remaining ? `Pedido actualizado; ${result.remaining} cambios de fotos pendientes.` : 'Pedido actualizado');
+      return completeContractPhotos({}, jobs.length + Number(Boolean(previous.pendingMedia)),
+        () => finishContractMediaJobs(mediaScope, { jobs, pending: previous.pendingMedia, signal }));
+    }, result => result.photosNeedReview ? 'Pedido actualizado; falta comprobar las fotos. Abre el pedido para revisarlas.'
+      : result.remaining ? `Pedido actualizado; ${result.remaining} cambios de fotos pendientes.` : 'Pedido actualizado');
   }, [contracts, commands, runCommand, user.uid, businessId]);
 
   const cancelContract = useCallback(async (contractId, reason = 'Anulado por el usuario') => {

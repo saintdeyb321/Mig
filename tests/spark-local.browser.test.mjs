@@ -34,7 +34,7 @@ it('P18 bounds WebP and Base64, recovers partial photos and preserves the encryp
     },
     setupPage: page => page.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] }),
   });
-  assert.equal(result.checks.length, 23);
+  assert.equal(result.checks.length, 24);
   assert.equal(result.metrics.photos.length, 4);
   console.log(JSON.stringify(result.metrics));
   const output = new URL('../.release/qa-p18/', import.meta.url);
