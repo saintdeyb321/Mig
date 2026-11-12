@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Alert, Button, Dialog, DialogFooter, FormField, Input, Textarea, cn } from '../shared/ui';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
+import { NEW_CASH_DURATION_HOURS } from '../features/cash-register/domain/cashExpiry.js';
 import { saleAmountCents } from '../features/sales/domain/saleModel.js';
 
 function cashAmount(text) {
@@ -69,7 +70,7 @@ export function CashCountSummary({ summary }) {
 
 export const CashRegisterModals = ({
   showOpenModal, setShowOpenModal, showCloseModal, setShowCloseModal,
-  currentSession, isLoadingSession, checkSession, recoverSessionId,
+  currentSession, isLoadingSession, checkSession, recoverySession, expiryState,
   authorizeOffline, openRegister, calculateClose, confirmClose
 }) => {
   const [openingAmount, setOpeningAmount] = useState('');
@@ -78,9 +79,10 @@ export const CashRegisterModals = ({
   const [tempSummary, setTempSummary] = useState(null);
   const [closeNotes, setCloseNotes] = useState('');
   const hasOpenSession = currentSession?.status === 'open';
-  const confirmedOpening = hasOpenSession && (!recoverSessionId || currentSession.id !== recoverSessionId)
+  const replacingExpired = Boolean(recoverySession && currentSession?.id === recoverySession.id);
+  const confirmedOpening = hasOpenSession && !replacingExpired
     && currentSession.serverConfirmed === true && !currentSession.heldByOther;
-  const openingBlocked = recoverSessionId ? !hasOpenSession || currentSession.id !== recoverSessionId || !currentSession.serverConfirmed : hasOpenSession;
+  const openingBlocked = (hasOpenSession && !replacingExpired) || expiryState?.busy;
 
   useEffect(() => {
     // The availability watcher can confirm the turn before the opening promise settles.
@@ -104,7 +106,7 @@ export const CashRegisterModals = ({
       toast.error(error.message, { id: MODAL_TOAST_ID });
       return;
     }
-    if (await openRegister(amount, '', recoverSessionId)) dismissOpening();
+    if (await openRegister(amount)) dismissOpening();
     else setNeedsOpeningCheck(true);
   };
 
@@ -153,8 +155,8 @@ export const CashRegisterModals = ({
   };
 
   return <>
-    {showOpenModal && !confirmedOpening && <Dialog icon={WalletCards} title={recoverSessionId ? 'Recuperar turno y abrir nueva caja' : 'Abrir caja'} onClose={dismissOpening} busy={busy}
-      description={recoverSessionId ? 'El turno anterior quedará vencido, sin arqueo. Introduce el fondo de la nueva caja. Sus movimientos se registrarán por separado.' : 'Escribe el fondo inicial disponible. Turno máximo: 10 horas.'}>
+    {showOpenModal && !confirmedOpening && <Dialog icon={WalletCards} title="Abrir caja" onClose={dismissOpening} busy={busy}
+      description={`${replacingExpired ? 'El turno anterior venció sin arqueo. ' : ''}Escribe el fondo inicial disponible. Turno máximo: ${NEW_CASH_DURATION_HOURS} horas.`}>
       <form onSubmit={submit(handleOpen)}>
         <fieldset disabled={busy} className="space-y-4">
           <FormField label="Fondo inicial (S/)">
@@ -163,14 +165,14 @@ export const CashRegisterModals = ({
               placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" />
           </FormField>
           {(openingBlocked || needsOpeningCheck) && <Alert variant="warning">
-            <p>{openingBlocked ? (recoverSessionId ? 'Comprueba el estado del turno de esta sede antes de continuar.'
+            <p>{openingBlocked ? (expiryState?.busy ? 'Confirmando el vencimiento del turno anterior…'
               : 'Ya hay un turno en esta sede. Comprueba su estado antes de volver a abrir.')
               : 'La apertura aún no se confirmó. Puedes comprobar el estado de la caja antes de reintentar.'}</p>
-            {checkSession && <Button variant="secondary" size="sm" className="mt-2" onClick={submit(checkSession)}>Comprobar estado de caja</Button>}
+            {checkSession && !expiryState?.busy && <Button variant="secondary" size="sm" className="mt-2" onClick={submit(checkSession)}>Comprobar estado de caja</Button>}
           </Alert>}
           <DialogFooter>
             <Button variant="secondary" onClick={dismissOpening}>Cancelar</Button>
-            <Button type="submit" loading={busy} disabled={openingBlocked}>{needsOpeningCheck ? 'Reintentar apertura' : recoverSessionId ? 'Confirmar recuperación y apertura' : 'Abrir caja'}</Button>
+            <Button type="submit" loading={busy} disabled={openingBlocked}>{needsOpeningCheck ? 'Reintentar apertura' : 'Abrir caja'}</Button>
           </DialogFooter>
         </fieldset>
       </form>

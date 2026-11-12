@@ -45,6 +45,7 @@ add('notifications-unread', 'Notificaciones', 'notifications', notices, 'subscri
 add('notifications-evidence-voids', 'Avisos al dueño: anulaciones', 'pos_voids', notices, 'subscribeUnreadNotifications', [eq('businessId')], [desc('occurredAt')]);
 add('notifications-evidence-closes', 'Avisos al dueño: cierres', 'cash_sessions', notices, 'subscribeUnreadNotifications', [eq('businessId')], [desc('closedAt')]);
 add('notifications-evidence-expiry', 'Avisos al dueño: vencimientos', 'cash_sessions', notices, 'subscribeUnreadNotifications', [eq('businessId')], [desc('recoveredAt')], 1, 'composite', 'Máximo 10 evidencias de vencimiento y acuse separado por dueño.');
+add('notifications-logical-expiry', 'Campana del dueño: vencimientos pendientes', 'cash_sessions', notices, 'subscribeLogicalCashExpiry', [eq('businessId'), eq('status'), ['openedAt', '<=']], [desc('openedAt')], 1, 'composite', 'Solo con la campana abierta; máximo 10 candidatos, sin acuse hasta la materialización.');
 scoped('audit-period', 'Auditoría histórica', 'audit_events', source('notifications', 'auditQueryRepository'), 'createAuditRepository', period('occurredAt'), [desc('occurredAt'), desc('__name__')], 2);
 add('alerts-unread', 'Avisos históricos', 'alerts', source('notifications', 'alertRepository'), 'subscribeUnreadAlerts', [eq('businessId'), eq('read')], [], 3, 'equality-merge');
 const admin = source('licenses', 'sparkAdministrationRepository');
@@ -66,7 +67,7 @@ export const reviewedSDKQueryCounts = {
   [source('contracts', 'contractPeriodRepository')]: 1, [source('sales', 'salesRepository')]: 1,
   [source('sales', 'salesQueryRepository')]: 2, [source('payments', 'paymentQueryRepository')]: 2,
   [source('sales', 'posVoidQueryRepository')]: 1,
-  [source('payments', 'sparkLegacyPayments')]: 1, [source('notifications', 'notificationQueryRepository')]: 2,
+  [source('payments', 'sparkLegacyPayments')]: 1, [source('notifications', 'notificationQueryRepository')]: 3,
   [source('notifications', 'auditQueryRepository')]: 1, [source('notifications', 'alertRepository')]: 1,
   [source('customers', 'customerRepository')]: 1, [source('licenses', 'sparkAdministrationRepository')]: 3,
   [source('licenses', 'platformBusinessRepository')]: 1, [source('backups', 'backupRepository')]: 2,
@@ -77,7 +78,7 @@ export const dynamicQueryReviews = {
   [source('sales', 'salesRepository')]: 'field: confirmedAt/createdAt; sede opcional.',
   [source('sales', 'salesQueryRepository')]: 'ranges: confirmedAt Timestamp, createdAt Timestamp/ISO; sede y cursor opcionales.',
   [source('payments', 'paymentQueryRepository')]: 'filters se construye únicamente en getPaymentsByContract, getPaymentsBySession y getPaymentsInPeriod; sede/cursor opcionales.',
-  [source('notifications', 'notificationQueryRepository')]: 'unread() aporta businessId/userId/readAt. Dueño: 30 anulaciones, 30 cierres y 10 vencimientos por recoveredAt DESC; acuses por ID y hasta 30 tarjetas visibles.',
+  [source('notifications', 'notificationQueryRepository')]: 'unread() aporta businessId/userId/readAt. Dueño: 30 anulaciones, 30 cierres y 10 vencimientos por recoveredAt DESC; acuses por ID y hasta 30 avisos confirmados visibles. Campana abierta: máximo 10 candidatos de vencimiento lógico.',
   [source('contracts', 'contractQueryRepository')]: 'status in constantes activas/cerradas, sede opcional para dueño; recojos por negocio y sede de recogida.',
   [source('contracts', 'contractPeriodRepository')]: 'Mismo createdAt ASC, valores Timestamp/ISO y sede/cursor opcionales.',
   [source('notifications', 'auditQueryRepository')]: 'Sede/cursor opcionales; verificar reachability en esta versión.',

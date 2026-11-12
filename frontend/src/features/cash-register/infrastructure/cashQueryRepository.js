@@ -1,3 +1,4 @@
+import { NEW_CASH_DURATION_HOURS, cashExpiryWindow } from '../domain/cashExpiry.js';
 import { checkedRead } from '../../../core/firebase/readDiagnostics.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { mapDocuments } from '../../../core/firebase/documents.js';
@@ -19,6 +20,7 @@ export function createCashPeriodReader(database, { sdk = firestoreSDK, project =
         const page = await readPage(query(collection(database, 'cash_sessions'), where('businessId', '==', businessId),
           ...(branchId === 'global' ? [] : [where('branchId', '==', branchId)]), where(field, '>=', first), where(field, '<=', last),
           orderBy(field), orderBy(documentId()), ...(cursor ? [startAfter(cursor)] : []), limit(size)));
+        if (page.metadata?.fromCache || page.metadata?.hasPendingWrites) throw new Error('La auditoría de caja requiere datos confirmados por el servidor.');
         scanned += page.size;
         for (const session of mapDocuments(page)) rows.set(session.id, project(session));
         if (scanned > maxRows || rows.size > maxRows) throw new Error('Demasiadas cajas (máximo ' + maxRows + '). Selecciona un período menor; no se exportó un informe parcial.');
@@ -37,10 +39,11 @@ export function createCashAuditPeriodReader(database, options) {
   return async (businessId, start, end, branchId, readOptions) => {
     const startDate = toDateSafe(start);
     if (!startDate) throw new Error('Período de cajas inválido.');
-    // Expiry is exactly ten hours after opening. The lookback reuses the existing opening index.
-    const [opened, closed] = await Promise.all([read('openedAt', businessId, +startDate - 36000000, end, branchId, readOptions),
+    // The longest shift may have started on the preceding day. Reuse the opening index.
+    const [opened, closed] = await Promise.all([read('openedAt', businessId, +startDate - NEW_CASH_DURATION_HOURS * 3600000, end, branchId, readOptions),
       read('closedAt', businessId, start, end, branchId, readOptions)]);
     const sessions = [...new Map([...opened.filter(session => session.status === 'expired_unreconciled'
+      || (session.status === 'open' && cashExpiryWindow(session)?.expiresAt >= startDate)
       || +toDateSafe(session.openedAt) >= +startDate), ...closed].map(session => [session.id, session])).values()];
     if (sessions.length > 10000) throw new Error('Demasiadas cajas. Selecciona un período menor.');
     return sessions;
@@ -52,7 +55,7 @@ export function createCashStateReader(database, { sdk = firestoreSDK } = {}) {
   const readDocs = sdk.getDocsFromServer ?? sdk.getDocs;
   const getDocs = checkedRead(readDocs, 'cash-open');
   const getDoc = checkedRead(sdk.getDocFromServer, 'cash-lock');
-  return async (businessId, branchId, userId = null) => {
+  return async (businessId, branchId, userId = null, { forOpening = false } = {}) => {
     if (!userId) {
       const lock = await getDoc(sdk.doc(database, 'active_cash_sessions', await cashLockId(businessId, branchId)));
       if (lock.metadata?.hasPendingWrites || lock.metadata?.fromCache) throw new Error('El candado de caja está pendiente de confirmar.');
@@ -60,6 +63,9 @@ export function createCashStateReader(database, { sdk = firestoreSDK } = {}) {
         const active = lock.data();
         if (active.businessId !== businessId || active.branchId !== branchId || active.status !== 'open'
           || typeof active.sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(active.sessionId)) throw new Error('El candado de caja requiere revisión administrativa.');
+        // During opening the transaction checks the authoritative lock and prior session together.
+        // The preflight is only needed to catch historical open sessions without a Spark lock.
+        if (forOpening) return null;
         const snapshot = await getDoc(sdk.doc(database, 'cash_sessions', active.sessionId));
         const session = snapshot.data();
         if (snapshot.metadata?.hasPendingWrites || snapshot.metadata?.fromCache || session?.status !== 'open'

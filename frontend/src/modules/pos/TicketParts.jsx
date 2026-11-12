@@ -13,7 +13,7 @@ export function CashStatus({ readOnly, session, isExpired = false, expiresAt = n
   const Icon = variant === 'success' ? UnlockKeyhole : variant === 'warning' ? Clock3 : LockKeyhole;
   const showTime = label === 'Caja abierta' && expiresAt;
   return <Badge
-    title={expiresAt ? `Vence ${new Date(expiresAt).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}. Hora orientativa; el servidor valida cada cobro.` : undefined}
+    title={expiresAt ? `Vence ${new Date(expiresAt).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima' })}. Hora orientativa; el servidor valida cada cobro.` : undefined}
     variant={variant}
     className={inPOS ? cn('border px-3 py-1.5 font-bold', {
       success: 'border-success/50', danger: 'border-danger/45', warning: 'border-warning/50',

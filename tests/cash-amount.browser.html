@@ -68,16 +68,16 @@ try {
   let verifyRecovery, recoveryAttempts = 0, recoveryDismissals = 0;
   const old = { id: 'previous', status: 'open', serverConfirmed: true, heldByOther: true };
   const renderRecovery = currentSession => root.render(React.createElement(CashRegisterModals, { ...props,
-    key: 'recover:' + old.id, currentSession, recoverSessionId: old.id, showOpenModal: true, showCloseModal: false,
+    key: 'recover:' + old.id, currentSession, recoverySession: old, showOpenModal: true, showCloseModal: false,
     setShowOpenModal: open => { if (!open) recoveryDismissals++; },
     openRegister: (...command) => {
-      check(JSON.stringify(command) === '[50,"","previous"]', 'recovery binds the prior ID and independently entered fund');
+      check(JSON.stringify(command) === '[50]', 'ordinary opening sends only the independently entered fund');
       recoveryAttempts++;
       return new Promise(resolve => { verifyRecovery = resolve; });
     },
   }));
   renderRecovery(old);
-  await wait(() => document.querySelector('h2')?.textContent.includes('Recuperar turno'));
+  await wait(() => document.querySelector('h2')?.textContent.includes('Abrir caja'));
   const replacementFund = document.querySelector('input[type="number"]');
   check(replacementFund.value === '' && document.body.innerText.includes('sin arqueo'), 'recovery requires a fresh fund and explains the prior state');
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(replacementFund, '50');

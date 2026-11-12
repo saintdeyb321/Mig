@@ -169,7 +169,7 @@ function ContractManager({
   return <><div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none">
       <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." className="to-primary-soft/60" actions={<>
         {canManageCash && <CashStatus readOnly={false} session={cash.currentSession} isExpired={cash.isExpired} expiresAt={cash.expiresAt} remainingMinutes={cash.remainingMinutes} />}
-        {canManageCash && !cash.currentSession && !cash.readError && <Button variant="secondary" disabled={cash.isLoadingSession} onClick={showCashOpening}>{cash.expiryState?.finalized ? 'Abrir caja nueva' : 'Abrir caja'}</Button>}
+        {canManageCash && (!cash.currentSession || cash.recoverySession) && !cash.readError && <Button variant="secondary" disabled={cash.isLoadingSession} onClick={showCashOpening}>{cash.expiryState?.finalized ? 'Abrir caja nueva' : 'Abrir caja'}</Button>}
         {canManageCash && !cash.isExpired && cash.currentSession && (!cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button variant="secondary" onClick={showCashClosing}>Cerrar caja</Button>}
         <Button onClick={() => {
         if (!activeBranchId || activeBranchId === 'global') return toast.error('Selecciona una sede física.');
@@ -180,7 +180,7 @@ function ContractManager({
         </Button></>} />
 
       {canManageCash && <CashRecoveryStatus session={cash.currentSession} isExpired={cash.isExpired} expiresAt={cash.expiresAt}
-        recoverySession={cash.recoverySession} expiryState={cash.expiryState} online={navigator.onLine} onFinalize={cash.finalizeTurn} onCheck={cash.checkSession} />}
+        expiryState={cash.expiryState} online={navigator.onLine} onCheck={cash.checkSession} />}
       {cash.currentSession?.needsForceClose && !cash.isExpired && canManageCash && <Alert variant="warning" title="Turno anterior pendiente">{cash.currentSession.canForceClose ? 'Puedes revisar y cerrar el turno desde esta sede.' : 'Solicita al dueño el cierre del turno anterior antes de cobrar.'}</Alert>}
       <FirestoreQueryError error={cash.readError} area="cash-open" user={user} onRetry={cash.checkSession} />
       <p role="status" className="text-sm text-muted">{isStale ? 'Agenda en caché, pendiente de servidor.' : `Agenda recibida: ${new Date(updatedAt).toLocaleTimeString('es-PE')}.`}{historyUpdatedAt > 0 && ` Historial leído: ${new Date(historyUpdatedAt).toLocaleTimeString('es-PE')}.`}</p>
@@ -228,8 +228,8 @@ function ContractManager({
       setContractToEdit(null);
     }} onSubmit={handleFormSubmit} isProcessing={isProcessing} cashAction={!canCollect && <Alert variant="warning" title="Los cobros requieren caja vigente">
         Puedes guardar el pedido sin anticipo.
-        {canManageCash && !cash.isExpired && !cash.readError && (!cash.currentSession || !cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={cash.isLoadingSession}
-          onClick={cash.currentSession ? showCashClosing : showCashOpening}>{cash.currentSession ? 'Cerrar turno anterior' : 'Abrir caja'}</Button>}
+        {canManageCash && !cash.readError && (cash.recoverySession || (!cash.isExpired && (!cash.currentSession || !cash.currentSession.needsForceClose || cash.currentSession.canForceClose))) && <Button type="button" size="sm" variant="secondary" className="mt-2" disabled={cash.isLoadingSession}
+          onClick={cash.currentSession && !cash.recoverySession ? showCashClosing : showCashOpening}>{cash.currentSession && !cash.recoverySession ? 'Cerrar turno anterior' : 'Abrir caja'}</Button>}
       </Alert>} />}
       {contractToView && <ContractDetailsModal user={user} contract={contracts.find(c => c.id === contractToView.id) || contractToView} branches={businessBranches} settings={settings} onClose={() => setContractToView(null)} onAddPayment={handleAddPayment} onMarkDelivered={markDelivered} onEditRequest={contract => {
       setContractToView(null);

@@ -6,6 +6,8 @@ import { mapDocuments } from '../../../core/firebase/documents';
 import { callBackend } from '../../../core/firebase/callable.js';
 import offlineDB from '../../../offlineDB.js';
 import { encrypt, decrypt } from '../../../crypto.js';
+import { assertNoLocalCashPending } from '../application/localCashPending.js';
+import { cashExpiryWindow } from '../domain/cashExpiry.js';
 import { persistCashSession } from '../application/sessionCache.js';
 import { createCashStateReader, createCashPeriodReader, createCashAuditPeriodReader, createCashAvailabilityWatcher } from './cashQueryRepository.js';
 import { createSparkCashRepository } from './sparkCashRepository.js';
@@ -16,7 +18,7 @@ import { runtimeCapabilities, requireCapability } from '../../../config/runtimeC
 import { createPosVoidReader, voidCashPayments } from '../../sales/infrastructure/posVoidQueryRepository.js';
 const posVoids = createPosVoidReader(db);
 
-const sparkCash = createSparkCashRepository(db, { currentUser: () => auth.currentUser });
+const sparkCash = createSparkCashRepository(db, { currentUser: () => auth.currentUser, beforeRollover: assertNoLocalCashPending });
 
 function sessionDTO(session) {
   return { ...session, ...Object.fromEntries(['openedAt', 'closedAt', 'syncedAt', 'expiredAt', 'recoveredAt'].filter(key => session[key]?.toDate).map(key => [key, session[key].toDate().toISOString()])), ...(session.recoveredSession ? { recoveredSession: sessionDTO(session.recoveredSession) } : {}), ...(session.financialWindow ? { financialWindow: Object.fromEntries(Object.entries(session.financialWindow)
@@ -52,11 +54,10 @@ export const findLastClosedSession = async (businessId, branchId) => mapDocument
 export const createSession = confirmedWrite(async data => {
   if (runtimeCapabilities.cashOpening) {
     if (auth.currentUser?.uid !== data.userId) throw new Error('La sesión cambió.');
-    if (!data.recoverSessionId) {
-      const historical = await findOpenSession(data.businessId, data.branchId);
-      if (historical && historical.id !== data.sessionId) throw new Error('Ya existe una caja abierta en la sede. Revisa el turno anterior.');
-    }
-    return { ...sessionDTO(await sparkCash.open(data)), serverConfirmed: true };
+    const existing = await readOpenSession(data.businessId, data.branchId, null, { forOpening: true });
+    const previous = existing?.id !== data.sessionId ? existing : null;
+    if (previous && !cashExpiryWindow(previous)) throw new Error('La caja anterior requiere revisión administrativa.');
+    return { ...sessionDTO(await sparkCash.open({ ...data, recoverSessionId: previous?.id })), serverConfirmed: true };
   }
   const reserved = await reserveOfflineSession({ uid: data.userId, businessId: data.businessId }, data.branchId);
   if (reserved.status !== 'reserved') throw new Error('La caja anterior aún se está sincronizando.');
@@ -105,4 +106,4 @@ export async function reconcilePendingSessions(identity) {
 }
 const readSessionsByDate = createCashPeriodReader(db, { project: sessionDTO });
 export const getSessionsOpenedInPeriod = (...args) => readSessionsByDate('openedAt', ...args);
-export const getSessionsInPeriod = createCashAuditPeriodReader(db, { project: sessionDTO });
+export const getSessionsInPeriod = createCashAuditPeriodReader(db);

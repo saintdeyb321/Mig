@@ -247,7 +247,8 @@ describe('Hosting policy and conservative cleanup', () => {
       'docs/PLAN-P14-REPORTES-CLAROS-AVISOS-CAJA.md', 'docs/PROMPT-CODEX-P14-REPORTES-CLAROS.md',
       'docs/PROMPT-INICIO-CODEX-P14-REPORTES-CLAROS.md', 'docs/RESULTADOS-P14-REPORTES-CLAROS.md',
       'docs/PLAN-POS-UX-REDISENO-CAJA-CARRITO.md', 'docs/PLAN-P16-POS-SUPERADMIN-CIERRE-PREVENTA.md', 'docs/RESULTADOS-P16-POS-SUPERADMIN.md',
-      'docs/PLAN-P17-CAJA-VENCIDA-CONTRATOS-SEGURIDAD.md', 'docs/RESULTADOS-P17-CAJA-CONTRATOS.md'];
+      'docs/PLAN-P17-CAJA-VENCIDA-CONTRATOS-SEGURIDAD.md', 'docs/RESULTADOS-P17-CAJA-CONTRATOS.md',
+      'docs/PLAN-P17-RC-CIERRE-VENCIMIENTO-14H-CI.md', 'docs/RESULTADOS-P17-RC-CIERRE-14H.md'];
     assert.deepEqual(markdown.filter(path => !allowedMarkdown.includes(path)), [], 'Documentos Markdown inesperados en el inventario local');
   });
 });

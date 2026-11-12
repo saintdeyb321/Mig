@@ -1,8 +1,13 @@
-<!doctype html><meta charset="utf-8"><div id="root"></div>
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div>
 <script type="module">
-import React from 'react';
+import React, { useState } from 'react';
+import fixture from 'virtual:browser-fixture';
+const style = document.createElement('style');
+style.textContent = fixture.css;
+document.head.append(style);
 import {createRoot} from 'react-dom/client';
 import {useCashRegister} from '/src/features/cash-register/hooks/useCashRegister.js';
+import { CashRegisterModals } from '/src/modules/CashRegisterModals.jsx';
 import CashRecoveryStatus from '/src/modules/CashRecoveryStatus.jsx';
 import {createSessionResources} from '/src/core/session/sessionResources.js';
 import {SessionResourcesContext} from '/src/core/session/sessionResourceHooks.js';
@@ -10,7 +15,7 @@ import offlineDB from '/src/offlineDB.js';
 import {encrypt} from '/src/crypto.js';
 
 const uid = 'p17-cashier', businessId = 'p17-tenant', branchId = 'p17-branch', id = 'p17-private-turn-id';
-const user = {uid,businessId,branchId,role:'cajero'};
+const user = {uid,businessId,branchId,role:'dueño'};
 const openedAt = new Date(Date.now() - 36000000 - 1000).toISOString();
 const model = globalThis.__p17 = {turn:{ id,businessId,branchId,userId:uid,openedAt,durationHours:10,runtime:'spark',status:'open' }, reads:0, writes:0, online:true};
 const resources = createSessionResources(), root = createRoot(document.getElementById('root'));
@@ -21,11 +26,15 @@ const until = async predicate => {
 };
 function Probe() {
   const cash = useCashRegister(user, branchId);
-  return React.createElement(CashRecoveryStatus, {
-    session:cash.currentSession, isExpired:cash.isExpired, expiresAt:cash.expiresAt,
-    recoverySession:cash.recoverySession, expiryState:cash.expiryState,
-    onFinalize:cash.finalizeTurn, onCheck:cash.checkSession, online:navigator.onLine,
-  });
+  const [open, setOpen] = useState(false);
+  return React.createElement('main', { className: 'space-y-3 p-4' },
+    React.createElement(CashRecoveryStatus, {
+      session:cash.currentSession, isExpired:cash.isExpired, expiresAt:cash.expiresAt,
+      expiryState:cash.expiryState, onCheck:cash.checkSession, online:navigator.onLine,
+    }),
+    cash.recoverySession && React.createElement('button', { onClick: () => setOpen(true) }, 'Abrir caja'),
+    React.createElement(CashRegisterModals, { ...cash, showOpenModal:open, setShowOpenModal:setOpen }),
+  );
 }
 let report;
 try {
@@ -42,13 +51,35 @@ try {
   };
   toggle(false);
   await until(() => document.body.innerText.includes('Conéctate'));
-  check(model.writes===0,'Offline cannot release the turn');
+  check(model.writes===0 && document.body.innerText.includes('Cierre por vencimiento · sin arqueo')
+    && !document.body.innerText.includes('Finalizar turno vencido'), 'Offline expiry is visible and never releases the turn');
   toggle(true);
-  await until(() => document.body.innerText.includes('Turno finalizado por vencimiento'));
+  await until(() => document.body.innerText.includes('Finalización confirmada.'));
   check(model.writes===1 && model.reads>=2 && !document.body.innerText.includes('Comprobar estado'), 'Reconnect finalizes exactly once and removes unnecessary retry');
   check((await offlineDB.sales.get('pending-p17')).data===ciphertext,'Pending record ciphertext is preserved');
-  report={ok:true,checks:4};
+  user.role = 'cajero';
+  model.turn = { id, businessId, branchId, userId:uid, durationHours:14, runtime:'spark', status:'open',
+    openedAt:new Date(Date.now() - 50401000).toISOString() };
+  toggle(true);
+  await until(() => document.querySelector('main > button'));
+  check(model.writes===1 && !document.body.innerText.includes('Finalizar turno vencido'), 'Cashier sees an ordinary opening action');
+  document.querySelector('main > button').click();
+  await until(() => document.querySelector('[role=dialog] input'));
+  const amount = document.querySelector('[role=dialog] input');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(amount,'50.05');
+  amount.dispatchEvent(new Event('input',{bubbles:true}));
+  await until(() => amount.value==='50.05');
+  check(document.body.innerText.includes('14 horas'), 'The form advertises the new 14-hour maximum');
+  globalThis.__p17Submit = async () => {
+    const form = document.querySelector('[role=dialog] form');
+    form.requestSubmit();
+    form.requestSubmit();
+    await until(() => model.opens === 1 && !document.querySelector('[role=dialog]'));
+    check(model.writes===2 && model.turn.openingAmount===50.05 && model.turn.id!==id,
+      'A double submission produces exactly one confirmed independent opening');
+  };
+  report={ok:true,checks:6};
 } catch(error) { report={ok:false,error:error.stack}; }
-finally { root.unmount();resources.close();offlineDB.close(); }
+globalThis.__p17Dispose = () => { root.unmount(); resources.close(); offlineDB.close(); };
 await fetch('/__phase4-report',{method:'POST',body:JSON.stringify(report)});
 </script>

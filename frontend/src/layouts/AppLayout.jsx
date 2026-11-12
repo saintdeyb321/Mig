@@ -28,7 +28,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
     <aside className="nebula-brand fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/10 text-white shadow-xl shadow-sidebar/10 lg:flex xl:w-68" aria-label="Navegación de escritorio">
       <div className="sidebar-identity shrink-0 space-y-3 px-4 pb-4 pt-5">
         <div className="flex items-center gap-3"><img src={brand.logo} alt="" className="size-9 rounded-xl bg-white object-contain p-1" /><div><p className="text-lg font-bold tracking-tight">{brand.name}</p></div></div>
-        <div className="flex min-h-11 items-center justify-between gap-3 border-b border-white/10" aria-label="Conectividad y notificaciones"><NetworkBadge dark /><NotificationBell user={user} {...notifications} isDesktop /></div>
+        <div className="flex min-h-11 items-center justify-between gap-3 border-b border-white/10" aria-label="Conectividad y notificaciones"><NetworkBadge dark /><NotificationBell onOpenCashAudit={() => setTab('history')} user={user} {...notifications} isDesktop /></div>
         <div className="flex items-start gap-3 py-2">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/10"><UserRound aria-hidden="true" strokeWidth={1.85} className="size-4" /></span>
           <div className="min-w-0">
@@ -53,7 +53,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
             {online && assisted && <span role="status" className="block text-xs text-muted">En revisión</span>}
           </div>
         </div>
-          <div className="flex shrink-0 items-center gap-1"><NetworkBadge /><NotificationBell user={user} {...notifications} /><IconButton label="Cerrar sesión" onClick={handleLogout}><LogOut aria-hidden="true" strokeWidth={1.85} /></IconButton></div>
+          <div className="flex shrink-0 items-center gap-1"><NetworkBadge /><NotificationBell onOpenCashAudit={() => setTab('history')} user={user} {...notifications} /><IconButton label="Cerrar sesión" onClick={handleLogout}><LogOut aria-hidden="true" strokeWidth={1.85} /></IconButton></div>
         </div>
         {canSelectBranch && <BranchSelector />}
         {assignedBranchName && <Badge><MapPin aria-hidden="true" strokeWidth={1.85} className="size-3" />{assignedBranchName}</Badge>}

@@ -1,3 +1,4 @@
+import { CASH_EXPIRY_LABEL } from '../../cash-register/domain/cashExpiry.js';
 import { escapeHtml as text } from '../../../shared/security/html.js';
 import { reportDay, reportTime, visibleDay } from '../domain/reportPeriod.js';
 import { CHANNEL_BREAKDOWN_ROWS } from '../domain/reportTotals.js';
@@ -16,8 +17,8 @@ export function cashReviewPresentation(events) {
     const difference = declared && !event.estimated && Number.isFinite(event.difference) ? event.difference : null;
     let title, explanation, severity = 'warning';
     if (event.kind === 'expiry') {
-      title = 'Turno vencido sin arqueo';
-      explanation = `Diferencia no calculable.${event.finalizedAt ? ` Finalización confirmada ${dateTime(event.finalizedAt)}.` : ''}`;
+      title = event.duration ? CASH_EXPIRY_LABEL : 'Turno vencido sin arqueo';
+      explanation = `Diferencia no calculable.${event.finalizedAt ? ` Finalización confirmada ${dateTime(event.finalizedAt)}.` : event.materialized ? ' Hora de confirmación no verificada.' : ' Finalización pendiente en Firestore.'}`;
     } else if (event.estimated) {
       title = 'Cierre pendiente de conciliación';
       explanation = 'La referencia de caja es provisional. Coteja el cierre con los comprobantes.';
@@ -30,7 +31,7 @@ export function cashReviewPresentation(events) {
       explanation = 'Coteja la diferencia registrada con el conteo y los comprobantes.';
     } else continue;
     incidents.push({ title, explanation, severity, branch: event.branch, occurredAt: event.date,
-      responsible: event.cashier, recordedBy: event.actor !== event.cashier ? event.actor : null, opening: event.kind === 'expiry' ? event.opening : null,
+      responsible: event.cashier, recordedBy: (event.kind !== 'expiry' || event.finalizedAt) && event.actor !== event.cashier ? event.actor : null, opening: event.kind === 'expiry' ? event.opening : null, expiry: event.kind === 'expiry', reference: event.reference, digital: event.digital,
       moneyLabel: declared ? 'Efectivo declarado' : 'Efectivo contado', moneyValueText: declared ? money(event.counted) : 'No declarado', difference });
   }
   incidents.sort((a, b) => b.occurredAt - a.occurredAt);
@@ -96,12 +97,14 @@ export function managementReportHtml(view, { period, business, branch, operator,
     .review-amounts dd{font-weight:700}.review-action{grid-column:1/-1;color:#514451}
     @media screen and (max-width:520px){body{padding:9px} .cards{grid-template-columns:repeat(2,minmax(0,1fr))}.card strong{font-size:13pt}.bar-row{grid-template-columns:1fr 1fr}.track{order:3;grid-column:1/-1;margin-bottom:3px}.review-row{grid-template-columns:1fr}.review-amounts{text-align:left}}
     @media print{body{padding:0;background:#fff;print-color-adjust:exact;-webkit-print-color-adjust:exact}
-      .masthead{padding-block:6px}.section{margin-top:8px;orphans:2;widows:2}.card,.pill{padding-block:5px}
-      .chart{padding-block:4px;margin-block:4px 5px}th,td{padding-block:3px}.review-row{padding-block:2px;margin-top:3px}
+      body{line-height:1.24} h2{margin-bottom:4px}
+      .masthead{padding-block:4px}.section{margin-top:6px;orphans:2;widows:2}.card,.pill{padding-block:4px}
+      .chart{padding-block:3px;margin-block:3px}th,td{padding-block:2px}
+      .review-row{grid-template-columns:minmax(0,3fr) minmax(0,2fr);align-items:start;gap:1px 8px;padding-block:2px;margin-top:2px}
       main:has(.cash-review) .channel-breakdown{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:8px;align-items:center}
       main:has(.cash-review) .channel-breakdown .bar-row{grid-template-columns:minmax(0,1fr) auto;gap:2px 6px;padding-block:3px}
       main:has(.cash-review) .channel-breakdown .track{grid-area:2/1/3/-1}
-      .review-heading{display:contents}.review-amounts{grid-area:1/2}.review-context{grid-area:2/1/3/-1}
+      .review-amounts{grid-area:1/2/3/3}.review-action{grid-area:2/1}
       .table-wrap{overflow:visible}h2{break-after:avoid}.next-page{break-before:page}}
   </style></head><body><main>
     <header class="masthead"><p class="eyebrow">MigaPOS · Reporte gerencial</p><h1>Informe del negocio</h1>
@@ -142,6 +145,8 @@ export function managementReportHtml(view, { period, business, branch, operator,
         <p class="review-context">${text(row.branch)} · ${text(dateTime(row.occurredAt))} · Responsable: ${text(row.responsible)}${row.recordedBy ? ` · Registró: ${text(row.recordedBy)}` : ''}</p></div>
         <dl class="review-amounts"><div><dt>${text(row.moneyLabel)}</dt> <dd>${text(row.moneyValueText)}</dd></div>
         ${Number.isFinite(row.opening) ? `<div><dt>Fondo inicial</dt> <dd>${text(money(row.opening))}</dd></div>` : ''}
+        ${row.expiry ? (Number.isFinite(row.reference) ? `<div><dt>Efectivo esperado · referencia</dt> <dd>${text(money(row.reference))}</dd></div>
+          <div><dt>Yape/Plin registrado</dt> <dd>${text(money(row.digital))}</dd></div>` : '<div>Referencia pendiente de verificar</div>') : ''}
         ${row.difference === null ? '' : `<div><dt>Diferencia registrada</dt> <dd>${text(money(row.difference))}</dd></div>`}</dl>
         <p class="review-action">${text(row.explanation)}</p></article>`).join('')}
       ${cashReview.totalCount > cashReview.visible.length ? `<p class="muted">Se muestran las 6 incidencias más recientes de ${cashReview.totalCount} detectadas en el período.</p>` : ''}

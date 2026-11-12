@@ -4,9 +4,13 @@ export function createSessionReportReads({ getSalesInPeriod, getContractsInPerio
   return function sessionReportReads(resources, businessId, branchId, period) {
     const key = JSON.stringify([businessId, branchId, period.start, period.end]);
     const ttl = reportTTL(period), signal = resources.signal;
+    const readFinancial = (kind, load) => resources.read(`report:${kind}:${key}`, async () => {
+      const startedAt = Date.now();
+      return { startedAt, rows: await load() };
+    }, ttl);
     const sales = async () => {
       const result = await resources.read(`report:sales:${key}`, async () => {
-        try { return { rows: await getSalesInPeriod(businessId, period.startDate, period.endDate, { branchId, maxRows: 10000, signal }) }; }
+        try { const startedAt = Date.now(); return { startedAt, rows: await getSalesInPeriod(businessId, period.startDate, period.endDate, { branchId, maxRows: 10000, signal }) }; }
         catch (error) {
           if (error.code !== 'report-limit') throw error;
           // Repeating a known oversized scan in another format cannot produce a complete report.
@@ -14,11 +18,11 @@ export function createSessionReportReads({ getSalesInPeriod, getContractsInPerio
         }
       }, ttl);
       if (result.error) throw result.error;
-      return result.rows;
+      return result;
     };
     const contracts = () => resources.read(`report:contracts:${key}`, () => getContractsInPeriod(businessId, period.startDate, period.endDate, branchId, 10000, { signal }), ttl);
-    const payments = () => resources.read(`report:payments:${key}`, () => getPaymentsInPeriod(businessId, period.startDate, period.endDate, branchId, { requireMigrated: true, maxRows: 10000, signal }), ttl);
-    const voids = () => resources.read(`report:voids:${key}`, () => readVoidsInPeriod(businessId, period.startDate, period.endDate, branchId, { signal }), ttl);
+    const payments = () => readFinancial('payments', () => getPaymentsInPeriod(businessId, period.startDate, period.endDate, branchId, { requireMigrated: true, maxRows: 10000, signal }));
+    const voids = () => readFinancial('voids', () => readVoidsInPeriod(businessId, period.startDate, period.endDate, branchId, { signal }));
     const sessions = () => resources.read(`report:cash:${key}`, () => getSessionsInPeriod(businessId, period.startDate, period.endDate, branchId, { signal }), ttl);
     const withContractAudit = async ({ payments: rows, contracts: created, loadedAt }, isCurrent = () => true) => {
       signal.throwIfAborted();
@@ -30,23 +34,24 @@ export function createSessionReportReads({ getSalesInPeriod, getContractsInPerio
       const audit = missing.length ? await resources.read(`report:audit:${auditKey}`, () => getContractAuditDocuments(businessId, missing, { signal }), ttl) : [];
       return { payments: rows, contracts: [...audit, ...created] };
     };
-    return { sales, contracts, payments, voids, sessions, withContractAudit,
+    return { sales: async () => (await sales()).rows, contracts, payments: async () => (await payments()).rows,
+      voids: async () => (await voids()).rows, sessions, withContractAudit,
       discardSnapshot: () => resources.invalidateWhere(candidate => candidate.startsWith('report:') && candidate.endsWith(key)),
       async exportContracts(isCurrent) {
-        const [rows, created] = await Promise.all([payments(), contracts()]);
+        const [{ rows }, created] = await Promise.all([payments(), contracts()]);
         return withContractAudit({ payments: rows, contracts: created }, isCurrent);
       },
       async exportSnapshot(isCurrent = () => true) {
-        const tickets = await sales(); // Refuse an oversized period before starting supplemental reads.
+        const { rows: tickets, startedAt: salesStart } = await sales(); // Refuse an oversized period before starting supplemental reads.
         if (!isCurrent()) throw new DOMException('El alcance del informe cambió.', 'AbortError');
-        const [ledger, orders, adjustments, cash] = await Promise.all([payments(), contracts(), voids(), sessions()]);
+        const [{ rows: ledger, startedAt: paymentsStart }, orders, { rows: adjustments, startedAt: voidsStart }, cash] = await Promise.all([payments(), contracts(), voids(), sessions()]);
         signal.throwIfAborted();
         if (tickets.length + ledger.length + adjustments.length > 10000) {
           throw new Error('Demasiados movimientos para exportar. Selecciona un período menor.');
         }
         const loadedAt = Math.min(Date.now(), ...['sales', 'payments', 'contracts', 'voids', 'cash']
           .map(kind => resources.readLoadedAt(`report:${kind}:${key}`) ?? 0));
-        return { sales: tickets, payments: ledger, contracts: orders, voids: adjustments, sessions: cash, loadedAt };
+        return { sales: tickets, payments: ledger, contracts: orders, voids: adjustments, sessions: cash, loadedAt, cashReferenceAsOf: Math.min(salesStart, paymentsStart, voidsStart) };
       },
     };
   };

@@ -1,12 +1,29 @@
+import { cashExpiryTotals } from '../../cash-register/application/cashExpiryTotals.js';
+import { CASH_EXPIRY_LABEL, cashExpiryWindow, materializedCashExpiry } from '../../cash-register/domain/cashExpiry.js';
+import { voidCashPayments } from '../../sales/infrastructure/posVoidQueryRepository.js';
 import { toDateSafe } from '../../../core/dates/dateValues.js';
 import { reportDay, visibleDay, reportTime } from '../domain/reportPeriod.js';
 import { branchReportName, employeeReportName, reportNote } from './reportNames.js';
 
 const monetaryValue = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
-const eventTitles = { opening: 'APERTURA', closing: 'CIERRE MANUAL', expiry: 'VENCIMIENTO SIN ARQUEO' };
+const eventTitles = { opening: 'APERTURA', closing: 'CIERRE MANUAL', expiry: CASH_EXPIRY_LABEL.toUpperCase() };
 
 export function cashAuditEvents(sessions, scope, { branchesMap = {}, people } = {}) {
   const events = [];
+  const groupBySession = rows => {
+    const groups = new Map();
+    for (const row of rows) {
+      if (!row.sessionId) continue;
+      const key = JSON.stringify([row.businessId, row.branchId, row.sessionId]);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    }
+    return groups;
+  };
+  const sales = groupBySession(scope.sales ?? []);
+  const payments = groupBySession([...(scope.payments ?? []), ...voidCashPayments(scope.voids ?? [])]);
+  const snapshotAt = scope.loadedAt ?? Date.now();
+
   for (const session of sessions) {
     if (scope.businessId && session.businessId !== scope.businessId) continue;
     if (scope.branchId !== 'global' && session.branchId !== scope.branchId) continue;
@@ -21,10 +38,26 @@ export function cashAuditEvents(sessions, scope, { branchesMap = {}, people } = 
     };
     add(session.openedAt, 'opening', { actor: employeeReportName(people, session.userId, session.cashierName),
       state: 'Fondo registrado', note: reportNote(session.openingNote, session.id, session.userId) });
-    if (session.status === 'expired_unreconciled') {
-      const finalizedAt = toDateSafe(session.recoveredAt);
-      add(session.expiredAt, 'expiry', { actor: employeeReportName(people, session.recoveredBy, session.recoveredByName), state: 'Finalizado por vencimiento · sin arqueo',
-        finalizedAt, note: 'Venció 10 horas después de la apertura.' + (finalizedAt ? ` Finalización confirmada el ${visibleDay(reportDay(finalizedAt))} ${reportTime(finalizedAt)} (Lima).` : ' Hora de finalización no registrada.') });
+    const window = cashExpiryWindow(session);
+    const materialized = session.status === 'expired_unreconciled';
+    if (materialized || (session.status === 'open' && window?.expiresAt <= snapshotAt)) {
+      const finalizedAt = materialized ? toDateSafe(session.recoveredAt) : null;
+      const evidence = materializedCashExpiry(session);
+      let totals;
+      if (evidence && scope.cashReferenceAsOf >= +evidence.finalizedAt && scope.period.startDate <= evidence.openedAt
+        && scope.period.endDate >= evidence.expiresAt && scope.sales && scope.payments && scope.voids) {
+        const key = JSON.stringify([session.businessId, session.branchId, session.id]);
+        try { totals = cashExpiryTotals(session, sales.get(key) ?? [], payments.get(key) ?? []); }
+        catch { /* Keep the audit event and explicitly report that the reference could not be verified. */ }
+      }
+      add(materialized ? session.expiredAt : window.expiresAt, 'expiry', {
+        actor: finalizedAt ? employeeReportName(people, session.recoveredBy, session.recoveredByName) : 'Pendiente de confirmación',
+        state: CASH_EXPIRY_LABEL, duration: window?.duration, materialized, finalizedAt, reference: totals?.expectedCash ?? null, digital: totals?.digitalTotal ?? null,
+        note: (window ? `Venció ${window.duration} horas después de la apertura. ` : '')
+          + (finalizedAt ? `Finalización confirmada el ${visibleDay(reportDay(finalizedAt))} ${reportTime(finalizedAt)} (Lima).`
+            : materialized ? 'Hora de confirmación no verificada.' : 'Finalización pendiente de confirmación en Firestore.')
+          + (totals ? ' Referencia de movimientos registrados. Sin conteo físico.' : ' Referencia pendiente de verificar.'),
+      });
     }
     if (['closed', 'closed_with_discrepancy'].includes(session.status)) {
       const counted = monetaryValue(session.declaredAmount);
@@ -48,7 +81,8 @@ export function cashAuditRows(events) {
     Responsable: event.cashier,
     'Registrado por': event.actor,
     'Fondo inicial (S/)': event.opening ?? 'No registrado',
-    'Referencia calculada (S/)': event.reference ?? (event.kind === 'opening' ? 'No aplica' : 'Sin referencia'),
+    'Referencia calculada (S/)': event.reference ?? (event.kind === 'opening' ? 'No aplica' : event.kind === 'expiry' ? 'Pendiente de verificar' : 'Sin referencia'),
+    'Yape/Plin registrado (S/)': event.digital ?? (event.kind === 'expiry' ? 'Pendiente de verificar' : 'No aplica'),
     'Efectivo declarado (S/)': event.counted ?? (event.kind === 'opening' ? 'No aplica' : 'No declarado'),
     'Diferencia (S/)': event.difference ?? (event.kind === 'opening' ? 'No aplica' : 'No calculable'),
     Estado: event.state,

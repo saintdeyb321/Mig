@@ -1,3 +1,4 @@
+import { cashExpiryWindow, materializedCashExpiry, MIN_CASH_DURATION_HOURS } from '../../cash-register/domain/cashExpiry.js';
 import { withQueryContext } from '../../../core/firebase/queryErrors.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { mapDocuments } from '../../../core/firebase/documents.js';
@@ -5,7 +6,7 @@ import { toMillisSafe } from '../../../core/dates/dateValues.js';
 
 export const NOTIFICATION_LIMIT = 30;
 export function createNotificationRepository(database, { sdk = firestoreSDK, currentUser } = {}) {
-  const { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, serverTimestamp, writeBatch, getDocFromServer } = sdk;
+  const { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, serverTimestamp, writeBatch, getDocFromServer, Timestamp } = sdk;
   const unread = (businessId, userId) => [where('businessId', '==', businessId), where('userId', '==', userId), where('readAt', '==', null)];
   const assertIdentity = uid => { if (currentUser && currentUser()?.uid !== uid) throw Object.assign(new Error('La sesión cambió; los avisos se conservan.'), { code: 'session-changed' }); };
   async function markNotices(businessId, userId, visible) {
@@ -95,6 +96,19 @@ export function createNotificationRepository(database, { sdk = firestoreSDK, cur
       }
       return () => { closed = true; stops.forEach(stop=>stop()); markerStops.forEach(stop=>stop()); };
     },
+    subscribeLogicalCashExpiry(businessId, userId, onData, onError) {
+      assertIdentity(userId);
+      // Only while the owner is viewing the bell. This bounded query is observational.
+      const cutoff = Timestamp.fromMillis(Date.now() - MIN_CASH_DURATION_HOURS * 3600000);
+      return onSnapshot(query(collection(database, 'cash_sessions'), where('businessId', '==', businessId),
+        where('status', '==', 'open'), where('openedAt', '<=', cutoff), orderBy('openedAt', 'desc'), limit(10)),
+      { includeMetadataChanges: true }, snapshot => {
+        if (currentUser && currentUser()?.uid !== userId) return;
+        if (snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) { onData([], { stale: true }); return; }
+        const rows = mapDocuments(snapshot).map(source => projectLogicalCashExpiry(source, businessId, userId)).filter(Boolean);
+        onData(rows, { limited: snapshot.size === 10 });
+      }, error => onError(withQueryContext(error, 'notifications-logical-expiry')));
+    },
     markNotificationRead: notice => typeof notice === 'string'
       ? updateDoc(doc(database, 'notifications', notice), { readAt: serverTimestamp() }) : markNotices(notice.businessId, notice.userId, [notice]),
     markAllNotificationsRead: (businessId, userId, visible = []) => markNotices(businessId, userId, visible),
@@ -111,11 +125,9 @@ export function projectFinancialNotice(type, source, businessId, userId) {
     message = `Compensación contable de S/ ${(-source.amount).toFixed(2)}. No acredita entrega física de dinero; requiere revisión.`;
     metadata = { reason:source.reason, amount:-source.amount, ticketId:source.saleId, actorId:source.userId };
   } else if (type === 'cash-expiry') {
-    const openedAt = toMillisSafe(source.openedAt), expiredAt = toMillisSafe(source.expiredAt);
-    if (source.runtime !== 'spark' || source.status !== 'expired_unreconciled' || !source.recoveredBy || !openedAt
-      || expiredAt - openedAt !== 36000000 || toMillisSafe(source.recoveredAt) < expiredAt) return null;
-    title = 'Caja vencida sin conteo'; createdAt = source.recoveredAt;
-    message = 'El turno finalizó por vencimiento. Efectivo contado: no declarado. Diferencia: no calculable.';
+    if (!materializedCashExpiry(source)) return null;
+    title = 'Caja finalizada por vencimiento'; createdAt = source.recoveredAt;
+    message = 'El efectivo contado no fue declarado. Diferencia: no calculable.';
     metadata = { actorId: source.recoveredBy, responsibleId: source.userId, openedAt: source.openedAt, expiredAt: source.expiredAt,
       openingAmount: Number.isFinite(source.openingAmount) ? source.openingAmount : null };
   } else {
@@ -131,4 +143,18 @@ export function projectFinancialNotice(type, source, businessId, userId) {
   return { id:`read_${type}_${source.id}_${userId}`, businessId, branchId:source.branchId, userId, sourceType:type, sourceId:source.id,
     title, message, createdAt, actorName:metadata.actorId, metadata, authority:'evidence-projection',
     readMarker:{ businessId, userId, sourceType:type, sourceId:source.id } };
+}
+
+export function projectLogicalCashExpiry(source, businessId, userId, now = Date.now()) {
+  const window = cashExpiryWindow(source);
+  if (source.businessId !== businessId || !source.id || !source.branchId || !source.userId || source.status !== 'open'
+    || !window || now < +window.expiresAt) return null;
+  return {
+    id: `read_cash-expiry_${source.id}_${userId}`, sourceId: source.id, businessId, branchId: source.branchId,
+    userId, sourceType: 'cash-expiry', authority: 'logical-expiry', createdAt: window.expiresAt,
+    title: 'Caja vencida · finalización pendiente', message: 'Efectivo contado: no declarado. Diferencia: no calculable.',
+    metadata: { openedAt: window.openedAt, expiredAt: window.expiresAt,
+      openingAmount: Number.isFinite(source.openingAmount) ? source.openingAmount : null },
+    responsibleDisplayName: source.cashierName && source.cashierName !== source.userId ? source.cashierName : undefined,
+  };
 }

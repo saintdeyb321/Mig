@@ -13,7 +13,7 @@ const netNote = 'Total neto registrado = neto de ventas en mostrador + neto de p
 const moneyColumns = new Set(['Precio unitario', 'Subtotal producto', 'Importe movimiento (S/)', labels.total, labels.cash, labels.digital,
   labels.pos, labels.orders, labels.products, 'Total comercial (referencia)', 'Neto abonado', 'Saldo', 'Total Pedido (referencia)',
   'Adelanto (S/)', 'Abono (S/)', 'Reembolso contable (S/)', 'Neto Movimiento (S/)', 'Fondo inicial (S/)',
-  'Referencia calculada (S/)', 'Efectivo declarado (S/)', 'Diferencia (S/)']);
+  'Referencia calculada (S/)', 'Yape/Plin registrado (S/)', 'Efectivo declarado (S/)', 'Diferencia (S/)']);
 const countColumns = new Set(['Cantidad', labels.tickets, labels.voids, labels.payments]);
 const movementTones = { 'VENTA POS': 'success', 'DETALLE TICKET': 'info', 'VENTA POS ANULADA': 'muted', 'DETALLE TICKET ANULADO': 'muted',
   'COMPENSACIÓN POS': 'danger', 'DETALLE COMPENSACIÓN': 'danger', 'REEMBOLSO CONTABLE PEDIDO': 'danger',
@@ -70,7 +70,7 @@ export function writeSalesWorkbook(XLSX, workbook) {
 }
 
 export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = [], voids = [], contracts = [], sessions = [], branchesMap = {}, people, model: prepared, period,
-  businessId, branchId = 'global', detailed = ['hoy', 'semana'].includes(period.filter), now = new Date() }) {
+  businessId, branchId = 'global', loadedAt, cashReferenceAsOf, detailed = ['hoy', 'semana'].includes(period.filter), now = new Date() }) {
   const scope = { businessId, branchId, period };
   const scopedSales = reportRows(sales ?? [], scope, row => row.createdAt);
   const scopedPayments = reportRows(payments, scope);
@@ -82,7 +82,7 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
   }
   const processed = detailed ? processSales(sales ?? [], branchesMap, scopedPayments, { ...scope, voids }, prepared, people, contracts)
     : processDailyStats(stats, scopedPayments, { ...scope, voids, sales }, prepared);
-  const { model } = processed, view = reportViewModel(model, scopedContracts, scope, sessions, { branchesMap, people }), metrics = view.summary;
+  const { model } = processed, view = reportViewModel(model, scopedContracts, { ...scope, sales, payments, voids, loadedAt, cashReferenceAsOf }, sessions, { branchesMap, people }), metrics = view.summary;
   const wb = XLSX.utils.book_new();
   const append = (name, rows, { omit = [], ...options } = {}) => {
     const sheet = createSheet(XLSX, rows, schemaFor(rows, omit), options);

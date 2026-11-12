@@ -5,3 +5,4 @@ const repository = createNotificationRepository(db, { currentUser: () => auth.cu
 export const subscribeUnreadNotifications = repository.subscribeUnreadNotifications;
 export const markNotificationRead = confirmedWrite(repository.markNotificationRead);
 export const markAllNotificationsRead = confirmedWrite(repository.markAllNotificationsRead);
+export const subscribeLogicalCashExpiry = repository.subscribeLogicalCashExpiry;

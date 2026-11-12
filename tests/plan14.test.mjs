@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { it } from 'node:test';
 import { Timestamp } from 'firebase/firestore';
+import { cashExpiryWindow } from '../frontend/src/features/cash-register/domain/cashExpiry.js';
+import { projectLogicalCashExpiry } from '../frontend/src/features/notifications/infrastructure/notificationQueryRepository.js';
 import { createSparkCashRepository, cashLockId } from '../frontend/src/features/cash-register/infrastructure/sparkCashRepository.js';
 import { createCashAuditPeriodReader, createCashStateReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
 import { createSparkCashClosingRepository } from '../frontend/src/features/cash-register/infrastructure/sparkCashClosingRepository.js';
@@ -25,19 +27,56 @@ it('P17 measures direct SDK reads and writes for expiry, new opening and replay'
     h.documents.get('cash_sessions/p08-cash-session').openingAmount = 100;
     const sdk = { ...h.sdk, Timestamp, serverTimestamp: () => Timestamp.fromMillis(expiry + 3600000) };
     const repository = createSparkCashRepository({}, { sdk, currentUser: h.currentUser });
-    return { h, repository, scope: { businessId: h.actor.businessId, branchId: h.actor.branchId },
+    return { h, repository, sdk, scope: { businessId: h.actor.businessId, branchId: h.actor.branchId },
       counts: () => [h.reads.length, h.writes.length] };
   };
   const old = await measure(), next = await measure();
   const opening = { ...old.scope, sessionId: 'p17-new-cash-session', openingAmount: 35 };
-  await old.repository.open({ ...opening, recoverSessionId: 'p08-cash-session' });
+  await old.repository.open(opening);
   assert.deepEqual(old.counts(), [8, 3]);
+  const preflight = createCashStateReader({}, { sdk: old.sdk });
+  assert.equal(await preflight(opening.businessId, opening.branchId, null, { forOpening: true }), null);
+  assert.deepEqual(old.counts(), [9, 3], 'canonical opening preflight reads only the lock');
   await next.repository.finalizeExpired({ ...next.scope, sessionId: 'p08-cash-session' });
   assert.deepEqual(next.counts(), [2, 2]);
   await next.repository.open(opening);
   assert.deepEqual(next.counts(), [7, 4]);
   await next.repository.finalizeExpired({ ...next.scope, sessionId: 'p08-cash-session' });
   assert.deepEqual(next.counts(), [9, 4]);
+});
+
+it('P17-RC distinguishes the exact logical deadline and reimports the verified S/ 150 cash and S/ 10 digital reference', () => {
+  const openedAt = Timestamp.fromDate(new Date('2026-11-10T08:00:00-05:00'));
+  const session = { id: 'p17-demo-turn', businessId: 'demo', branchId: 'centro', userId: 'cashier', cashierName: 'María',
+    openingAmount: 100, openedAt, durationHours: 14, runtime: 'spark', status: 'open' };
+  const expiresAt = Timestamp.fromDate(new Date('2026-11-10T22:00:00-05:00'));
+  assert.equal(+cashExpiryWindow(session).expiresAt, expiresAt.toMillis());
+  assert.equal(+cashExpiryWindow({ ...session, durationHours: 10 }).expiresAt, openedAt.toMillis() + 36000000);
+  assert.equal(cashExpiryWindow({ ...session, durationHours: undefined }), null);
+  assert.equal(projectLogicalCashExpiry(session, 'demo', 'owner', expiresAt.toMillis() - 1), null);
+  assert.equal(projectLogicalCashExpiry(session, 'demo', 'owner', expiresAt.toMillis()).authority, 'logical-expiry');
+  const recoveredAt = Timestamp.fromMillis(expiresAt.toMillis() + 1000);
+  const { businessId, branchId, userId } = session;
+  const sales = [50, 10, 100].map((total, index) => ({ id: `sale-${index}`, businessId, branchId, userId,
+    sessionId: index === 2 ? 'next-turn' : session.id, status: 'confirmed', total, payment: index === 1 ? 'yape' : 'efectivo',
+    createdAt: Timestamp.fromMillis(openedAt.toMillis() + 3600000), confirmedAt: Timestamp.fromMillis(openedAt.toMillis() + 3600000),
+    items: [{ id: 'bread', name: 'Pan', price: total, qty: 1 }] }));
+  const scope = { businessId, branchId, period: reportPeriod('hoy', expiresAt), sales, payments: [], voids: [],
+    branchesMap: { centro: 'Sede Principal' }, loadedAt: recoveredAt.toMillis() + 1000, cashReferenceAsOf: recoveredAt.toMillis() + 1 };
+  const logical = buildSalesWorkbook(XLSX, { ...scope, sessions: [session] }).view.cashEvents.at(-1);
+  assert.deepEqual([logical.kind, logical.reference, logical.finalizedAt], ['expiry', null, null]);
+  const closed = { ...session, status: 'expired_unreconciled', expiredAt: expiresAt, recoveredAt, recoveredBy: 'owner',
+    declaredAmount: null, difference: null };
+  const { workbook, view } = buildSalesWorkbook(XLSX, { ...scope, sessions: [closed] });
+  const restored = XLSX.read(writeSalesWorkbook(XLSX, workbook), { type: 'array', cellNF: true });
+  const expiry = sheets(restored, 'Auditoría_Cajas').at(-1);
+  assert.deepEqual([expiry['Referencia calculada (S/)'], expiry['Yape/Plin registrado (S/)'],
+    expiry['Efectivo declarado (S/)'], expiry['Diferencia (S/)']], [150, 10, 'No declarado', 'No calculable']);
+  const pdf = managementReportHtml(view, { period: scope.period, generatedAt: recoveredAt.toDate() });
+  assert.match(pdf, /Efectivo esperado · referencia<\/dt> <dd>S\/ 150\.00/);
+  assert.match(pdf, /Yape\/Plin registrado<\/dt> <dd>S\/ 10\.00/);
+  const incomplete = buildSalesWorkbook(XLSX, { ...scope, cashReferenceAsOf: recoveredAt.toMillis() - 1, sessions: [closed] }).view.cashEvents.at(-1);
+  assert.equal(incomplete.reference, null);
 });
 
 it('P14-RC reimports the October net totals per day and branch with semantic number formats', () => {
@@ -176,7 +215,7 @@ it('P14 C03/C04/C08: recovery replaces exactly one lock and verifies the origina
   const openedAt = Timestamp.fromDate(new Date('2026-10-28T03:22:00.000Z'));
   Object.assign(h.documents.get(old), { openedAt, openingAmount: 100, userId: 'previous-cashier' });
   h.documents.get(lock).userId = 'previous-cashier';
-  const sdk = { ...h.sdk, Timestamp, getDocFromServer: ref => {
+  const sdk = { ...h.sdk, Timestamp, serverTimestamp: () => Timestamp.fromDate(new Date('2026-11-02T18:00:00Z')), getDocFromServer: ref => {
     if (h.state.noConnection) throw unavailable();
     return h.sdk.getDocFromServer(ref);
   } };
@@ -191,7 +230,7 @@ it('P14 C03/C04/C08: recovery replaces exactly one lock and verifies the origina
   const race = await Promise.allSettled([repository.open(command), repository.open({ ...command, sessionId: 'p14-competing-session' })]);
   assert.deepEqual(race.map(row => row.status), ['fulfilled', 'rejected']);
   const { recoveredSession, ...current } = race[0].value;
-  assert.deepEqual([current.openingAmount, current.userId, current.durationHours], [50, uid, 10]);
+  assert.deepEqual([current.openingAmount, current.userId, current.durationHours], [50, uid, 14]);
   assert.deepEqual([recoveredSession.status, recoveredSession.openingAmount, recoveredSession.userId, recoveredSession.recoveredBy,
     recoveredSession.declaredAmount, recoveredSession.difference, recoveredSession.closedAt, recoveredSession.recoverySessionId],
   ['expired_unreconciled', 100, 'previous-cashier', uid, null, null, undefined, command.sessionId]);
@@ -238,7 +277,7 @@ it('P14 C09/C10/R01/R02: reimports a Lima opening, overnight expiry and independ
   const events = sheets(restored, 'Auditoría_Cajas');
   assert.deepEqual(events.map(row => [row.Turno, row['Fondo inicial (S/)'], row['Referencia calculada (S/)'], row['Efectivo declarado (S/)'], row['Diferencia (S/)']]), [
     ['APERTURA', 100, 'No aplica', 'No aplica', 'No aplica'],
-    ['VENCIMIENTO SIN ARQUEO', 100, 'Sin referencia', 'No declarado', 'No calculable'],
+    ['CIERRE POR VENCIMIENTO · SIN ARQUEO', 100, 'Pendiente de verificar', 'No declarado', 'No calculable'],
     ['APERTURA', 50, 'No aplica', 'No aplica', 'No aplica'],
     ['CIERRE MANUAL', 50, 70, 70, 0],
   ]);
@@ -249,7 +288,7 @@ it('P14 C09/C10/R01/R02: reimports a Lima opening, overnight expiry and independ
   assert.match(events[3].Observación, /provisionales/);
   assert.equal(view.summary.netRevenue, 20);
   const onlyExpiry = buildSalesWorkbook(XLSX, { ...options, period: day }).workbook;
-  assert.deepEqual(sheets(onlyExpiry, 'Auditoría_Cajas').map(row => row.Turno), ['VENCIMIENTO SIN ARQUEO']);
+  assert.deepEqual(sheets(onlyExpiry, 'Auditoría_Cajas').map(row => row.Turno), ['CIERRE POR VENCIMIENTO · SIN ARQUEO']);
 });
 
 it('P14 R03–R06: Excel and PDF share signed channels, per-branch totals and an explicit unresolved-history warning', () => {

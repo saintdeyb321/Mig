@@ -18,7 +18,7 @@ it('opens the real SuperAdmin shell without tenant subscriptions, backend calls 
     [module('features/branches/infrastructure/branchRepository.js')]: `export function subscribeBranches() {${forbidden}}`,
     [module('features/settings/infrastructure/settingsRepository.js')]: `export function subscribeSettings() {${forbidden}}`,
     [module('features/catalog/infrastructure/catalogRepository.js')]: `export function subscribeProducts() {${forbidden}} export function subscribeCategories() {${forbidden}}`,
-    [module('features/notifications/infrastructure/notificationRepository.js')]: `export function subscribeUnreadNotifications() {${forbidden}} export function markNotificationRead() {${forbidden}} export function markAllNotificationsRead() {${forbidden}}`,
+    [module('features/notifications/infrastructure/notificationRepository.js')]: `export function subscribeUnreadNotifications() {${forbidden}} export function subscribeLogicalCashExpiry() {${forbidden}} export function markNotificationRead() {${forbidden}} export function markAllNotificationsRead() {${forbidden}}`,
     [module('features/licenses/infrastructure/licenseRepository.js')]: `
       export function subscribeLicense() {${forbidden}}
       export function subscribeTenant() {${forbidden}}

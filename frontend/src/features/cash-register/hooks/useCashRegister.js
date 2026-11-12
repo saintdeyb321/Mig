@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useSessionResources, useSessionState } from '../../../core/session/sessionResourceHooks.js';
-import { toDateSafe } from '../../../core/dates/dateValues.js';
+import { cashExpiryWindow } from '../domain/cashExpiry.js';
+import { assertNoLocalCashPending } from '../application/localCashPending.js';
 import toast from 'react-hot-toast';
 import { findOpenSession, createSession, updateSession, cacheSession, reserveOfflineSession, previewSessionClose, watchCashAvailability, finalizeExpiredCash } from '../infrastructure/cashRegisterRepository';
 import { calculateCashTotals } from '../../../../../functions/src/cash-register/domain/cashTotals.js';
@@ -11,25 +12,6 @@ import { auth } from '../../../core/firebase/client';
 import { runtimeCapabilities } from '../../../config/runtimeCapabilities.js';
 import { invalidateReportScope } from '../../reports/application/reportResource.js';
 import { useNetworkStatus } from '../../../hooks/useNetworkStatus.js';
-import { saleFinancialState } from '../../sales/domain/queueState.js';
-
-async function assertNoLocalCashPending(session, uid) {
-  const [turn, rows] = await Promise.all([
-    offlineDB.cash_sessions.get(session.id),
-    offlineDB.sales.where('[businessId+userId+status]').anyOf(['pending', 'syncing']
-      .map(status => [session.businessId, session.userId, status])).toArray(),
-  ]);
-  if (turn?.sync === false) throw new Error('Hay una caja local pendiente de revisar.');
-  for (const row of rows) {
-    if ((row.branchId && row.branchId !== session.branchId) || saleFinancialState(row) === 'draft_offline') continue;
-    if (session.userId !== uid) throw new Error('Hay cobros por comprobar en el dispositivo del responsable.');
-    let sale;
-    try { sale = JSON.parse(await decrypt(row.data, uid)); }
-    catch { throw new Error('Hay un ticket local que no se pudo verificar.'); }
-    if (!sale.sessionId || sale.sessionId === session.id) throw new Error('Comprueba los tickets pendientes de este turno desde el historial.');
-  }
-}
-
 export const useCashRegister = (user, currentBranchId) => {
   const resources = useSessionResources();
   const scopeKey = JSON.stringify([user?.uid, user?.businessId, currentBranchId]);
@@ -37,6 +19,11 @@ export const useCashRegister = (user, currentBranchId) => {
   const [currentSession, setCurrentSession, sessionCell] = useSessionState('cash:session:' + scopeKey, null);
   const [isLoadingSession, setIsLoadingSession] = useSessionState('cash:loading:' + scopeKey, true);
   const revision = useRef(0);
+  const activeScope = useRef(null);
+  useEffect(() => {
+    activeScope.current = scopeKey;
+    return () => { activeScope.current = null; };
+  }, [scopeKey]);
   const processing = resources.value('cash:mutex:' + scopeKey, () => ({ current: false }));
   const openings = resources.value('cash:commands:' + scopeKey, () => ({ current: new Map() }));
   const expiryAttempt = resources.value('cash:expiry-attempt:' + scopeKey, () => ({ sessionId: null }));
@@ -44,8 +31,7 @@ export const useCashRegister = (user, currentBranchId) => {
   const online = useNetworkStatus();
   const readKey = 'cash:open:' + scopeKey;
   const [clock, setClock] = useState(() => Date.now());
-  const openedAt = toDateSafe(currentSession?.openedAt);
-  const expiresAt = currentSession?.runtime === 'spark' && currentSession.durationHours === 10 && openedAt ? openedAt.getTime() + 36000000 : null;
+  const expiresAt = cashExpiryWindow(currentSession)?.expiresAt.getTime() ?? null;
   const isExpired = expiresAt !== null && clock >= expiresAt;
   const recoverySession = isExpired && currentSession?.serverConfirmed && currentSession.status === 'open'
     && (user?.role === 'dueño' || user?.role === 'cajero' && user.branchId === currentBranchId) ? currentSession : null;
@@ -53,7 +39,7 @@ export const useCashRegister = (user, currentBranchId) => {
     if (expiresAt === null) return;
     const tick = () => setClock(Date.now());
     const timer = setInterval(tick, 30000);
-    const deadline = setTimeout(tick, Math.min(36000000, Math.max(0, expiresAt - Date.now())));
+    const deadline = setTimeout(tick, Math.max(0, expiresAt - Date.now()));
     window.addEventListener('focus', tick);
     return () => { clearInterval(timer); clearTimeout(deadline); window.removeEventListener('focus', tick); };
   }, [expiresAt]);
@@ -130,14 +116,14 @@ export const useCashRegister = (user, currentBranchId) => {
     } finally { processing.current = false; }
   }, [recoverySession, online, processing, expiryAttempt, resources, user.uid, user.businessId, currentBranchId, sessionCell, setCurrentSession, setExpiryState, refreshSession]);
   useEffect(() => {
-    if (!recoverySession || !online || expiryAttempt.sessionId === recoverySession.id) return;
+    if (user?.role !== 'dueño' || !recoverySession || !online || expiryAttempt.sessionId === recoverySession.id) return;
     const attempt = () => {
       if (document.visibilityState === 'visible' && expiryAttempt.sessionId !== recoverySession.id) void finalizeTurn();
     };
     attempt();
     document.addEventListener('visibilitychange', attempt);
     return () => document.removeEventListener('visibilitychange', attempt);
-  }, [recoverySession, online, expiryAttempt, finalizeTurn]);
+  }, [user?.role, recoverySession, online, expiryAttempt, finalizeTurn]);
   const authorizeOffline = async () => {
     if (!runtimeCapabilities.offlineSync) { toast.error('La autorización offline sigue pendiente de SPARK-4.'); return; }
     if (!navigator.onLine || processing.current || !user?.uid || currentBranchId === 'global') return;
@@ -148,24 +134,20 @@ export const useCashRegister = (user, currentBranchId) => {
     } catch (error) { toast.error(error.message || 'No se pudo autorizar la apertura offline.'); }
     finally { processing.current = false; }
   };
-  const openRegister = async (openingAmount, notes = '', recoverSessionId) => {
+  const openRegister = async (openingAmount, notes = '') => {
     if (!user?.businessId || currentBranchId === 'global' || processing.current || auth.currentUser?.uid !== user.uid) return false;
     if (typeof openingAmount !== 'number' || !Number.isFinite(openingAmount) || openingAmount < 0) { toast.error('Monto de apertura inválido.'); return false; }
     if (!navigator.onLine) { toast.error('La apertura Spark requiere conexión. Los pendientes existentes se conservan.'); return false; }
-    if (recoverSessionId && recoverSessionId !== recoverySession?.id) {
-      toast.error('El turno anterior cambió. Comprueba el estado de la caja.'); return false;
-    }
     processing.current = true;
-    const token = ++revision.current;
+    revision.current++;
     const toastId = toast.loading('Abriendo caja...');
     try {
       let session;
-      const command = JSON.stringify([user.uid, user.businessId, currentBranchId, recoverSessionId, openingAmount, notes]);
+      const command = JSON.stringify([user.uid, user.businessId, currentBranchId, openingAmount, notes]);
       if (!openings.current.has(command)) openings.current.set(command, crypto.randomUUID());
       if (navigator.onLine) session = await createSession({ userId: user.uid, businessId: user.businessId, branchId: currentBranchId,
-        openingAmount, openingNote: notes, sessionId: openings.current.get(command), recoverSessionId });
+        openingAmount, openingNote: notes, sessionId: openings.current.get(command) });
       else {
-        if (recoverSessionId) throw new Error('La recuperación requiere conexión.');
         let reserved;
         for (const record of await offlineDB.cash_sessions.toArray()) {
           try {
@@ -183,7 +165,10 @@ export const useCashRegister = (user, currentBranchId) => {
       resources.invalidate(readKey);
       invalidateReportScope(resources, user.businessId, currentBranchId);
       openings.current.delete(command);
-      if (!resources.active || auth.currentUser?.uid !== user.uid || token !== revision.current) { toast.dismiss(toastId); return false; }
+      if (activeScope.current !== scopeKey || !resources.active || auth.currentUser?.uid !== user.uid) { toast.dismiss(toastId); return false; }
+      revision.current++;
+      setIsLoadingSession(false);
+      setReadError(null);
       setCurrentSession(session);
       setExpiryState(null);
       toast.success('Caja abierta y confirmada', { id: toastId }); return true;
@@ -233,5 +218,5 @@ export const useCashRegister = (user, currentBranchId) => {
     } catch (error) { toast.error(error.message || 'No se pudo cerrar la caja.', { id: toastId }); return false; }
     finally { processing.current = false; }
   };
-  return { currentSession, isExpired, expiresAt, recoverySession, expiryState, finalizeTurn, remainingMinutes: expiresAt === null ? null : Math.max(0, Math.ceil((expiresAt - clock) / 60000)), readError, isLoadingSession, checkSession: refreshSession, authorizeOffline, openRegister, calculateClose, confirmClose };
+  return { currentSession, isExpired, expiresAt, recoverySession, expiryState, remainingMinutes: expiresAt === null ? null : Math.max(0, Math.ceil((expiresAt - clock) / 60000)), readError, isLoadingSession, checkSession: refreshSession, authorizeOffline, openRegister, calculateClose, confirmClose };
 };

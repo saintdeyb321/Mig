@@ -727,7 +727,7 @@ describe('SPARK-4 integrated financial Rules', () => {
     await env.withSecurityRulesDisabled(async ctx => {
       await updateDoc(doc(ctx.firestore(), 'users', uid), { shiftStart: hhmm((minutes + 120) % 1440), shiftEnd: hhmm((minutes + 180) % 1440) });
       await setDoc(doc(ctx.firestore(), 'users', 'p17-owner'), { businessId, role: 'dueño', status: 'activo' });
-      await updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), { durationHours: 10 });
+      await updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), { durationHours: 14 });
     });
     const close = (db, actor) => createSparkCashClosingRepository(db, { sdk, currentUser: () => ({ uid: actor }), readSales: async () => [], readPayments: async () => [] });
     await assertFails(close(database(), uid).close(sessionId, 10));
@@ -738,11 +738,11 @@ describe('SPARK-4 integrated financial Rules', () => {
     assert.equal(saved.declaredAmount, 10);
   });
   it('P17 projects one owner expiry notice, keeps its acknowledgement separate and reads only that turn ledger', async () => {
-    const started = Date.now() - 39600000, occurredAt = Timestamp.fromMillis(started + 3600000);
+    const started = Date.now() - 54000000, occurredAt = Timestamp.fromMillis(started + 3600000);
     const scope = { businessId, branchId, sessionId, userId: uid };
     await env.withSecurityRulesDisabled(async ctx => {
       const db = ctx.firestore(), batch = writeBatch(db);
-      batch.update(doc(db, 'cash_sessions', sessionId), { durationHours: 10, openedAt: Timestamp.fromMillis(started) });
+      batch.update(doc(db, 'cash_sessions', sessionId), { durationHours: 14, openedAt: Timestamp.fromMillis(started) });
       batch.set(doc(db, 'users', 'p17-owner'), { businessId, role: 'dueño', status: 'activo' });
       batch.set(doc(db, 'sales', 'p17-cash'), { ...scope, status: 'confirmed', confirmedAt: occurredAt, total: 20, payment: 'efectivo' });
       batch.set(doc(db, 'sales', 'p17-digital'), { ...scope, status: 'confirmed', confirmedAt: occurredAt, total: 30, payment: 'yape' });
@@ -754,6 +754,19 @@ describe('SPARK-4 integrated financial Rules', () => {
       await batch.commit();
     });
     const cashierDb = database(), ownerDb = env.authenticatedContext('p17-owner').firestore();
+    const logicalNotices = createNotificationRepository(ownerDb, { sdk, currentUser: () => ({ uid: 'p17-owner' }) });
+    const logical = database => new Promise((resolve, reject) => {
+      const repository = database === ownerDb ? logicalNotices : createNotificationRepository(database, { sdk });
+      const stop = repository.subscribeLogicalCashExpiry(businessId, 'p17-owner', (rows, meta) => {
+        if (!meta.stale) { stop(); resolve(rows); }
+      }, error => { stop(); reject(error); });
+    });
+    const observed = await logical(ownerDb);
+    assert.equal(observed.length, 1);
+    assert.equal(observed[0].authority, 'logical-expiry');
+    assert.equal(observed[0].readMarker, undefined);
+    await assertFails(logical(cashierDb));
+    await assertFails(logical(env.authenticatedContext('p17-foreign').firestore()));
     const lostReply = { ...sdk, runTransaction: async (...args) => {
       await sdk.runTransaction(...args);
       throw Object.assign(new Error('Lost commit response'), { code: 'unavailable' });
@@ -762,6 +775,8 @@ describe('SPARK-4 integrated financial Rules', () => {
     const saved = (await inspect('cash_sessions/' + sessionId)).data();
     const notice = projectFinancialNotice('cash-expiry', { ...saved, id: sessionId }, businessId, 'p17-owner');
     assert.equal(notice.metadata.openingAmount, 10);
+    assert.equal(notice.id, observed[0].id);
+    assert.deepEqual(await logical(ownerDb), []);
     assert.equal(notice.id, 'read_cash-expiry_' + sessionId + '_p17-owner');
     assert.equal(projectFinancialNotice('cash-expiry', { ...saved, id: sessionId }, 'foreign', 'p17-owner'), null);
     const notices = createNotificationRepository(ownerDb, { sdk, currentUser: () => ({ uid: 'p17-owner' }) });
@@ -952,16 +967,23 @@ it('Plan03 rejects sales and new contracts on an inactive or unknown-status bran
   }
 });
 
-it('P17 expires new ten-hour cash sessions using server time and refuses financial writes and a late manual count', async () => {
+it('P17-RC expires fourteen-hour cash sessions using server time and refuses financial writes and a late manual count', async () => {
   await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'dueño' }));
   const db = database(), contracts = createSparkContractsRepository(db, { sdk, currentUser: () => ({ uid }) });
   const contractId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const paymentId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
   await contracts.create({ contractId, operationId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', branchId, clientName: 'Prueba',
     total: 20, subtotal: 20, deliveryCost: 0, initialPayment: { operationId: paymentId, amount: 2, method: 'efectivo' } });
-  const expiredOpening = Date.now() - 10 * 3600000 - 60000;
   await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), {
-    durationHours: 10, openedAt: Timestamp.fromMillis(expiredOpening),
+    durationHours: 14, openedAt: Timestamp.fromMillis(Date.now() - 11 * 3600000),
+  }));
+  const live = payload('p17-live-at-eleven-hours', 1);
+  await commit(live);
+  await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'test_clock/anchor'), { time: serverTimestamp() }));
+  const { time } = (await inspect('test_clock/anchor')).data();
+  const expiredOpening = time.toMillis() - 14 * 3600000;
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), {
+    openedAt: new Timestamp(time.seconds - 50400, time.nanoseconds),
   }));
   // A forged client date inside the old window cannot override request.time in Rules.
   await assertFails(commit({ ...payload('expired-cash-sale', 2), createdAt: new Date(expiredOpening + 1000).toISOString() }));
@@ -974,7 +996,7 @@ it('P17 expires new ten-hour cash sessions using server time and refuses financi
   await assertFails(updateDoc(doc(db, 'cash_sessions', sessionId), { durationHours: 12 }));
   await assertFails(updateDoc(doc(db, 'cash_sessions', sessionId), { openedAt: serverTimestamp() }));
   assert.equal((await inspect('sales/expired-cash-sale')).exists(), false);
-  assert.equal((await inspect('products/bread')).data().stock[branchId], 10);
+  assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
   assert.equal((await inspect('contracts/' + contractId)).data().paidTotal, 2);
   assert.equal((await inspect('contracts/' + rejectedContractId)).exists(), false);
   assert.equal((await inspect('payments/88888888-8888-4888-8888-888888888888')).exists(), false);
@@ -984,6 +1006,7 @@ it('P17 expires new ten-hour cash sessions using server time and refuses financi
   await createSparkCashRepository(db, { sdk, currentUser: () => ({ uid }) }).finalizeExpired({ businessId, branchId, sessionId });
   const expired = (await inspect('cash_sessions/' + sessionId)).data();
   assert.equal(expired.status, 'expired_unreconciled');
+  assert.ok(expired.expiredAt.isEqual(time));
   assert.equal(expired.declaredAmount, null);
   assert.equal(expired.closedBy, undefined);
   assert.equal((await inspect('payments/' + paymentId)).data().amount, 2);
@@ -1018,7 +1041,7 @@ it('Plan14 verifies a committed recovery after a lost response and accepts sales
       if (++commits === 1) throw Object.assign(new Error('Connection lost after commit'), { code: 'unavailable' });
     },
   } });
-  const command = { businessId, branchId, sessionId: 'plan14-new-cash-session', recoverSessionId: sessionId, openingAmount: 50 };
+  const command = { businessId, branchId, sessionId: 'plan14-new-cash-session', openingAmount: 50 };
   const result = await repository.open(command);
   assert.equal(result.recoveredSession.status, 'expired_unreconciled');
   assert.equal(result.openingAmount, 50);

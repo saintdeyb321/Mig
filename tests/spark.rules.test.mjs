@@ -54,7 +54,7 @@ const rawBundle = (database, data, { omit, mutate = entries => entries } = {}) =
 const cashRepository = (database, uid = 'owner') => createSparkCashRepository(database, { currentUser: () => ({ uid }), sdk });
 const rawCash = async (database, businessId, branchId, { userId = 'owner', sessionId = 'cash-opening-123456789', session = {}, lock = {}, omit, omitDuration = false } = {}) => {
   const id = await cashLockId(businessId, branchId), timestamp = serverTimestamp(), batch = writeBatch(database);
-  const opening = { businessId, branchId, userId, status: 'open', openingAmount: 20, openingNote: '', cashierName: 'Dueña Prueba', openedAt: timestamp, syncedAt: timestamp, runtime: 'spark', durationHours: 10, ...session };
+  const opening = { businessId, branchId, userId, status: 'open', openingAmount: 20, openingNote: '', cashierName: 'Dueña Prueba', openedAt: timestamp, syncedAt: timestamp, runtime: 'spark', durationHours: 14, ...session };
   if (omitDuration) delete opening.durationHours;
   if (omit !== 'session') batch.set(doc(database, 'cash_sessions', sessionId), opening);
   if (omit !== 'lock') batch.set(doc(database, 'active_cash_sessions', id), { businessId, branchId, userId, sessionId, status: 'open', runtime: 'spark', updatedAt: timestamp, ...lock });
@@ -226,7 +226,7 @@ describe('SPARK-3 online cash opening', () => {
     const { database, businessId, branchId } = await businessOwner(), repo = cashRepository(database);
     const command = { businessId, branchId, sessionId: 'cash-opening-123456789', openingAmount: 20.25, openingNote: 'Fondo' };
     const session = await repo.open(command), repeated = await repo.open(command);
-    assert.equal(session.durationHours, 10);
+    assert.equal(session.durationHours, 14);
     assert.ok(session.openedAt.isEqual(session.syncedAt));
     assert.equal(session.openedAt.toMillis(), repeated.openedAt.toMillis());
     assert.ok(Math.abs(session.openedAt.toMillis() - Date.now()) < 10000);
@@ -250,7 +250,7 @@ describe('SPARK-3 online cash opening', () => {
     const { database, businessId, branchId } = await businessOwner();
     const lockId = await cashLockId(businessId, branchId);
     for (const patch of [{ omit: 'session' }, { omit: 'lock' }, { userId: 'another' }, { omitDuration: true },
-      ...[12, 0, -1, 10.5, '10', null, true].map(durationHours => ({ session: { durationHours } })),
+      ...[10, 12, 0, -1, 14.5, '14', null, true].map(durationHours => ({ session: { durationHours } })),
       { session: { openingAmount: -1 } }, { session: { openingAmount: 0.001 } },
       { session: { financialWindow: { expiresAt: Timestamp.fromMillis(Date.now() + 86400000) } } }, { session: { expiresAt: serverTimestamp() } },
       { session: { openedAt: Timestamp.fromMillis(Date.now() + 86400000) } }, { session: { syncedAt: Timestamp.fromMillis(Date.now() - 1000) } },
@@ -314,7 +314,7 @@ describe('SPARK-3 online cash opening', () => {
     await assertFails(updateDoc(doc(database, 'branches', 'historical'), { sparkCashVersion: 1 }));
     const lockId = await cashLockId(businessId, branchId);
     await seed({ [`active_cash_sessions/${lockId}`]: { businessId, branchId, userId: 'owner', sessionId: 'old', status: 'open' } });
-    await assert.rejects(cashRepository(database).open({ businessId, branchId, sessionId: 'cash-historical-lock-123456789', openingAmount: 0 }), /candado histórico/);
+    await assert.rejects(cashRepository(database).open({ businessId, branchId, sessionId: 'cash-historical-lock-123456789', openingAmount: 0 }), /El turno de esta sede cambió/);
     await assertFails(rawCash(database, businessId, branchId));
   });
 });
@@ -322,7 +322,7 @@ describe('SPARK-3 online cash opening', () => {
 describe('Plan 14: recovery of an expired Spark cash lock', () => {
   const oldId = 'plan14-previous-cash-session';
   const newId = 'plan14-replacement-cash-session';
-  const prepare = async (age, { historical = false } = {}) => {
+  const prepare = async (age, { historical = false, durationHours = 10 } = {}) => {
     const owner = await businessOwner();
     const { businessId, branchId } = owner;
     const lockPath = `active_cash_sessions/${await cashLockId(businessId, branchId)}`;
@@ -331,14 +331,14 @@ describe('Plan 14: recovery of an expired Spark cash lock', () => {
     const profile = { businessId, branchId, role: 'cajero', status: 'activo', shiftStart: null, shiftEnd: null };
     await seed({
       [oldPath]: { businessId, branchId, userId: 'owner', runtime: 'spark', status: 'open', cashierName: 'Dueña',
-        openedAt, syncedAt: openedAt, openingAmount: 100, openingNote: 'Fondo anterior', ...(historical ? {} : { durationHours: 10 }) },
+        openedAt, syncedAt: openedAt, openingAmount: 100, openingNote: 'Fondo anterior', ...(historical ? {} : { durationHours }) },
       [lockPath]: { businessId, branchId, sessionId: oldId, userId: 'owner', status: 'open', runtime: 'spark', updatedAt: openedAt },
       'users/next-cashier': profile,
       'users/other-branch': { ...profile, branchId: 'otra' },
       'users/suspended': { ...profile, status: 'inactivo' },
       'users/other-business': { ...profile, businessId: 'otro' },
     });
-    return { ...owner, openedAt, lockPath, oldPath, command: { businessId, branchId, sessionId: newId, recoverSessionId: oldId, openingAmount: 50 } };
+    return { ...owner, openedAt, durationHours, lockPath, oldPath, command: { businessId, branchId, sessionId: newId, recoverSessionId: oldId, openingAmount: 50 } };
   };
   const assertUntouched = async ({ lockPath, oldPath }) => {
     assert.equal((await dump(lockPath)).data().sessionId, oldId);
@@ -346,16 +346,16 @@ describe('Plan 14: recovery of an expired Spark cash lock', () => {
     assert.equal((await dump(`cash_sessions/${newId}`)).exists(), false);
   };
   const rawRecovery = (database, setup, actor, { omit, previous, nextId = newId } = {}) => {
-    const { businessId, branchId, openedAt, lockPath, oldPath } = setup;
+    const { businessId, branchId, openedAt, durationHours, lockPath, oldPath } = setup;
     const batch = writeBatch(database), now = serverTimestamp();
     if (omit !== 'previous') batch.update(doc(database, oldPath), {
-      status: 'expired_unreconciled', expiredAt: new Timestamp(openedAt.seconds + 36000, openedAt.nanoseconds),
+      status: 'expired_unreconciled', expiredAt: new Timestamp(openedAt.seconds + durationHours * 3600, openedAt.nanoseconds),
       recoveredAt: now, recoveredBy: actor, recoveryReason: 'shift-time-limit', recoverySessionId: nextId,
       reconciliationPending: true, declaredAmount: null, difference: null, ...previous,
     });
     if (omit !== 'lock') batch.update(doc(database, lockPath), { sessionId: nextId, userId: actor, updatedAt: now });
     if (omit !== 'new') batch.set(doc(database, 'cash_sessions', nextId), {
-      businessId, branchId, userId: actor, status: 'open', runtime: 'spark', durationHours: 10, openingAmount: 50,
+      businessId, branchId, userId: actor, status: 'open', runtime: 'spark', durationHours: 14, openingAmount: 50,
       openingNote: '', cashierName: 'Cajera', openedAt: now, syncedAt: now,
     });
     return batch.commit();
@@ -374,6 +374,23 @@ describe('Plan 14: recovery of an expired Spark cash lock', () => {
     }));
     await cashRepository(database, actor).open(setup.command);
     assert.ok((await dump(setup.oldPath)).data().expiredAt.isEqual(time));
+  });
+
+  it('P17-RC keeps a 14-hour lock past hour ten and atomically opens after its original deadline', async () => {
+    const setup = await prepare(11 * 3600000, { durationHours: 14 }), actor = 'next-cashier';
+    const database = dbFor(actor);
+    await assertFails(rawRecovery(database, setup, actor));
+    await assertUntouched(setup);
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'test_clock/anchor'), { time: serverTimestamp() }));
+    const { time } = (await dump('test_clock/anchor')).data();
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), setup.oldPath), {
+      openedAt: new Timestamp(time.seconds - 50400, time.nanoseconds),
+    }));
+    const next = await cashRepository(database, actor).open({ ...setup.command, recoverSessionId: undefined });
+    assert.equal(next.durationHours, 14);
+    assert.equal(next.recoveredSession.durationHours, 14);
+    assert.ok(next.recoveredSession.expiredAt.isEqual(time));
+    assert.equal(next.recoveredSession.declaredAmount, null);
   });
 
   it('recovers a five-day lock for a different assigned cashier, atomically and only once', async () => {

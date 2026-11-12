@@ -39,12 +39,12 @@ export function createSalesPeriodReader(database, { sdk = firestoreSDK } = {}) {
 
 export function createSalesSessionReader(database, { sdk = firestoreSDK } = {}) {
   const { getDocsFromServer, query, collection, where, orderBy, documentId, startAfter, limit } = sdk;
-  return async (session, { maxRows = 10000 } = {}) => {
-    const rows = [];
+  return async (session, { maxRows = 10000, signal } = {}) => {
+    const rows = [], readPage = checkedRead(getDocsFromServer, 'sales-session', signal);
     let cursor;
     do {
       const size = Math.min(SALES_PAGE_SIZE, maxRows - rows.length + 1);
-      const page = await getDocsFromServer(query(collection(database, 'sales'), where('businessId', '==', session.businessId),
+      const page = await readPage(query(collection(database, 'sales'), where('businessId', '==', session.businessId),
         where('branchId', '==', session.branchId), where('sessionId', '==', session.id), orderBy(documentId()),
         ...(cursor ? [startAfter(cursor)] : []), limit(size)));
       if (page.metadata?.fromCache || page.metadata?.hasPendingWrites) throw new Error('Los tickets del turno no están confirmados por el servidor.');
