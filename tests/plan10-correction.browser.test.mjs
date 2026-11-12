@@ -211,6 +211,89 @@ it('P10-06 preserves full payment focus, article space, fixed identity and compa
       }
       await size(320,560);await input(0,'0.001');
       check(await ev(()=>{const r=document.querySelector('[role="dialog"] .pos-ticket');return Boolean(r.querySelector('[role="alert"]'))&&r.querySelector('.pos-ticket-actions button').disabled;}),'monetary validation error still visible and charge blocked');await shot('invalid-payment-320');
+      await key('Escape', 'Escape', 27);
+
+      const posViewports = [[1280, 560], [1366, 768], [1440, 900], [1024, 448], [768, 1024], [640, 450], [390, 844], [375, 667], [320, 640]];
+      for (const [width, height] of posViewports) {
+        const label = `${width}x${height}`;
+        await size(width, height);
+        await cart(8);
+        await ev(async () => {
+          const { cash, notify, frames } = window.__p09;
+          cash.expiresAt = Date.now() + 90 * 60000;
+          cash.remainingMinutes = 90;
+          notify('cash');
+          await frames();
+        });
+        const toolbar = await ev(() => {
+          const header = document.querySelector('.pos-toolbar');
+          const button = header.querySelector('button');
+          const badge = header.querySelector('[title]');
+          return { status: badge.textContent, close: button.textContent,
+            colored: getComputedStyle(button).backgroundColor !== getComputedStyle(badge).backgroundColor,
+            fits: header.scrollWidth <= header.clientWidth + 1 };
+        });
+        check(toolbar.status.includes('Caja abierta') && toolbar.status.includes('90 min')
+          && toolbar.close === 'Cerrar caja' && toolbar.colored && toolbar.fits, `cash controls ${label}: ${JSON.stringify(toolbar)}`);
+        await openDrawer(width);
+        await selectPayment('efectivo');
+        await input(0, '50.05');
+        assertFocus(await focused(0), `cash received focus ${label}`);
+        const paymentLayout = await ev(async () => {
+          const ticket = document.querySelector('[role="dialog"] .pos-ticket') || document.querySelector('aside[aria-label="Ticket"] .pos-ticket');
+          const cash = ticket.querySelector('.pos-cash-payment');
+          const received = cash.querySelector('input').getBoundingClientRect();
+          const change = cash.querySelector('dd'), changeBounds = change.getBoundingClientRect();
+          const items = ticket.querySelector('.pos-ticket-items');
+          const payment = ticket.querySelector('.pos-ticket-payment');
+          const charge = ticket.querySelector('.pos-ticket-actions button');
+          const chargeTop = charge.getBoundingClientRect().top;
+          const overflow = items.scrollHeight - items.clientHeight;
+          items.scrollTop = items.scrollHeight;
+          await window.__p09.frames();
+          return { change: change.textContent, sideBySide: received.right < changeBounds.left && Math.abs(received.top - changeBounds.top) <= 1,
+            overflow, itemScroll: items.scrollTop, paymentOverflow: payment.scrollHeight - payment.clientHeight,
+            chargeFixed: chargeTop === charge.getBoundingClientRect().top && charge.getBoundingClientRect().bottom <= innerHeight,
+            chargeEnabled: !charge.disabled, horizontalOverflow: ticket.scrollWidth > ticket.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth + 1 };
+        });
+        check(paymentLayout.change === 'S/ 10.05' && paymentLayout.sideBySide && !paymentLayout.horizontalOverflow,
+          `cash received and exact change ${label}: ${JSON.stringify(paymentLayout)}`);
+        check(paymentLayout.chargeFixed && paymentLayout.chargeEnabled && paymentLayout.paymentOverflow <= 1
+          && (paymentLayout.overflow <= 1 || paymentLayout.itemScroll > 0), `independent items and visible checkout ${label}: ${JSON.stringify(paymentLayout)}`);
+        await key('Tab', 'Tab', 9);
+        check(await ev(() => document.activeElement.matches('.pos-ticket-actions button')), `Tab advances from cash received to Cobrar ${label}`);
+        await ev(() => {
+          const ticket = document.querySelector('[role="dialog"] .pos-ticket') || document.querySelector('aside[aria-label="Ticket"] .pos-ticket');
+          ticket.querySelector('.pos-ticket-items').scrollTop = 0;
+          document.activeElement.blur();
+        });
+        await shot(`pos-caja-carrito-${label}`);
+        await input(0, '39.99');
+        check(await ev(() => {
+          const ticket = document.querySelector('[role="dialog"] .pos-ticket') || document.querySelector('aside[aria-label="Ticket"] .pos-ticket');
+          return ticket.querySelector('.pos-cash-payment dd').textContent.includes('Por calcular')
+            && ticket.querySelector('.pos-ticket-actions button').disabled;
+        }), `insufficient cash shows no calculated change and disables Cobrar ${label}`);
+        if (width < 1024) await key('Escape', 'Escape', 27);
+      }
+      await cart(0);
+      await ev(async () => {
+        document.querySelector('.pos-catalog button[title^="ProductoDeNombreExtenso"]').click();
+        await window.__p09.frames();
+      });
+      await openDrawer(320);
+      await selectPayment('efectivo');
+      await input(0, '50000.00');
+      assertFocus(await focused(0), 'large cash amount stays focused at 320x640');
+      check(await ev(() => {
+        const ticket = document.querySelector('[role="dialog"] .pos-ticket');
+        const items = ticket.querySelector('.pos-ticket-items');
+        return items.scrollWidth <= items.clientWidth + 1 && items.textContent.includes('ProductoDeNombreExtenso')
+          && ticket.querySelector('.pos-ticket-total strong').textContent === 'S/ 49995.00'
+          && ticket.querySelector('.pos-cash-payment dd').textContent === 'S/ 5.00'
+          && !ticket.querySelector('.pos-ticket-actions button').disabled;
+      }), 'long product name and high payment amount do not overflow or alter exact values');
+      await shot('pos-nombre-largo-320x640');
       await ev(()=>window.__p09.stop());
     }});
   } finally {

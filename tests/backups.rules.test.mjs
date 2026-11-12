@@ -72,6 +72,21 @@ it('rejects cashiers and another owner before reading business data, while direc
   await assertFails(sdk.getDocFromServer(sdk.doc(env.authenticatedContext('foreign').firestore(),'products/p-000')));
 });
 
+it('P16 paginates the selected business summary, declares partial sections and excludes all financial collections', async () => {
+  const options = { businessId: 'tenant-a', actorId: 'admin', summary: true };
+  const capped = await read('admin')({ ...options, maxRecords: 100 });
+  assert.deepEqual(capped.sections.map(section => section.name), ['tenants', 'licenses', 'branches', 'categories', 'products', 'users', 'invites']);
+  assert.equal(capped.sections.reduce((sum, section) => sum + section.records.length, 0), 100);
+  assert.equal(capped.sections.find(section => section.name === 'products').status, 'limited');
+  assert.equal(capped.sections.find(section => section.name === 'invites').status, 'not-read');
+  assert.match(capped.warnings.join(), /Excluye movimientos financieros/);
+  const expanded = await read('admin')({ ...options, maxRecords: 500 });
+  assert.equal(expanded.sections.find(section => section.name === 'products').records.length, 205);
+  assert.doesNotMatch(JSON.stringify(expanded), /"Foreign"|"tenant-b"/);
+  assert.equal(expanded.accessControlWrites, 2);
+  await assert.rejects(read('owner')({ ...options, actorId: 'owner', maxRecords: 100 }), /Solo SuperAdmin/);
+});
+
 it('Rules protect scopes from owners, cross-tenant reads, expired grants and all administrative business writes', async () => {
   const admin = env.authenticatedContext('admin').firestore(), owner = env.authenticatedContext('owner').firestore();
   const grant = { actorId:'admin',businessId:'tenant-a',purpose:'export',accessId:'scoped-test-operation',createdAt:sdk.serverTimestamp() };

@@ -42,6 +42,7 @@ try {
   HTMLAnchorElement.prototype.click=function(){downloads++;filename=this.download;textPromise=fetch(this.href).then(r=>r.text());return click.call(this);};
   download().click();await waitFor(()=>document.body.textContent.includes('Descarga solicitada:'));
   const text=await textPromise;
+  const encryptedFilename=filename;
   check(filename.endsWith('.encrypted.json')&&!text.includes('own-sale'),'Real download uses encrypted JSON');
   check([...document.querySelectorAll('input[type=password]')].every(input=>input.value===''),'Passphrase cleared after export');
   const verified=await verifyBackupFile(text,'fixture-password-123',businessId);
@@ -80,7 +81,24 @@ try {
   await waitFor(()=>globalThis.__probeBusiness==='new-business');
   globalThis.__pendingRemote.shift().resolve({sections:[],warnings:[]});await businessOperation;
   check(downloads===1,'Business change during a remote read cancels the old scope without downloading');
-  probeRoot.unmount();result={ok:true,checks,filename};
+  probeRoot.unmount();
+  const summaryRoot=createRoot(document.getElementById('root'));
+  summaryRoot.render(React.createElement(BackupPanel,{user:{uid,businessId,role:'superadmin'},businessName:'Panadería de prueba'}));
+  await waitFor(()=>label('Autorizo estas lecturas'));
+  label('Autorizo estas lecturas').click();
+  const summaryButton=[...document.querySelectorAll('button')].find(button=>button.textContent==='Descargar resumen Excel');
+  await waitFor(()=>!summaryButton.disabled);
+  summaryButton.click();
+  await waitFor(()=>globalThis.__pendingRemote.length===1);
+  const summaryRead=globalThis.__pendingRemote.shift();
+  check(summaryRead.options.summary && summaryRead.options.maxRecords===500 && summaryRead.options.businessId===businessId,'Excel uses only the requested business and its summary budget');
+  summaryRead.resolve({accessControlWrites:2,warnings:['Excluye movimientos financieros.'],sections:[
+    {name:'products',records:[{name:'=1+1',price:10.05,id:'technical-product'}],status:'limited',warning:'Límite de la captura'},
+    {name:'invites',records:[],status:'not-read'},
+  ]});
+  await waitFor(()=>document.body.textContent.includes('EXPORTACIÓN PARCIAL'));
+  check(document.body.textContent.includes('.xlsx') && document.body.textContent.includes('Límite de la captura'),'The browser reports partial Excel explicitly');
+  summaryRoot.unmount();result={ok:true,checks,filename:encryptedFilename,excelName:'MigaPOS-resumen-'+new Date().toISOString().slice(0,10)+'.xlsx'};
 }catch(error){result={ok:false,checks,error:error.stack};}
 await fetch('/__phase4-report',{method:'POST',body:JSON.stringify(result)});
 </script>

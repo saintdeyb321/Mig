@@ -76,7 +76,12 @@ describe('SPARK-1 provisioning, identity and license authority', () => {
     assert.equal((await dump('invites/one@gmail.com')).exists(), false);
     assert.deepEqual(await repository().createTenant(data), { businessId, branchId, status: 'active' });
     await assert.rejects(repository().createTenant({ ...data, businessName: 'Changed' }), { code: 'operation-conflict' });
-    assert.equal((await repository().administrationPage()).rows[0].ownerEmail, 'one@gmail.com');
+    const page = await repository().administrationPage();
+    assert.equal(page.rows[0].id, businessId);
+    assert.equal(page.rows[0].ownerEmail, undefined);
+    assert.equal((await repository().administrationContact({ businessId })).ownerEmail, 'one@gmail.com');
+    await assertFails(repository(owner.uid, dbFor(owner.uid, owner.email)).administrationPage());
+    await assertFails(repository(owner.uid, dbFor(owner.uid, owner.email)).administrationContact({ businessId: 'foreign' }));
   });
   it('paginates existing licenses, including tenants without metadata or a registered owner', async () => {
     await create('one'); await create('two');
@@ -125,9 +130,12 @@ describe('SPARK-1 provisioning, identity and license authority', () => {
   });
   it('renews and changes status idempotently, but never without a linked immutable receipt', async () => {
     const { businessId } = await create(), repo = repository(), before = (await dump(`licenses/${businessId}`)).data().expiry.toMillis();
-    const command = { businessId, operationId: input('renew').operationId, months: 2 };
-    await repo.extendTenantLicense(command); const expiry = (await dump(`licenses/${businessId}`)).data().expiry.toMillis();
+    const command = { businessId, operationId: input('renew').operationId, months: 2, expected: { expiry: before, status: 'activa' } };
+    await Promise.all([repo.extendTenantLicense(command), repo.extendTenantLicense(command)]);
+    const expiry = (await dump(`licenses/${businessId}`)).data().expiry.toMillis();
     assert.ok(expiry > before); await repo.extendTenantLicense(command); assert.equal((await dump(`licenses/${businessId}`)).data().expiry.toMillis(), expiry);
+    await assert.rejects(repo.extendTenantLicense({ ...command, operationId: input('stale').operationId }), { code: 'license-changed' });
+    await assert.rejects(repo.extendTenantLicense({ ...command, months: 3 }), { code: 'operation-conflict' });
     await repo.setTenantLicenseStatus({ businessId, operationId: input('suspend').operationId, status: 'inactiva' });
     assert.equal((await dump(`licenses/${businessId}`)).data().status, 'inactiva');
     await repo.setTenantLicenseStatus({ businessId, operationId: input('enable').operationId, status: 'activa' });
@@ -426,6 +434,22 @@ describe('Plan03 branch authority and quota concurrency', () => {
     return { ...created, database, save: createBranchWriter(database, { sdk, currentUser: () => user }) };
   };
   const branchData = businessId => ({ businessId, name: 'Sede adicional', address: '', phone: '', status: 'activo' });
+  it('P16 reduces three active slots to two with two active and one inactive branch without removing any registered slot', async () => {
+    const { businessId, save } = await ownerWithQuota(3, 5);
+    await save('second', branchData(businessId), { create: true });
+    await save('historical', { ...branchData(businessId), status: 'inactivo' }, { create: true });
+    const repo = repository();
+    const command = { businessId, maxActiveBranches: 2, maxRegisteredBranches: 5, expected: { active: 3, registered: 5 }, operationId: input('reduce-two').operationId };
+    await repo.setTenantBranchQuota(command);
+    const saved = (await dump(`licenses/${businessId}`)).data();
+    assert.equal(saved.maxActiveBranches, 2);
+    assert.equal(saved.maxRegisteredBranches, 5);
+    assert.equal(saved.activeBranchIds.length, 2);
+    assert.equal(saved.registeredBranchIds.length, 3);
+    assert.equal((await dump('branches/historical')).data().status, 'inactivo');
+    await assert.rejects(repo.setTenantBranchQuota({ ...command, operationId: input('stale-quota').operationId }), { code: 'quota-changed' });
+    await assert.rejects(repo.setTenantBranchQuota({ ...command, maxRegisteredBranches: 2, expected: { active: 2, registered: 5 }, operationId: input('reduce-invalid').operationId }), /menor/);
+  });
   it('Plan03 serializes the last slot and rejects owner quota forgery or missing roster writes', async () => {
     const { businessId, database, save } = await ownerWithQuota(2);
     const results = await Promise.allSettled([save('second', branchData(businessId), { create: true }), save('third', branchData(businessId), { create: true })]);

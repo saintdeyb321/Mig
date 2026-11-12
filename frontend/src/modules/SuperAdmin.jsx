@@ -1,184 +1,101 @@
-import { DEFAULT_MAX_REGISTERED_BRANCHES, MAX_REGISTERED_BRANCHES } from '../features/branches/domain/branchPolicy';
-import FirestoreQueryError from '../components/FirestoreQueryError';
-import { BusinessDetailsDialog } from './admin/BusinessDetailsDialog';
-import { BranchQuotaModal } from './admin/BranchQuotaModal';
-import { ShieldCheck, Plus } from 'lucide-react';
-import { ClientCard } from "./admin/ClientCard.jsx";
-import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Select, Card, SearchField, DialogFooter, EmptyState, HelpDisclosure } from "../shared/ui";
-import { brand } from '../config/brand';
-// src/modules/SuperAdmin.jsx
 import { useState } from 'react';
-import { useSuperAdmin } from '../hooks/useSuperAdmin';
-import BackupPanel from '../features/backups/components/BackupPanel.jsx';
+import { CalendarPlus, ClipboardList, Plus, RefreshCw, ShieldCheck } from 'lucide-react';
+import FirestoreQueryError from '../components/FirestoreQueryError';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
-// Componente Principal
-function SuperAdmin({
-  user
-}) {
-  const {
-    isLoading,
-    isProcessing,
-    handleCreateClient,
-    handleExtendLicense,
-    handleToggleStatus, handleSetBranchQuota,
-    searchTerm,
-    setSearchTerm,
-    filteredLicenses,
-    licenses,
-    error,
-    hasMore,
-    loadMore,
-    refresh
-  } = useSuperAdmin(user);
-  const [detailLicense, setDetailLicense] = useState(null);
-  const [backupBusinessId, setBackupBusinessId] = useState(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [extendModalInfo, setExtendModalInfo] = useState(null);
-  const [businessName, setBusinessName] = useState('');
-  const [ownerEmail, setOwnerEmail] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+import { toMillisSafe } from '../core/dates/dateValues.js';
+import { addLicenseMonths, formatLicenseDate } from '../features/licenses/domain/licenseTerm.js';
+import { useSuperAdmin } from '../hooks/useSuperAdmin';
+import { Alert, Button, ConfirmDialog, Dialog, DialogFooter, EmptyState, FormField, LoadingState, PageHeader, SearchField, Select } from '../shared/ui';
+import { BranchQuotaModal } from './admin/BranchQuotaModal';
+import { BusinessDownloadsDialog } from './admin/BusinessDownloadsDialog.jsx';
+import { ClientCard } from './admin/ClientCard.jsx';
+import { LicenseMonthOptions, NewBusinessDialog } from './admin/NewBusinessDialog.jsx';
+
+function RenewalDialog({ license, onClose, onSave, busy, canOperate, accessRecovery }) {
   const [months, setMonths] = useState(1);
-  const [maxActiveBranches, setMaxActiveBranches] = useState(1), [quotaLicense, setQuotaLicense] = useState(null);
-  const [maxRegisteredBranches, setMaxRegisteredBranches] = useState(DEFAULT_MAX_REGISTERED_BRANCHES);
-  const [extendMonths, setExtendMonths] = useState(1);
-  if (user?.role !== 'superadmin') {
-    return <div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none text-center pt-12.5">
-        <h2 className="text-ink text-2xl mb-2.5">⛔ Acceso Denegado</h2>
-        <p className="text-muted">Esta área es exclusiva para el CEO de {brand.name}.</p>
-      </div>;
-  }
-  if (!runtimeCapabilities.tenantAdministration) return <section className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none" aria-label="Administración de plataforma">
-      <h2>Clientes SaaS · Firebase Spark</h2>
-      <p>Contexto de plataforma: SuperAdmin.</p>
-      <Card role="status" as="div">
-        <p>Authentication, Firestore, Hosting y persistencia local disponibles.</p>
-        <p>Consulta y creación de negocios no disponibles en SPARK-0. Se habilitarán en SPARK-1.</p>
-        <p>Backups cloud, purgas y automatizaciones aún no disponibles. Cloud Functions y Firebase Storage deshabilitados.</p>
-      </Card>
-      <Button disabled title="Pendiente de SPARK-1" type="button" variant="primary">Nuevo negocio · pendiente de SPARK-1</Button>
-    </section>;
-  const submitCreate = async e => {
-    e.preventDefault();
-    const success = await handleCreateClient(businessName, ownerEmail, firstName, lastName, months, maxActiveBranches, maxRegisteredBranches);
-    if (success) {
-      setBusinessName('');
-      setOwnerEmail('');
-      setFirstName('');
-      setLastName('');
-      setMonths(1); setMaxActiveBranches(1); setMaxRegisteredBranches(DEFAULT_MAX_REGISTERED_BRANCHES);
-      setShowAddModal(false);
-    }
-  };
-  const submitExtend = async e => {
-    e.preventDefault();
-    const success = await handleExtendLicense(extendModalInfo, extendMonths);
-    if (success) {
-      setExtendMonths(1);
-      setExtendModalInfo(null);
-    }
-  };
-  const isActuallyLoading = isLoading || licenses && licenses.length === 0 && isLoading !== false;
-  if (isActuallyLoading && !showAddModal && !extendModalInfo) {
-    return <LoadingState>Cargando Clientes de {brand.name}...</LoadingState>;
-  }
-  return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none" aria-label="Administración de plataforma">
-
-      <PageHeader title="Clientes SaaS" icon={ShieldCheck} eyebrow="Administración de plataforma" description="Negocios, accesos y vigencia de licencias." actions={<><Button className="shrink-0" onClick={() => setShowAddModal(true)} type="button" variant="primary">
-          <Plus aria-hidden="true" /> Nuevo Cliente
-        </Button></>} />
-      <HelpDisclosure title="Alcance de la administración">Firebase Spark. Exportación empresarial disponible solo en plataforma, bajo demanda y por negocio. Purga, restauración privilegiada y jobs backend deshabilitados. Las solicitudes de baja se coordinan externamente con el propietario.</HelpDisclosure>
-      <FirestoreQueryError error={error} area="administration" user={user} onRetry={refresh} />
-      <Button disabled={isLoading} onClick={refresh} type="button" variant="secondary">Actualizar clientes</Button>
-      {backupBusinessId && <BackupPanel key={`${user.uid}:${backupBusinessId}`} user={user} businessId={backupBusinessId} onClose={() => setBackupBusinessId(null)} />}
-
-      <div className="view-toolbar">
-        <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar entre clientes cargados por negocio, dueño, correo o ID..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
-      </div>
-
-      {filteredLicenses.length === 0 && error ? null : filteredLicenses.length === 0 ? <EmptyState title="Sin registros" description={<>
-            {error ? 'No se pudo consultar la lista. Revisa el error y vuelve a intentarlo.' : searchTerm ? `No se encontraron clientes para "${searchTerm}"` : 'Aún no tienes clientes registrados.'}
-          </>} /> : <div className="grid min-w-0 gap-4 xl:grid-cols-2 3xl:grid-cols-3">
-          {filteredLicenses.map(license => <ClientCard key={license.id} license={license} isProcessing={isProcessing} setExtendModalInfo={setExtendModalInfo} handleToggleStatus={handleToggleStatus} handleExport={setBackupBusinessId} onQuota={setQuotaLicense} onDetails={setDetailLicense} />)}
-        </div>}
-      {hasMore && <Button disabled={isLoading} onClick={loadMore} type="button" variant="secondary">Cargar más clientes</Button>}
-
-      {detailLicense && <BusinessDetailsDialog key={`${user.uid}:${detailLicense.id}`} user={user} license={detailLicense} onClose={() => setDetailLicense(null)} onQuota={value => { setDetailLicense(null); setQuotaLicense(value); }} />}
-      {quotaLicense && <BranchQuotaModal key={`${user.uid}:${quotaLicense.id}`} user={user} license={quotaLicense} onClose={() => setQuotaLicense(null)} onSave={handleSetBranchQuota} busy={isProcessing} />}
-      {/* MODAL: NUEVO CLIENTE */}
-      {showAddModal && <Dialog title={<>🏢 Alta de Nuevo Cliente</>} busy={isProcessing} className="max-w-lg" onClose={() => setShowAddModal(false)}>
-
-            <div className="bg-primary-soft text-primary p-3 rounded-xl text-sm mb-4 flex gap-2 items-center">
-              <span>💡</span>
-              <p className="m-0">El sistema creará automáticamente la <strong>Sede Principal</strong> y los Ajustes base para este cliente.</p>
-            </div>
-
-            <form onSubmit={submitCreate} className="grid gap-4">
-              <FormField label={<>NOMBRE DEL NEGOCIO</>}>
-
-                <Input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="Ej: Panadería San José" required disabled={isProcessing} />
-              </FormField>
-
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                <FormField label={<>NOMBRE DUEÑO</>}>
-
-                  <Input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Ej: Juan" required disabled={isProcessing} />
-                </FormField>
-                <FormField label={<>APELLIDO</>}>
-
-                  <Input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Ej: Pérez" required disabled={isProcessing} />
-                </FormField>
-              </div>
-
-              <FormField label={<>CORREO GMAIL</>} hint="Usa una cuenta diferente a la del SuperAdmin.">
-
-                <Input type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} placeholder="Correo del titular" required disabled={isProcessing} />
-              </FormField>
-
-              <FormField label={<>MESES PAGADOS</>}>
-
-                <Select value={months || 1} onChange={e => setMonths(e.target.value)} disabled={isProcessing}>
-                  <option value={1}>1 Mes</option>
-                  <option value={3}>3 Meses</option>
-                  <option value={6}>6 Meses</option>
-                  <option value={12}>1 Año</option>
-                </Select>
-              </FormField>
-
-              <FormField label="Máximo de sedes activas" hint="Política inicial: 1 sede activa; SuperAdmin puede fijar de 1 a 100. Las inactivas no consumen cupo."><Input type="number" min="1" max="100" step="1" value={maxActiveBranches} onChange={event => setMaxActiveBranches(event.target.value)} required disabled={isProcessing} /></FormField>
-              <FormField label="Máximo de sedes registradas (activas e inactivas)" hint="Política inicial: 5 registradas. Inactivar libera solo cupo activo; el historial conserva su plaza. Debe ser igual o mayor al cupo activo, hasta 200."><Input type="number" min={Number(maxActiveBranches) || 1} max={MAX_REGISTERED_BRANCHES} step="1" value={maxRegisteredBranches} onChange={event => setMaxRegisteredBranches(event.target.value)} required disabled={isProcessing} /></FormField>
-              <DialogFooter>
-                <Button type="button" onClick={() => setShowAddModal(false)} disabled={isProcessing} variant="secondary">Cancelar</Button>
-                <Button type="submit" disabled={isProcessing} className="flex-1" variant="primary">{isProcessing ? 'Creando...' : 'Crear negocio'}</Button>
-              </DialogFooter>
-            </form>
-          </Dialog>}
-
-      {/* MODAL: RENOVAR LICENCIA */}
-      {extendModalInfo && <Dialog title={<>🚀 Renovar Licencia</>} busy={isProcessing} className="max-w-lg" onClose={() => setExtendModalInfo(null)}>
-
-            <p className="text-muted text-sm mb-5 leading-snug">
-              Agrega meses de servicio a este cliente. Si estaba suspendido, se reactivará automáticamente.
-            </p>
-
-            <form onSubmit={submitExtend} className="grid gap-4">
-              <FormField label={<>TIEMPO A EXTENDER</>}>
-
-                <Select value={extendMonths || 1} onChange={e => setExtendMonths(e.target.value)} disabled={isProcessing}>
-                  <option value={1}>+ 1 Mes de servicio</option>
-                  <option value={3}>+ 3 Meses de servicio</option>
-                  <option value={6}>+ 6 Meses de servicio</option>
-                  <option value={12}>+ 1 Año de servicio</option>
-                </Select>
-              </FormField>
-
-              <DialogFooter>
-                <Button type="button" onClick={() => setExtendModalInfo(null)} disabled={isProcessing} variant="secondary">Cancelar</Button>
-                <Button type="submit" disabled={isProcessing} className="flex-1" variant="success">Confirmar Pago</Button>
-              </DialogFooter>
-            </form>
-          </Dialog>}
-
-    </div>;
+  const [openedAt] = useState(Date.now);
+  const estimate = addLicenseMonths(Math.max(openedAt, toMillisSafe(license.expiry)), months);
+  return <Dialog title="Renovar licencia" description={license.businessName} icon={CalendarPlus} busy={busy} onClose={onClose}>
+    {accessRecovery}
+    <form className="grid gap-4" onSubmit={async event => {
+      event.preventDefault();
+      if (canOperate && await onSave(license, months)) onClose();
+    }}>
+      <FormField label="Meses de servicio"><Select value={months} onChange={e => setMonths(Number(e.target.value))}><LicenseMonthOptions /></Select></FormField>
+      <dl className="grid gap-3 rounded-xl border border-primary/20 bg-primary-soft/40 p-3 text-sm sm:grid-cols-2">
+        <div><dt className="text-muted">Vencimiento actual</dt><dd className="font-bold">{formatLicenseDate(license.expiry)}</dd></div>
+        <div><dt className="text-muted">Nuevo vencimiento estimado</dt><dd className="font-bold">{formatLicenseDate(estimate)}</dd></div>
+      </dl>
+      <p className="text-sm text-muted">Se cuentan los meses desde el vencimiento vigente o desde hoy si ya venció, en horario de Lima. La renovación {license.status === 'activa' ? 'mantiene activa' : 'reactiva'} la licencia y no realiza un cobro.</p>
+      <DialogFooter><Button variant="secondary" onClick={onClose}>Cancelar</Button><Button type="submit" loading={busy} disabled={!canOperate}>Confirmar renovación</Button></DialogFooter>
+    </form>
+  </Dialog>;
 }
-export default SuperAdmin;
+
+function AdminWorkspace({ user }) {
+  const admin = useSuperAdmin(user);
+  const [selection, setSelection] = useState(null);
+  const { licenses, filteredLicenses, isLoading, isProcessing, canOperate, online, updatedAt, error } = admin;
+  const close = () => setSelection(null);
+  const select = (type, license) => setSelection({ type, license });
+  const { type, license } = selection ?? {};
+  const statusText = isLoading ? 'Consultando Firestore…' : !online ? 'Sin conexión' : !canOperate && !isProcessing ? 'Actualiza para confirmar el acceso' :
+    updatedAt ? `Consulta confirmada · ${new Date(updatedAt).toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit' })}` : '';
+  const suspending = license?.status === 'activa';
+  const accessRecovery = !canOperate && !isProcessing && <Alert variant="warning">
+    <p>{online ? 'Actualiza el acceso para continuar con los datos de este formulario.' : 'Se perdió la conexión. Conservamos los datos de este formulario.'}</p>
+    <Button variant="secondary" size="sm" loading={isLoading} disabled={!online} onClick={admin.refresh}>Actualizar acceso</Button>
+  </Alert>;
+
+  return <section className="workspace-page max-w-6xl" aria-label="Administración de plataforma">
+    <PageHeader title="Negocios" icon={ShieldCheck} eyebrow="Administración · Firebase Spark"
+      actions={<Button onClick={() => select('create')} disabled={!canOperate}><Plus aria-hidden="true" />Agregar negocio</Button>} />
+    <div className="grid gap-3 rounded-2xl border border-line bg-panel p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchField value={admin.searchTerm} onChange={event => admin.setSearchTerm(event.target.value)} onClear={() => admin.setSearchTerm('')}
+          label="Buscar por nombre en los negocios cargados" placeholder="Buscar por nombre" className="min-w-0 flex-1 basis-48" />
+        <Button variant="secondary" size="sm" disabled={!online || isLoading || isProcessing} onClick={admin.refresh}><RefreshCw aria-hidden="true" />Actualizar</Button>
+      </div>
+      <div className="flex flex-wrap justify-between gap-2 text-xs text-muted" role="status">
+        <span>{admin.searchTerm ? 'Buscando en' : 'Mostrando'} {licenses.length} {licenses.length === 1 ? 'negocio cargado' : 'negocios cargados'}</span>
+        <span>{statusText}</span>
+      </div>
+    </div>
+    <FirestoreQueryError error={error} area="administration" user={user} onRetry={admin.refresh} />
+    {isLoading && licenses.length === 0 ? <LoadingState>Consultando negocios…</LoadingState> : filteredLicenses.length ? (
+      <div className="grid min-w-0 gap-3 xl:grid-cols-2 3xl:grid-cols-3">
+        {filteredLicenses.map(row => <ClientCard key={row.id} license={row} canOperate={canOperate}
+          onRenew={value => select('renew', value)} onQuota={value => select('quota', value)} onExport={value => select('export', value)}
+          onOffboard={value => select('offboard', value)} onStatus={value => select('status', value)} readContact={admin.readContact} />)}
+      </div>
+    ) : !error && <EmptyState title={admin.searchTerm ? 'Sin coincidencias entre los negocios cargados' : 'Aún no hay negocios registrados'} />}
+    {admin.hasMore && <Button className="justify-self-start" variant="secondary" disabled={!canOperate} onClick={admin.loadMore}>Cargar más negocios</Button>}
+    {type === 'create' && <NewBusinessDialog user={user} busy={isProcessing} canOperate={canOperate} accessRecovery={accessRecovery} onCreate={admin.handleCreateClient} onClose={close} />}
+    {type === 'renew' && <RenewalDialog license={license} onClose={close} onSave={admin.handleExtendLicense} busy={isProcessing} canOperate={canOperate} accessRecovery={accessRecovery} />}
+    {type === 'status' && <ConfirmDialog title={suspending ? 'Suspender licencia' : 'Reactivar licencia'} onClose={close}
+      description={suspending ? `Se bloqueará el acceso operativo de ${license.businessName}. El historial y la fecha de vencimiento se conservan.` : `Se reactivará ${license.businessName}. Si la vigencia terminó, seguirá necesitando renovación.`}
+      confirmLabel={suspending ? 'Confirmar suspensión' : 'Confirmar reactivación'}
+      onConfirm={async () => {
+        if (!canOperate) throw new Error('Actualiza la lista para confirmar la licencia.');
+        if (await admin.handleToggleStatus(license)) close();
+      }}>{accessRecovery}</ConfirmDialog>}
+    {type === 'quota' && <BranchQuotaModal user={user} license={license} onClose={close} onSave={admin.handleSetBranchQuota} busy={isProcessing} canOperate={canOperate} accessRecovery={accessRecovery} />}
+    {type === 'export' && <BusinessDownloadsDialog user={user} license={license} onClose={close} />}
+    {type === 'offboard' && <Dialog title="Solicitud de baja" description={license.businessName} icon={ClipboardList} onClose={close}>
+      <Alert variant="warning">Coordina la solicitud por un canal verificado con el titular. Esta pantalla no registra una baja ni modifica el negocio.</Alert>
+      <ol className="list-decimal space-y-2 pl-5 text-sm">
+        <li>Confirma la identidad, el negocio, las obligaciones pendientes y la conservación aplicable. Revisa cajas, anticipos y devoluciones.</li>
+        <li>Entrega una copia cifrada con alcance verificado. Recoge pendientes y fotos de cada dispositivo con autorización.</li>
+        <li>Completa el inventario de rutas y referencias, incluidas subcolecciones y cuentas Auth. Prepara y verifica el dry-run antes de pedir autorización independiente.</li>
+        <li>Una futura limpieza requiere un entorno administrativo, checkpoints y comprobación posterior de las rutas. La eliminación está deshabilitada.</li>
+      </ol>
+      <DialogFooter><Button variant="secondary" onClick={close}>Cerrar</Button><Button disabled={!canOperate} onClick={() => select('export', license)}>Abrir exportación e inventario</Button></DialogFooter>
+    </Dialog>}
+  </section>;
+}
+
+export default function SuperAdmin({ user }) {
+  if (user?.role !== 'superadmin') return <Alert variant="danger">El acceso a Negocios requiere el rol SuperAdmin.</Alert>;
+  if (!runtimeCapabilities.tenantAdministration) return <Alert variant="warning">La administración de negocios no está disponible en este entorno.</Alert>;
+  return <AdminWorkspace key={user.uid} user={user} />;
+}

@@ -1,25 +1,48 @@
-import { Check, Clock3, FilePenLine, Minus, Plus, Printer, ReceiptText, ShoppingBag, Trash2, XCircle } from 'lucide-react';
+import { Check, Clock3, FilePenLine, LockKeyhole, Minus, Plus, Printer, ReceiptText, ShoppingBag, Trash2, UnlockKeyhole, XCircle } from 'lucide-react';
 import { useLayoutEffect, useRef } from 'react';
 import { Alert, Badge, Button, Card, IconButton, cn } from '../../shared/ui';
 import { VERIFIED_ATOMIC_LINE_LIMIT } from '../../features/sales/domain/checkoutPolicy.js';
 
-export function CashStatus({ readOnly, session, isExpired = false, expiresAt = null, remainingMinutes = null }) {
-  return <Badge title={expiresAt ? `Vence ${new Date(expiresAt).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}. Hora orientativa; el servidor valida cada cobro.` : undefined} variant={readOnly||!session?'danger':session.serverConfirmed===false||session.needsForceClose||isExpired?'warning':'success'}>{readOnly?'Solo lectura':!session?'Caja cerrada':session.serverConfirmed===false?'Caja sin verificar':session.heldByOther?'Otro responsable':session.needsForceClose?'Turno pendiente':isExpired?'Caja vencida':expiresAt?`Caja · ${remainingMinutes} min restantes aprox.`:'Caja abierta'}</Badge>;
+export function CashStatus({ readOnly, session, isExpired = false, expiresAt = null, remainingMinutes = null, inPOS = false }) {
+  const variant = readOnly || !session ? 'danger'
+    : session.serverConfirmed === false || session.needsForceClose || isExpired || (inPOS && session.heldByOther) ? 'warning' : 'success';
+  const label = readOnly ? 'Solo lectura' : !session ? 'Caja cerrada'
+    : session.serverConfirmed === false ? 'Caja sin verificar'
+      : inPOS && isExpired ? 'Caja vencida' : session.heldByOther ? 'Otro responsable'
+        : session.needsForceClose ? 'Turno pendiente' : isExpired ? 'Caja vencida' : 'Caja abierta';
+  const Icon = variant === 'success' ? UnlockKeyhole : variant === 'warning' ? Clock3 : LockKeyhole;
+  const showTime = label === 'Caja abierta' && expiresAt;
+  return <Badge
+    title={expiresAt ? `Vence ${new Date(expiresAt).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}. Hora orientativa; el servidor valida cada cobro.` : undefined}
+    variant={variant}
+    className={inPOS ? cn('border px-3 py-1.5 font-bold', {
+      success: 'border-success/50', danger: 'border-danger/45', warning: 'border-warning/50',
+    }[variant]) : undefined}
+  >
+    {inPOS && <Icon aria-hidden="true" className="size-4" />}
+    <span>{showTime && !inPOS ? `Caja · ${remainingMinutes} min restantes aprox.` : label}
+      {showTime && inPOS && Number.isFinite(remainingMinutes) && <span className="font-semibold"> · {remainingMinutes} min restantes aprox.</span>}
+    </span>
+  </Badge>;
 }
 export function CartItem({ item, onQty, onRemove, disabled, change, onAcceptChange }) {
-  return <li className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 border-b border-line/80 py-2.5 last:border-0">
-    <p className="min-w-0 text-sm leading-snug font-bold wrap-anywhere">{item.name}</p>
-    <strong className="text-right text-sm font-extrabold text-brand-deep tabular-nums">S/ {(item.price * item.qty).toFixed(2)}</strong>
-    <span className="self-center text-xs text-muted tabular-nums wrap-anywhere">S/ {Number(item.price).toFixed(2)} c/u</span>
-    <div className="flex items-center justify-end gap-1.5">
-      <div className="flex items-center rounded-xl border border-primary/15 bg-primary-soft/30">
-        <IconButton size="sm" label={`Reducir ${item.name}`} onClick={() => onQty(item.id, item.qty - 1)} disabled={disabled || item.qty <= 1} className="size-11 min-h-11 rounded-[inherit] text-primary hover:bg-primary-soft hover:text-primary sm:size-9 sm:min-h-9"><Minus aria-hidden="true" /></IconButton>
-        <span className="min-w-6 text-center text-sm font-bold tabular-nums">{item.qty}</span>
-        <IconButton size="sm" label={`Aumentar ${item.name}`} onClick={() => onQty(item.id, item.qty + 1)} disabled={disabled} className="size-11 min-h-11 rounded-[inherit] text-primary hover:bg-primary-soft hover:text-primary sm:size-9 sm:min-h-9"><Plus aria-hidden="true" /></IconButton>
-      </div>
-      <IconButton label={`Quitar ${item.name}`} onClick={() => onRemove(item.id)} disabled={disabled} className="size-11 min-h-11 text-danger hover:bg-danger-soft hover:text-danger sm:size-9 sm:min-h-9"><Trash2 aria-hidden="true" /></IconButton>
+  return <li className="space-y-1.5 border-b border-line py-2.5 last:border-0">
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,auto)] items-baseline gap-2">
+      <p className="text-sm leading-snug font-bold wrap-anywhere">{item.name}</p>
+      <strong className="text-right text-sm font-extrabold text-brand-deep tabular-nums wrap-anywhere">S/ {(item.price * item.qty).toFixed(2)}</strong>
     </div>
-    {change && !disabled && <Alert variant="warning" className="col-span-2 mt-1" title={change.type === 'changed' ? 'Catálogo actualizado' : change.type === 'stock' ? 'Stock insuficiente' : 'Producto no disponible'}>
+    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+      <span className="min-w-0 text-xs text-muted tabular-nums wrap-anywhere">S/ {Number(item.price).toFixed(2)} c/u</span>
+      <div className="ml-auto flex items-center gap-1.5">
+        <div className="flex items-center rounded-xl border border-primary/15 bg-primary-soft/30">
+          <IconButton size="sm" label={`Reducir ${item.name}`} onClick={() => onQty(item.id, item.qty - 1)} disabled={disabled || item.qty <= 1} className="size-11 min-h-11 rounded-[inherit] text-primary hover:bg-primary-soft hover:text-primary sm:size-9 sm:min-h-9"><Minus aria-hidden="true" /></IconButton>
+          <span className="min-w-6 text-center text-sm font-bold tabular-nums">{item.qty}</span>
+          <IconButton size="sm" label={`Aumentar ${item.name}`} onClick={() => onQty(item.id, item.qty + 1)} disabled={disabled} className="size-11 min-h-11 rounded-[inherit] text-primary hover:bg-primary-soft hover:text-primary sm:size-9 sm:min-h-9"><Plus aria-hidden="true" /></IconButton>
+        </div>
+        <IconButton label={`Quitar ${item.name}`} onClick={() => onRemove(item.id)} disabled={disabled} className="size-11 min-h-11 text-danger hover:bg-danger-soft hover:text-danger sm:size-9 sm:min-h-9"><Trash2 aria-hidden="true" /></IconButton>
+      </div>
+    </div>
+    {change && !disabled && <Alert variant="warning" title={change.type === 'changed' ? 'Catálogo actualizado' : change.type === 'stock' ? 'Stock insuficiente' : 'Producto no disponible'}>
       {change.type === 'changed' ? <><p>Precio del carrito: S/ {Number(change.previousPrice).toFixed(2)} · Vigente: S/ {Number(change.currentPrice).toFixed(2)}. También se revisan costo y descripción.</p><Button size="sm" variant="secondary" disabled={disabled} onClick={() => onAcceptChange(item.id)}>Aceptar datos vigentes</Button></>
         : change.type === 'stock' ? `Quedan ${change.stock} unidades. Reduce la cantidad o retira el producto.` : 'Retira este producto para continuar. No se ha registrado un cobro.'}
     </Alert>}
@@ -83,7 +106,7 @@ export function Ticket({ cart, total, onQty, onRemove, isProcessing, children, a
   }, []);
   useLayoutEffect(() => { revealPaymentFocus(paymentRef.current); });
   return <Card className={cn('pos-ticket flex min-h-0 flex-col overflow-hidden p-0 sm:p-0', drawer && 'pos-ticket-drawer')}>
-    <header className="pos-ticket-heading flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-primary/15 bg-linear-to-r from-primary-soft to-panel px-3.5 py-2">
+    <header className="pos-ticket-heading flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-primary/20 bg-primary-soft px-3.5 py-2">
       <h2 className="flex min-w-0 items-center gap-2 text-sm font-extrabold text-brand-deep">
         <span className="pos-ticket-heading-icon flex size-8 shrink-0 items-center justify-center rounded-lg border border-primary/15 bg-panel text-primary"><ReceiptText aria-hidden="true" className="size-4" /></span>
         Ticket de venta
@@ -99,12 +122,12 @@ export function Ticket({ cart, total, onQty, onRemove, isProcessing, children, a
         Tu ticket está vacío
       </p>}
     </div>
-    <div className="pos-ticket-total flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 border-y border-finance-line bg-linear-to-r from-success-soft to-panel px-3.5 py-2 text-success">
-      <span className="text-xs font-bold">Total a cobrar</span><strong className="ml-auto text-2xl font-extrabold tracking-tight tabular-nums">S/ {total.toFixed(2)}</strong>
+    <div className="pos-ticket-total flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 border-y border-finance-line px-3.5 py-2">
+      <span className="text-sm font-bold">Total a cobrar</span><strong className="ml-auto min-w-0 text-right text-2xl font-extrabold tracking-tight tabular-nums wrap-anywhere">S/ {total.toFixed(2)}</strong>
     </div>
-    <div ref={paymentRef} onFocusCapture={() => requestAnimationFrame(() => revealPaymentFocus(paymentRef.current))} className="pos-ticket-payment ui-scroll space-y-2.5 bg-canvas p-3 focus-visible:outline-offset-[-3px]" role="region" aria-label="Pago y validación" tabIndex={0}>
+    <div ref={paymentRef} onFocusCapture={() => requestAnimationFrame(() => revealPaymentFocus(paymentRef.current))} className="pos-ticket-payment ui-scroll space-y-2.5 p-3 focus-visible:outline-offset-[-3px]" role="region" aria-label="Pago y validación" tabIndex={0}>
       {children}
     </div>
-    <div className="pos-ticket-actions border-t border-line bg-panel p-3">{action}</div>
+    <footer className="pos-ticket-actions border-t border-primary/15 bg-panel p-3">{action}</footer>
   </Card>;
 }

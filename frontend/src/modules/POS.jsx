@@ -129,7 +129,7 @@ function POS({ user }) {
     : isOnline&&currentSession?.needsForceClose&&!isExpired
       ? currentSession.canForceClose ? <Button variant="danger" className="w-full" onClick={showCashClosing}>Revisar y cerrar turno anterior</Button>
         : <Button variant="secondary" className="w-full" onClick={checkSession}>Comprobar disponibilidad</Button>
-      : <Button className="w-full" variant={isOnline && !branchStatus.isReadOnly ? 'success' : 'primary'} size="lg" onClick={requestCheckout} loading={isProcessing} disabled={isGlobalDisabled||catalogBlocked||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing}>
+      : <Button className="w-full" data-pos-charge={isOnline && !branchStatus.isReadOnly ? '' : undefined} variant={isOnline && !branchStatus.isReadOnly ? 'success' : 'primary'} size="lg" onClick={requestCheckout} loading={isProcessing} disabled={isGlobalDisabled||catalogBlocked||!runtimeCapabilities.saleOnline||cart.length===0||!isPaymentValid||isProcessing}>
         {isOnline && !isProcessing && !branchStatus.isReadOnly && <Banknote aria-hidden="true" />}
         {branchStatus.isReadOnly?'Modo lectura':isProcessing?'Procesando…':isOnline?'Cobrar':'Guardar sin cobrar'}
       </Button>;
@@ -148,9 +148,9 @@ function POS({ user }) {
     <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
     <header className="pos-toolbar flex shrink-0 flex-wrap items-center justify-between gap-2">
       <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight"><ShoppingBag aria-hidden="true" className="size-5 text-primary" />Punto de venta</h1>
-      <div className="flex flex-wrap items-center gap-2">
-      <CashStatus readOnly={branchStatus.isReadOnly} session={currentSession} isExpired={isExpired} expiresAt={expiresAt} remainingMinutes={remainingMinutes} />
-      {currentSession&&!isExpired&&!branchStatus.isReadOnly&&(!currentSession.needsForceClose||currentSession.canForceClose)&&<Button variant={currentSession.needsForceClose?'danger':'secondary'} size="sm" disabled={isProcessing} onClick={showCashClosing}><LockKeyhole />{currentSession.needsForceClose?'Revisar cierre anterior':'Cerrar caja'}</Button>}
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <CashStatus inPOS readOnly={branchStatus.isReadOnly} session={currentSession} isExpired={isExpired} expiresAt={expiresAt} remainingMinutes={remainingMinutes} />
+        {currentSession&&!isExpired&&!branchStatus.isReadOnly&&(!currentSession.needsForceClose||currentSession.canForceClose)&&<Button variant="danger" size="sm" disabled={isProcessing} onClick={showCashClosing}><LockKeyhole aria-hidden="true" />{currentSession.needsForceClose?'Revisar cierre anterior':'Cerrar caja'}</Button>}
       </div>
     </header>
     {branchStatus.isReadOnly&&<p role="status" className="flex shrink-0 items-start gap-2 rounded-xl border border-warning/25 bg-warning-soft px-3 py-2 text-sm text-warning"><Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><span>{branchStatus.reason==='global'?<><strong>Vista global · Solo lectura.</strong> Elige una sucursal en el selector de sede para vender.</>:<><strong>Solo lectura.</strong> La sucursal {branchStatus.name} está inactiva.</>}</span></p>}

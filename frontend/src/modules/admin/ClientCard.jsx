@@ -1,87 +1,63 @@
-import { memo } from 'react';
-import { Card, Button, cn } from '../../shared/ui';
+import { Building2, CalendarPlus, Download, Ellipsis, UsersRound } from 'lucide-react';
+import { useState } from 'react';
+import { Badge, Button, Card } from '../../shared/ui';
 import { toDateSafe } from '../../core/dates/dateValues.js';
-const formatDate = timestamp => {
-  if (!timestamp) return 'Sin fecha';
-  const d = toDateSafe(timestamp);
-  if (!d) return 'Fecha inválida';
-  return d.toLocaleDateString('es-PE', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric'
-  });
-};
-export const ClientCard = memo(({
-  license,
-  isProcessing,
-  setExtendModalInfo,
-  handleToggleStatus,
-  handleExport, onQuota, onDetails
-}) => {
-  const expiryDate = toDateSafe(license.expiry);
-  const isExpired = !expiryDate || expiryDate < new Date();
-  const isInactive = license.status !== 'activa';
-  const hasProblem = isExpired || isInactive;
-  const fullName = `${license.ownerFirstName || ''} ${license.ownerLastName || ''}`.trim() || 'Dueño';
-  return <Card className={cn("animate-enter motion-reduce:animate-none overflow-hidden p-0 sm:p-0 border-t-4", hasProblem ? "border-t-danger" : "border-t-success")} as="div">
+import { formatLicenseDate } from '../../features/licenses/domain/licenseTerm.js';
 
-      {/* Cabecera de Tarjeta */}
-      <div className="p-5 flex flex-col gap-2">
-        <div className="flex flex-wrap justify-between items-start gap-3">
-          <h3 className="min-w-0 flex-1 text-brand-deep text-lg font-bold wrap-anywhere">
-            {license.businessName}
-          </h3>
-          <div className="flex flex-wrap gap-3 items-center">
-            <span className={cn("text-xs font-bold uppercase py-1 px-2 rounded-lg", hasProblem ? "bg-danger-soft" : "bg-success-soft", hasProblem ? "text-danger" : "text-success")}>
-              {isExpired ? 'VENCIDA' : isInactive ? 'SUSPENDIDA' : 'ACTIVA'}
-            </span>
+export function ClientCard({ license, canOperate, onRenew, onQuota, onExport, onOffboard, onStatus, readContact }) {
+  const [contactState, setContactState] = useState(null);
+  const contact = contactState?.license === license ? contactState.value : null;
+  const maintained = license.tenantStatus === 'active' && !license.maintenanceJobId;
+  const suspended = license.status !== 'activa';
+  const expiry = toDateSafe(license.expiry);
+  const expired = !expiry || expiry < new Date();
+  const active = license.branchQuotaVersion === 1 && Array.isArray(license.activeBranchIds) ? license.activeBranchIds.length : null;
+  const registered = license.registeredBranchQuotaVersion === 1 && Array.isArray(license.registeredBranchIds) ? license.registeredBranchIds.length : null;
+  const inactive = registered !== null && active !== null && active <= registered ? registered - active : null;
+  const status = !maintained ? 'En revisión' : suspended ? 'Suspendida' : !expiry ? 'Vigencia sin verificar' : expired ? 'Vencida' : 'Activa';
 
-            {/* 🚀 BOTÓN DE EXPORTAR BD */}
-            <Button onClick={() => handleExport(license.id)} disabled={isProcessing} title="Exportar datos autorizados a un archivo local" aria-label="Exportar datos autorizados" type="button" variant="secondary" className="bg-transparent border-0 cursor-pointer text-xl p-0 opacity-80 transition-colors motion-reduce:transition-none">
-              📥
-            </Button>
+  const loadContact = async () => {
+    setContactState({ license, value: { loading: true } });
+    try { setContactState({ license, value: await readContact(license.id) }); }
+    catch (failure) { setContactState({ license, value: { error: failure.message } }); }
+  };
+  const owner = contact && [contact.ownerFirstName, contact.ownerLastName].filter(Boolean).join(' ');
 
-          </div>
+  return <Card as="article" className="grid content-start gap-3 border-t-2 border-t-primary/60 p-4 sm:p-4">
+    <header className="flex flex-wrap items-start justify-between gap-2">
+      <h2 className="min-w-0 text-lg font-extrabold text-brand-deep">{license.businessName}</h2>
+      <Badge variant={status === 'Activa' ? 'success' : status === 'Suspendida' ? 'danger' : 'warning'}>{status}</Badge>
+    </header>
+    <dl className="grid gap-2 rounded-xl border border-line bg-primary-soft/35 p-3 text-sm sm:grid-cols-2">
+      <div><dt className="text-xs text-muted">Vencimiento · Lima</dt><dd className="font-semibold">{formatLicenseDate(license.expiry)}</dd></div>
+      <div><dt className="text-xs text-muted">Sedes activas</dt><dd className="font-semibold">{active === null ? 'Necesita revisión' : `${active} de ${license.maxActiveBranches}`}</dd></div>
+      <div className="sm:col-span-2"><dt className="text-xs text-muted">Sedes registradas</dt><dd className="font-semibold">
+        {registered === null ? 'Inventario pendiente de revisión' : `${registered} ${registered === 1 ? 'registrada' : 'registradas'}${inactive !== null ? ` · ${inactive} ${inactive === 1 ? 'inactiva' : 'inactivas'}` : ''}`}
+      </dd></div>
+    </dl>
+    <div className="flex flex-wrap gap-2">
+      <Button size="sm" disabled={!canOperate || !maintained} onClick={() => onRenew(license)}><CalendarPlus aria-hidden="true" />Renovar licencia</Button>
+      <Button size="sm" variant="secondary" disabled={!canOperate} onClick={() => onQuota(license)}><Building2 aria-hidden="true" />Gestionar sedes y cupos</Button>
+    </div>
+    <div className="flex flex-wrap gap-2 border-t border-line pt-2">
+      <Button size="sm" variant="ghost" disabled={!canOperate} onClick={() => onExport(license)}><Download aria-hidden="true" />Descargar datos</Button>
+      <Button size="sm" variant="ghost" onClick={() => onOffboard(license)}>Solicitud de baja</Button>
+    </div>
+    <details className="rounded-xl border border-line bg-canvas px-3">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-semibold text-brand-deep"><Ellipsis aria-hidden="true" className="size-4" />Contacto y opciones de licencia</summary>
+      <div className="grid gap-2 border-t border-line py-3 text-sm">
+        {contact && !contact.loading && !contact.error && canOperate && <div role="status" className="wrap-anywhere">
+          <strong>{owner || 'Titular'}</strong>
+          <p className="text-muted">{contact.ownerEmail || 'Correo sin registrar'}</p>
+          {contact.businessName && contact.businessName !== license.businessName && <p>{contact.businessName}</p>}
+        </div>}
+        {contact?.error && <p role="alert" className="text-danger">{contact.error}</p>}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" disabled={!canOperate} loading={contact?.loading} onClick={loadContact}><UsersRound aria-hidden="true" />Consultar titular</Button>
+          <Button variant="secondary" size="sm" disabled={!canOperate || !maintained} onClick={() => onStatus(license)}>{suspended ? 'Reactivar licencia' : 'Suspender licencia'}</Button>
         </div>
-
-        <span className="break-all text-xs text-muted font-mono">
-          ID: {license.id}
-        </span>
+        <details><summary className="cursor-pointer text-xs text-muted">Información técnica</summary><p className="break-all text-xs text-muted">ID: {license.id}</p></details>
       </div>
-
-      {/* Detalles de Tarjeta */}
-      <div className="bg-primary-soft/40 py-4 px-5 border-t border-t-line border-b border-b-line grid gap-2.5">
-        <div className="flex items-center gap-2.5 text-sm">
-          <span className="text-xl">👤</span>
-          <div>
-            <strong className="block text-ink">{fullName}</strong>
-            <span className="break-all text-muted">{license.ownerEmail}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5 text-sm">
-          <span className="text-xl">📅</span>
-          <div>
-            <strong className="block text-ink">Vencimiento</strong>
-            <span className={cn(hasProblem ? "text-danger" : "text-muted", hasProblem ? "font-bold" : "font-normal")}>
-              {formatDate(license.expiry)}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3 text-xs text-muted"><span>Sedes activas: {license.branchQuotaVersion === 1 ? `${license.activeBranchIds?.length ?? '?'} / ${license.maxActiveBranches}` : 'cupo histórico sin regularizar'}. Registradas (incluye inactivas): {license.registeredBranchQuotaVersion === 1 ? `${license.registeredBranchIds?.length ?? '?'} / ${license.maxRegisteredBranches}` : 'inventario pendiente de revisión'}</span><Button variant="secondary" size="sm" disabled={isProcessing} onClick={() => onQuota(license)}>Editar cupo</Button></div>
-      <div className="px-5 py-3"><Button variant="secondary" onClick={() => onDetails(license)} disabled={isProcessing} className="w-full">Ver detalles</Button></div>
-      {/* Botonera de Tarjeta */}
-      {license.tenantStatus !== 'active' && <p role="status" className="rounded-xl border border-line bg-subtle/60 p-3 text-xs leading-relaxed text-muted">Estado histórico: {license.tenantStatus}. Mantenimiento privilegiado no disponible en Spark.</p>}
-      <div className="py-4 px-5 flex flex-wrap gap-2.5">
-        <Button disabled={isProcessing || license.tenantStatus !== 'active' || !!license.maintenanceJobId} onClick={() => setExtendModalInfo(license.id)} className="min-w-0 flex-1 p-2 text-sm" type="button" variant="primary">
-          🚀 Renovar
-        </Button>
-        <Button onClick={() => handleToggleStatus(license.id, license.status)} disabled={isProcessing || license.tenantStatus !== 'active' || !!license.maintenanceJobId} className={cn("size-11 shrink-0 p-2 border border-line rounded-xl", isProcessing ? "opacity-50" : "opacity-100")} title={isInactive ? 'Activar Servicio' : 'Suspender Servicio'} type="button" variant="ghost" aria-label={isInactive ? 'Activar Servicio' : 'Suspender Servicio'}>
-          {isInactive ? '▶️' : '⏸️'}
-        </Button>
-      </div>
-    </Card>;
-});
-
-// Componente Principal
+    </details>
+  </Card>;
+}

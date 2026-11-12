@@ -8,6 +8,8 @@ import { readLocalBackup } from '../infrastructure/localBackup.js';
 import { makeBackup, encodeBackup, verifyBackupFile } from '../domain/backupFile.js';
 import { inventorySections } from '../domain/tenantInventory.js';
 import { downloadBackup } from '../application/downloadBackup.js';
+import { loadExcelModule } from '../../reports/application/excelModule.js';
+import { buildBusinessSummaryWorkbook } from '../application/businessSummaryWorkbook.js';
 
 export function useLocalBackup(user, businessId) {
   const [state, setState] = useState({ busy: false, progress: null, error: null, result: null });
@@ -23,6 +25,22 @@ export function useLocalBackup(user, businessId) {
     finally { if (operation.current === controller) operation.current = null; }
   };
   return { ...state, cancel: () => { operation.current?.abort(); operation.current = null; setState({ busy: false, error: 'Exportación cancelada; no se modificó ningún registro.', result: null, progress: null }); },
+    exportSummary: ({ consent, businessName, maxRecords }) => run(async (assertActive, signal) => {
+      if (user?.role !== 'superadmin' || !consent) throw new Error('Confirma la descarga del resumen de este negocio.');
+      assertActive();
+      const XLSX = await loadExcelModule();
+      assertActive();
+      const capturedAt = new Date().toISOString();
+      const remote = await readRemoteBackup({ actorId: user.uid, businessId, summary: true, maxRecords, signal,
+        onProgress: progress => { if (!signal.aborted) setState(previous => ({ ...previous, progress })); } });
+      assertActive();
+      const workbook = buildBusinessSummaryWorkbook(XLSX, { businessName, capturedAt, ...remote });
+      const filename = `MigaPOS-resumen-${capturedAt.slice(0, 10)}.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      const sections = remote.sections.map(({ name, records, status, warning }) => ({ name, count: records.length, status, warning }));
+      return { filename, summary: true, businessWrites: 0, accessControlWrites: remote.accessControlWrites ?? 0,
+        manifest: { sections, partial: sections.some(section => section.status !== 'complete'), warnings: remote.warnings } };
+    }),
     exportBackup: options => run(async (assertActive, signal) => {
       if (user?.role !== 'superadmin') throw new Error('Solo SuperAdmin puede iniciar la exportación o el inventario empresarial.');
       if ((options.pending || options.photos) && !options.password) throw new Error('Pendientes/fotos requieren consentimiento y exportación cifrada.');

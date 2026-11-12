@@ -25,13 +25,27 @@ it('opens the real SuperAdmin shell without tenant subscriptions, backend calls 
       export function getLicenseFromServer() {${forbiddenRead}}
       export function getTenantFromServer() {${forbiddenRead}}`,
     [module('features/licenses/infrastructure/administrationRepository.js')]: `
-      const expiry = {toDate:() => new Date(Date.now() + 86400000)};
+      const expiryMs = Date.now() + 86400000;
+      const expiry = {toDate:() => new Date(expiryMs), toMillis:() => expiryMs};
       const rows = [{id:'fixture-tenant', businessName:'Negocio existente', status:'activa', tenantStatus:'active', expiry}];
       export async function administrationPage() {globalThis.__sparkPageCalls++; return {rows:[...rows], cursor:null};}
+      export async function administrationLicense({businessId}) {
+        globalThis.__sparkLicenseReads = (globalThis.__sparkLicenseReads ?? 0) + 1;
+        return {...rows.find(row=>row.id===businessId)};
+      }
+      export async function administrationContact() {
+        globalThis.__sparkContactReads = (globalThis.__sparkContactReads ?? 0) + 1;
+        return {ownerFirstName:'Titular',ownerEmail:'contacto@example.test'};
+      }
       export async function adminCall(name, data) {
         if (!['createTenant','extendTenantLicense','setTenantLicenseStatus'].includes(name)) {${forbidden}}
         globalThis.__sparkAdminCalls.push({name, data});
         if(name === 'createTenant') rows.push({id:data.operationId, businessName:data.businessName, ownerEmail:data.ownerEmail, tenantStatus:'active', status:'activa', expiry});
+        if(name === 'extendTenantLicense' && !globalThis.__sparkRenewFailed) {
+          await new Promise(resolve => { globalThis.__sparkResolveRenew = resolve; });
+          globalThis.__sparkRenewFailed = true;
+          throw Object.assign(new Error('Respuesta interrumpida en la simulación'), {code:'unavailable'});
+        }
         return {businessId:data.operationId};
       }`,
     [module('utils/offlineRetry.js')]: `export async function retryOfflineSales() {${forbidden}}`,
@@ -40,6 +54,6 @@ it('opens the real SuperAdmin shell without tenant subscriptions, backend calls 
     // Fail before any external endpoint is contacted. Only these forbidden services are intercepted.
     setupPage: page => page.send('Fetch.enable', { patterns: ['*cloudfunctions.net*', '*firebasestorage.googleapis.com*', '*storage.googleapis.com*'].map(urlPattern => ({ urlPattern, requestStage: 'Request' })) }),
   });
-  assert.equal(result.checks.length, 10);
+  assert.equal(result.checks.length, 17);
   console.log(`Spark startup: ${result.checks.length} isolated browser checks passed; no real login or Firebase connection.`);
 });

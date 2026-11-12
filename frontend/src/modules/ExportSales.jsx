@@ -90,7 +90,7 @@ function ExportSales({ user }) {
     if (!isExporting) void exportData();
   };
 
-  return <section aria-labelledby={headingId} className="export-toolbar min-w-0 rounded-card border border-line border-l-4 border-l-success bg-linear-to-br from-panel via-panel to-success-soft/55 p-3 shadow-card sm:px-4">
+  return <section aria-labelledby={headingId} className="export-toolbar min-w-0 rounded-card border border-line border-l-4 border-l-success bg-linear-to-br from-panel via-panel to-success-soft/55 p-3 shadow-card sm:px-6">
     <header className="flex min-w-0 items-start gap-3">
       <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-finance-line bg-success-soft text-success shadow-xs sm:size-11">
         <FileSpreadsheet aria-hidden="true" className="size-5" />

@@ -1,22 +1,13 @@
 import { DEFAULT_MAX_ACTIVE_BRANCHES, DEFAULT_MAX_REGISTERED_BRANCHES, validateBranchQuotas } from '../../branches/domain/branchPolicy.js';
 import * as firestore from 'firebase/firestore';
+import { toMillisSafe } from '../../../core/dates/dateValues.js';
+import { addLicenseMonths, validateLicenseMonths } from '../domain/licenseTerm.js';
 
 const fail = (message, code = 'invalid-administration') => { throw Object.assign(new Error(message), { code }); };
 const text = (value, label, max = 120) => {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > max) fail(`${label}: valor requerido o demasiado largo.`);
   return value.trim();
 };
-const monthsValue = value => {
-  if (!Number.isInteger(value) || value < 1 || value > 120) fail('La duración debe ser de 1 a 120 meses.');
-  return value;
-};
-export function addLicenseMonths(ms, count) {
-  const date = new Date(ms - 5 * 3600000), day = date.getUTCDate();
-  date.setUTCDate(1); date.setUTCMonth(date.getUTCMonth() + monthsValue(count));
-  const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
-  date.setUTCDate(Math.min(day, end));
-  return date.getTime() + 5 * 3600000;
-}
 const identifier = value => {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(value)) fail('ID de operación inválido.');
   return value;
@@ -33,42 +24,64 @@ const replay = (snapshot, expected) => {
 };
 
 export function createSparkAdministrationRepository(database, { currentUser, sdk = firestore, now = Date.now } = {}) {
-  const { doc, collection, query, where, orderBy, documentId, limit, startAfter, getDoc, getDocs, runTransaction, serverTimestamp, Timestamp } = sdk;
-  const actor = () => {
+  const { doc, collection, query, where, orderBy, documentId, limit, startAfter, getDocFromServer, getDocsFromServer, runTransaction, serverTimestamp, Timestamp } = sdk;
+  const actor = expectedId => {
     const user = currentUser?.();
-    if (!user?.uid) fail('Inicia sesión de nuevo.', 'unauthenticated');
+    if (!user?.uid || (expectedId && user.uid !== expectedId)) fail('La sesión cambió. Inicia sesión de nuevo.', 'unauthenticated');
     return user;
   };
-  const administrationPage = async ({ cursor, limit: pageLimit = 25 } = {}) => {
+  const licenseRow = snapshot => {
+    const businessId = snapshot.id, data = snapshot.data();
+    if (!data || (data.businessId != null && data.businessId !== businessId)) fail('Licencia no verificable.');
+    const { businessName, status, tenantStatus, maintenanceJobId, expiry, branchQuotaVersion, registeredBranchQuotaVersion,
+      maxActiveBranches, maxRegisteredBranches, activeBranchIds, registeredBranchIds } = data;
+    return { id: businessId, businessName: businessName || 'Negocio sin nombre registrado', status, tenantStatus: tenantStatus ?? 'active',
+      maintenanceJobId, expiry, branchQuotaVersion, registeredBranchQuotaVersion, maxActiveBranches, maxRegisteredBranches,
+      activeBranchIds, registeredBranchIds };
+  };
+  const administrationPage = async ({ actorId, cursor, limit: pageLimit = 25 } = {}) => {
+    const user = actor(actorId);
     if (!Number.isInteger(pageLimit) || pageLimit < 1 || pageLimit > 50) fail('Página inválida.');
-    const page = await getDocs(query(collection(database, 'licenses'), orderBy(documentId()), ...(cursor ? [startAfter(cursor)] : []), limit(pageLimit)));
-    const rows = await Promise.all(page.docs.map(async license => {
-      const businessId = license.id;
-      const [tenant, owners] = await Promise.all([getDoc(doc(database, 'tenants', businessId)),
-        getDocs(query(collection(database, 'users'), where('businessId', '==', businessId), where('role', '==', 'dueño'), limit(1)))]);
-      const invites = owners.empty ? await getDocs(query(collection(database, 'invites'), where('businessId', '==', businessId), where('role', '==', 'dueño'), limit(1))) : null;
-      const owner = owners.docs[0]?.data() ?? invites?.docs[0]?.data() ?? {}, t = tenant.data() ?? {}, l = license.data();
-      return { ...l, id: businessId, businessId, businessName: t.businessName ?? l.businessName ?? businessId,
-        tenantStatus: t.status ?? l.tenantStatus ?? 'active', maintenanceJobId: t.maintenanceJobId ?? l.maintenanceJobId ?? null,
-        ownerFirstName: owner.firstName ?? '', ownerLastName: owner.lastName ?? '', ownerEmail: owner.email ?? t.ownerEmail ?? '' };
-    }));
-    return { rows, cursor: page.size === pageLimit ? page.docs.at(-1).id : null };
+    const page = await getDocsFromServer(query(collection(database, 'licenses'), orderBy(documentId()), ...(cursor ? [startAfter(cursor)] : []), limit(pageLimit)));
+    actor(user.uid);
+    if (page.metadata?.fromCache || page.metadata?.hasPendingWrites) fail('La página no fue confirmada por el servidor.', 'unavailable');
+    return { rows: page.docs.map(licenseRow), cursor: page.size === pageLimit ? page.docs.at(-1).id : null };
+  };
+  const administrationLicense = async ({ actorId, businessId }) => {
+    const user = actor(actorId);
+    const saved = await getDocFromServer(doc(database, 'licenses', tenantId(businessId)));
+    actor(user.uid);
+    if (saved.metadata?.fromCache || saved.metadata?.hasPendingWrites) fail('La licencia no fue confirmada por el servidor.', 'unavailable');
+    return licenseRow(saved);
+  };
+  const administrationContact = async ({ actorId, businessId }) => {
+    const user = actor(actorId), id = tenantId(businessId);
+    const ownerQuery = name => getDocsFromServer(query(collection(database, name), where('businessId', '==', id), where('role', '==', 'dueño'), limit(1)));
+    const [tenant, owners] = await Promise.all([getDocFromServer(doc(database, 'tenants', id)), ownerQuery('users')]);
+    actor(user.uid);
+    const contactPage = owners.empty ? await ownerQuery('invites') : owners;
+    actor(user.uid);
+    const contact = contactPage.docs[0]?.data(), tenantData = tenant.data();
+    if ([tenant, owners, contactPage].some(result => result.metadata?.fromCache || result.metadata?.hasPendingWrites)
+      || (contact && contact.businessId !== id) || (tenantData?.businessId != null && tenantData.businessId !== id)) fail('Contacto no verificable.');
+    return { businessName: tenantData?.businessName, ownerFirstName: contact?.firstName ?? '', ownerLastName: contact?.lastName ?? '',
+      ownerEmail: contact?.email ?? tenantData?.ownerEmail ?? '' };
   };
   const createTenant = async raw => {
-    const user = actor(), operationId = identifier(raw.operationId), businessId = operationId, branchId = `main_${operationId}`;
+    const user = actor(raw.actorId), operationId = identifier(raw.operationId), businessId = operationId, branchId = `main_${operationId}`;
     const ownerEmail = text(raw.ownerEmail, 'Correo', 254).toLowerCase();
     if (!/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(ownerEmail)) fail('Correo de propietario inválido.');
     if (ownerEmail === user.email?.toLowerCase()) fail('Usa una cuenta de propietario distinta del SuperAdmin.');
     const limits = validateBranchQuotas(raw.maxActiveBranches ?? DEFAULT_MAX_ACTIVE_BRANCHES, raw.maxRegisteredBranches ?? Math.max(DEFAULT_MAX_REGISTERED_BRANCHES, raw.maxActiveBranches ?? DEFAULT_MAX_ACTIVE_BRANCHES));
     const input = { operationId, actorId: user.uid, operation: 'createTenant', businessId, branchId, ownerEmail,
-      businessName: text(raw.businessName, 'Negocio'), firstName: text(raw.firstName, 'Nombres'), lastName: text(raw.lastName, 'Apellidos'), months: monthsValue(raw.months), ...limits };
+      businessName: text(raw.businessName, 'Negocio'), firstName: text(raw.firstName, 'Nombres'), lastName: text(raw.lastName, 'Apellidos'), months: validateLicenseMonths(raw.months), ...limits };
     const opRef = doc(database, 'platform_operations', `${user.uid}_${operationId}`);
     const claimRef = doc(database, 'owner_email_claims', ownerEmail), inviteRef = doc(database, 'invites', ownerEmail);
     // Rules cannot query historical users by email. Existing profiles are checked here;
     // permanent claims protect every new provisioning atomically, including concurrent admins.
-    const previous = replay(await getDoc(opRef), input);
+    const previous = replay(await getDocFromServer(opRef), input);
     if (previous) return previous;
-    const registered = await getDocs(query(collection(database, 'users'), where('email', '==', ownerEmail), limit(1)));
+    const registered = await getDocsFromServer(query(collection(database, 'users'), where('email', '==', ownerEmail), limit(1)));
     if (!registered.empty) fail('El correo ya pertenece a un usuario. Usa otro Gmail de propietario.', 'email-in-use');
     return runTransaction(database, async tx => {
       const prior = replay(await tx.get(opRef), input);
@@ -89,27 +102,46 @@ export function createSparkAdministrationRepository(database, { currentUser, sdk
     });
   };
   const changeLicense = async (operation, raw) => {
-    const user = actor(), businessId = tenantId(raw.businessId), operationId = identifier(raw.operationId);
+    const user = actor(raw.actorId), businessId = tenantId(raw.businessId), operationId = identifier(raw.operationId);
     const input = { operationId, actorId: user.uid, operation, businessId,
-      ...(operation === 'extendTenantLicense' ? { months: monthsValue(raw.months) } : { newStatus: raw.status }) };
+      ...(operation === 'extendTenantLicense' ? { months: validateLicenseMonths(raw.months) } : { newStatus: raw.status }) };
     if (operation === 'setTenantLicenseStatus' && !['activa', 'inactiva'].includes(raw.status)) fail('Estado de licencia inválido.');
     const opRef = doc(database, 'platform_operations', `${user.uid}_${operationId}`), licenseRef = doc(database, 'licenses', businessId);
-    return runTransaction(database, async tx => {
+    const commit = () => runTransaction(database, async tx => {
       const prior = replay(await tx.get(opRef), input);
       if (prior) return prior;
       const [license, tenant] = await Promise.all([tx.get(licenseRef), tx.get(doc(database, 'tenants', businessId))]);
       const l = license.data(), t = tenant.data();
       if (!l || l.businessId !== businessId) fail('La licencia no existe.');
       if ((t?.status ?? l.tenantStatus ?? 'active') !== 'active' || t?.maintenanceJobId || l.maintenanceJobId) fail('El negocio tiene mantenimiento o eliminación pendiente.');
+      if (raw.expected && (raw.expected.status !== l.status || raw.expected.expiry !== toMillisSafe(l.expiry))) {
+        fail('La licencia cambió. Actualiza la lista y revisa la vigencia antes de confirmar.', 'license-changed');
+      }
+      actor(user.uid);
       const updatedAt = serverTimestamp();
       const changes = operation === 'extendTenantLicense' ? { status: 'activa', expiry: Timestamp.fromMillis(addLicenseMonths(Math.max(now(), l.expiry?.toMillis?.() ?? 0), input.months)) } : { status: raw.status };
       tx.update(licenseRef, { ...changes, updatedAt, operationId });
       tx.set(opRef, { ...input, newStatus: changes.status, ...(changes.expiry ? { expiry: changes.expiry } : {}), createdAt: updatedAt });
       return { businessId, status: changes.status };
     });
+    try {
+      return await commit();
+    } catch (failure) {
+      // A concurrent commit may win before Rules evaluate this attempt.
+      // Only a matching server receipt can turn an ambiguous response into success.
+      if (!['permission-denied', 'aborted', 'unavailable', 'deadline-exceeded'].includes(failure.code)) throw failure;
+      actor(user.uid);
+      const receipt = await getDocFromServer(opRef).catch(() => null);
+      actor(user.uid);
+      if (receipt && !receipt.metadata?.fromCache && !receipt.metadata?.hasPendingWrites) {
+        const confirmed = replay(receipt, input);
+        if (confirmed) return confirmed;
+      }
+      throw failure;
+    }
   };
   const setTenantBranchQuota = async raw => {
-    const user = actor(), businessId = tenantId(raw.businessId), operationId = identifier(raw.operationId);
+    const user = actor(raw.actorId), businessId = tenantId(raw.businessId), operationId = identifier(raw.operationId);
     const limits = validateBranchQuotas(raw.maxActiveBranches, raw.maxRegisteredBranches);
     const licenseRef = doc(database, 'licenses', businessId), opRef = doc(database, 'platform_operations', `${user.uid}_${operationId}`);
     return runTransaction(database, async tx => {
@@ -118,6 +150,9 @@ export function createSparkAdministrationRepository(database, { currentUser, sdk
       if (prior.exists()) { replay(prior, expected); return { businessId }; }
       if (!saved.exists() || saved.data().businessId !== businessId) fail('Licencia inexistente.');
       const existing = saved.data();
+      if (raw.expected && (raw.expected.active !== (existing.maxActiveBranches ?? null) || raw.expected.registered !== (existing.maxRegisteredBranches ?? null))) {
+        fail('El cupo cambió. Actualiza la lista antes de confirmar.', 'quota-changed');
+      }
       const regularization = existing.branchQuotaVersion !== 1 || existing.registeredBranchQuotaVersion !== 1;
       if (regularization && raw.confirmHistoricalReview !== true) fail('Confirma el inventario completo de sedes registradas y activas para regularizar el negocio histórico.');
       const activeBranchIds = existing.branchQuotaVersion === 1 ? existing.activeBranchIds : raw.activeBranchIds;
@@ -133,7 +168,7 @@ export function createSparkAdministrationRepository(database, { currentUser, sdk
       return { businessId, ...limits };
     });
   };
-  return { administrationPage, createTenant, setTenantBranchQuota,
+  return { administrationPage, administrationLicense, administrationContact, createTenant, setTenantBranchQuota,
     extendTenantLicense: data => changeLicense('extendTenantLicense', data),
     setTenantLicenseStatus: data => changeLicense('setTenantLicenseStatus', data) };
 }

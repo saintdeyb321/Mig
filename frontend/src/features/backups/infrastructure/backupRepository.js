@@ -4,13 +4,15 @@ import { sanitizeBackup } from '../domain/backupFile.js';
 import { firebaseErrorMessage } from '../../../core/errors/firebaseErrors.js';
 
 const single = ['tenants', 'licenses', 'settings'];
+const summaryCollections = ['tenants', 'licenses', 'branches', 'categories', 'products', 'users', 'invites'];
 export const BACKUP_COLLECTIONS = [...single, 'branches', 'categories', 'products', 'customers', 'sales', 'contracts', 'payments',
   'cash_sessions', 'active_cash_sessions', 'users', 'invites', 'spark_contract_operations', 'alerts', 'audit_events',
   'daily_stats', 'notifications', 'platform_jobs', 'platform_operations', 'platform_audit', 'owner_email_claims', 'pos_sale_groups', 'pos_voids', 'pos_void_groups'];
 export function createBackupRepository(database, { sdk = firestoreSDK, currentUser, withAccess = createPlatformDataAccess(database, { sdk, currentUser }) } = {}) {
   const { doc, getDocFromServer, collection, query, where, orderBy, documentId, startAfter, limit, getDocsFromServer } = sdk;
-  return async ({ businessId, actorId, maxRecords = 2000, signal, purpose = 'export', onProgress = () => {} }) => {
+  return async ({ businessId, actorId, maxRecords = 2000, signal, purpose = 'export', summary = false, onProgress = () => {} }) => {
     if (!businessId || businessId === 'platform-admin' || businessId.includes('/') || !['export', 'inventory'].includes(purpose) || !Number.isSafeInteger(maxRecords) || maxRecords < 100 || maxRecords > 5000) throw new Error('Alcance o límite de exportación inválido.');
+    if (summary && (purpose !== 'export' || maxRecords > 500)) throw new Error('El resumen empresarial admite hasta 500 documentos.');
     const assertActive = () => { if (signal?.aborted || currentUser()?.uid !== actorId) throw new Error('Exportación cancelada o identidad modificada.'); };
     assertActive();
     const profile = (await getDocFromServer(doc(database, 'users', actorId))).data();
@@ -30,7 +32,7 @@ export function createBackupRepository(database, { sdk = firestoreSDK, currentUs
         if (bytes + size > 16 * 1024 * 1024 || count >= maxRecords) { exhausted = true; return false; }
         bytes += size; count++; records.push(record); return true;
       };
-      for (const name of BACKUP_COLLECTIONS) {
+      for (const name of summary ? summaryCollections : BACKUP_COLLECTIONS) {
         assertActive();
         const section = { name, records: [], status: 'complete' };
         if (exhausted || count >= maxRecords) { section.status = 'not-read'; section.warning = 'Límite global de registros/16 MiB alcanzado.'; sections.push(section); continue; }
@@ -58,6 +60,12 @@ export function createBackupRepository(database, { sdk = firestoreSDK, currentUs
         }
         if (section.status !== 'complete') section.warning ??= 'Límite global: no se afirma que la colección esté completa.';
         sections.push(section);
+      }
+      if (summary) {
+        if (redacted.length) warnings.push(`Campos sensibles/no soportados omitidos: ${redacted.length}.`);
+        warnings.push('Resumen empresarial. Excluye movimientos financieros, tickets, pedidos, ajustes, Authentication, Storage y datos de dispositivos.');
+        assertActive();
+        return { sections, warnings };
       }
       // Known historical job children inherit their tenant from the verified parent.
       // No arbitrary reference path is queried: the Web SDK cannot enumerate unknown collections.

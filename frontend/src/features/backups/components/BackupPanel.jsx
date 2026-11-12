@@ -2,7 +2,7 @@ import { Button, Card, Input, Select } from '../../../shared/ui';
 import { useState } from 'react';
 import { useLocalBackup } from '../hooks/useLocalBackup.js';
 
-export default function BackupPanel({ user, businessId = user?.businessId, onClose }) {
+export default function BackupPanel({ user, businessId = user?.businessId, businessName, onClose }) {
   const [encrypted, setEncrypted] = useState(true), [password, setPassword] = useState(''), [repeat, setRepeat] = useState('');
   const [pending, setPending] = useState(false), [photos, setPhotos] = useState(false), [consent, setConsent] = useState(false);
   const [maxRecords, setMaxRecords] = useState(2000), [file, setFile] = useState(null);
@@ -17,9 +17,8 @@ export default function BackupPanel({ user, businessId = user?.businessId, onClo
   };
   const valid = consent && (!encrypted || password.length >= 12 && password.length <= 1024 && password === repeat);
   return <Card className="grid min-w-0 gap-5 border-t-2 border-t-primary text-sm leading-relaxed [&>label]:space-y-2" aria-label="Backup local Spark">
-    <h3 className="break-all text-lg font-bold text-brand-deep">Exportación local · {businessId}</h3>
-    <p>Lee solo lo permitido por Firestore Rules. SuperAdmin recibe acceso de lectura temporal exclusivamente al negocio elegido (10 minutos), revocado al terminar cuando la sesión lo permite. Esto escribe un permiso de acceso, nunca registros de negocio. No es un backup integral de Firebase ni un snapshot atómico; evita cambios concurrentes durante la lectura.</p>
-    <p>No incluye cuentas Authentication, credenciales ni objetos Storage. No hay restauración a Firebase, purga, scheduler ni jobs. Las fotografías solo existen en su dispositivo/cuenta.</p>
+    <h3 className="text-lg font-bold text-brand-deep">Datos de {businessName || businessId}</h3>
+    <p>La lectura se limita al negocio elegido y usa un permiso de 10 minutos. El archivo excluye cuentas Authentication, credenciales, Storage y archivos de otros dispositivos.</p>
     <label className="text-sm leading-relaxed">Límite total de documentos Firestore <Select value={maxRecords} disabled={backup.busy} onChange={event => setMaxRecords(Number(event.target.value))}>
       {[100, 500, 2000, 5000].map(value => <option key={value} value={value}>{value}</option>)}
     </Select></label>
@@ -32,7 +31,12 @@ export default function BackupPanel({ user, businessId = user?.businessId, onClo
       <p className="text-xs text-muted sm:col-span-2">Si la pierdes, no podremos recuperar el archivo cifrado.</p>
     </div>}
     <label className="text-sm leading-relaxed"><Input type="checkbox" checked={consent} disabled={backup.busy} onChange={event => setConsent(event.target.checked)} /> Autorizo estas lecturas y la descarga de información de este negocio en este equipo.</label>
-    <div className="flex flex-wrap gap-2"><Button disabled={backup.busy || !valid} onClick={() => void exportData(false)}>Descargar datos Firestore autorizados</Button> <Button disabled={backup.busy || !valid} onClick={() => void exportData(false, true)}>Inventariar rutas y referencias (sin borrar)</Button></div>
+    <div className="rounded-xl border border-finance-line bg-success-soft p-3">
+      <h4 className="font-bold text-success">Resumen empresarial Excel</h4>
+      <p className="mb-2 text-xs">Hasta {Math.min(500, maxRecords)} documentos de negocio, licencia, sedes, catálogo y personal. Excluye movimientos financieros. El Excel se descarga sin cifrar.</p>
+      <Button variant="success" disabled={backup.busy || !consent} onClick={() => void backup.exportSummary({ consent, businessName, maxRecords: Math.min(500, maxRecords) })}>Descargar resumen Excel</Button>
+    </div>
+    <div className="flex flex-wrap gap-2"><Button disabled={backup.busy || !valid} onClick={() => void exportData(false)}>{encrypted ? 'Descargar copia cifrada' : 'Descargar copia JSON'}</Button> <Button variant="secondary" disabled={backup.busy || !valid} onClick={() => void exportData(false, true)}>Inventariar rutas y referencias</Button></div>
     <p>Inventario de colecciones declaradas y subcolecciones históricas conocidas de jobs; no puede enumerar rutas desconocidas o padres ausentes. Las referencias se informan sin seguirlas ni asumir que sean de este negocio.</p>
     <fieldset disabled={backup.busy} className="grid min-w-0 gap-3 rounded-2xl border border-primary/15 bg-primary-soft/25 p-4">
       <legend className="px-2 text-sm font-bold text-brand-deep">Archivo separado del dispositivo (siempre cifrado)</legend>
@@ -59,7 +63,7 @@ export default function BackupPanel({ user, businessId = user?.businessId, onClo
     {backup.error && <p role="alert">{backup.error}</p>}
     {backup.result && <div role="status" className="space-y-3 rounded-2xl border border-finance-line bg-success-soft p-4">
       <p>{backup.result.filename ? `Descarga solicitada: ${backup.result.filename}` : backup.result.cleanupVerification ? 'Verificación remota de rutas conocidas finalizada; no se eliminó ningún dato.' : 'Integridad local verificada; no se restauró ningún dato.'} {backup.result.filename || backup.result.cleanupVerification ? `Escrituras de negocio: 0. Escrituras de permiso temporal: ${backup.result.accessControlWrites}.` : 'Escrituras: 0.'}</p>
-      <p>{backup.result.manifest.partial ? 'EXPORTACIÓN PARCIAL' : 'Alcance declarado leído; consultar exclusiones y advertencias.'}</p>
+      <p>{backup.result.manifest.partial ? 'EXPORTACIÓN PARCIAL' : backup.result.summary ? 'Resumen de las secciones seleccionadas; consulta el alcance del Excel.' : 'Alcance declarado leído; consultar exclusiones y advertencias.'}</p>
       <ul className="list-disc space-y-1 break-words pl-5 text-xs">{backup.result.manifest.sections.map(section => <li key={section.name}>{section.name}: {section.count} · {section.status} {section.warning ?? ''}</li>)}</ul>
       <ul className="list-disc space-y-1 break-words pl-5 text-xs">{backup.result.manifest.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
     </div>}

@@ -21,13 +21,13 @@ const methods = [
 ];
 
 export function PaymentSelector({ payment, onSelect, disabled, inTicket = false }) {
-  return <div className="pos-payment-methods grid grid-cols-3 gap-1.5" role="group" aria-label="Método de pago">
+  return <div className={cn('pos-payment-methods grid grid-cols-3 gap-1.5', inTicket && 'rounded-xl border border-primary/20 bg-panel p-1')} role="group" aria-label="Método de pago">
     {methods.map(({ id, label, icon: Icon, idle, active }) => {
       const selected = payment === id;
-      return <Button key={id} variant="secondary" onClick={() => onSelect(id)} disabled={disabled} aria-pressed={selected}
+      return <Button key={id} variant="secondary" onClick={() => onSelect(id)} disabled={disabled} aria-pressed={selected} data-ticket-payment={inTicket ? id : undefined}
         className={cn('min-h-11 gap-1 px-1 py-1.5 text-xs shadow-none disabled:border-line disabled:bg-subtle disabled:text-muted disabled:opacity-100 disabled:ring-0',
           inTicket && 'relative',
-          selected ? cn('font-bold', active) : cn(idle, inTicket && 'border-line bg-panel'))}>
+          selected ? cn(inTicket ? 'font-extrabold' : 'font-bold', active) : idle)}>
         {selected ? <Check aria-hidden="true" className={inTicket ? 'payment-method-check' : 'payment-method-icon'} /> : createElement(Icon, { 'aria-hidden': true, className: 'payment-method-icon' })}
         <span className="min-w-0 wrap-anywhere">{label}</span>
       </Button>;
@@ -37,18 +37,30 @@ export function PaymentSelector({ payment, onSelect, disabled, inTicket = false 
 export function PaymentFields({ payment, amountPaid, onAmountPaid, splitEfectivo, onSplitEfectivo, splitYape, onSplitYape, total, validation, disabled, inTicket = false }) {
   const amountHintId = useId();
   const { errors, valid, change } = validation;
+  const cashAmount = <FormField label="Monto recibido (S/)" className={inTicket ? 'gap-1' : undefined} error={amountPaid!==''&&errors.amountPaid}>
+    <Input type="text" inputMode="decimal" aria-describedby={amountHintId} value={amountPaid} onChange={event=>onAmountPaid(event.target.value)} placeholder="0.00" disabled={disabled}
+      className={cn('font-semibold', inTicket && 'bg-success-soft/30 text-right font-bold tabular-nums')} />
+  </FormField>;
   return <div className={inTicket ? 'space-y-2' : 'space-y-3'}>
     {errors.total&&<Alert variant="warning">{errors.total} El carrito se conserva sin cobrar.</Alert>}
     {payment==='efectivo'&&<>
       <span id={amountHintId} className="sr-only">Máximo S/ 50 000. Hasta dos decimales.</span>
-      <FormField label="Monto recibido (S/)" className={inTicket ? 'gap-1' : undefined} error={amountPaid!==''&&errors.amountPaid}>
-        <Input type="text" inputMode="decimal" aria-describedby={amountHintId} value={amountPaid} onChange={event=>onAmountPaid(event.target.value)} placeholder="0.00" disabled={disabled}
-          className={cn('font-semibold', inTicket && 'bg-success-soft/30 text-right font-bold tabular-nums')} />
-      </FormField>
-      {valid&&<div className={cn('flex justify-between rounded-lg bg-success-soft px-3 py-1 text-sm text-success', inTicket && 'flex-wrap items-center gap-1.5 border border-finance-line py-1.5')}>
-        <span className={inTicket ? 'flex items-center gap-1.5 font-semibold' : undefined}>{inTicket && <Coins aria-hidden="true" className="size-4" />}Vuelto</span>
-        <strong className={inTicket ? 'ml-auto font-extrabold tabular-nums' : undefined}>S/ {change.toFixed(2)}</strong>
-      </div>}
+      {inTicket ? <div className="pos-cash-payment grid grid-cols-[minmax(0,11fr)_minmax(0,9fr)] items-start gap-2 rounded-xl bg-panel/70">
+        {cashAmount}
+        <dl className="grid min-w-0 gap-1">
+          <dt className="flex items-center gap-1.5 text-sm font-semibold text-brand-deep"><Coins aria-hidden="true" className="size-4 shrink-0 text-success" />Vuelto</dt>
+          <dd className={cn('flex min-h-11 justify-end rounded-xl border px-2 py-2 text-right font-extrabold tabular-nums wrap-anywhere sm:px-3',
+            valid ? 'border-finance-line bg-success-soft text-success' : 'border-line bg-panel text-muted')}>
+            {valid ? `S/ ${change.toFixed(2)}` : <><span aria-hidden="true">—</span><span className="sr-only">Por calcular</span></>}
+          </dd>
+        </dl>
+      </div> : <>
+        {cashAmount}
+        {valid && <div className="flex justify-between rounded-lg bg-success-soft px-3 py-1 text-sm text-success">
+          <span>Vuelto</span>
+          <strong>S/ {change.toFixed(2)}</strong>
+        </div>}
+      </>}
     </>}
     {payment==='mixto'&&<div className={cn('grid grid-cols-2 gap-3', inTicket && 'gap-2')}>
       <FormField label="Efectivo (S/)" error={splitEfectivo!==''&&errors.splitEfectivo}>

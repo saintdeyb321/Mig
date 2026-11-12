@@ -19,7 +19,8 @@ let result;
 const root = createRoot(document.getElementById('root'));
 const logo = () => document.querySelector('img[alt="Logo MigaPOS"]');
 const navigation = () => [...document.querySelectorAll('nav[aria-label="Módulos"] button, nav[aria-label="Navegación principal"] button')];
-const createButton = () => [...document.querySelectorAll('[aria-label="Administración de plataforma"] header button')].find(button => button.textContent.includes('Nuevo Cliente'));
+const button = text => [...document.querySelectorAll('button')].find(button => button.textContent.trim() === text);
+const createButton = () => button('Agregar negocio');
 const createForm = () => document.querySelector('[role="dialog"] form');
 try {
   // Synthetic data in a fresh, isolated browser profile; the application never clears it.
@@ -28,13 +29,18 @@ try {
   await waitFor(() => logo()?.complete);
   check(logo().naturalWidth > 0, 'Login serves the local MigaPOS logo');
   globalThis.__setSparkUser({uid:'platform-user', role:'superadmin', businessId:'platform-admin', hasAcceptedTerms:true});
-  await waitFor(() => document.querySelector('[aria-label="Administración de plataforma"]'));
+  await waitFor(() => document.querySelector('[aria-label="Administración de plataforma"]') && createButton() && !createButton().disabled && globalThis.__sparkPageCalls > 0);
   check(document.body.textContent.includes('Firebase Spark'), 'SuperAdmin opens directly in Spark platform context');
   check(navigation().every(button => button.textContent.includes('SaaS Admin')), 'Desktop and mobile only show SaaS navigation');
   check(navigation().length === 2 && !document.querySelector('button[aria-label="Notificaciones"]'), 'No business navigation or notification bell mounted');
   check(createButton() && !createButton().disabled && globalThis.__sparkPageCalls > 0, 'Migrated native administration is enabled');
-  const exportButton = document.querySelector('[aria-label="Exportar datos autorizados"]');
-  check(exportButton && !exportButton.disabled && !document.querySelector('[title^="Eliminación"]') && document.body.textContent.includes('jobs backend deshabilitados'), 'Local export is available and destructive backend jobs have no controls');
+  const exportButton = button('Descargar datos');
+  button('Solicitud de baja').click();
+  await waitFor(() => document.querySelector('[role="dialog"]'));
+  check(exportButton && !exportButton.disabled && document.querySelector('[role="dialog"]').textContent.includes('eliminación está deshabilitada')
+    && globalThis.__sparkAdminCalls.length === 0, 'Local export is available and the offboarding procedure makes no business writes');
+  button('Cerrar').click();
+  await waitFor(() => !document.querySelector('[role="dialog"]'));
   createButton().click();
   await waitFor(createForm);
   const values = ['MigaPOS Laboratorio UI', 'Dueña', 'Prueba', 'titular-test@gmail.com', '1', '5'];
@@ -49,6 +55,62 @@ try {
     && globalThis.__sparkAdminCalls[0].data.maxActiveBranches === 1 && globalThis.__sparkAdminCalls[0].data.maxRegisteredBranches === 5
     && typeof globalThis.__sparkAdminCalls[0].data.operationId === 'string', 'Create form sends the owner and stable operation ID to its migrated repository boundary');
   await waitFor(() => !createForm());
+  const setInput = (input, value) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
+    input.dispatchEvent(new Event('input', {bubbles:true}));
+  };
+  const readsAfterCreate = globalThis.__sparkPageCalls;
+  const search = document.querySelector('input[aria-label^="Buscar por nombre"]');
+  setInput(search,'inexistente');
+  await waitFor(() => document.body.textContent.includes('Sin coincidencias'));
+  check(globalThis.__sparkPageCalls === readsAfterCreate && !globalThis.__sparkContactReads, 'Filtering loaded licenses performs no server or owner reads');
+  setInput(search,'');
+  await waitFor(() => button('Renovar licencia'));
+  document.querySelector('article summary').click();
+  button('Consultar titular').click();
+  await waitFor(() => document.body.textContent.includes('contacto@example.test'));
+  button('Consultar titular').click();
+  await waitFor(() => !button('Consultar titular').disabled);
+  check(globalThis.__sparkContactReads === 1 && globalThis.__sparkPageCalls === readsAfterCreate, 'Owner data is requested once on demand and reused inside the same session');
+  button('Renovar licencia').click();
+  await waitFor(() => button('Confirmar renovación'));
+  const duration = createForm().querySelector('select');
+  duration.value = '3';
+  duration.dispatchEvent(new Event('change',{bubbles:true}));
+  await waitFor(() => createForm().querySelector('select').value === '3');
+  const renewal = button('Confirmar renovación');
+  renewal.click(); renewal.click();
+  await waitFor(() => globalThis.__sparkResolveRenew);
+  check(globalThis.__sparkAdminCalls.filter(call => call.name === 'extendTenantLicense').length === 1
+    && Boolean(document.querySelector('[role="dialog"] form').textContent.includes('Nuevo vencimiento estimado')), 'Double click submits one reviewed renewal');
+  const setOnline = online => {
+    Object.defineProperty(navigator,'onLine',{configurable:true,value:online});
+    dispatchEvent(new Event(online ? 'online' : 'offline'));
+  };
+  setOnline(false);
+  globalThis.__sparkResolveRenew();
+  await waitFor(() => button('Actualizar acceso')?.disabled);
+  setOnline(true);
+  await waitFor(() => button('Actualizar acceso') && !button('Actualizar acceso').disabled);
+  check(button('Confirmar renovación').disabled && createForm().querySelector('select').value === '3'
+    && globalThis.__sparkPageCalls === readsAfterCreate, 'Reconnecting preserves the open renewal and duration but still requires server verification');
+  button('Actualizar acceso').click();
+  await waitFor(() => !button('Confirmar renovación').disabled);
+  const readsAfterRevalidation = globalThis.__sparkPageCalls;
+  button('Confirmar renovación').click();
+  await waitFor(() => !createForm());
+  const renewals = globalThis.__sparkAdminCalls.filter(call => call.name === 'extendTenantLicense');
+  check(renewals.length === 2 && renewals[0].data.operationId === renewals[1].data.operationId
+    && renewals.every(call => call.data.months === 3) && readsAfterRevalidation === readsAfterCreate + 1
+    && globalThis.__sparkPageCalls === readsAfterRevalidation && globalThis.__sparkLicenseReads === 1, 'Ambiguous renewal retries its original ID and refreshes one document');
+  setOnline(false);
+  await waitFor(() => createButton().disabled);
+  setOnline(true);
+  await waitFor(() => !button('Actualizar').disabled);
+  check(createButton().disabled && globalThis.__sparkPageCalls === readsAfterRevalidation, 'Reconnection leaves writes blocked and starts no automatic reads');
+  button('Actualizar').click();
+  await waitFor(() => !createButton().disabled);
+  check(globalThis.__sparkPageCalls === readsAfterRevalidation + 1, 'Manual revalidation reads one page and re-enables verified operations');
   navigation()[0].click();
   globalThis.__setSparkUser({uid:'another-platform-user', role:'superadmin', businessId:'old-tenant', hasAcceptedTerms:true});
   await new Promise(resolve => setTimeout(resolve, 150));

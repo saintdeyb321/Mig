@@ -48,7 +48,7 @@
   .pos-ticket { height: 100%; max-height: calc(var(--ui-viewport-height, 100dvh) - 3rem); }
   .pos-ticket-items { min-height: 1.75rem; flex: 1 1 0; overflow-y: auto; overscroll-behavior: contain; }
   /* Reserve enough visible room for a complete focused control; articles yield first. */
-  .pos-ticket-payment { min-height: 5rem; flex: 0 1 auto; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 0.25rem; }
+  .pos-ticket-payment { container: ticket-payment / inline-size; min-height: 5rem; flex: 0 1 auto; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 0.25rem; }
   .pos-ticket-payment :is(input, select, textarea, button) { scroll-margin-block: 0.25rem; }
   .pos-ticket-total, .pos-ticket-actions { flex: 0 0 auto; }
   .pos-ticket-desktop { height: 100%; min-height: 0; }
@@ -59,10 +59,36 @@
   .pos-payment-methods { container: payment-methods / inline-size; }
 }
 
+@container ticket-payment (max-width: 14rem) {
+  .pos-cash-payment { grid-template-columns: minmax(0, 1fr); }
+}
+
 @container payment-methods (max-width: 17rem) {
   .pos-payment-methods .payment-method-icon { display: none; }
   .pos-payment-methods .payment-method-check { position: absolute; inset-block-start: 0.125rem; inset-inline-end: 0.125rem; width: 0.625rem; height: 0.625rem; }
 }
+
+.pos-ticket-items { background: linear-gradient(180deg, var(--color-panel), #faf7ff); }
+.pos-ticket-total { background: linear-gradient(105deg, #e3f9ec, #f2fcf3); color: #08694c; }
+.pos-ticket-payment { background: #f8f4ff; }
+.pos-ticket [data-ticket-payment="efectivo"] {
+  --pay-idle: #f1fcf4; --pay-active: #d9f7e7; --pay-text: #096b4d; --pay-border: #598571;
+}
+.pos-ticket [data-ticket-payment="yape"] {
+  --pay-idle: #fcf6ff; --pay-active: #f0e2ff; --pay-text: #6c35b4; --pay-border: #8c72ac;
+}
+.pos-ticket [data-ticket-payment="mixto"] {
+  --pay-idle: #f5f9ff; --pay-active: #e3edff; --pay-text: #2b52ab; --pay-border: #6a83af;
+}
+.pos-ticket [data-ticket-payment]:not(:disabled) {
+  background: var(--pay-idle); border-color: var(--pay-border); color: var(--pay-text);
+}
+.pos-ticket [data-ticket-payment]:not(:disabled):is(:hover, [aria-pressed="true"]) {
+  background: var(--pay-active); border-color: var(--pay-text);
+}
+.pos-ticket [data-ticket-payment][aria-pressed="true"]:not(:disabled) { box-shadow: inset 0 0 0 1px var(--pay-text); }
+.pos-ticket [data-pos-charge]:not(:disabled) { background: #0a7e59; }
+.pos-ticket [data-pos-charge]:not(:disabled):hover { background: #08694c; }
 
 /* Header colors for the sales history dialog. */
 .sale-void-dialog .dialog-heading { background: var(--color-panel); color: var(--color-ink); border-color: var(--color-line); }
@@ -109,9 +135,16 @@
   .pos-ticket-total strong { font-size: 1.25rem; line-height: 1.75rem; }
   .pos-ticket-actions { padding: 0.5rem 0.75rem; }
 }
-@media (max-height: 420px) {
-  /* Keep the drawer description available to assistive technology at keyboard height. */
+@media (max-height: 480px) {
+  .pos-ticket-payment { padding-block: 0.25rem; }
+  /* Preserve the drawer description for assistive technology when height is scarce. */
   .dialog-drawer:has(.pos-ticket) .dialog-heading p { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
+  :where(.pos-ticket-drawer) .pos-ticket-heading { padding-block: 0.25rem; }
+  .pos-ticket-drawer .pos-ticket-heading-icon { display: none; }
+  .pos-ticket-drawer .pos-payment-methods { padding: 0.125rem; }
+  .pos-ticket-drawer :is(.pos-ticket-total, .pos-ticket-actions) { padding-block: 0.25rem; }
+}
+@media (max-height: 420px) {
   .pos-ticket-heading { padding-block: 0.125rem; }
   .pos-ticket-heading-icon { display: none; }
   .pos-ticket > p[role="status"] { padding-block: 0.125rem; line-height: 1rem; }

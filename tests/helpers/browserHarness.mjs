@@ -56,7 +56,7 @@ async function connectCDP(url, onEvent) {
   }) };
 }
 
-export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, inspectPage, onPageEvent, createFixtureServer, mockPng, verifyDownload, firebaseSdk = false, fixture, moduleMocks = {} } = {}) {
+export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-test', headers = {}, setupPage, inspectPage, onPageEvent, createFixtureServer, mockPng, verifyDownload, firebaseSdk = false, excel = false, fixture, moduleMocks = {} } = {}) {
   const browser = findBrowser();
   const root = fileURLToPath(new URL('../../frontend/', import.meta.url));
   const html = htmlFile && (await readFile(htmlFile, 'utf8')).replaceAll('__WORKSPACE__', workspace.replaceAll('\\', '/'));
@@ -88,7 +88,7 @@ export async function runBrowserFixture({ htmlFile, route = '/phase4-offline-tes
     resolve: { alias: { react: resolve(root, 'node_modules/react'), 'react-dom': resolve(root, 'node_modules/react-dom'), 'xlsx-js-style': resolve(root, 'node_modules/xlsx-js-style'), firebase: resolve(root, 'node_modules/firebase') } },
     // Discovery is disabled for isolated/mocked fixtures. Radix also imports the CJS
     // react-dom root (portals/flushSync), so prebundle it alongside react-dom/client.
-    optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom', 'react-dom/client', ...(mockPng || firebaseSdk ? ['xlsx-js-style'] : []), ...(firebaseSdk ? ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'] : [])] },
+    optimizeDeps: { noDiscovery: true, include: ['dexie', 'react', 'react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom', 'react-dom/client', ...(mockPng || firebaseSdk || excel ? ['xlsx-js-style'] : []), ...(firebaseSdk ? ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/functions'] : [])] },
     // saleModel imports the shared Functions domain outside frontend/. Default Vite fs policy denies it.
     server: { host: '127.0.0.1', port: 0, hmr: false, headers, fs: { allow: [workspace] } }, plugins: [{ name: 'isolated-indexeddb-test',
       resolveId: id => id === 'virtual:browser-fixture' ? '\0browser-fixture' : Object.hasOwn(moduleMocks, id) ? id : undefined,

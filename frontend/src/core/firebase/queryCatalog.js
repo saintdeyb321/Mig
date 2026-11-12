@@ -47,15 +47,14 @@ scoped('audit-period', 'Auditoría histórica', 'audit_events', source('notifica
 add('alerts-unread', 'Avisos históricos', 'alerts', source('notifications', 'alertRepository'), 'subscribeUnreadAlerts', [eq('businessId'), eq('read')], [], 3, 'equality-merge');
 const admin = source('licenses', 'sparkAdministrationRepository');
 add('admin-page', 'SaaS Admin', 'licenses', admin, 'administrationPage', [], [asc('__name__')], 3, 'automatic');
-for (const collection of ['users', 'invites']) add(`admin-owner-${collection}`, 'SaaS Admin propietario', collection, admin, 'administrationPage', [eq('businessId'), eq('role')], [], 3, 'equality-merge');
+for (const collection of ['users', 'invites']) add(`admin-owner-${collection}`, 'Contacto SaaS bajo demanda', collection, admin, 'administrationContact', [eq('businessId'), eq('role')], [], 3, 'equality-merge');
 add('admin-email', 'SaaS alta negocio', 'users', admin, 'createTenant', [eq('email')], [], 3, 'automatic');
-for (const collection of ['branches', 'users', 'invites']) add(`admin-detail-${collection}`, 'Detalle/cupo SaaS', collection, source('licenses', 'platformBusinessRepository'), 'createPlatformBusinessReader', [eq('businessId')], [], 3, 'automatic', 'Solo al abrir: hasta 200 sedes, 50 perfiles y 50 invitaciones; presencia de otras colecciones limitada a 1.');
+add('admin-detail-branches', 'Cupo SaaS', 'branches', source('licenses', 'platformBusinessRepository'), 'createPlatformBusinessReader', [eq('businessId')], [], 3, 'automatic', 'Solo al abrir cupo: hasta 200 sedes con detección de inventario parcial.');
 scoped('pos-voids-period', 'Compensaciones POS', 'pos_voids', source('sales', 'posVoidQueryRepository'), 'inPeriod', period('occurredAt'), [asc('occurredAt'), asc('__name__')], 2);
 add('pos-voids-session', 'Devoluciones por caja', 'pos_voids', source('sales', 'posVoidQueryRepository'), 'bySession', [eq('businessId'), eq('branchId'), eq('sessionId')], [asc('occurredAt'), asc('__name__')]);
 const inventoryCollections = ['branches', 'categories', 'products', 'customers', 'sales', 'contracts', 'payments', 'cash_sessions', 'active_cash_sessions', 'users', 'invites', 'spark_contract_operations', 'alerts', 'audit_events', 'daily_stats', 'notifications', 'platform_jobs', 'platform_operations', 'platform_audit', 'owner_email_claims', 'pos_sale_groups', 'pos_voids', 'pos_void_groups'];
 for (const collection of inventoryCollections) add(`backup-${collection}`, 'Inventario/exportación SaaS', collection, source('backups', 'backupRepository'), 'createBackupRepository', [eq('businessId')], [asc('__name__')], 3, 'automatic', 'Colecciones declaradas; settings/tenants/licenses se leen por ID. No collectionGroup.');
 add('backup-job-children', 'Subcolecciones conocidas', 'scopes / asset_sources', source('backups', 'backupRepository'), 'const path =', [], [asc('__name__')], 3, 'automatic', 'Ruta platform_jobs/{id}/(scopes|asset_sources), colección concreta; no colección group ni rutas desconocidas.');
-for (const collection of inventoryCollections.filter(name => !['branches', 'users', 'invites'].includes(name))) add(`admin-presence-${collection}`, 'Presencia inicial SaaS', collection, source('licenses', 'platformBusinessRepository'), 'result.inventory', [eq('businessId')], [], 3, 'automatic', 'Muestra de 1 documento, no conteo total.');
 export const firestoreQueryCatalog = records;
 
 export const reviewedSDKQueryCounts = {
@@ -67,8 +66,8 @@ export const reviewedSDKQueryCounts = {
   [source('sales', 'posVoidQueryRepository')]: 1,
   [source('payments', 'sparkLegacyPayments')]: 1, [source('notifications', 'notificationQueryRepository')]: 2,
   [source('notifications', 'auditQueryRepository')]: 1, [source('notifications', 'alertRepository')]: 1,
-  [source('customers', 'customerRepository')]: 1, [source('licenses', 'sparkAdministrationRepository')]: 4,
-  [source('licenses', 'platformBusinessRepository')]: 3, [source('backups', 'backupRepository')]: 2,
+  [source('customers', 'customerRepository')]: 1, [source('licenses', 'sparkAdministrationRepository')]: 3,
+  [source('licenses', 'platformBusinessRepository')]: 1, [source('backups', 'backupRepository')]: 2,
 };
 export const dynamicQueryReviews = {
   [source('sales', 'posVoidQueryRepository')]: 'Negocio/sede fijos; filtros por sesión o rango occurredAt, páginas <=200, máximo 10000; hasta 50 listeners documentales por ID con ausencia autorizada y scope comprobado.',
@@ -82,7 +81,6 @@ export const dynamicQueryReviews = {
   [source('notifications', 'auditQueryRepository')]: 'Sede/cursor opcionales; verificar reachability en esta versión.',
   [source('licenses', 'sparkAdministrationRepository')]: 'Cursor documental de licencias; propietario users/invites con filtros literales iguales.',
   [source('backups', 'backupRepository')]: 'name acotado a BACKUP_COLLECTIONS; path acotado a scopes/asset_sources bajo jobs leídos del negocio. No enumera subcolecciones desconocidas.',
-  [source('licenses', 'platformBusinessRepository')]: 'name acotado a users/invites/BACKUP_COLLECTIONS; presencia limit 1, no conteo exhaustivo.',
   [source('payments', 'sparkLegacyPayments')]: 'Cursor de IDs de contratos; lectura individual por ID no precisa compuesto.',
 };
 export function queryIndexFields(record) {

@@ -64,7 +64,7 @@ it('P14-RC compares the shared palette in actual modules and keeps checkout and 
           });
           assert.ok(!actual.error && actual.width === width && actual.scrollWidth <= width + 1, JSON.stringify({ view, width, actual }));
           if (phase === 'after') {
-            assert.equal(actual.canvas, 'rgb(255, 249, 241)');
+            assert.equal(actual.canvas, 'rgb(255, 254, 250)');
             assert.equal(actual.panel, '#fffefc');
             assert.match(actual.sidebar, /linear-gradient/);
           }
@@ -201,9 +201,12 @@ it('P09 verifies actual views, viewport-bound checkout, dialog focus/busy, role 
         await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' }); await frames();
       }
       await show('superadmin', 'superadmin');
-      check(await evaluate(() => [...document.querySelectorAll('header button')].some(el => el.textContent.trim() === 'Nuevo Cliente')), 'SuperAdmin preserves the exact existing Spark create-button label');
-      await evaluate(async () => { [...document.querySelectorAll('header button')].find(el => el.textContent.trim() === 'Nuevo Cliente').click(); await window.__p09.frames(); });
-      check(await evaluate(() => document.querySelector('[role="dialog"] h2').textContent.includes('Alta de Nuevo Cliente') && Boolean(document.querySelector('[role="dialog"] form'))), 'the original SuperAdmin button still opens its create form');
+      await viewport(1280,560); await capture('p16-negocios-1280x560');
+      await viewport(390,844); await capture('p16-negocios-390x844');
+      await viewport(1280,800);
+      check(await evaluate(() => [...document.querySelectorAll('header button')].some(el => el.textContent.trim() === 'Agregar negocio' && !el.disabled)), 'SuperAdmin exposes the Spark create action');
+      await evaluate(async () => { [...document.querySelectorAll('header button')].find(el => el.textContent.trim() === 'Agregar negocio').click(); await window.__p09.frames(); });
+      check(await evaluate(() => document.querySelector('[role="dialog"] h2').textContent === 'Agregar negocio' && Boolean(document.querySelector('[role="dialog"] form'))), 'the SuperAdmin action opens its labeled create form');
       await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' }); await frames();
       await show('pos');
 
