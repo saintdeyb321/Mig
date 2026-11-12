@@ -5,10 +5,10 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { toDateSafe } from '../../../core/dates/dateValues';
 import { useContractImageUrls } from '../../../features/contracts/hooks/useContractImageUrls';
-import { contractImageList } from '../../../features/contracts/infrastructure/contractImages';
-import { fitsContractImageLimit, MAX_CONTRACT_IMAGES } from '../../../features/contracts/application/contractImagePolicy.js';
+import { contractImageList, contractImageScope } from '../../../features/contracts/infrastructure/contractImages';
+import { contractMediaId, fitsContractImageLimit, MAX_CONTRACT_IMAGES } from '../../../features/contracts/application/contractImagePolicy.js';
 const ContractFormModal = ({
-  contractToEdit,
+  contractToEdit, user,
   activeLocations,
   onClose,
   onSubmit,
@@ -63,10 +63,10 @@ const ContractFormModal = ({
       created.clear();
     };
   }, []);
-  const imageReferences = useMemo(() => images.map(image => image.type === 'existing' ? image.value : image.url), [images]);
   const {
-    urls: displayedImages, loading: loadingImages
-  } = useContractImageUrls(imageReferences, { preserveSlots: true });
+    urls: existingPreviews, loading: loadingImages, error: imageError
+  } = useContractImageUrls(savedImages, { preserveSlots: true, scope: contractImageScope(contractToEdit, user?.uid) });
+  const displayedImages = images.map(image => image.type === 'new' ? image.url : existingPreviews[savedImages.indexOf(image.value)]);
   const totals = useMemo(() => {
     const sub = Math.max(0, Number(formData.subtotal) || 0);
     const del = Math.max(0, Number(formData.deliveryCost) || 0);
@@ -107,7 +107,7 @@ const ContractFormModal = ({
       return toast.error(`Máximo ${MAX_CONTRACT_IMAGES} imágenes de referencia por pedido.`);
     }
     if (files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || !/\.(jpe?g|png|webp)$/i.test(file.name) || file.size > 5 * 1024 * 1024)) {
-      return toast.error('Usa imágenes JPEG, PNG o WebP de hasta 5 MB. Se comprimen y guardan solo en este dispositivo.');
+      return toast.error('Usa imágenes JPEG, PNG o WebP de hasta 5 MB. Se comprimen antes de adjuntarlas al pedido.');
     }
     const newImages = files.map(file => {
       const url = URL.createObjectURL(file);
@@ -158,7 +158,8 @@ const ContractFormModal = ({
         }
       } : {}),
       newImages: newImageFiles,
-      retainedImages: existingImages
+      retainedImages: existingImages,
+      removeMediaIds: savedImages.filter(ref => !existingImages.includes(ref)).map(contractMediaId).filter(Boolean)
     };
     onSubmit(finalData, null, isEditing ? contractToEdit.id : null);
   };
@@ -220,6 +221,7 @@ const ContractFormModal = ({
                     </div>}
                   </div>
                   <p className="text-xs leading-relaxed text-muted">Hasta {MAX_CONTRACT_IMAGES} fotos · JPEG, PNG o WebP · 5 MB por foto. Se guardan comprimidas solo en este dispositivo y cuenta.</p>
+                  {imageError && <p role="status" className="text-xs text-warning">{imageError.message}</p>}
                   {overImageLimit && <p className="rounded-lg bg-warning-soft px-2 py-1.5 text-xs text-warning">Puedes conservar las fotos anteriores. Para cambiar la selección, redúcela a {MAX_CONTRACT_IMAGES} como máximo.</p>}
                 </div>
               </div>

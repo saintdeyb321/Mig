@@ -93,7 +93,7 @@ export function createBackupRepository(database, { sdk = firestoreSDK, currentUs
           nested.status = 'incomplete'; nested.warning = 'Una subcolección conocida no se pudo leer completamente.';
         }
       }
-      sections.push(nested, { name: 'unverified_subcollections', records: [], status: 'not-read', warning: 'El SDK web no enumera subcolecciones desconocidas ni padres ausentes. Revisar recursivamente en Console; este archivo no autoriza ninguna purga.' });
+      sections.push(nested, { name: 'unverified_subcollections', records: [], status: 'not-read', warning: 'El respaldo contiene las referencias de contratos. Las fotos privadas de Firestore y las históricas de los dispositivos quedan fuera. El SDK web no enumera subcolecciones desconocidas ni padres ausentes. Revisar recursivamente en Console; este archivo no autoriza ninguna purga.' });
       assertActive();
       if (redacted.length) warnings.push(`Campos sensibles/no soportados omitidos: ${redacted.length}.`);
       warnings.push('Lectura exclusiva SuperAdmin mediante permiso temporal del negocio seleccionado (10 minutos). No concede escrituras financieras ni borrados. Las referencias inventariadas no prueban propiedad del documento destino.');

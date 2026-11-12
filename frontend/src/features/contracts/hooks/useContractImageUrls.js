@@ -1,24 +1,27 @@
-import { useEffect, useState } from 'react';
-import { resolveContractImageUrls } from '../infrastructure/contractImages';
-import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
+import { useEffect, useMemo, useState } from 'react';
+import { resolveContractImageUrls } from '../infrastructure/contractImages.js';
 
 const EMPTY_IMAGES = [];
 
-export function useContractImageUrls(images = EMPTY_IMAGES, { preserveSlots = false } = {}) {
+export function useContractImageUrls(images = EMPTY_IMAGES, { preserveSlots = false, scope } = {}) {
+  const scopeKey = JSON.stringify(scope ?? {});
+  const media = useMemo(() => ({ scope: JSON.parse(scopeKey), blobs: new Map() }), [scopeKey]);
   const key = JSON.stringify(images);
   const [result, setResult] = useState({ key: null, urls: [], loading: false, error: null });
   useEffect(() => {
-    let disposed = false;
+    const controller = new AbortController();
     let release = () => {};
-    resolveContractImageUrls(JSON.parse(key), { preserveSlots }).then(resolved => {
-      if (disposed) { resolved.release(); return; }
+    resolveContractImageUrls(JSON.parse(key), {
+      preserveSlots, scope: media.scope, signal: controller.signal, verifiedBlobs: media.blobs,
+    }).then(resolved => {
+      if (controller.signal.aborted) { resolved.release(); return; }
       release = resolved.release;
-      setResult({ key, urls: resolved.urls, loading: false, error: resolved.warnings?.length ? new Error(resolved.warnings.join(' ')) : null });
+      setResult({ key, scopeKey, urls: resolved.urls, loading: false,
+        error: resolved.warnings.length ? new Error(resolved.warnings.join(' ')) : null });
     }).catch(error => {
-      reportDiagnostic('storage', error);
-      if (!disposed) setResult({ key, urls: [], loading: false, error });
+      if (!controller.signal.aborted) setResult({ key, scopeKey, urls: [], loading: false, error });
     });
-    return () => { disposed = true; release(); };
-  }, [key, preserveSlots]);
-  return result.key === key ? result : { urls: [], loading: images.length > 0, error: null };
+    return () => { controller.abort(); release(); };
+  }, [key, scopeKey, preserveSlots, media]);
+  return result.key === key && result.scopeKey === scopeKey ? result : { urls: [], loading: images.length > 0, error: null };
 }

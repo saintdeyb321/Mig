@@ -308,5 +308,5 @@
     {"collectionGroup":"contract_pickups","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"pickupBranchId","order":"ASCENDING"},{"fieldPath":"deliveryDate","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
     {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"openedAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}],"density":"SPARSE_ALL"}
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [{ "collectionGroup": "media", "fieldPath": "data", "indexes": [] }]
 }

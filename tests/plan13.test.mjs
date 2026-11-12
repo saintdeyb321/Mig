@@ -224,10 +224,10 @@ it('P13 keeps names and void reasons as XLSX text and refuses an over-limit expo
   assert.throws(() => buildSalesWorkbook(XLSX, { ...scope, sales: [tooMany], now }), /Demasiadas filas de detalle/);
 });
 
-it('P13 preserves the four new contract photo limit and keeps unchanged historical references', () => {
-  const refs = Array.from({ length: 5 }, (_, index) => `local-image-${index}`);
-  assert.equal(MAX_CONTRACT_IMAGES, 4);
-  assert.equal(fitsContractImageLimit(refs.slice(0, 4)), true);
+it('P18 supports twenty contract photos and keeps unchanged historical references', () => {
+  const refs = Array.from({ length: 21 }, (_, index) => `local-image-${index}`);
+  assert.equal(MAX_CONTRACT_IMAGES, 20);
+  assert.equal(fitsContractImageLimit(refs.slice(0, 20)), true);
   assert.equal(fitsContractImageLimit(refs), false);
   assert.equal(fitsContractImageLimit(refs, [...refs]), true);
   assert.equal(fitsContractImageLimit(refs, [...refs].reverse()), false);

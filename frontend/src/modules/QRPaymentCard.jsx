@@ -12,7 +12,7 @@ const QRPaymentCard = memo(({
     <div className="space-y-4 rounded-2xl border border-accent/20 bg-accent-soft/40 p-4">
       <h3 className="text-lg font-semibold">Pagos Digitales (Opcional)</h3>
       <p className="text-sm leading-relaxed text-muted">
-        Sube la imagen del código QR de Yape/Plin para esta sede. El sistema la optimizará automáticamente.
+        Sube la imagen del código QR de Yape/Plin para esta sede. Conserva el margen blanco y comprueba que el código se pueda escanear.
       </p>
 
       <div className="grid justify-items-center gap-4 rounded-xl border border-dashed border-control bg-subtle p-4">
@@ -22,7 +22,7 @@ const QRPaymentCard = memo(({
         </div>
 
         <div className="grid w-full gap-2">
-          <Input type="file" id="qr-upload" accept="image/*" onChange={handleImageChange} className="peer sr-only" disabled={isProcessing} />
+          <Input type="file" id="qr-upload" accept="image/jpeg,image/png,image/webp" onChange={handleImageChange} className="peer sr-only" disabled={isProcessing} />
 
           <div className="flex w-full flex-wrap gap-2.5 peer-focus-visible:[&_label]:outline-2 peer-focus-visible:[&_label]:outline-focus">
             <label htmlFor="qr-upload" className="cursor-pointer rounded-xl border border-line bg-panel text-sm font-medium hover:bg-subtle flex-[1_1_200px] text-center m-0 min-h-12 flex items-center justify-center py-0 px-4">

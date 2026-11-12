@@ -4,7 +4,7 @@ import { decrypt } from '../../../crypto';
 import { canonicalSale } from '../domain/saleModel.js';
 import { decodeQueuedSale, migrateSaleRecord, pendingStockDeltas, saleFinancialState } from '../domain/queueState.js';
 
-export async function readPendingSales(identity, branchId = 'global', projection = false) {
+export async function readPendingSales(identity, branchId = 'global', projection = false, onUnreadable) {
   const source = projection ? offlineDB.sales.where('projectionState').equals('pending')
     : offlineDB.sales.where('status').anyOf('pending', 'syncing', 'failed');
   const records = await source.filter(record => {
@@ -21,7 +21,11 @@ export async function readPendingSales(identity, branchId = 'global', projection
         receiptState: migrateSaleRecord(record).status === 'failed' ? 'rejected' : record.lastErrorCode === 'receipt-not-found' || !record.attempted ? 'unconfirmed' : 'uncertain',
         lastError: record.lastError, attempted: record.attempted, projectionBase: record.projectionBase,
         financialAck: record.financialAck, stockVersions: record.stockVersions };
-    } catch { return null; }
+    } catch {
+      if (record.businessId === identity.businessId && record.userId === identity.uid
+        && (branchId === 'global' || record.branchId === branchId)) onUnreadable?.();
+      return null;
+    }
   }));
   return sales.filter(sale => sale && (branchId === 'global' || sale.branchId === branchId));
 }
@@ -32,7 +36,11 @@ export async function getPendingStockDeltas(identity) {
 }
 
 export function subscribePendingSales(identity, branchId, onData, onError) {
-  const subscription = liveQuery(() => readPendingSales(identity, branchId)).subscribe({ next: onData, error: onError });
+  const subscription = liveQuery(async () => {
+    let unreadable = 0;
+    const sales = await readPendingSales(identity, branchId, false, () => { unreadable++; });
+    return { sales, unreadable };
+  }).subscribe({ next: ({ sales, unreadable }) => onData(sales, { unreadable }), error: onError });
   return () => subscription.unsubscribe();
 }
 

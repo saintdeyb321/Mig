@@ -76,16 +76,21 @@ export const usePOS = (user, currentSession) => {
     if (!pendingSaleId) return;
     let active = true;
     const stop = subscribeSaleAcknowledgement(pendingSaleId, record => {
-      if (!active || !resources.active || record?.userId !== user.uid || record.businessId !== user.businessId || record.branchId !== activeBranchId) return;
+      if (!active || !resources.active) return;
+      if (record === null) {
+        setLastSale(previous => previous?.saleId === pendingSaleId ? { ...previous, localRecordMissing: true } : previous);
+        return;
+      }
+      if (record?.userId !== user.uid || record.businessId !== user.businessId || record.branchId !== activeBranchId) return;
       if (record.status !== 'synced' || record.financialAck !== true) {
         setLastSale(previous => previous?.saleId === pendingSaleId ? { ...previous, ...(record.verifiedPayload ?? {}),
-          financialState: record.financialState ?? previous.financialState,
+          localRecordMissing: false, financialState: record.financialState ?? previous.financialState,
           receiptState: record.lastErrorCode === 'receipt-not-found' || !record.attempted ? 'unconfirmed' : 'uncertain', verificationMessage: record.lastError } : previous);
         return;
       }
       setLastSale(previous => previous?.saleId === pendingSaleId && hasVerifiedSaleReceipt({ status: 'ALREADY_APPLIED', saleId: pendingSaleId,
         syncedAt: record.syncedAt, stockVersions: record.stockVersions }, previous)
-        ? { ...previous, ...(record.verifiedPayload ?? {}), isOffline: false, financialState: 'confirmed', status: 'confirmed', receiptState: 'confirmed', verificationMessage: null, confirmedAt: record.syncedAt } : previous);
+        ? { ...previous, ...(record.verifiedPayload ?? {}), isOffline: false, localRecordMissing: false, financialState: 'confirmed', status: 'confirmed', receiptState: 'confirmed', verificationMessage: null, confirmedAt: record.syncedAt } : previous);
     }, () => {});
     return () => { active = false; stop(); };
   }, [pendingSaleId, user.uid, user.businessId, activeBranchId, resources]);
@@ -216,7 +221,9 @@ export const usePOS = (user, currentSession) => {
     } catch (err) {
       console.error(err);
       toast.dismiss(toastId);
-      if (active()) toast.error(err.message || 'Error al procesar la venta', { id: 'sale-error' });
+      if (active()) toast.error(err.code === 'local-persistence'
+        ? 'El ticket no se guardó ni se envió. Conservamos el carrito abierto. Libera espacio o habilita el almacenamiento del navegador y reintenta.'
+        : err.message || 'Error al procesar la venta', { id: 'sale-error' });
     } finally {
       processingRef.current = false;
       if (mounted.current) setIsProcessing(false);

@@ -51,7 +51,7 @@ export function createPrintJob({ popup = false, compact = false, page, host = wi
       dispose = register(finish);
     });
   }
-  return { close, async print(html) {
+  return { close, signal: controller.signal, async print(html) {
     try {
       if (closed()) throw new DOMException('Impresión cancelada.', 'AbortError');
       if (printed) throw new Error('La impresión ya fue preparada.');

@@ -9,7 +9,9 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
     let sale = canonicalSale(input, products);
     assertSaleIdentity(sale, identity);
     // Existing ciphertext/IDs retain their historical contract, including uncertain receipts.
-    const existing = await store.get(sale.saleId);
+    let existing;
+    try { existing = await store.get(sale.saleId); }
+    catch { throw new SaleError('local-persistence', 'No se pudo abrir el almacenamiento local del ticket.'); }
     if (existing) {
       const decoded = await decodeQueuedSale(existing, identity, decrypt);
       if (!sameSaleOperation(decoded, sale)) throw new SaleError('sale-conflict', 'ID local reutilizado con otro payload.');
@@ -17,16 +19,23 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
     }
     // Validate ORIGINAL numeric values before encryption, projection or a durable insert.
     sale = canonicalNewSale(input, products);
-    const data = await encrypt(JSON.stringify(sale), identity.uid);
-    await store.insert({ localId: sale.saleId, idempotencyKey: sale.saleId, data,
-      businessId: sale.businessId, branchId: sale.branchId, userId: sale.userId,
-      status: 'pending', sync: false, createdAt: sale.createdAt, queuedAt: sale.queuedAt, origin: sale.origin,
-      projectionState: sale.origin === 'offline' ? null : 'pending', version: sale.version,
-      attempted: false, ...(sale.origin === 'offline' ? { financialState: 'draft_offline' } : {}),
-      retries: 0, lastError: null, syncStartedAt: null, nextRetryAt: 0 }, async existing => {
-      const decoded = await decodeQueuedSale(existing, identity, decrypt);
-      if (!sameSaleOperation(decoded, sale)) throw new SaleError('sale-conflict', 'ID local reutilizado con otro payload.');
-    });
+    let data;
+    try { data = await encrypt(JSON.stringify(sale), identity.uid); }
+    catch { throw new SaleError('local-persistence', 'No se pudo cifrar el ticket.'); }
+    try {
+      await store.insert({ localId: sale.saleId, idempotencyKey: sale.saleId, data,
+        businessId: sale.businessId, branchId: sale.branchId, userId: sale.userId,
+        status: 'pending', sync: false, createdAt: sale.createdAt, queuedAt: sale.queuedAt, origin: sale.origin,
+        projectionState: sale.origin === 'offline' ? null : 'pending', version: sale.version,
+        attempted: false, ...(sale.origin === 'offline' ? { financialState: 'draft_offline' } : {}),
+        retries: 0, lastError: null, syncStartedAt: null, nextRetryAt: 0 }, async existing => {
+        const decoded = await decodeQueuedSale(existing, identity, decrypt);
+        if (!sameSaleOperation(decoded, sale)) throw new SaleError('sale-conflict', 'ID local reutilizado con otro payload.');
+      });
+    } catch (error) {
+      if (error instanceof SaleError) throw error;
+      throw new SaleError('local-persistence', 'No se pudo guardar el ticket en este dispositivo.');
+    }
     return sale;
   }
 
@@ -64,7 +73,7 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
             requiresReceiptReview: false, syncStartedAt: null, nextRetryAt: 0 });
         };
         // After a lost response, establish whether the original ID already committed before any new write.
-        if (record.attempted || record.status === 'syncing' || record.financialAck) {
+        if (record.attempted || record.status === 'syncing' || record.financialAck || record.submissionData) {
           try {
             if (!verifyReceipt) throw new SaleError('receipt-unverified', 'Consulta remota del recibo requerida antes de reintentar.');
             await acknowledge(await verifyReceipt(sale, identity)); report.synced++; continue;
@@ -151,15 +160,15 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
   }
   // Receipt recovery never calls apply/flush or rewrites the frozen encrypted payload.
   async function reconcile(identity, { onlyId, maxRecords = 10, isCurrent = () => true } = {}) {
-    if (!identity?.uid || !identity.businessId || !identity.branchId || identity.branchId === 'global') return [];
+    if (!identity?.uid || !identity.businessId || !identity.branchId || identity.branchId === 'global' || !online()) return [];
     if (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || maxRecords > 10) throw new SaleError('invalid-argument', 'Hasta diez recibos por revisión.');
-    const active = () => currentIdentity(identity) && isCurrent();
+    const active = () => online() && currentIdentity(identity) && isCurrent();
     if (!active()) return [];
     return withLock(async () => {
-      let records = onlyId ? [await store.get(onlyId)].filter(Boolean) : await store.list();
+      let records = onlyId ? [await store.get(onlyId)].filter(Boolean) : await (store.listForReceiptRecovery?.(identity) ?? store.list());
       if (!onlyId) {
         records = records.filter(record => record.userId === identity.uid && record.businessId === identity.businessId && record.branchId === identity.branchId
-          && !['failed', 'synced'].includes(migrateSaleRecord(record).status) && (record.attempted || record.status === 'syncing' || record.financialAck))
+          && !['failed', 'synced'].includes(migrateSaleRecord(record).status) && (record.attempted || record.status === 'syncing' || record.financialAck || record.submissionData))
           .sort((a, b) => a.localId.localeCompare(b.localId));
         const key = JSON.stringify([identity.uid, identity.businessId, identity.branchId]);
         if (recoveryScope !== key) { recoveryScope = key; recoveryOffset = 0; }
@@ -171,7 +180,7 @@ export function createSaleQueue({ store, encrypt, decrypt, apply, syncSessions, 
         if (!active() || results.length >= maxRecords) break;
         if (record.userId !== identity.uid || record.businessId !== identity.businessId || record.branchId !== identity.branchId
           || ['failed', 'synced'].includes(migrateSaleRecord(record).status)
-          || (!onlyId && !record.attempted && record.status !== 'syncing' && !record.financialAck)) continue;
+          || (!record.attempted && record.status !== 'syncing' && !record.financialAck && !record.submissionData)) continue;
         let sale;
         try {
           sale = canonicalSale(await decodeQueuedSale(record, identity, decrypt));

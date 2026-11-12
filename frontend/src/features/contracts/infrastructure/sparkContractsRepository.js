@@ -48,7 +48,13 @@ export function createSparkContractsRepository(database, { currentUser, sdk = fi
     amount, method, type, runtime: 'spark', occurredAt: serverTimestamp(), createdAt: serverTimestamp() });
   async function syncPickup(tx, id, next, previous = null) {
     const destination = pickupBranch(next), oldDestination = previous ? pickupBranch(previous) : null;
-    const sameDate = next.deliveryDate === previous?.deliveryDate || next.deliveryDate?.isEqual?.(previous?.deliveryDate);
+    const sameDate =
+  next.deliveryDate === previous?.deliveryDate ||
+  (
+    previous?.deliveryDate != null &&
+    typeof next.deliveryDate?.isEqual === 'function' &&
+    next.deliveryDate.isEqual(previous.deliveryDate)
+  );
     if (destination === oldDestination && (!destination || sameDate)) return;
     const ref = doc(database, 'contract_pickups', id);
     // A historical contract may never have had a pickup projection.

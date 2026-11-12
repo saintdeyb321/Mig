@@ -20,7 +20,7 @@ export function useRecentSales(user) {
   const subscribe = useCallback((onData, onError) => {
     const scope = createSubscriptionScope();
     let remote = [];
-    let pending = [];
+    let pending = [], unreadable = 0;
     let voidAttempts = [];
     let failure = null;
     let metadata = { fromCache: true };
@@ -44,7 +44,7 @@ export function useRecentSales(user) {
         if (verified && matchesPosVoidReceipt(verified, sale)) return { ...sale, voided: true, voidReason: verified.reason, posVoid: verified, voidServerConfirmed: true };
         return attempts.has(sale.id) ? { ...sale, voidCheckPending: true, voidAttempt: attempts.get(sale.id) } : sale;
       });
-      onData(salesHistoryPresentation(pending, decorated), { ...metadata, fromCache: metadata.fromCache || voidMetadata.fromCache, observedDocumentCount });
+      onData({ ...salesHistoryPresentation(pending, decorated), unreadable }, { ...metadata, fromCache: metadata.fromCache || voidMetadata.fromCache, observedDocumentCount });
     });
     const stopRemote = subscribeRecentSales(businessId, branchId, scope.guard((sales, source) => {
       remote = sales; metadata = source;
@@ -61,14 +61,14 @@ export function useRecentSales(user) {
       }
       publish(source.observedDocumentCount);
     }), fail);
-    const stopPending = subscribePendingSales(user, branchId, sales => { pending = sales; publish(); }, fail);
+    const stopPending = subscribePendingSales(user, branchId, scope.guard((sales, local) => { pending = sales; unreadable = local?.unreadable ?? 0; publish(); }), fail);
     const stopAttempts = branchId ? subscribeVoidAttempts({ ...user, branchId }, scope.guard(rows => {
       voidAttempts = rows; publish();
     }), fail) : () => {};
     return () => { scope.close(); voidRevision++; stopVoids(); stopRemote(); stopPending(); stopAttempts(); };
   }, [businessId, branchId, user, verifiedVoids]);
   const result = useSharedSubscription(`sales:${identityKey}:${branchId}`, subscribe, undefined, { preserveOnError: true });
-  return { sales: result.data?.rows ?? [], localCount: result.data?.localCount ?? 0, rejectedCount: result.data?.rejectedCount ?? 0,
+  return { sales: result.data?.rows ?? [], unreadableLocalCount: result.data?.unreadable ?? 0, localCount: result.data?.localCount ?? 0, rejectedCount: result.data?.rejectedCount ?? 0,
     rejected: result.data?.rejected ?? [], draftCount: result.data?.draftCount ?? 0, getVerifiedVoid: saleId => verifiedVoids.get(saleId),
     uncertainCount: result.data?.uncertainCount ?? 0, isLoading: result.isLoading, error: result.error, retry: result.retry, isStale: result.isStale, updatedAt: result.updatedAt };
 }

@@ -242,3 +242,24 @@ it('P08 zero-difference cash with compensations stays provisional, counts each t
   const negative = calculateCashTotals({ openingAmount: 0 }, [], voidCashPayments([{ ...source, cashAmount: -9 }]));
   assert.equal(negative.expectedCash, -9); assert.equal(negative.hasUnverifiedDisbursements, true);
 });
+
+it('P18 reports a failed durable write without attempting any charge or discarding the original sale ID', async () => {
+  const sale = plan08Sale('p18-quota-failure', { origin:'offline' });
+  const base = plan08MemoryStore();
+  let writes = 0, verifications = 0;
+  const queue = createSaleQueue({
+    store: { ...base, insert: async () => { throw new DOMException('device full', 'QuotaExceededError'); } },
+    encrypt, decrypt, withLock: async callback => callback(), online: () => true, receiptOnlyRetries:true,
+    apply: async () => { writes++; }, verifyReceipt: async () => { verifications++; },
+  });
+  await assert.rejects(queue.submit(sale, plan08Identity, { isolated:true }), { code:'local-persistence' });
+  assert.equal(writes, 0);
+  assert.equal(base.rows.size, 0);
+  const healthy = createSaleQueue({ store:base, encrypt, decrypt, withLock: async callback => callback(), online: () => true,
+    receiptOnlyRetries:true, apply: async () => { writes++; }, verifyReceipt: async () => { verifications++; } });
+  await healthy.enqueue(sale, plan08Identity);
+  assert.deepEqual(await healthy.reconcile(plan08Identity, { onlyId:sale.saleId }), []);
+  assert.equal(verifications, 0);
+  assert.equal(writes, 0);
+  assert.equal(base.rows.get(sale.saleId).localId, sale.saleId);
+});

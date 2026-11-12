@@ -1,3 +1,4 @@
+import { createContractMediaRepository, imageHash } from '../frontend/src/features/contracts/infrastructure/contractMediaRepository.js';
 import { planLegacyPayments } from '../functions/src/contracts/domain/legacyPaymentPlan.js';
 import { createContractPeriodReader } from '../frontend/src/features/contracts/infrastructure/contractPeriodRepository.js';
 import { createContractQueryRepository } from '../frontend/src/features/contracts/infrastructure/contractQueryRepository.js';
@@ -1052,4 +1053,151 @@ it('Plan14 verifies a committed recovery after a lost response and accepts sales
   assert.equal((await inspect('sales/plan14-replacement-session-sale')).data().sessionId, result.id);
   assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
   assert.equal((await inspect('cash_sessions/' + sessionId)).data().declaredAmount, null);
+});
+
+describe('P18 private contract media', () => {
+  const origin = { uid, businessId, branchId };
+  const target = 'p18-pickup';
+  const create = async (suffix, { initialPayment = false, referenceImages = [] } = {}) => {
+    const contractId = `aaaaaaaa-1111-4111-8111-${suffix.padStart(12, '0')}`;
+    const repo = createSparkContractsRepository(database(), { sdk, currentUser: () => ({ uid }) });
+    await repo.create({ contractId, operationId: `bbbbbbbb-1111-4111-8111-${suffix.padStart(12, '0')}`,
+      branchId, clientName: 'Pedido con fotos', clientPhone: '987654321', deliveryDate: '2026-11-14T17:00:00.000Z',
+      deliveryType: target, total: 100, subtotal: 100, deliveryCost: 0, referenceImages,
+      ...(initialPayment ? { initialPayment: { operationId: 'cccccccc-1111-4111-8111-000000000001', amount: 20, method: 'yape' } } : {}) });
+    return { ...origin, contractId };
+  };
+  const photo = async (overrides = {}) => {
+    const blob = new Blob([Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEAAUAmJaQAA3AA/v89WAAAAA==','base64')], { type:'image/webp' });
+    return { mediaId: crypto.randomUUID(), blob, width: 1, height: 1, sha256: await imageHash(new Uint8Array(await blob.arrayBuffer())), ...overrides };
+  };
+  const seedAccounts = () => env.withSecurityRulesDisabled(async ctx => {
+    const db = ctx.firestore(), batch = writeBatch(db);
+    batch.set(doc(db, 'branches', target), { businessId, status:'activo', sparkCashVersion:1 });
+    batch.set(doc(db, 'users', 'p18-owner'), { businessId, status:'activo', role:'dueño' });
+    batch.set(doc(db, 'users', 'p18-other'), { businessId, branchId:target, status:'activo', role:'cajero' });
+    batch.set(doc(db, 'users', 'p18-foreign'), { businessId:'foreign', status:'activo', role:'dueño' });
+    await batch.commit();
+  });
+
+  it('publishes 0, 1 and 4 independent Bytes after creation with a date and advance; only origin and owner can open them', async () => {
+    await seedAccounts();
+    const db = database(), counts = { transactionReads:0, serverReads:0, writes:0 };
+    const counted = { ...sdk, runTransaction: (db, work) => sdk.runTransaction(db, tx => work({
+      get: ref => { counts.transactionReads++; return tx.get(ref); },
+      set: (...args) => { counts.writes++; return tx.set(...args); },
+      update: (...args) => { counts.writes++; return tx.update(...args); },
+    })), getDocFromServer: ref => { counts.serverReads++; return sdk.getDocFromServer(ref); } };
+    const repo = createContractMediaRepository(db, { sdk: counted, currentUser: () => ({ uid }) });
+    for (const count of [0, 1, 4]) {
+      const scope = await create(String(count), { initialPayment: count === 4 });
+      const ids = [];
+      for (let i = 0; i < count; i++) {
+        const job = await photo();
+        if (i === 3) {
+          const atLimit = new Uint8Array(163840);
+          atLimit.set(new Uint8Array(await job.blob.arrayBuffer()));
+          job.blob = new Blob([atLimit], { type: 'image/webp' });
+          job.sha256 = await imageHash(atLimit);
+        }
+        await repo.upload(scope, job);
+        ids.push(job.mediaId);
+      }
+      const parent = (await getDoc(doc(db, 'contracts', scope.contractId))).data();
+      assert.deepEqual(parent.mediaIds ?? [], ids);
+      assert.deepEqual(parent.referenceImages, []);
+      assert.equal(parent.data, undefined);
+      assert.equal(parent.pendingMedia ?? null, null);
+      assert.equal(parent.paidTotal, count === 4 ? 20 : 0);
+      if (!count) continue;
+      const id = ids[0], path = `contracts/${scope.contractId}/media/${id}`;
+      const freshOwner = env.authenticatedContext('p18-owner').firestore();
+      const owner = createContractMediaRepository(freshOwner, { sdk, currentUser: () => ({ uid:'p18-owner' }) });
+      assert.equal((await owner.readPhoto({ ...scope, uid:'p18-owner' }, id)).blob.type, 'image/webp');
+      const other = env.authenticatedContext('p18-other').firestore();
+      assert.equal((await getDoc(doc(other, 'contract_pickups', scope.contractId))).data().pickupBranchId, target);
+      await assertFails(getDoc(doc(other, 'contracts', scope.contractId)));
+      await assertFails(getDoc(doc(other, path)));
+      await assertFails(getDoc(doc(env.authenticatedContext('p18-foreign').firestore(), path)));
+      await assertFails(sdk.getDocs(sdk.collection(freshOwner, 'contracts', scope.contractId, 'media')));
+      await assertFails(updateDoc(doc(db, path), { width: 2 }));
+      await assertFails(sdk.deleteDoc(doc(db, path)));
+    }
+    const receipts = await sdk.getDocs(sdk.query(sdk.collection(db, 'payments'), sdk.where('businessId', '==', businessId), sdk.where('branchId', '==', branchId)));
+    assert.equal(receipts.size, 1);
+    assert.deepEqual(counts, { transactionReads:10, serverReads:10, writes:15 });
+  });
+
+  it('keeps product and branch images in bounded Base64 and exposes updates across authorized accounts', async () => {
+    await seedAccounts();
+    const ownerDb = env.authenticatedContext('p18-owner').firestore();
+    const product = doc(ownerDb, 'products', 'bread'), branch = doc(ownerDb, 'branches', branchId);
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'branches', branchId), { name:'Sede origen' }));
+    const jpeg = 'data:image/jpeg;base64,/9j/2Q==', png = 'data:image/png;base64,iVBORw0KGgo=';
+    await updateDoc(product, { imageUrl:jpeg });
+    await updateDoc(branch, { yapeQrUrl:png });
+    assert.equal((await getDoc(doc(database(), 'products', 'bread'))).data().imageUrl, jpeg);
+    assert.equal((await getDoc(doc(database(), 'branches', branchId))).data().yapeQrUrl, png);
+    await assertFails(updateDoc(product, { imageUrl:'data:image/svg+xml;base64,AAAA' }));
+    await assertFails(updateDoc(product, { imageUrl:'data:image/jpeg;base64,' + 'A'.repeat(131072) }));
+    await assertFails(updateDoc(branch, { yapeQrUrl:'data:image/png;base64,' + 'A'.repeat(393216) }));
+    await updateDoc(branch, { yapeQrUrl:jpeg });
+    assert.equal((await getDoc(doc(database(), 'branches', branchId))).data().yapeQrUrl, jpeg);
+    await updateDoc(branch, { yapeQrUrl:null });
+    assert.equal((await getDoc(doc(database(), 'branches', branchId))).data().yapeQrUrl, null);
+  });
+
+  it('reuses the same photo after a lost response, requires server proof, preserves legacy refs and denies invalid or excess Bytes', async () => {
+    await seedAccounts();
+    const contractId = 'aaaaaaaa-1111-4111-8111-000000000020';
+    const legacy = Array.from({ length: 20 }, () => `local-image:${businessId}:${contractId}:${crypto.randomUUID()}`);
+    await assertFails(create('20', { referenceImages: legacy }));
+    const scope = await create('20');
+    await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'contracts', scope.contractId), { referenceImages: legacy }));
+    const db = database();
+    const repo = createContractMediaRepository(db, { sdk, currentUser: () => ({ uid }) });
+    await assertFails(repo.upload(scope, await photo()));
+    const job = await photo({ legacyRef: legacy[0] });
+    const parent = doc(db, 'contracts', scope.contractId), image = doc(db, 'contracts', scope.contractId, 'media', job.mediaId);
+    const raw = async (fields = {}, pending = {}, parentOnly = false) => {
+      const batch = writeBatch(db), rawBytes = new Uint8Array(await job.blob.arrayBuffer());
+      if (!parentOnly) batch.set(image, { businessId, originBranchId:branchId, version:1, contentType:'image/webp',
+        createdAt:serverTimestamp(), createdBy:uid, width:1, height:1, sha256:job.sha256, byteLength:rawBytes.length,
+        data:sdk.Bytes.fromUint8Array(rawBytes), ...fields });
+      batch.update(parent, { mediaRevision:1, pendingMedia:{ id:job.mediaId, legacyRef:job.legacyRef, sha256:job.sha256, ...pending } });
+      return batch.commit();
+    };
+    await assertFails(raw({}, {}, true));
+    await assertFails(raw({ byteLength: 163841 }));
+    await assertFails(raw({ data: sdk.Bytes.fromUint8Array(new Uint8Array(163841)), byteLength: 163841 }));
+    await assertFails(raw({ data:'AAAA' }));
+    await assertFails(raw({ contentType:'image/svg+xml' }));
+    await assertFails(raw({ originBranchId:target }));
+    await assertFails(raw({ sha256:'a'.repeat(64) }, { sha256:'a'.repeat(64) }));
+    await assertFails(updateDoc(parent, { mediaIds:[job.mediaId], pendingMedia:null, mediaRevision:1 }));
+    await assertFails(updateDoc(parent, { mediaRevision:1 }));
+    const controller = new AbortController();
+    const first = createContractMediaRepository(db, { currentUser: () => ({ uid }), sdk: { ...sdk,
+      async runTransaction(...args) { await sdk.runTransaction(...args); controller.abort(); },
+    } });
+    await assert.rejects(first.upload(scope, job, controller.signal), { name:'AbortError' });
+    assert.equal((await getDoc(parent)).data().pendingMedia.id, job.mediaId);
+    assert.deepEqual((await getDoc(parent)).data().referenceImages, legacy);
+    const ownerDb = env.authenticatedContext('p18-owner').firestore();
+    const owner = createContractMediaRepository(ownerDb, { currentUser: () => ({ uid:'p18-owner' }), sdk: { ...sdk,
+      async runTransaction(...args) { await sdk.runTransaction(...args); throw Object.assign(new Error('lost reply'), { code:'unavailable' }); },
+    } });
+    await owner.resume({ ...scope, uid:'p18-owner' }, job.mediaId);
+    await repo.upload(scope, job);
+    const saved = (await getDoc(parent)).data();
+    assert.deepEqual(saved.mediaIds, [job.mediaId]);
+    assert.deepEqual(saved.referenceImages, legacy.slice(1));
+    assert.equal(saved.pendingMedia, null);
+    assert.equal(saved.mediaRevision, 2);
+    assert.equal(saved.paidTotal, 0);
+    await repo.remove(scope, job.mediaId);
+    assert.deepEqual((await getDoc(parent)).data().mediaIds, []);
+    assert.equal((await inspect(image.path)).exists(), false);
+    assert.deepEqual((await getDoc(parent)).data().referenceImages, legacy.slice(1));
+  });
 });

@@ -12,7 +12,7 @@ const historyMocks = {
     const model=window.__p08History;const publish=(rows,meta)=>next(rows.filter(row=>row.businessId===business&&(branch==='global'||row.branchId===branch)),meta);
     model.emitSales=publish;publish(model.remote,{fromCache:false});return()=>{};}`,
   [path('features/sales/infrastructure/pendingSalesCache.js')]: `export function subscribePendingSales(user,branch,next){next(window.__p08History.local.filter(row=>row.userId===user.uid&&row.businessId===user.businessId&&(branch==='global'||row.branchId===branch)));return()=>{};}`,
-  [path('features/sales/infrastructure/posVoidQueryRepository.js')]: `export function createPosVoidReader(){return{subscribeIds(business,branch,ids,next){
+  [path('features/sales/infrastructure/posVoidQueryRepository.js')]: `export const voidCashPayments=()=>[];export function createPosVoidReader(){return{subscribeIds(business,branch,ids,next){
     const model=window.__p08History;const publish=(rows,meta)=>next(rows.filter(row=>row.businessId===business&&ids.includes(row.saleId)&&(branch==='global'||row.branchId===branch)),meta);
     model.emitVoids=publish;publish(model.receipts,{fromCache:false});return()=>{};}};}`,
   [transactions]: `export async function voidSaleTransaction(command){const model=window.__p08History;model.writes++;model.command=command;
@@ -41,5 +41,5 @@ it('P08 Chromium preserves durable draft ciphertext, coordinates last-unit races
       export const confirmDraftSaleTransaction=(...args)=>window.__p08Transactions.confirm(...args);
       export const verifyPendingSaleTransaction=(...args)=>window.__p08Transactions.verify(...args);`,
   }, setupPage: page => page.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] }) });
-  assert.equal(result.remoteWrites, 2); assert.equal(result.warningsDuringProcessing, 0); assert.equal(result.checks.length, 16);
+  assert.equal(result.remoteWrites, 2); assert.equal(result.warningsDuringProcessing, 0); assert.equal(result.checks.length, 18);
 });

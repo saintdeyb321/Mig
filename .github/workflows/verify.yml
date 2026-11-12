@@ -56,12 +56,13 @@ jobs:
             tail -n 25 "$RUNNER_TEMP/tests.log"
             exit 1
           fi
-      - name: Real IndexedDB with Chromium
+      - name: Real IndexedDB and offline receipt recovery
         timeout-minutes: 3
         run: |
           browser="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
           test -n "$browser" || { echo 'Chromium is missing from the runner'; exit 1; }
           MIGAPOS_TEST_BROWSER="$browser" npm run test:offline-db
+          MIGAPOS_TEST_BROWSER="$browser" node --test --test-concurrency=1 tests/plan07.test.mjs tests/plan08.test.mjs tests/plan08.browser.test.mjs
       - name: Frontend lint and build
         run: |
           npm run lint --prefix frontend

@@ -129,6 +129,28 @@ it('Plan07 schedules only three read-only recovery attempts per connection and c
   recovery.stop(); events.dispatchEvent(new Event('online')); assert.equal(timers.size, 0);
 });
 
+it('P18 coalesces reconnect during a slow receipt read and invalidates the prior network generation', async () => {
+  const events = new EventTarget(), timers = new Map();
+  let id = 0, online = true, reads = 0, release, currentCheck;
+  const recovery = startReceiptRecovery({ events, online: () => online, isCurrent: () => true,
+    schedule: callback => { timers.set(++id, callback); return id; }, cancel: timer => timers.delete(timer),
+    async verify(isCurrent) { reads++; currentCheck = isCurrent; if (reads === 1) await new Promise(resolve => { release = resolve; }); },
+  });
+  const [firstId, first] = [...timers][0];
+  timers.delete(firstId);
+  const inFlight = first();
+  online = false; events.dispatchEvent(new Event('offline'));
+  assert.equal(currentCheck(), false);
+  online = true;
+  for (let index = 0; index < 5; index++) events.dispatchEvent(new Event('online'));
+  assert.equal(timers.size, 0);
+  release(); await inFlight;
+  assert.equal(timers.size, 3);
+  for (const [timer, callback] of [...timers]) { timers.delete(timer); await callback(); }
+  assert.equal(reads, 4);
+  recovery.stop();
+});
+
 it('Plan07 keeps a definitively rejected void retryable only by an explicit action after verifying absence', async () => {
   const store = memoryStore(); let writes = 0, absentChecks = 0;
   const recovery = createVoidRecovery({ store, encrypt, decrypt, currentIdentity: () => true, repository: {

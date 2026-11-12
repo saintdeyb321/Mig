@@ -77,9 +77,12 @@ const prepare = async original => {
 const drafts = createDraftCheckout({ store, encrypt, decrypt, prepare, apply, verifyReceipt: verify, withLock: createQueueLock(db), currentIdentity: identity => identity.uid === user.uid });
 window.__p08Transactions = {
   save: (sale, items, products) => queue.submit({ ...sale, items, origin: 'online', queuedAt: new Date().toISOString() }, user, { isolated: true, products }),
-  draft: (sale, items, products) => queue.submit({ ...sale, items, origin: 'offline', queuedAt: new Date().toISOString() }, user, { isolated: true, products }),
+  draft: (sale, items, products) => {
+    if (model.failLocal) throw new SaleError('local-persistence', 'QuotaExceededError');
+    return queue.submit({ ...sale, items, origin: 'offline', queuedAt: new Date().toISOString() }, user, { isolated: true, products });
+  },
   subscribe(id, callback, onError) {
-    const watcher = liveQuery(async () => { const record = await db.sales.get(id); return record && { ...record, verifiedPayload: await decodeQueuedSale(record, user, decrypt) }; }).subscribe({ next: callback, error: onError });
+    const watcher = liveQuery(async () => { const record = await db.sales.get(id); return record ? { ...record, verifiedPayload: await decodeQueuedSale(record, user, decrypt) } : null; }).subscribe({ next: callback, error: onError });
     return () => watcher.unsubscribe();
   },
   review: (sale, identity, active) => drafts.review(sale.saleId, identity, active), confirm: (...args) => drafts.confirm(...args),
@@ -169,6 +172,19 @@ try {
   check(!text().includes('Venta registrada'), 'switching branch clears the old ticket while its read is in flight');
   model.finishVerification(); await verifying; await wait(() => !api.isProcessing);
   check(!api.lastSale && model.writes === 2, 'a late verification cannot revive a previous branch ticket or leave processing stuck');
+  setBranch(user.branchId); await pause();
+  model.raw={...model.raw, stock:{[user.branchId]:1}}; await publish();
+  model.online=false; window.dispatchEvent(new Event('offline'));
+  await wait(()=>!api.isOnline);
+  api.addToCart(projectQueuedStock([model.raw],[],user.businessId).products[0]); await wait(()=>api.cart.length===1);
+  api.setAmountPaid('6.00'); await wait(()=>api.isPaymentValid);
+  model.failLocal=true; await api.processSale();
+  check(!api.lastSale && api.cart.length===1 && model.writes===2,'local quota failure preserves the cart and never claims a draft or charge');
+  model.failLocal=false; await api.processSale();
+  await wait(()=>api.lastSale?.financialState==='draft_offline');
+  await db.sales.delete(api.lastSale.saleId);
+  await wait(()=>text().includes('Copia local no disponible'));
+  check(button('Revisar y confirmar').disabled && model.writes===2,'a deleted local draft is marked unavailable and cannot be resubmitted');
   result = { ok: true, checks, remoteWrites: model.writes, warningsDuringProcessing };
 } catch (error) { result = { ok: false, checks, error: error.stack }; }
 observer.disconnect(); recovery.stop(); watch.unsubscribe(); root.unmount(); resources.close(); db.close();

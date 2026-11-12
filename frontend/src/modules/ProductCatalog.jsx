@@ -1,8 +1,9 @@
+import { boundedImageDataUrl, imageCanvas, MAX_PRODUCT_IMAGE_CHARS } from '../shared/images/raster.js';
 import FirestoreQueryError from '../components/FirestoreQueryError';
 import { Package, Plus, Pencil, Camera } from 'lucide-react';
 import { Dialog, Button, LoadingState, PageHeader, Input, FormField, Select, SearchField, Card, DialogFooter, cn, EmptyState } from "../shared/ui";
 // src/modules/ProductCatalog.jsx
-import React, { useCallback, memo } from 'react';
+import React, { useCallback, useEffect, useRef, memo } from 'react';
 import { useProducts } from '../features/catalog/hooks/useProducts';
 import { useTenantData } from '../features/branches/context/TenantContext';
 import toast from 'react-hot-toast';
@@ -93,43 +94,20 @@ function ProductCatalog({
     openEditForm,
     handleSave
   } = useProducts(user);
-  const handleImageUpload = useCallback(e => {
-    const file = e.target.files[0];
+  const upload = useRef(null);
+  useEffect(() => () => { upload.current = null; }, [user.uid, user.businessId, editing, showFormModal]);
+  const handleImageUpload = useCallback(async event => {
+    const file = event.currentTarget.files[0];
+    event.currentTarget.value = '';
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error('Por favor, selecciona una imagen válida.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = event => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 200;
-        const MAX_HEIGHT = 200;
-        let width = img.width;
-        let height = img.height;
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-        setImageUrl(compressedBase64);
-      };
-    };
+    const request = {};
+    upload.current = request;
+    try {
+      const image = boundedImageDataUrl(await imageCanvas(file, 200), 'image/jpeg', MAX_PRODUCT_IMAGE_CHARS, 0.7);
+      if (upload.current === request) setImageUrl(image);
+    } catch (error) {
+      if (upload.current === request) toast.error(error.message);
+    } finally { if (upload.current === request) upload.current = null; }
   }, [setImageUrl]);
   const currentEditingProduct = editing ? globalProducts.find(p => p.id === editing) : null;
   if (isLoading && !showFormModal) {
@@ -165,7 +143,10 @@ function ProductCatalog({
               {editing ? '✏️ Editar Producto' : '📦 Nuevo Producto'}
             </>} busy={isLoading} className="max-w-lg" onClose={() => setShowFormModal(false)}>
 
-            <form onSubmit={handleSave} className="grid gap-4">
+            <form onSubmit={event => {
+              if (!upload.current) return handleSave(event);
+              event.preventDefault(); toast.error('Espera a que se prepare la imagen.');
+            }} className="grid gap-4">
 
               <div className="flex flex-wrap items-center gap-4 rounded-xl border border-dashed border-line bg-subtle p-4">
                 <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-panel">
@@ -174,7 +155,7 @@ function ProductCatalog({
 
                 <FormField className="grid min-w-0 flex-1 gap-2" label={<>FOTO DEL PRODUCTO (Opcional)</>}>
 
-                  <Input type="file" id="product-img" accept="image/*" onChange={handleImageUpload} disabled={isLoading} className="peer sr-only" />
+                  <Input type="file" id="product-img" accept="image/jpeg,image/png,image/webp" onChange={handleImageUpload} disabled={isLoading} className="peer sr-only" />
 
                   <div className="flex flex-wrap items-center gap-2 peer-focus-visible:[&_label]:outline-2 peer-focus-visible:[&_label]:outline-focus">
                     <label htmlFor="product-img" className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium hover:bg-subtle">

@@ -1,3 +1,4 @@
+import { ContractMediaActions } from './ContractMediaActions.jsx';
 import { ContractPhotoViewer } from './ContractPhotoViewer';
 import { Dialog, ConfirmDialog, Button, cn, Input, Select, FormField } from "../../../shared/ui";
 import { toDateSafe } from '../../../core/dates/dateValues';
@@ -5,7 +6,7 @@ import { toDateSafe } from '../../../core/dates/dateValues';
 import React, { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { getPaymentsByContract } from '../../../features/payments/infrastructure/paymentRepository';
-import { contractImageList } from '../../../features/contracts/infrastructure/contractImages';
+import { contractImageList, contractImageScope } from '../../../features/contracts/infrastructure/contractImages';
 import { useContractImageUrls } from '../../../features/contracts/hooks/useContractImageUrls';
 const formatFirebaseDate = (timestamp, includeTime = false) => {
   if (!timestamp) return 'Sin fecha';
@@ -36,12 +37,18 @@ const ContractDetailsModal = ({
   const [payMethod, setPayMethod] = useState('efectivo');
   const [selectedImageIndex, setSelectedImageIndex] = useState(null);
   const [confirmDelivery, setConfirmDelivery] = useState(false);
-  const imageReferences = useMemo(() => contractImageList(contract), [contract]);
+  const [manifest, setManifest] = useState(null);
+  const mediaScope = contractImageScope(contract, user?.uid);
+  const mediaKey = JSON.stringify(mediaScope);
+  const mediaContract = useMemo(() => manifest?.key === mediaKey && manifest.value.mediaRevision > (contract?.mediaRevision ?? 0)
+    ? { ...contract, ...manifest.value } : contract,
+    [contract, manifest, mediaKey]);
+  const imageReferences = useMemo(() => contractImageList(mediaContract), [mediaContract]);
   const {
     urls: allImages,
     loading: imagesLoading,
     error: imagesError
-  } = useContractImageUrls(imageReferences);
+  } = useContractImageUrls(imageReferences, { scope: mediaScope });
   const [paymentResult, setPaymentResult] = useState({
     key: null,
     payments: [],
@@ -209,9 +216,11 @@ const ContractDetailsModal = ({
                         {allImages.map((img, idx) => <button key={idx} type="button" className="min-w-0 overflow-hidden rounded-xl focus-visible:ring-2 focus-visible:ring-focus" onClick={() => setSelectedImageIndex(idx)} aria-label={`Ampliar fotografía ${idx + 1}`}><img src={img} alt={`Referencia ${idx + 1}`} title="Haz clic para ampliar" className="w-full h-full max-h-45 object-cover rounded-xl border border-line cursor-zoom-in motion-reduce:transition-none transition-colors hover:border-primary/40 hover:bg-primary-soft/40" /></button>)}
                       </div> : <div className="grid min-h-28 place-content-center gap-2 rounded-xl border border-accent/15 bg-panel/85 text-center text-sm text-muted">
                         <span className="text-3xl">🎂</span>
-                        <p>Sin referencia</p>
+                        <p>{imagesLoading ? 'Cargando fotos…' : imageReferences.length ? 'Fotos no disponibles' : 'Sin referencia'}</p>
                       </div>}
                 </div>
+                <ContractMediaActions key={mediaKey} scope={mediaScope} contract={mediaContract}
+                  onManifest={value => setManifest({ key: mediaKey, value })} />
               </div>
             </div>
 

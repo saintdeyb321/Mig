@@ -65,7 +65,7 @@ export function SaleStatus({ sale, onPrint, onNew, onVerify, onReview, isProcess
           <Icon aria-hidden="true" className="size-6" />
         </span>
         <Badge variant={badge}>{draft ? 'Sin cobrar' : rejected ? 'No realizada' : pending ? 'Por comprobar' : 'Registrada'}</Badge>
-        <h2 className="mt-1.5 text-xl font-extrabold tracking-tight text-ink">{draft ? 'Guardado en este dispositivo' : rejected ? 'La venta no se realizó' : pending ? 'Comprobando venta' : 'Venta registrada'}</h2>
+        <h2 className="mt-1.5 text-xl font-extrabold tracking-tight text-ink">{draft ? (sale.localRecordMissing ? 'Copia local no disponible' : 'Guardado en este dispositivo') : rejected ? 'La venta no se realizó' : pending ? 'Comprobando venta' : 'Venta registrada'}</h2>
       </header>
       <dl className="space-y-1 rounded-xl border border-line bg-canvas px-3 py-3">
         <dt className="text-xs font-semibold text-muted">{confirmed ? 'Total confirmado' : draft ? 'Importe guardado' : rejected ? 'Importe del ticket' : 'Importe pendiente'}</dt>
@@ -75,12 +75,13 @@ export function SaleStatus({ sale, onPrint, onNew, onVerify, onReview, isProcess
         <span className="text-sm font-semibold">{confirmed ? 'Vuelto a entregar' : 'Vuelto calculado (pendiente)'}</span>
         <strong className="ml-auto text-lg font-extrabold tabular-nums">S/ {sale.change.toFixed(2)}</strong>
       </div>}
+      {sale.localRecordMissing && <Alert variant="warning" className="text-left">El navegador ya no tiene el registro durable de este ticket. Conserva su referencia.</Alert>}
       {draft ? <p className="text-sm text-muted">Aún no se ha cobrado ni se ha movido inventario. Al conectarte, revisa precios, productos y tu caja antes de confirmar.</p>
         : pending && !rejected && <Alert variant="warning" className="text-left">No repitas el cobro. Comprueba el resultado por el mismo ticket.</Alert>}
       <p className="text-xs text-muted wrap-anywhere">ID: {sale.saleId}</p>
     </div>
     <footer className="grid shrink-0 gap-2 border-t border-line bg-panel px-3.5 py-3">
-      {draft ? <Button variant="secondary" onClick={onReview} disabled={isProcessing}>Revisar y confirmar</Button>
+      {draft ? <Button variant="secondary" onClick={onReview} disabled={isProcessing || sale.localRecordMissing}>Revisar y confirmar</Button>
         : pending && !rejected && <Button variant="secondary" onClick={onVerify} loading={isProcessing}>Verificar venta</Button>}
       <div className="grid grid-cols-2 gap-2">
         <Button variant="secondary" className="px-2 text-xs" disabled={isProcessing} onClick={() => onPrint(sale)}><Printer aria-hidden="true" />{confirmed ? 'Imprimir ticket' : draft ? 'Imprimir borrador' : 'Imprimir registro sin confirmar'}</Button>

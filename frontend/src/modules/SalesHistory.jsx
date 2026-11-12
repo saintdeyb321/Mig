@@ -11,7 +11,7 @@ import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 import { DraftSaleReview } from './sales-history/DraftSaleReview.jsx';
 
 export default function SalesHistory({ user }) {
-  const { sales, rejected, error, isStale, updatedAt, retry, isLoading, formatDate, anularVentaConfirmada,
+  const { sales, rejected, unreadableLocalCount = 0, error, isStale, updatedAt, retry, isLoading, formatDate, anularVentaConfirmada,
     verificarPendiente, verificarAnulacion, isProcessing, businessBranches, voidResult, confirmedVoid } = useSalesHistory(user);
   const { activeBranchId } = useTenantData();
   useSessionScroll(`sales:${activeBranchId}`, !isLoading);
@@ -59,8 +59,11 @@ export default function SalesHistory({ user }) {
     </header>
     <p className="text-xs text-muted">Los tickets sin cobrar no suman ingresos.</p>
     <FirestoreQueryError error={error} area="sales-recent" user={user} onRetry={retry} commercial />
+    {unreadableLocalCount > 0 && <Alert variant="warning" title="Tickets locales por revisar">
+      No se pudo leer el contenido de {unreadableLocalCount} {unreadableLocalCount === 1 ? 'ticket local' : 'tickets locales'}. Los registros se conservan. Si alguno se envió, comprueba su recibo antes de volver a cobrar.
+    </Alert>}
     {sales.length ? <div className="history-grid min-w-0">{sales.map(card)}</div>
-      : !error && <EmptyState title="Sin movimientos recientes" description="Aquí aparecerán las ventas y los tickets guardados." />}
+      : !error && !unreadableLocalCount && <EmptyState title="Sin movimientos recientes" description="Aquí aparecerán las ventas y los tickets guardados." />}
     {rejected.length > 0 && <details className="rounded-2xl border border-line bg-panel p-4"><summary className="flex min-h-11 cursor-pointer items-center font-semibold">Revisión local · {rejected.length}</summary><p className="mb-4 text-sm text-muted">Estos intentos no se realizaron. Se conservan para revisión y no suman ingresos.</p><div className="history-grid">{rejected.map(card)}</div></details>}
     {selectedSale && <Dialog
       title="¿Anular esta venta?"

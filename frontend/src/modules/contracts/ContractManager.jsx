@@ -118,7 +118,7 @@ function ContractManager({
         }, async resolved => {
           const html = template(resolved, settings || {}, businessBranches);
           await job.print(html);
-        });
+        }, { signal: job.signal });
       }, {
         popup: true,
         compact
@@ -223,7 +223,7 @@ function ContractManager({
         La agenda muestra los 100 pedidos activos con entrega más próxima. La búsqueda se aplica a esos pedidos.
       </p>}
 
-      {(showCreateModal || contractToEdit) && <ContractFormModal contractToEdit={contractToEdit} activeLocations={activeLocations} onClose={() => {
+      {(showCreateModal || contractToEdit) && <ContractFormModal user={user} contractToEdit={contractToEdit} activeLocations={activeLocations} onClose={() => {
       setShowCreateModal(false);
       setContractToEdit(null);
     }} onSubmit={handleFormSubmit} isProcessing={isProcessing} cashAction={!canCollect && <Alert variant="warning" title="Los cobros requieren caja vigente">

@@ -2,7 +2,7 @@
 
 Inventario local reproducible, sin red, cuentas, consultas ni lecturas Spark. Proyecto **migapos**, base **(default)**. No publica, crea ni elimina índices.
 
-Analizados 31 builders SDK en 19 archivos; 0 collectionGroup. Configuración local: **53 compuestos** (33 necesarios para las formas actuales catalogadas), 0 fieldOverrides conservados. Acceso por ID (perfil, invitación, licencia, tenant, locks, receipts) usa índices documentales automáticos. IndexedDB no se cuenta como Firestore.
+Analizados 31 builders SDK en 19 archivos; 0 collectionGroup. Configuración local: **53 compuestos** (33 necesarios para las formas actuales catalogadas), 1 fieldOverrides conservados. Acceso por ID (perfil, invitación, licencia, tenant, locks, receipts) usa índices documentales automáticos. IndexedDB no se cuenta como Firestore.
 
 **Remoto: no comprobado.** El propietario informó un índice de notificaciones; no se consultó Firebase ni se comprueba que ese índice coincida en todos los campos/órdenes. Definido en Git no significa Habilitado. Los emuladores no demuestran disponibilidad de índices remotos.
 
@@ -200,7 +200,7 @@ Limitaciones: las rutas de inventario/limpieza son una whitelist de documentos c
 
 ## Resultado local
 
-Sin compuestos faltantes para las formas actuales catalogadas. Se conservan las 44 definiciones y fieldOverrides; no se añaden ni eliminan índices sin justificación. Esto no confirma los índices de producción.
+Sin compuestos faltantes para las formas actuales catalogadas. Definiciones locales: 53 compuestos y 1 exenciones de campo. Esto no confirma los índices de producción.
 
 Regenerar: npm run indexes:inventory. Comprobar sin escribir: npm run indexes:check. Ambos funcionan sin conexión y no importan Firebase.
 

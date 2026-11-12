@@ -4,6 +4,9 @@ export function dexieSaleStore(database) {
   return {
     get: id => database.sales.get(id),
     list: () => database.sales.where('status').anyOf('pending', 'syncing').toArray(),
+    listForReceiptRecovery: ({ uid, businessId, branchId }) => database.sales
+      .where('[businessId+userId+status]').anyOf(['pending', 'syncing'].map(status => [businessId, uid, status]))
+      .filter(row => row.branchId === branchId && (row.attempted || row.status === 'syncing' || row.financialAck || row.submissionData)).toArray(),
     update: (id, changes) => database.sales.update(id, changes),
     insert: async (record, checkExisting) => {
       // Encryption must finish outside IDB transactions, which auto-close across unrelated awaits.

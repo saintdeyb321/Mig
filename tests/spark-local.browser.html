@@ -2,30 +2,113 @@
 <script type="module">
 import db from '/src/offlineDB.js';
 import { auth } from '/src/core/firebase/client.js';
-import { prepareContractImages, resolveContractImageUrls, withResolvedContractImages } from '/src/features/contracts/infrastructure/contractImages.js';
+import { availableLegacyPhotos, contractImageList, finishContractMediaJobs, readContractMediaJobs, resolveContractImageUrls, stageContractMediaJobs, withResolvedContractImages } from '/src/features/contracts/infrastructure/contractImages.js';
 import { createSaleQueue } from '/src/features/sales/application/saleQueue.js';
 import { dexieSaleStore, createQueueLock } from '/src/features/sales/infrastructure/saleQueueStore.js';
 import { encrypt, decrypt } from '/src/crypto.js';
+import { boundedImageDataUrl, imageCanvas, MAX_PRODUCT_IMAGE_CHARS, MAX_QR_IMAGE_CHARS } from '/src/shared/images/raster.js';
 import { generateReceiptHTML } from '/src/utils/receiptTemplate.js';
 const checks = [], check = (ok, name) => { if (!ok) throw Error(name); checks.push(name); };
 let result;
 try {
   const uid = 'local-fixture-user', businessId = 'local-fixture-business', contractId = '11111111-1111-4111-8111-111111111111';
   auth.currentUser = { uid };
+  const branchId = 'branch', scope = { uid, businessId, branchId, contractId };
+  const model = globalThis.__p18 = { photos:new Map(), manifest:[], reads:0, calls:[], networkFailure:2 };
   const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 800;
-  const context = canvas.getContext('2d'); context.fillStyle = '#fa4'; context.fillRect(0, 0, 1200, 800);
-  const input = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-  const refs = await prepareContractImages({ businessId, contractId, newImages: [input] });
-  check(refs.length === 1 && refs[0].startsWith('local-image:'), 'Firestore receives only a small local reference');
-  const saved = await db.settings.get(`contract-image:${uid}:${refs[0]}`);
-  check(saved.main.size <= 262144 && saved.thumbnail.size <= 65536 && saved.deviceOnly, 'Real canvas compression is bounded and persisted in IndexedDB');
-  const first = await resolveContractImageUrls(refs); check(first.urls[0].startsWith('blob:'), 'Stored photo resolves after reading IndexedDB'); first.release();
-  auth.currentUser = { uid: 'other-account' };
-  const foreign = await resolveContractImageUrls(refs); check(foreign.urls.length === 0 && foreign.warnings.length === 1, 'Another account cannot resolve local photos');
+  const ctx = canvas.getContext('2d'), files = [];
+  const imageBlob = (surface, type = 'image/png') => new Promise(resolve => surface.toBlob(resolve, type));
+  for (let index = 0; index < 4; index++) {
+    const gradient = ctx.createLinearGradient(0,0,1200,800);
+    gradient.addColorStop(0,'#fbd4ad'); gradient.addColorStop(1,'#d5a7d9');
+    ctx.fillStyle=gradient; ctx.fillRect(0,0,1200,800);
+    for (let i=0;i<2000*(index+1);i++) {
+      ctx.fillStyle=`hsla(${(i*97)%360},50%,40%,.24)`;
+      ctx.fillRect((i*917)%1200,(i*819)%800,4+i%13,4+i%10);
+    }
+    ctx.fillStyle='#401448'; ctx.font='bold 64px Arial'; ctx.fillText('Feliz cumpleaños',100,170);
+    ctx.font='32px Arial'; ctx.fillText('Glaseado · 14 de noviembre',100,226);
+    files.push(await imageBlob(canvas));
+  }
+  const parent = { id:contractId, businessId, branchId, referenceImages:[] };
+  check(contractImageList(parent).length === 0 && model.reads === 0, 'listing a contract does not read photos');
+  const jobs = await stageContractMediaJobs(scope,{files});
+  check(jobs.length===4 && jobs.every(job=>job.blob.type==='image/webp' && job.width===960 && job.height===640
+    && job.blob.size<=163840 && job.sha256.length===64), 'Chrome encodes four photos into bounded WebP documents');
+  let partial = await finishContractMediaJobs(scope,{jobs});
+  check(partial.remaining===3 && model.photos.size===1,'interruption after first image reports partial success');
+  db.close(); await db.open();
+  const saved = await readContractMediaJobs(scope);
+  check(saved.length===3 && saved.every(job=>jobs.find(original=>original.mediaId===job.mediaId)?.sha256===job.sha256),
+    'reopening Dexie retains verified local IDs and hashes for retry');
+  model.networkFailure=0;
+  const complete = await finishContractMediaJobs(scope,{jobs:saved});
+  check(complete.remaining===0 && model.photos.size===4 && (await readContractMediaJobs(scope)).length===0,
+    'retry attaches the three remaining images without duplicating the first');
+  const refs = contractImageList({...parent,mediaIds:model.manifest});
+  const verifiedBlobs=new Map();
+  const first = await resolveContractImageUrls(refs,{scope,verifiedBlobs});
+  check(first.urls.length===4 && model.reads===4 && model.peak<=3,'detail loads four documents with at most three concurrent reads');
+  const verified = new Image(); verified.src=first.urls[0]; await verified.decode();
+  check(verified.naturalWidth===960 && verified.naturalHeight===640,'the verified compressed bytes decode at the recorded size');
+  first.release();
+  check(await fetch(first.urls[0]).then(()=>false,()=>true),'released object URLs cannot be reused');
+  const warm = await resolveContractImageUrls(refs,{scope,verifiedBlobs});
+  check(warm.urls.length===4 && model.reads===4,'an open view reuses verified blobs without another Firestore read');
+  warm.release();
+  const abort = new AbortController();
+  const interrupted = resolveContractImageUrls(refs,{scope,signal:abort.signal});
+  abort.abort();
+  check(await interrupted.then(()=>false,error=>error.name==='AbortError'),'closing a view cancels obsolete work and exposes no URLs');
+  const readsBeforeOther = model.reads;
+  auth.currentUser = { uid:'owner-fixture' };
+  const other = await resolveContractImageUrls(refs,{scope:{...scope,uid:auth.currentUser.uid}});
+  check(other.urls.length===4 && model.reads-readsBeforeOther===4,'a second authorized account fetches its own four documents');
+  other.release();
+  auth.currentUser = { uid:'pickup-only' };
+  const denied = await resolveContractImageUrls(refs,{scope:{...scope,uid:auth.currentUser.uid}});
+  check(!denied.urls.length && denied.warnings.length===1,'a denied scope presents no remote photos');
   auth.currentUser = { uid };
-  await withResolvedContractImages({ referenceImages: ['https://firebasestorage.googleapis.com/no-network'] }, contract => {
-    check(contract.referenceImages.length === 0 && contract.imageAvailabilityNote.includes('conservada'), 'Unavailable legacy photo preserves reference and permits text printing');
+  const legacy = `local-image:${businessId}:${contractId}:${crypto.randomUUID()}`, jpeg = await imageBlob(canvas,'image/jpeg');
+  await db.settings.put({id:`contract-image:${uid}:${legacy}`,businessId,contractId,userId:uid,main:jpeg});
+  const missing = `local-image:${businessId}:${contractId}:${crypto.randomUUID()}`;
+  check((await availableLegacyPhotos(scope,[legacy,missing])).join()===legacy,'only the legacy blob present on this device can migrate');
+  const legacyJob = await stageContractMediaJobs(scope,{migration:[legacy]});
+  check((await finishContractMediaJobs(scope,{jobs:legacyJob})).remaining===0 && (await db.settings.get(`contract-image:${uid}:${legacy}`)).main.size===jpeg.size,
+    'verified migration preserves the original historical blob');
+  await withResolvedContractImages({...parent,referenceImages:[missing]}, contract => {
+    check(contract.referenceImages.length === 0 && contract.imageAvailabilityNote.includes('histórica no disponible'),
+      'an absent historical blob cannot appear in the printed order');
   });
+  const full = db.settings.bulkPut;
+  db.settings.bulkPut = async () => { throw new DOMException('quota','QuotaExceededError'); };
+  const rejected = await stageContractMediaJobs(scope,{files:[files[0]]}).then(()=>false,error=>/no se pudieron guardar/i.test(error.message));
+  db.settings.bulkPut=full;
+  check(rejected && !(await readContractMediaJobs(scope)).length,'photo quota failure leaves no partially inserted local work');
+
+  const noisy = ctx.createImageData(1200,800);
+  let random=127;
+  for(let i=0;i<noisy.data.length;i+=4){
+    random=(Math.imul(1664525,random)+1013904223)>>>0;
+    noisy.data[i]=random>>>24; noisy.data[i+1]=(random>>>16)&255; noisy.data[i+2]=(random>>>8)&255; noisy.data[i+3]=255;
+  }
+  ctx.putImageData(noisy,0,0);
+  const oversized = await stageContractMediaJobs(scope,{files:[await imageBlob(canvas)]}).then(()=>false,error=>error.message.includes('160 KiB'));
+  check(oversized && !(await readContractMediaJobs(scope)).length,'oversize photo requests a crop and never creates a pending job');
+  const photoSample = await new Promise((resolve,reject)=>{
+    const reader=new FileReader(); reader.onload=()=>resolve(reader.result); reader.onerror=reject; reader.readAsDataURL(jobs[0].blob);
+  });
+  const product = boundedImageDataUrl(await imageCanvas(files[0],200),'image/jpeg',MAX_PRODUCT_IMAGE_CHARS,0.7);
+  check(product.startsWith('data:image/jpeg;base64,') && product.length<MAX_PRODUCT_IMAGE_CHARS,'products retain bounded JPEG Base64');
+  const matrix = '0000000000000000000000000,0000000000000000000000000,0011111110010010111111100,0010000010110100100000100,0010111010110110101110100,0010111010010110101110100,0010111010100110101110100,0010000010100110100000100,0011111110101010111111100,0000000000111110000000000,0011010011011000111011000,0001111000110001001001000,0001001111001001000111100,0011101000101011111010000,0001010010011101011101000,0000000000101000010001100,0011111110111100111010100,0010000010010011010101100,0010111010001101111111000,0010111010100101111111100,0010111010001010000100100,0010000010111110111000100,0011111110110100100100000,0000000000000000000000000,0000000000000000000000000'.split(',');
+  const qr = document.createElement('canvas'); qr.width=qr.height=870;
+  const qrCtx=qr.getContext('2d'); qrCtx.fillStyle='#fff'; qrCtx.fillRect(0,0,870,870); qrCtx.fillStyle='#000';
+  matrix.forEach((row,y)=>[...row].forEach((module,x)=>{if(module==='1') qrCtx.fillRect((x+2)*30,(y+2)*30,30,30);}));
+  const encodedQR = boundedImageDataUrl(await imageCanvas(await imageBlob(qr),600,{smooth:false}),'image/png',MAX_QR_IMAGE_CHARS);
+  const visualQR = await imageCanvas(await (await fetch(encodedQR)).blob(),200,{smooth:false});
+  const mobileQR = visualQR.toDataURL('image/png');
+  check(encodedQR.startsWith('data:image/png;base64,') && visualQR.width===200 && encodedQR.length<MAX_QR_IMAGE_CHARS,
+    'QR preserves a quiet zone in PNG Base64 and decodes for the mobile viewport');
   const applied = [], identity = { uid, businessId, role: 'cajero', branchId: 'branch' };
   const queue = createSaleQueue({ store: dexieSaleStore(db), encrypt, decrypt, withLock: createQueueLock(db), online: () => true,
     syncSessions: () => { throw Error('Legacy cash flush must remain paused'); }, afterFlush: () => { throw Error('Reconciliation must remain paused'); },
@@ -40,7 +123,8 @@ try {
   check(pending.isOffline && applied.length === 1, 'Offline capture stays pending and never invokes remote application');
   const html = generateReceiptHTML({ ...pending.sale, isOffline: true }, {});
   check(html.includes('PENDIENTE LOCAL') && html.includes('SIN CONFIRMACIÓN REMOTA'), 'Printed local pending has an explicit non-confirmation label');
-  result = { ok: true, checks };
+  result = { ok: true, checks, metrics:{ photos:jobs.map(job=>job.blob.size), productChars:product.length,
+    qrChars:encodedQR.length, remoteReads:model.reads, peak:model.peak }, encodedQR, mobileQR, photoSample };
 } catch (error) { result = { ok: false, checks, error: error.stack }; }
 await fetch('/__phase4-report', { method: 'POST', body: JSON.stringify(result) });
 </script>

@@ -435,17 +435,23 @@ service cloud.firestore {
         && (before == null || before.data.businessId == id)
         && branchInventoryChange(key, after.data, before != null && before.data.get('status', null) == 'activo', before == null);
     }
+    function boundedBase64Image(value, maximum) {
+      return value == null || value == '' || (value is string && value.size() <= maximum
+        && value.matches('^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$'));
+    }
     function branchCreation(id) {
       let d = request.resource.data;
       return tenantCreator() && validNamedRecord()
         && d.sparkCashVersion == 1 && d.branchLifecycleVersion == 1
         && d.keys().hasOnly(['businessId', 'name', 'address', 'phone', 'status', 'yapeQrUrl', 'createdAt', 'updatedAt', 'sparkCashVersion', 'branchLifecycleVersion'])
+        && boundedBase64Image(d.get('yapeQrUrl', null), 393216)
         && branchInventoryChange(id, d, false, true);
     }
     function branchUpdate(id) {
       let d = request.resource.data;
       return tenantManager() && businessUnchanged() && validNamedRecord()
         && d.diff(resource.data).affectedKeys().hasOnly(['name', 'address', 'phone', 'status', 'yapeQrUrl', 'updatedAt'])
+        && (!d.diff(resource.data).affectedKeys().hasAny(['yapeQrUrl']) || boundedBase64Image(d.get('yapeQrUrl', null), 393216))
         && (d.status == resource.data.get('status', null) ||
           (d.status == 'activo' ? branchInventoryChange(id, d, false, false) :
             (d.status == 'inactivo' && resource.data.get('branchLifecycleVersion', 0) == 1
@@ -772,7 +778,8 @@ service cloud.firestore {
         && d.deliveryType is string && d.deliveryType.size() > 0 && d.deliveryType.size() <= 150
         && d.deliveryAddress is string && d.deliveryAddress.size() <= 1000
         && (d.deliveryDate == null || d.deliveryDate is timestamp)
-        && d.referenceImages is list && d.referenceImages.size() <= 20
+        && d.referenceImages is list && d.referenceImages.size() + d.get('mediaIds', []).size() <= 20
+        && (d.get('pendingMedia', null) == null || d.referenceImages == resource.data.referenceImages)
         && d.referenceImages.join('|').matches('^(local-image:' + d.businessId + ':' + id + ':[A-Za-z0-9_-]{36}[|]?){0,20}$');
     }
     function contractBalance(d) {
@@ -827,6 +834,73 @@ service cloud.firestore {
     function originContractReader() {
       return tenantReader() && (currentRole() == 'dueño' || assignedContractBranch(resource.data.branchId));
     }
+    function mediaPath(contractId, mediaId) {
+      return /databases/$(database)/documents/contracts/$(contractId)/media/$(mediaId);
+    }
+    function validMediaId(id) {
+      return id is string && id.matches('^[a-f0-9-]{36}$');
+    }
+    function mediaReader(contract, mediaId) {
+      return activeUser() && currentBusiness() != 'platform-admin' && currentBusiness() == contract.businessId && tenantEnabled(contract.businessId)
+        && (currentRole() == 'dueño' || assignedContractBranch(contract.branchId))
+        && (mediaId in contract.get('mediaIds', []) || (contract.get('pendingMedia', null) != null && contract.pendingMedia.id == mediaId));
+    }
+    function validMediaData(d, parent) {
+      return d.keys().hasOnly(['businessId', 'originBranchId', 'contentType', 'data', 'byteLength',
+          'width', 'height', 'sha256', 'version', 'createdAt', 'createdBy'])
+        && d.businessId == parent.businessId && d.originBranchId == parent.branchId
+        && d.version is int && d.version == 1 && d.createdAt == request.time && d.createdBy == request.auth.uid
+        && d.contentType in ['image/webp', 'image/jpeg'] && d.data is bytes
+        && d.byteLength is int && d.byteLength > 0 && d.byteLength <= 163840 && d.data.size() == d.byteLength
+        && d.width is int && d.height is int && d.width > 0 && d.height > 0 && d.width <= 960 && d.height <= 960
+        && d.sha256 is string && d.sha256.matches('^[a-f0-9]{64}$') && hashing.sha256(d.data).toHexString().lower() == d.sha256;
+    }
+    function reserveContractMedia(id, old, next) {
+      let pending = next.pendingMedia;
+      let path = mediaPath(id, pending.id);
+      let legacy = old.get('referenceImages', []);
+      return old.status != 'cancelado' && old.get('pendingMedia', null) == null
+        && pending.keys().hasOnly(['id', 'legacyRef', 'sha256']) && validMediaId(pending.id)
+        && !(pending.id in old.get('mediaIds', []))
+        && (pending.legacyRef == null ? legacy.size() + old.get('mediaIds', []).size() < 20
+          : pending.legacyRef is string && pending.legacyRef in legacy
+            && pending.legacyRef.matches('^local-image:' + old.businessId + ':' + id + ':[A-Za-z0-9_-]{36}$')
+            && legacy.size() + old.get('mediaIds', []).size() <= 20)
+        && next.diff(old).affectedKeys().hasOnly(['pendingMedia', 'mediaRevision'])
+        && !exists(path) && getAfter(path).data.createdAt == request.time && pending.sha256 == getAfter(path).data.sha256;
+    }
+    function publishContractMedia(id, old, next) {
+      let pending = old.pendingMedia;
+      let legacy = old.get('referenceImages', []);
+      let ids = old.get('mediaIds', []);
+      let media = get(mediaPath(id, pending.id)).data;
+      return next.get('pendingMedia', null) == null
+        && !(pending.id in ids) && ids.size() + legacy.size() - (pending.legacyRef == null ? 0 : 1) < 20
+        && media.businessId == old.businessId && media.originBranchId == old.branchId && media.version == 1 && media.sha256 == pending.sha256
+        && next.mediaIds == ids.concat([pending.id])
+        && next.get('referenceImages', []) == (pending.legacyRef == null ? legacy : legacy.removeAll([pending.legacyRef]))
+        && next.diff(old).affectedKeys().hasOnly(['pendingMedia', 'mediaIds', 'referenceImages', 'mediaRevision']);
+    }
+    function removedMedia(id, old, next, removed) {
+      let path = mediaPath(id, removed);
+      return validMediaId(removed) && exists(path) && !existsAfter(path)
+        && next.mediaIds == old.mediaIds.removeAll([removed])
+        && next.diff(old).affectedKeys().hasOnly(['mediaIds', 'mediaRevision']);
+    }
+    function removeContractMedia(id, old, next) {
+      let removed = old.get('mediaIds', []).removeAll(next.get('mediaIds', []));
+      return old.status != 'cancelado' && removed.size() == 1 && removedMedia(id, old, next, removed[0]);
+    }
+    function updateContractMedia(id) {
+      let old = resource.data;
+      let next = request.resource.data;
+      return cashActor(old.businessId, old.branchId)
+        && next.mediaRevision is int && next.mediaRevision == old.get('mediaRevision', 0) + 1
+        && next.mediaRevision <= 9007199254740991
+        && (next.get('pendingMedia', null) != null ? reserveContractMedia(id, old, next)
+          : old.get('pendingMedia', null) != null ? publishContractMedia(id, old, next)
+          : removeContractMedia(id, old, next));
+    }
     function initialContractPayment(d, id) {
       let p = getAfter(/databases/$(database)/documents/payments/$(d.lastPaymentId)).data;
       return d.ledgerVersion == 1 && p.sourceId == id && p.type == 'advance' && p.userId == d.createdBy
@@ -845,7 +919,7 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/spark_contract_operations/$(d.createOperationId)).data.contractId == id
         && !exists(/databases/$(database)/documents/spark_contract_operations/$(d.createOperationId))
         && d.creatorName is string && d.creatorName.size() <= 250 && d.contractNumber.matches('^PED-[A-F0-9]{8}$') && d.contractId == d.contractNumber
-        && contractFields(d, id) && contractBalance(d) && d.status == projectedContractStatus(d.balance, 'pendiente')
+        && contractFields(d, id) && d.referenceImages.size() == 0 && contractBalance(d) && d.status == projectedContractStatus(d.balance, 'pendiente')
         && (d.lastPaymentId == null ? d.ledgerVersion == 0 && d.paidTotal == 0 : initialContractPayment(d, id))
         && (!crossPickup(d) || pickupSynchronized(id, d, d.deliveryType));
     }
@@ -880,7 +954,10 @@ service cloud.firestore {
         && (!contractTerminal(old) || d.deliveryType == old.deliveryType)
         && (positiveContractPayment(id, d, old) || cancelSparkContract(id, d, old)
           || (d.diff(old).affectedKeys().hasOnly(['clientName', 'clientPhone', 'deliveryDate', 'details', 'deliveryType', 'deliveryAddress', 'deliveryCost', 'subtotal', 'total', 'referenceImages', 'balance', 'status', 'updatedAt'])
-            && contractFields(d, id) && contractBalance(d) && d.status == projectedContractStatus(d.balance, old.status))
+            && contractFields(d, id)
+            && (d.referenceImages == old.get('referenceImages', []) || (old.get('referenceImages', []).hasAll(d.referenceImages)
+              && d.referenceImages.toSet().size() == d.referenceImages.size()))
+            && contractBalance(d) && d.status == projectedContractStatus(d.balance, old.status))
           || (d.diff(old).affectedKeys().hasOnly(['balance', 'status', 'deliveredAt', 'deliveredBy', 'updatedAt'])
             && !old.keys().hasAny(['deliveredAt']) && d.deliveredAt == request.time && d.deliveredBy == request.auth.uid
             && d.status == projectedContractStatus(d.balance, 'entregado') && d.balance == old.balance))
@@ -951,11 +1028,14 @@ service cloud.firestore {
     match /products/{productId} {
       allow read: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if tenantCreator() && validProduct() && validStock(request.resource.data.stock)
+        && boundedBase64Image(request.resource.data.get('imageUrl', ''), 131072)
         && request.resource.data.keys().hasOnly(['businessId', 'name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'createdAt', 'updatedAt']);
       allow update: if (request.resource.data.diff(resource.data).affectedKeys().hasAny(['posLastSaleId']) && debit(productId))
         || (request.resource.data.diff(resource.data).affectedKeys().hasAny(['posLastVoidSaleId']) && credit(productId))
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'price', 'cost', 'stock', 'category', 'status', 'imageUrl', 'lastStockHistory', 'updatedAt'])
         && businessUnchanged() && tenantManager() && validProduct()
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['imageUrl'])
+          || boundedBase64Image(request.resource.data.get('imageUrl', ''), 131072))
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['stock']) || validStock(request.resource.data.stock)));
       allow delete: if tenantManager() && resource.data.get('posStockVersion', {}).size() == 0;
     }
@@ -1002,8 +1082,24 @@ service cloud.firestore {
       allow get: if activeUser() && (resource == null || originContractReader() || platformDataReader());
       allow list: if superadmin() ? platformDataReader() : originContractReader();
       allow create: if createSparkContract(contractId);
-      allow update: if updateSparkContract(contractId);
+      allow update: if updateSparkContract(contractId) || updateContractMedia(contractId);
       allow delete: if false;
+      match /media/{mediaId} {
+        function parent() {
+          return get(/databases/$(database)/documents/contracts/$(contractId)).data;
+        }
+        function nextParent() {
+          return getAfter(/databases/$(database)/documents/contracts/$(contractId)).data;
+        }
+        allow get: if mediaReader(parent(), mediaId) && resource.data.businessId == parent().businessId
+          && resource.data.originBranchId == parent().branchId;
+        allow create: if validMediaId(mediaId) && parent().get('pendingMedia', null) == null
+          && cashActor(parent().businessId, parent().branchId) && nextParent().pendingMedia.id == mediaId
+          && validMediaData(request.resource.data, parent());
+        allow delete: if mediaId in parent().get('mediaIds', []) && !(mediaId in nextParent().get('mediaIds', []))
+          && cashActor(parent().businessId, parent().branchId);
+        allow list, update: if false;
+      }
     }
     match /contract_pickups/{contractId} {
       allow get: if activeUser() && (resource == null || platformDataReader()

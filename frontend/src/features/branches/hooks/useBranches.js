@@ -1,12 +1,13 @@
+import { boundedImageDataUrl, imageCanvas, MAX_QR_IMAGE_CHARS } from '../../../shared/images/raster.js';
 import { useTenantData } from '../context/TenantContext';
 import { createBranch, updateBranch } from '../infrastructure/branchRepository';
 import { timestampNow } from '../../../core/firebase/timestamps';
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 
 export const useBranches = (user) => {
   const { businessBranches, branchQuota, isLoading: isGlobalLoading } = useTenantData();
-  const creatingId = useRef(null), saving = useRef(false);
+  const creatingId = useRef(null), saving = useRef(false), upload = useRef(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Estados del formulario
@@ -43,60 +44,35 @@ export const useBranches = (user) => {
     setQrImageBase64(branch.yapeQrUrl || null); // Cargar el QR que ya tenía guardado
     setShowFormModal(true);
   };
-  const handleImageChange = useCallback((e) => {
-    const file = e.target.files[0];
+  useEffect(() => () => { upload.current = null; }, [user.uid, user.businessId, editingBranch?.id, showFormModal]);
+  const handleImageChange = useCallback(async event => {
+    const file = event.currentTarget.files[0];
+    event.currentTarget.value = '';
     if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      toast.error('Por favor, selecciona un archivo de imagen válido.');
-      return;
-    }
-
-    const loadId = toast.loading('Procesando imagen...');
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-
-      img.onload = () => {
-        const MAX_WIDTH = 600;
-        const MAX_HEIGHT = 600;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
-        } else {
-          if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-
-        ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, width, height);
-
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-
-        setQrImageBase64(compressedBase64);
+    const request = {};
+    upload.current = request;
+    const loadId = toast.loading('Procesando código QR...');
+    try {
+      const canvas = await imageCanvas(file, 600, { smooth: false });
+      const image = boundedImageDataUrl(canvas, 'image/png', MAX_QR_IMAGE_CHARS);
+      if (upload.current === request) {
+        setQrImageBase64(image);
         toast.success('QR listo para guardar', { id: loadId });
-      };
-
-      img.onerror = () => toast.error('Error al procesar la imagen.', { id: loadId });
-    };
+      } else toast.dismiss(loadId);
+    } catch (error) {
+      if (upload.current === request) toast.error(error.message, { id: loadId });
+      else toast.dismiss(loadId);
+    } finally { if (upload.current === request) upload.current = null; }
   }, []);
   const removeQrImage = () => {
+    upload.current = null;
     setQrImageBase64(null);
   };
 
   const handleSave = async (e) => {
     e.preventDefault();
     if (saving.current) return;
+    if (upload.current) return toast.error('Espera a que se prepare el código QR.');
     if (!name.trim()) return toast.error('El nombre es obligatorio');
 
     saving.current = true;
