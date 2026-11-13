@@ -41,5 +41,5 @@ it('P08 Chromium preserves durable draft ciphertext, coordinates last-unit races
       export const confirmDraftSaleTransaction=(...args)=>window.__p08Transactions.confirm(...args);
       export const verifyPendingSaleTransaction=(...args)=>window.__p08Transactions.verify(...args);`,
   }, setupPage: page => page.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] }) });
-  assert.equal(result.remoteWrites, 2); assert.equal(result.warningsDuringProcessing, 0); assert.equal(result.checks.length, 19);
+  assert.equal(result.remoteWrites, 3); assert.equal(result.warningsDuringProcessing, 0); assert.equal(result.checks.length, 21);
 });

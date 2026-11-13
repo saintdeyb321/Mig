@@ -56,6 +56,9 @@ const verify = async sale => {
   const saved = model.receipts.get(sale.saleId);
   if (!saved) throw new SaleError('receipt-not-found', 'Todavía no hay una venta registrada.');
   if (!sameSaleOperation(saved.sale, sale)) throw new SaleError('sale-conflict', 'Payload diferente.');
+  if (model.verificationSaleId === sale.saleId) {
+    await new Promise(resolve => { model.finishVerification = resolve; });
+  }
   return saved.receipt;
 };
 const apply = async input => {
@@ -69,6 +72,7 @@ const apply = async input => {
   const receipt = { status: 'APPLIED', saleId: sale.saleId, stockVersions: { 'pos-product': version }, syncedAt: new Date().toISOString() };
   model.writes++; model.receipts.set(sale.saleId, { sale, receipt }); await publish();
   if (model.mode === 'delayed') await new Promise(resolve => { model.finish = resolve; });
+  if (model.mode === 'lost-response') throw new SaleError('unavailable', 'Se perdió la respuesta después del cobro.');
   return receipt;
 };
 const queue = createSaleQueue({ store, encrypt, decrypt, online: () => model.online, currentIdentity: identity => identity.uid === user.uid,
@@ -100,7 +104,11 @@ window.__p08Transactions = {
     return () => watcher.unsubscribe();
   },
   review: (sale, identity, active) => drafts.review(sale.saleId, identity, active), confirm: (...args) => drafts.confirm(...args),
-  verify: () => new Promise(resolve => { model.finishVerification = resolve; }),
+  async verify(sale, identity, isCurrent) {
+    const [result] = await queue.reconcile({ ...identity, branchId: sale.branchId }, { onlyId: sale.saleId, isCurrent });
+    if (result?.state !== 'confirmed') throw result?.error ?? new SaleError('receipt-unverified', 'El ticket sigue sin confirmar.');
+    return result.receipt;
+  },
 };
 const watch = liveQuery(() => db.sales.toArray()).subscribe({ next: () => { void publish(); }, error: error => { throw error; } });
 const recovery = startReceiptRecovery({ isCurrent: () => true, verify: active => queue.reconcile(user, { isCurrent: active }) });
@@ -165,7 +173,7 @@ try {
   dialog.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   await wait(() => !document.querySelector('[role="dialog"]') && api.lastSale?.isOffline === false);
   const saved = await db.sales.get(draftId);
-  check(model.writes === 2 && model.receipts.has(draftId) && saved.data === before && saved.submissionData, 'explicit confirmation keeps the same ID and original encrypted draft, and charges once');
+  check(model.writes === 2 && model.receipts.has(draftId) && saved.status === 'synced' && saved.financialAck === true && saved.data === before && saved.submissionData, 'explicit confirmation keeps the same ID and original encrypted draft, and charges once');
   check(api.lastSale.total === 6 && text().includes('Venta registrada') && model.raw.stock[user.branchId] === 0, 'recovered local acknowledgement displays the accepted reviewed amount and exact remaining stock');
 
   showCash({ openingAmount: 11, posCash: 106.30, contractCash: 0, posCompensationCount: 1, posCompensationCash: -106.30,
@@ -178,22 +186,47 @@ try {
   await wait(() => rootElement.innerText.includes('S/ -9.00') && rootElement.innerText.includes('Por revisar'));
   check(rootElement.innerText.includes('S/ -9.00') && !rootElement.innerText.includes('Sobran') && rootElement.querySelector('details').textContent.includes('referencia negativa'), 'a negative reference stays visible with its accessible explanation, without claiming a physical surplus');
 
-  showCash(null); await pause();
-  const verifiedSale = api.lastSale;
-  api.acceptReviewedSale({ sale: verifiedSale, isOffline: true, financialState: 'submitted_uncertain' }); await wait(() => api.lastSale?.isOffline);
+  showCash(null);
+  // Own the timing of receipt verification for this case; reconnect recovery is exercised above.
+  recovery.stop();
+  api.clearLastSale(); await wait(() => !api.lastSale);
+  const branchStockVersion = () => model.raw.posStockVersion[user.branchId];
+  const restock = async () => {
+    model.raw = { ...model.raw, stock: { [user.branchId]: 1 }, posStockVersion: { [user.branchId]: branchStockVersion() + 1 } };
+    await publish();
+  };
+  await restock();
+  api.addToCart(projectQueuedStock([model.raw], [], user.businessId).products[0]); await wait(() => api.cart.length === 1);
+  api.setAmountPaid('6.00'); await wait(() => api.isPaymentValid);
+  const beforeUncertainVersion = branchStockVersion();
+  model.mode = 'lost-response'; await api.processSale();
+  await wait(() => api.lastSale?.isOffline === true && api.lastSale.financialState === 'submitted_uncertain');
+  const uncertainId = api.lastSale.saleId;
+  const pending = await db.sales.get(uncertainId);
+  check(uncertainId !== draftId && pending.status === 'pending' && pending.attempted === true && pending.financialAck !== true
+    && model.receipts.has(uncertainId) && model.writes === 3 && model.raw.stock[user.branchId] === 0
+    && branchStockVersion() === beforeUncertainVersion + 1, 'a lost response leaves a real pending ticket with one commit and one stock debit');
+  model.verificationSaleId = uncertainId;
   const verifying = api.verifyLastSale(); await wait(() => api.isProcessing && model.finishVerification);
   setBranch('p08-other-branch'); await wait(() => !api.lastSale);
   check(!text().includes('Venta registrada'), 'switching branch clears the old ticket while its read is in flight');
   model.finishVerification(); await verifying; await wait(() => !api.isProcessing);
-  check(!api.lastSale && model.writes === 2, 'a late verification cannot revive a previous branch ticket or leave processing stuck');
+  const afterSwitch = await db.sales.get(uncertainId);
+  check(!api.lastSale && afterSwitch.status === 'pending' && afterSwitch.data === pending.data && model.writes === 3,
+    'a late verification cannot revive a previous branch ticket, acknowledge it out of scope, or leave processing stuck');
   setBranch(user.branchId); await pause();
-  model.raw={...model.raw, stock:{[user.branchId]:1}}; await publish();
+  model.verificationSaleId = null;
+  const [reconciled] = await queue.reconcile(user, { onlyId: uncertainId });
+  const recovered = await db.sales.get(uncertainId);
+  check(reconciled?.state === 'confirmed' && recovered.financialAck === true && recovered.data === pending.data
+    && model.writes === 3 && branchStockVersion() === beforeUncertainVersion + 1, 'receipt recovery in the original branch preserves the encrypted ticket and does not charge or debit stock again');
+  await restock();
   model.online=false; window.dispatchEvent(new Event('offline'));
   await wait(()=>!api.isOnline);
   api.addToCart(projectQueuedStock([model.raw],[],user.businessId).products[0]); await wait(()=>api.cart.length===1);
   api.setAmountPaid('6.00'); await wait(()=>api.isPaymentValid);
   model.failLocal=true; await api.processSale();
-  check(!api.lastSale && api.cart.length===1 && model.writes===2,'local quota failure preserves the cart and never claims a draft or charge');
+  check(!api.lastSale && api.cart.length===1 && model.writes===3,'local quota failure preserves the cart and never claims a draft or charge');
   model.failLocal=false; await api.processSale();
   await wait(()=>api.lastSale?.financialState==='draft_offline');
   const removedId = api.lastSale.saleId;
@@ -201,7 +234,7 @@ try {
   await db.sales.delete(removedId);
   check(!(await db.sales.get(removedId)), 'the fixture removed exactly the saved local draft');
   await wait(()=>text().includes('Copia local no disponible'));
-  check(button('Revisar y confirmar').disabled && model.writes===2,'a deleted local draft is marked unavailable and cannot be resubmitted');
+  check(button('Revisar y confirmar').disabled && model.writes===3,'a deleted local draft is marked unavailable and cannot be resubmitted');
   result = { ok: true, checks, remoteWrites: model.writes, warningsDuringProcessing };
 } catch (error) { result = { ok: false, checks, error: error.stack }; }
 observer.disconnect(); recovery.stop(); watch.unsubscribe(); root.unmount(); resources.close(); db.close();
