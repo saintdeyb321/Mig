@@ -152,9 +152,9 @@ const ContractDetailsModal = ({
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex min-w-0 flex-wrap gap-2">
                 {/* Botón de Marcar Entregado (Restaurado) */}
-                {!isDelivered && !isCancelled && <Button disabled={restricted || isProcessing} title="Entrega disponible solo para contratos Spark" onClick={() => setConfirmDelivery(true)} className="py-1.5 px-3 text-sm mr-2" type="button" variant="primary">
+                {!isDelivered && !isCancelled && <Button disabled={restricted || isProcessing} title="Entrega disponible solo para contratos Spark" onClick={() => setConfirmDelivery(true)} className="px-3 py-1.5 text-sm" type="button" variant="primary">
                     📦 Marcar Entregado
                   </Button>}
 

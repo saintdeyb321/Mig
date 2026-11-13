@@ -60,7 +60,7 @@ function ExpiryDetail({ notice, logical }) {
   </>;
 }
 
-export function NotificationBell({ user, alerts = [], notificationError, isAdmin, canViewNotifications=false, markAsRead, markAllAsRead, retryNotifications, isMarkingRead, notificationsStale, onOpenCashAudit }) {
+export function NotificationBell({ user, alerts = [], notificationError, isAdmin, canViewNotifications=false, markAsRead, markAllAsRead, retryNotifications, isMarkingRead, notificationsStale, onOpenCashAudit, dark = false }) {
   const {businessBranches=[],settings}=useTenantData()??{};
   const [isOpen,setIsOpen]=useState(false);
   const [logicalCash, setLogicalCash] = useState(null);
@@ -84,7 +84,7 @@ export function NotificationBell({ user, alerts = [], notificationError, isAdmin
   const visible = [...alerts, ...(observations?.rows ?? []).filter(row => !seen.has(row.id))];
   if(!canViewNotifications&&!isAdmin) return null;
   return <>
-    <span className="relative inline-flex"><IconButton label="Notificaciones" onClick={()=>setIsOpen(true)} className="text-inherit"><Bell /></IconButton>
+    <span className="relative inline-flex"><IconButton label="Notificaciones" onClick={()=>setIsOpen(true)} className={dark ? 'text-sidebar-muted hover:bg-white/10 hover:text-white' : 'text-inherit'}><Bell /></IconButton>
       {(notificationError||alerts.length>0)&&<span className="pointer-events-none absolute right-0 top-0 flex min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">{notificationError?'!':alerts.length}</span>}
     </span>
     {isOpen&&<Dialog title="Notificaciones" description="Avisos de tus operaciones y de tu negocio." onClose={close} busy={isMarkingRead}>

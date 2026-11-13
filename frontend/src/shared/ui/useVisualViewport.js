@@ -9,7 +9,10 @@ export function useVisualViewport() {
       let frame;
       const update = () => {
         frame = undefined;
-        const height = viewport?.height ?? window.innerHeight, top = viewport?.offsetTop ?? 0;
+        // Pinch zoom shrinks the visual viewport too. Keep the layout stable and allow panning.
+        const zoomed = viewport && Math.abs(viewport.scale - 1) > 0.01;
+        const height = zoomed ? window.innerHeight : (viewport?.height ?? window.innerHeight);
+        const top = zoomed ? 0 : (viewport?.offsetTop ?? 0);
         style.setProperty('--ui-viewport-height', `${height}px`);
         style.setProperty('--ui-viewport-top', `${top}px`);
         style.setProperty('--ui-keyboard-inset', `${Math.max(0, window.innerHeight - height - top)}px`);

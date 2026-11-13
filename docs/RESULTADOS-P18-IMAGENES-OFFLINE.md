@@ -103,3 +103,15 @@ Archivos del cierre: `tests/helpers/browserHarness.mjs`, `firestore.rules`, `tes
 1. En Firebase Console, proyecto `migapos`, base Firestore `(default)`, conservar una copia de las Rules publicadas y contrastar el inventario activo con `firestore.indexes.json`. El cierre no requiere compuestos nuevos ni eliminar compuestos existentes.
 2. Verificar la exención de campo único con ID de colección `media`, ruta de campo `data` y modos de indexación desactivados. Su definición exacta es `{"collectionGroup":"media","fieldPath":"data","indexes":[]}`. Conservar los índices I51, I52 e I53 del [inventario local](INDICES-FIRESTORE-MIGAPOS.md).
 3. Tras comprobar la CI del SHA final y autorizar la publicación, publicar el contenido de `firestore.rules` en esa base y coordinar la versión web de Hosting `migapos-peru`. El inventario activo y la aceptación del piloto deben comprobarse por separado.
+
+## Bloqueo de auditoría del SHA `7c0fe8ed`
+
+La ejecución 43327401975 reportó GHSA-qv5m-9pm6-hqp3 y GHSA-jpvv-r467-5p4w en `@hono/node-server@2.1.3`, dependencia de desarrollo de `firebase-tools@15.34.1 → @modelcontextprotocol/sdk@1.32.1`. El lockfile raíz fija `2.1.6` con la integridad publicada por npm. La versión satisface el rango del SDK y el peer admite el Hono 4 instalado. El cambio abarca una entrada de `package-lock.json`. `package.json` y la política de auditoría siguen intactos.
+
+- **PASS** · `npm ci` instaló 685 paquetes y conservó el hash del lockfile. `npm ls` confirmó la cadena hasta `@hono/node-server@2.1.6`.
+- **PASS** · `npm run audit:security` con 0 hallazgos raíz. El registro reportó 5 entradas de severidad baja en frontend y 1 en Functions. Los tres árboles quedaron sin hallazgos moderados, altos o críticos.
+- **PASS** · Lint, build/PWA e inventario local de índices. La verificación de PWA confirmó 45 archivos precacheados y 2,94 MiB.
+- **PASS** · `npm run test:spark` (81/81) y `npm run test:spark:rules` en `demo-migapos` (82/82). La repetición paralela de backup y P15 con CDP por pipes en Chromium Windows pasó 2/2.
+- **BLOCKED** · Chromium Ubuntu y CI del SHA final. Ubuntu local carece de Node y Chromium disponibles.
+
+**Código local READY** para subir y verificar en CI. La publicación sigue pendiente de la CI Ubuntu del SHA final y de la aceptación manual.

@@ -349,3 +349,262 @@ it('P09 verifies actual views, viewport-bound checkout, dialog focus/busy, role 
   });
   console.log(JSON.stringify({ checks: checks.length, screenshots }));
 });
+ 
+it('P19 measures the mobile shell and operational modules', { timeout: 180000 }, async () => {
+  const css = await readBrowserBuildCss();
+  const baseline = process.env.MIGAPOS_P19_PHASE === 'before';
+  const output = '.release/qa-p19/' + (baseline ? 'before' : 'after');
+  await mkdir(output, { recursive: true });
+  const measurements = [];
+  const printMock = `export const usePrintJobs = () => async (prepare, options) => prepare({
+    signal: new AbortController().signal,
+    print: async html => { (window.__p09.prints ??= []).push({ title: new DOMParser().parseFromString(html, 'text/html').title, compact: options.compact }); }
+  });`;
+  await runBrowserFixture({ htmlFile: new URL('./plan09.browser.html', import.meta.url), route: '/p19-mobile', fixture: { css, p19: true },
+    moduleMocks: { ...moduleMocks, [path('shared/printing/usePrintJobs.js')]: printMock },
+    async inspectPage(page) {
+      const evaluate = async (fn, ...args) => {
+        const result = await page.send('Runtime.evaluate', { expression: `(${fn})(...${JSON.stringify(args)})`, awaitPromise: true, returnByValue: true });
+        assert.ok(!result.exceptionDetails, result.exceptionDetails?.exception?.description);
+        return result.result.value;
+      };
+      const viewport = (width, height) => page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 1024 });
+      const show = (view) => evaluate(async view => { await window.__p09.show(view); scrollTo(0, 0); await window.__p09.frames(); }, view);
+      const press = async (key, code = key) => {
+        await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code });
+        await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code });
+        await evaluate(() => window.__p09.frames());
+      };
+      const capture = async name => {
+        await evaluate(async () => {
+          await Promise.allSettled(document.getAnimations().filter(animation =>
+            Number.isFinite(animation.effect.getComputedTiming().endTime)).map(animation => animation.finished));
+        });
+        const shot = await page.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true }, 15000);
+        await writeFile(`${output}/${name}.png`, Buffer.from(shot.data, 'base64'));
+      };
+      const sample = [[320, 568], [360, 740], [390, 844], [430, 932], [1280, 560]];
+      const dimensions = baseline ? sample : [...sample, [320, 640], [375, 667], [412, 915], [667, 375], [844, 390], [768, 1024], [820, 1180], [1024, 768], [1440, 900]];
+      for (const [width, height] of dimensions) {
+        await viewport(width, height);
+        for (const view of ['pos', 'contracts', 'categories']) {
+          await show(view);
+          const actual = await evaluate(() => {
+            const bounds = el => {
+              if (!el) return null;
+              const { left, right, top, bottom, width, height } = el.getBoundingClientRect();
+              return { left, right, top, bottom, width, height };
+            };
+            const nav = document.querySelector('[aria-label="Navegación principal"]');
+            const launcher = document.querySelector('.pos-cart-launcher');
+            const header = document.querySelector('header');
+            const catalog = document.querySelector('[aria-label="Catálogo de productos"]');
+            return { error: window.__p09.renderError, width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+              nav: bounds(nav), launcher: bounds(launcher), header: bounds(header),
+              headerGradient: getComputedStyle(header).backgroundImage,
+              navGradient: getComputedStyle(nav.parentElement).backgroundImage,
+              navButtons: [...nav.querySelectorAll('button')].map(bounds),
+              headerButtons: [...header.querySelectorAll('button,select')].map(bounds),
+              columns: catalog && getComputedStyle(catalog.querySelector('button[title^="Producto"]')?.parentElement ?? catalog).gridTemplateColumns };
+          });
+          measurements.push({ view, width, height, ...actual });
+          if (!baseline) {
+            const details = JSON.stringify({ view, width, height, actual });
+            assert.ok(!actual.error && actual.width === width && actual.scrollWidth <= width + 1, details);
+            if (width < 1024) {
+              assert.match(actual.headerGradient, /gradient/, details);
+              assert.match(actual.navGradient, /gradient/, details);
+              assert.ok(actual.nav.left >= 0 && actual.nav.right <= width + 1 && actual.nav.bottom <= height + 1, details);
+              assert.ok(actual.navButtons.every(b => b.height >= 44 && b.width >= 44), details);
+              assert.ok(actual.navButtons.every((b, i, buttons) => i === 0 || b.left >= buttons[i - 1].right), details);
+              assert.ok(actual.headerButtons.every(b => b.height >= 44 && b.width >= 44 && b.left >= 0 && b.right <= width + 1), details);
+              assert.ok(actual.headerButtons.every((a, i, buttons) => buttons.slice(i + 1).every(b =>
+                a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top)), details);
+              if (view === 'pos') assert.ok(actual.launcher.height >= 44 && actual.launcher.bottom < actual.nav.top && actual.launcher.top > actual.header.bottom, details);
+            }
+          }
+          if (sample.some(([w, h]) => w === width && h === height)) await capture(`${view}-${width}x${height}`);
+        }
+      }
+      if (!baseline) {
+        await viewport(320, 568);
+        await evaluate(() => window.__p09.loadMobileStressData());
+        await show('pos');
+        const catalog = await evaluate(async () => {
+          const area = document.querySelector('[aria-label="Catálogo de productos"]');
+          const rail = area.querySelector('[aria-label="Filtrar por categoría"]');
+          const lastChip = rail.lastElementChild;
+          lastChip.focus({ preventScroll: true });
+          rail.scrollLeft = rail.scrollWidth;
+          await window.__p09.frames();
+          const chip = lastChip.getBoundingClientRect(), railBounds = rail.getBoundingClientRect();
+          const chipVisible = chip.left >= railBounds.left - 1 && chip.right <= railBounds.right + 1;
+          const products = area.querySelectorAll('.pos-product-card');
+          const last = products[products.length - 1];
+          last.scrollIntoView({ block: 'end' });
+          await window.__p09.frames();
+          const rect = last.getBoundingClientRect();
+          const price = last.querySelector('strong');
+          const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.bottom - 5);
+          return { chipCount: rail.childElementCount, chipVisible, price: price.textContent, priceFits: price.scrollWidth <= price.clientWidth + 1,
+            stock: last.textContent.includes('100 disponibles'), lastReachable: last.contains(hit),
+            globalWidth: document.documentElement.scrollWidth, touches: rect.height >= 44 && rect.width >= 44 };
+        });
+        assert.deepEqual(catalog, { chipCount: 17, chipVisible: true, price: 'S/ 49995.00', priceFits: true,
+          stock: true, lastReachable: true, globalWidth: 320, touches: true });
+        await evaluate(async () => {
+          document.querySelector('.pos-cart-launcher').focus();
+          document.querySelector('.pos-cart-launcher').click();
+          await window.__p09.frames();
+        });
+        assert.ok(await evaluate(() => document.querySelector('[role="dialog"]').textContent.includes('El ticket está vacío') ||
+          document.querySelector('[role="dialog"] .pos-ticket-items').querySelectorAll('li').length === 0));
+        await press('Escape');
+        assert.equal(await evaluate(() => document.activeElement.matches('.pos-cart-launcher')), true);
+        await evaluate(async () => {
+          for (const product of [...document.querySelectorAll('.pos-product-card')].slice(0, 3)) {
+            product.click(); await window.__p09.frames();
+          }
+          document.querySelector('.pos-cart-launcher').click();
+          await window.__p09.frames();
+          const dialog = document.querySelector('[role="dialog"]');
+          dialog.querySelector('button[aria-label^="Aumentar"]').click();
+          dialog.querySelector('[data-ticket-payment="mixto"]').click();
+          await window.__p09.frames();
+        });
+        const keyboard = await evaluate(async () => {
+          const root = document.documentElement;
+          // Simulate the measurements delivered by visualViewport when the keyboard covers 318px.
+          root.style.setProperty('--ui-viewport-height', '250px');
+          root.style.setProperty('--ui-keyboard-inset', '318px');
+          const dialog = document.querySelector('[role="dialog"]');
+          const field = dialog.querySelector('input[inputmode="decimal"]');
+          field.focus();
+          field.scrollIntoView({ block: 'nearest' });
+          await window.__p09.frames();
+          const fieldRect = field.getBoundingClientRect();
+          const action = dialog.querySelector('[data-pos-charge]');
+          action.scrollIntoView({ block: 'end' });
+          await window.__p09.frames();
+          const chargeRect = action.getBoundingClientRect();
+          const bounds = dialog.getBoundingClientRect();
+          return { panel: bounds.bottom, input: [fieldRect.top, fieldRect.bottom], button: [chargeRect.top, chargeRect.bottom],
+            quantity: dialog.querySelectorAll('button[aria-label^="Quitar"]').length,
+            total: dialog.querySelector('.pos-ticket-total strong').textContent };
+        });
+        assert.equal(keyboard.total, 'S/ 20.00');
+        assert.equal(keyboard.quantity, 3);
+        assert.ok(keyboard.input[0] >= 0 && keyboard.input[1] <= keyboard.panel + 1 && keyboard.button[0] >= 0 && keyboard.button[1] <= keyboard.panel + 1, JSON.stringify(keyboard));
+        await capture('pos-teclado-simulado-320');
+        await press('Escape');
+        await viewport(320, 640);
+        await show('contracts');
+        const contracts = await evaluate(async () => {
+          const root = document.querySelector('main');
+          const filters = root.querySelector('[aria-label="Estado de los pedidos"]');
+          const last = filters.lastElementChild;
+          const cards = [...root.querySelectorAll('article')];
+          const first = cards[0], print = [...first.querySelectorAll('[aria-label="Imprimir pedido"] button')];
+          const printBounds = print.map(button => button.getBoundingClientRect());
+          last.focus();
+          last.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          await window.__p09.frames();
+          const rail = filters.getBoundingClientRect(), item = last.getBoundingClientRect();
+          last.click();
+          await window.__p09.frames();
+          const closed = root.querySelectorAll('article').length;
+          filters.firstElementChild.click();
+          await window.__p09.frames();
+          return { active: cards.length, closed, print: print.map(button => button.getAttribute('aria-label')),
+            printTouches: printBounds.every(b => b.width >= 44 && b.height >= 44),
+            printSeparated: printBounds.every((a, i) => printBounds.slice(i + 1).every(b =>
+              a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top)),
+            filterReachable: item.left >= rail.left - 1 && item.right <= rail.right + 1,
+            finance: first.textContent.includes('123456.78') && first.textContent.includes('123436.78'),
+            width: document.documentElement.scrollWidth };
+        });
+        assert.deepEqual(contracts, { active: 22, closed: 1, print: ['Imprimir Ticket', 'Imprimir Orden de Taller', 'Imprimir Texto Solo'],
+          printTouches: true, printSeparated: true, filterReachable: true, finance: true, width: 320 });
+        const printing = await evaluate(async () => {
+          for (const button of document.querySelector('main article [aria-label="Imprimir pedido"]').querySelectorAll('button')) {
+            button.click();
+            await window.__p09.frames();
+          }
+          return window.__p09.prints;
+        });
+        assert.deepEqual(printing?.map(({ title }) => title.split(' - ')[0]), ['Ticket de Pedido', 'Orden de Producción', 'Orden de Horneado']);
+        assert.deepEqual(printing.map(({ compact }) => compact), [true, false, false]);
+        await evaluate(async () => {
+          const manage = [...document.querySelectorAll('main article button')].find(button => button.textContent.trim() === 'Gestionar');
+          manage.click();
+          await window.__p09.frames();
+        });
+        assert.ok(await evaluate(() => {
+          const details = document.querySelector('[role="dialog"]');
+          const payment = [...details.querySelectorAll('button')].find(button => button.textContent.trim() === 'Confirmar Abono');
+          return payment?.disabled && details.scrollWidth <= details.clientWidth + 1;
+        }));
+        await evaluate(async () => {
+          document.querySelector('[role="dialog"] button[title="Editar datos permitidos"]').click();
+          await window.__p09.frames();
+        });
+        assert.match(await evaluate(() => document.querySelector('[role="dialog"] h2').textContent), /Editar Pedido/);
+        await press('Escape');
+        await evaluate(async () => {
+          window.__p09.savedCash = window.__p09.cash.currentSession;
+          window.__p09.cash.currentSession = null;
+          window.__p09.notify('cash');
+          await window.__p09.frames();
+        });
+        assert.ok(await evaluate(() => [...document.querySelectorAll('main header button')].some(button => button.textContent.trim() === 'Abrir caja')));
+        await evaluate(async () => {
+          const trigger = [...document.querySelectorAll('main header button')].find(button => button.textContent.trim() === 'Nuevo Pedido');
+          trigger.focus(); trigger.click(); await window.__p09.frames();
+          const textarea = document.querySelector('[role="dialog"] textarea');
+          textarea.focus(); textarea.scrollIntoView({ block: 'nearest' });
+          await window.__p09.frames();
+        });
+        const form = await evaluate(() => {
+          const dialog = document.querySelector('[role="dialog"]');
+          const bounds = dialog.getBoundingClientRect();
+          const footer = dialog.querySelector('button[type="submit"]').getBoundingClientRect();
+          const field = document.activeElement.getBoundingClientRect();
+          return { visible: field.top >= bounds.top && field.bottom <= footer.top + 1 && footer.bottom <= bounds.bottom + 1,
+            photo: !!dialog.querySelector('input[type="file"]'), width: dialog.scrollWidth, panel: dialog.clientWidth };
+        });
+        assert.ok(form.visible && form.photo && form.width <= form.panel + 1, JSON.stringify(form));
+        await capture('contratos-formulario-320');
+        await press('Escape');
+        await evaluate(() => document.querySelector('[aria-label="Navegación principal"] button:last-child').focus());
+        await press('Enter');
+        assert.ok(await evaluate(() => document.querySelector('[role="menu"]')?.textContent.includes('Categorías')));
+        await press('Escape');
+        assert.ok(await evaluate(() => document.activeElement.textContent === 'Más'));
+        await show('categories');
+        const zoom = await evaluate(async () => {
+          document.documentElement.style.fontSize = '200%';
+          await window.__p09.frames();
+          const edits = [...document.querySelectorAll('main button[aria-label="Editar"]')];
+          const last = edits.at(-1);
+          last.focus({ preventScroll: true });
+          const nav = document.querySelector('.app-mobile-dock');
+          const header = document.querySelector('.app-mobile-header');
+          const visibleCenter = nav.getBoundingClientRect().top / 2;
+          scrollTo(0, scrollY + last.getBoundingClientRect().top - visibleCenter + last.offsetHeight / 2);
+          for (let attempt = 0; attempt < 3; attempt++) await window.__p09.frames();
+          const bounds = last.getBoundingClientRect();
+          const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+          return { width: document.documentElement.scrollWidth, lastAccessible: last.contains(hit), rows: edits.length,
+            archived: document.querySelector('main').textContent.includes('Inactiva'),
+            headerBottom: header.getBoundingClientRect().bottom, position: [bounds.top, bounds.bottom], dockTop: nav.getBoundingClientRect().top };
+        });
+        assert.ok(zoom.width === 320 && zoom.lastAccessible && zoom.rows === 16 && zoom.archived &&
+          zoom.position[0] >= Math.max(0, zoom.headerBottom) && zoom.position[1] <= zoom.dockTop, JSON.stringify(zoom));
+        await capture('categorias-texto-200-320');
+        measurements.push({ catalog, keyboard, contracts, printing, form, zoom });
+      }
+      await evaluate(() => window.__p09.stop());
+    },
+  });
+  await writeFile(`${output}/geometry.json`, JSON.stringify(measurements, null, 2));
+});

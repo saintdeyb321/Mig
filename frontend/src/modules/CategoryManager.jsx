@@ -15,10 +15,10 @@ const CategoryCard = memo(({
   const isInactive = c.status === 'inactivo';
 
   return <Card as="div" className={cn(
-    'grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-l-4 p-3 sm:p-3',
+    'category-card grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-l-4 p-3 sm:gap-3 sm:p-3',
     isInactive ? 'border-l-control' : 'border-l-stellar/65'
   )}>
-    <span className={cn('grid size-10 place-items-center rounded-xl', isInactive ? 'bg-subtle text-muted' : 'bg-stellar-soft text-stellar')}>
+    <span className={cn('category-card-icon grid size-10 place-items-center rounded-xl', isInactive ? 'bg-subtle text-muted' : 'bg-stellar-soft text-stellar')}>
       <Tags aria-hidden="true" className="size-5" />
     </span>
     <div className="min-w-0 space-y-1">
@@ -61,7 +61,7 @@ function CategoryManager({
   return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
 
       {/* HEADER REFACTORIZADO */}
-      <PageHeader title="Categorías" icon={Tags} eyebrow="Organización" className="border-t-stellar/65 p-3 sm:p-3" actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
+      <PageHeader title="Categorías" icon={Tags} eyebrow="Organización" className="border-t-stellar/65 p-3 sm:p-3" actions={<><Button onClick={openAddForm} className="shrink-0 max-sm:w-full" type="button" variant="primary">
           <Plus aria-hidden="true" /> Nueva categoría
         </Button></>} />
 
@@ -70,7 +70,7 @@ function CategoryManager({
       <div className="view-toolbar">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar categoría por nombre..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
-        <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted">
+        <label className="inline-flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted max-sm:w-full">
           <Input type="checkbox" className="shrink-0" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Ver archivados
         </label>
@@ -80,7 +80,7 @@ function CategoryManager({
         Lista de Categorías ({filteredCategories.length})
       </h3>
 
-      <div className="grid gap-3 xl:grid-cols-2">
+      <div className="category-grid grid min-w-0 gap-3 xl:grid-cols-2">
         {filteredCategories.length === 0 && catalogError ? null : filteredCategories.length === 0 ? <EmptyState title="Sin registros" description={<>
               {searchTerm ? `No se encontraron resultados para "${searchTerm}"` : 'Aún no has registrado ninguna categoría.'}
             </>} /> : filteredCategories.map(c => (/* 🚀 Invocamos la tarjeta blindada */

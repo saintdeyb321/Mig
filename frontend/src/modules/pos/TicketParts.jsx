@@ -35,11 +35,11 @@ export function CartItem({ item, onQty, onRemove, disabled, change, onAcceptChan
       <span className="min-w-0 text-xs text-muted tabular-nums wrap-anywhere">S/ {Number(item.price).toFixed(2)} c/u</span>
       <div className="ml-auto flex items-center gap-1.5">
         <div className="flex items-center rounded-xl border border-primary/15 bg-primary-soft/30">
-          <IconButton size="sm" label={`Reducir ${item.name}`} onClick={() => onQty(item.id, item.qty - 1)} disabled={disabled || item.qty <= 1} className="size-11 min-h-11 rounded-[inherit] text-primary hover:bg-primary-soft hover:text-primary sm:size-9 sm:min-h-9"><Minus aria-hidden="true" /></IconButton>
+          <IconButton size="sm" label={`Reducir ${item.name}`} onClick={() => onQty(item.id, item.qty - 1)} disabled={disabled || item.qty <= 1} className="size-11 min-h-11 rounded-[inherit] text-primary hover:bg-primary-soft hover:text-primary lg:size-9 lg:min-h-9"><Minus aria-hidden="true" /></IconButton>
           <span className="min-w-6 text-center text-sm font-bold tabular-nums">{item.qty}</span>
-          <IconButton size="sm" label={`Aumentar ${item.name}`} onClick={() => onQty(item.id, item.qty + 1)} disabled={disabled} className="size-11 min-h-11 rounded-[inherit] text-primary hover:bg-primary-soft hover:text-primary sm:size-9 sm:min-h-9"><Plus aria-hidden="true" /></IconButton>
+          <IconButton size="sm" label={`Aumentar ${item.name}`} onClick={() => onQty(item.id, item.qty + 1)} disabled={disabled} className="size-11 min-h-11 rounded-[inherit] text-primary hover:bg-primary-soft hover:text-primary lg:size-9 lg:min-h-9"><Plus aria-hidden="true" /></IconButton>
         </div>
-        <IconButton label={`Quitar ${item.name}`} onClick={() => onRemove(item.id)} disabled={disabled} className="size-11 min-h-11 text-danger hover:bg-danger-soft hover:text-danger sm:size-9 sm:min-h-9"><Trash2 aria-hidden="true" /></IconButton>
+        <IconButton label={`Quitar ${item.name}`} onClick={() => onRemove(item.id)} disabled={disabled} className="size-11 min-h-11 text-danger hover:bg-danger-soft hover:text-danger lg:size-9 lg:min-h-9"><Trash2 aria-hidden="true" /></IconButton>
       </div>
     </div>
     {change && !disabled && <Alert variant="warning" title={change.type === 'changed' ? 'Catálogo actualizado' : change.type === 'stock' ? 'Stock insuficiente' : 'Producto no disponible'}>

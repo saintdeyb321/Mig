@@ -167,15 +167,17 @@ function ContractManager({
       </div>{cashModals}</>;
   }
   return <><div className="workspace-page max-w-7xl animate-enter motion-reduce:animate-none">
-      <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." className="to-primary-soft/60" actions={<>
+      <PageHeader title="Gestión de pedidos" icon={CakeSlice} eyebrow="Agenda de producción" description="Cada pedido, desde el primer anticipo hasta la entrega." className="to-primary-soft/60" actionsClassName="max-lg:w-full max-lg:justify-start" actions={<>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 empty:hidden max-sm:w-full">
         {canManageCash && <CashStatus readOnly={false} session={cash.currentSession} isExpired={cash.isExpired} expiresAt={cash.expiresAt} remainingMinutes={cash.remainingMinutes} />}
         {canManageCash && (!cash.currentSession || cash.recoverySession) && !cash.readError && <Button variant="secondary" disabled={cash.isLoadingSession} onClick={showCashOpening}>{cash.expiryState?.finalized ? 'Abrir caja nueva' : 'Abrir caja'}</Button>}
         {canManageCash && !cash.isExpired && cash.currentSession && (!cash.currentSession.needsForceClose || cash.currentSession.canForceClose) && <Button variant="secondary" onClick={showCashClosing}>Cerrar caja</Button>}
+        </div>
         <Button onClick={() => {
         if (!activeBranchId || activeBranchId === 'global') return toast.error('Selecciona una sede física.');
         setContractToEdit(null);
         setShowCreateModal(true);
-      }} className="shrink-0 py-2.5 px-5 text-base" type="button" variant="primary">
+      }} className="shrink-0 px-5 py-2.5 text-base max-sm:w-full" type="button" variant="primary">
           <Plus aria-hidden="true" />Nuevo Pedido
         </Button></>} />
 
@@ -187,9 +189,9 @@ function ContractManager({
       <FirestoreQueryError error={error} area="contracts-active" user={user} onRetry={retry} />
       {canManageCash && user.role === 'cajero' && <ContractPickupPanel user={user} branchId={activeBranchId} branches={businessBranches} />}
 
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-primary/15 bg-linear-to-r from-panel to-primary-soft/45 p-3.5 shadow-card">
+      <div className="grid min-w-0 items-center gap-3 rounded-2xl border border-primary/15 bg-linear-to-r from-panel to-primary-soft/45 p-3 shadow-card sm:grid-cols-[minmax(0,1fr)_minmax(15rem,auto)]">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por cliente, teléfono o ID..." />
-        <label className="flex min-w-0 flex-1 basis-full items-center gap-2.5 sm:basis-64">
+        <label className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
           <span className="text-sm font-semibold text-muted">Ordenar</span>
           <Select value={sortBy} onChange={e => setSortBy(e.target.value)} className="flex-1 cursor-pointer font-semibold">
             <option value="urgencia">Más próximos a entregar</option>
@@ -199,17 +201,17 @@ function ContractManager({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2.5">
-        <div className="segmented-control w-full border-primary/15 bg-primary-soft/30 sm:w-auto" role="group" aria-label="Estado de los pedidos">
-          <Button size="sm" className="flex-1 sm:flex-none" aria-pressed={viewFilter === 'activos'} onClick={() => setViewFilter('activos')} type="button" variant={viewFilter === 'activos' ? 'primary' : 'ghost'}><Package aria-hidden="true" />Pedidos en Curso</Button>
-          <Button size="sm" className="flex-1 sm:flex-none" aria-pressed={viewFilter === 'deudas'} onClick={() => setViewFilter('deudas')} type="button" variant={viewFilter === 'deudas' ? 'primary' : 'ghost'}><WalletCards aria-hidden="true" />Cuentas por Cobrar</Button>
-          <Button size="sm" className="flex-1 sm:flex-none" aria-pressed={viewFilter === 'historial'} onClick={() => setViewFilter('historial')} type="button" variant={viewFilter === 'historial' ? 'primary' : 'ghost'}><History aria-hidden="true" />Historial Cerrados</Button>
+        <div className="segmented-control responsive-filter-rail ui-scroll w-full min-w-0 flex-nowrap overflow-x-auto border-primary/15 bg-primary-soft/30 lg:w-auto" role="group" aria-label="Estado de los pedidos" tabIndex={0}>
+          <Button size="sm" className="max-lg:min-h-11" aria-pressed={viewFilter === 'activos'} onClick={() => setViewFilter('activos')} type="button" variant={viewFilter === 'activos' ? 'primary' : 'ghost'}><Package aria-hidden="true" />Pedidos en Curso</Button>
+          <Button size="sm" className="max-lg:min-h-11" aria-pressed={viewFilter === 'deudas'} onClick={() => setViewFilter('deudas')} type="button" variant={viewFilter === 'deudas' ? 'primary' : 'ghost'}><WalletCards aria-hidden="true" />Cuentas por Cobrar</Button>
+          <Button size="sm" className="max-lg:min-h-11" aria-pressed={viewFilter === 'historial'} onClick={() => setViewFilter('historial')} type="button" variant={viewFilter === 'historial' ? 'primary' : 'ghost'}><History aria-hidden="true" />Historial Cerrados</Button>
         </div>
         <span className="rounded-full border border-stellar/15 bg-stellar-soft/65 px-3 py-1.5 text-xs font-semibold text-stellar">
           Mostrando {filteredContracts.length} pedidos cargados
         </span>
       </div>
 
-      <div className="grid gap-4">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
         {filteredContracts.length === 0 && error ? null : filteredContracts.length === 0 ? <EmptyState title={<>No hay pedidos en esta vista</>} /> : filteredContracts.map(c => <ContractCard key={c.id} contract={c} onView={setContractToView} branches={businessBranches} onPrint={handlePrintTicket} onPrintProduction={handlePrintProduction} onPrintTextOnly={handlePrintTextOnly} />)}
       </div>
 

@@ -212,9 +212,9 @@ const ContractFormModal = ({
                     {images.map((_image, idx) => <div key={idx} className="relative aspect-square min-w-0 rounded-xl border border-accent/15 bg-panel shadow-xs">
                       {displayedImages[idx] ? <img src={displayedImages[idx]} alt={`Referencia ${idx + 1}`} className="size-full rounded-[inherit] object-cover" />
                         : <span className="absolute inset-x-1 bottom-2 text-center text-xs text-muted">{loadingImages ? 'Cargando…' : 'No disponible aquí'}</span>}
-                      <Button onClick={() => handleRemoveImage(idx)} disabled={isProcessing} className="absolute top-1 right-1 size-9 min-h-9 rounded-full p-1" variant="danger" aria-label={`Quitar foto ${idx + 1}`}>×</Button>
+                      <Button onClick={() => handleRemoveImage(idx)} disabled={isProcessing} className="absolute top-1 right-1 size-11 min-h-11 rounded-full p-1 lg:size-9 lg:min-h-9" variant="danger" aria-label={`Quitar foto ${idx + 1}`}>×</Button>
                     </div>)}
-                    {images.length < MAX_CONTRACT_IMAGES && <div className="relative flex aspect-square min-w-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-accent/45 bg-accent-soft/70 p-1 text-center text-accent transition-colors hover:border-accent hover:bg-accent-soft focus-within:ring-2 focus-within:ring-focus motion-reduce:transition-none">
+                    {images.length < MAX_CONTRACT_IMAGES && <div className="relative flex aspect-square min-h-11 min-w-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-accent/45 bg-accent-soft/70 p-1 text-center text-accent transition-colors hover:border-accent hover:bg-accent-soft focus-within:ring-2 focus-within:ring-focus motion-reduce:transition-none">
                       <Input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handleImageChange} disabled={isProcessing} className="absolute inset-0 size-full cursor-pointer opacity-0" aria-label="Añadir fotos de referencia" />
                       <ImagePlus aria-hidden="true" className="pointer-events-none size-5" />
                       <span aria-hidden="true" className="pointer-events-none text-xs font-semibold">Añadir fotos</span>

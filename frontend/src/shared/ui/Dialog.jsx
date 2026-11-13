@@ -40,11 +40,11 @@ function DialogSurface({ open = true, onOpenChange, onClose, title, description,
         drawer ? 'dialog-drawer w-full max-w-none rounded-b-none' : 'dialog-centered -translate-y-1/2', className)}>
       <DialogHeader className="dialog-heading nebula-brand flex shrink-0 items-start justify-between gap-3 border-white/10 px-5 py-4 text-white sm:px-6 sm:py-5">
         <span className="dialog-heading-icon flex size-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10"><Icon aria-hidden="true" className="size-5" /></span>
-        <div className="min-w-0 flex-1"><Primitive.Title className="text-lg font-extrabold tracking-tight">{title}</Primitive.Title>
+        <div className="min-w-0 flex-1"><Primitive.Title className="text-lg font-extrabold tracking-tight wrap-anywhere">{title}</Primitive.Title>
           <Primitive.Description className={cn('mt-1 text-xs leading-relaxed text-sidebar-muted', !description && 'sr-only')}>{description || 'Revisa y completa los datos de esta operación.'}</Primitive.Description></div>
         {dismissible && <Close asChild><IconButton label="Cerrar diálogo" disabled={busy} className="-mr-1 -mt-1 text-white/80 hover:bg-white/10 hover:text-white"><X /></IconButton></Close>}
       </DialogHeader>
-      <div className={cn("ui-scroll flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain p-5 sm:p-6", bodyClassName)}><fieldset disabled={busy} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 border-0 p-0">{children}</fieldset></div>
+      <div className={cn("dialog-body ui-scroll flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain p-5 sm:p-6", bodyClassName)}><fieldset disabled={busy} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 border-0 p-0">{children}</fieldset></div>
     </Primitive.Content>
     </div>
   </Primitive.Portal></Primitive.Root>;

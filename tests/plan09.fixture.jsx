@@ -60,6 +60,21 @@ window.__p09 = {
   forbidden, calls: 0,
 };
 const model = window.__p09, watchers = new Map();
+model.catalogCategories = [{ id: 'pan', name: 'Panes', status: 'activo' }];
+if (fixture.p19) model.loadMobileStressData = () => {
+  const categories = Array.from({ length: 16 }, (_, index) => ({
+    id: `p19-cat-${index}`, name: index === 15 ? 'CategoríaDePruebaSinEspacios'.repeat(4) : `Temporada ${index + 1}`,
+    status: index === 13 ? 'inactivo' : 'activo',
+  }));
+  model.catalogCategories = [...model.catalogCategories, ...categories];
+  model.categories.filteredCategories = categories;
+  model.contracts.contracts = Array.from({ length: 23 }, (_, index) => ({
+    ...contract, id: `p19-order-${index}`, contractId: `PEDIDO${'IDENTIFICADORLARGO'.repeat(5)}${index}`,
+    clientName: `Cliente de prueba ${index} ${'NombreExtenso'.repeat(4)}`, clientPhone: '+510'.repeat(11),
+    total: 123_456.78, balance: 123_436.78, status: index === 22 ? 'cancelado' : 'pendiente', sparkContractVersion: 1,
+  }));
+  branch.name = 'Sede de simulación San Martín de Porres con nombre largo';
+};
 model.admin.licenses = model.admin.filteredLicenses;
 model.revisions = {};
 model.watch = (key, callback) => { if (!watchers.has(key)) watchers.set(key, new Set()); watchers.get(key).add(callback); return () => watchers.get(key).delete(callback); };
@@ -128,7 +143,7 @@ function Fixture() {
   for (const kind of ['details','cancel','photo','quota','business','cash-open','cash-close','cash-summary']) views[kind] = props => <SpecializedModal {...props} kind={kind} />;
   const View = views[view];
   const page = <RenderBoundary key={view + ':' + role + ':' + (view === 'pos' ? '' : revision)}><View user={user} businessId="p09-tenant" /></RenderBoundary>;
-  return <SessionResourcesContext.Provider value={resources}><TenantContext.Provider value={{ user, identityKey: user.uid + role, activeBranchId: branchId, setActiveBranchId: setBranchId, businessBranches: [branch], settings: {}, branchesLoading: false }}><CatalogContext.Provider value={{ products, categories: [{ id: 'pan', name: 'Panes', status: 'activo' }], isLoading: false }}>
+  return <SessionResourcesContext.Provider value={resources}><TenantContext.Provider value={{ user, identityKey: user.uid + role, activeBranchId: branchId, setActiveBranchId: setBranchId, businessBranches: [branch], settings: {}, branchesLoading: false }}><CatalogContext.Provider value={{ products, categories: model.catalogCategories, isLoading: false }}>
     {view === 'auth' ? page : <AppLayout user={user} tab={role === 'superadmin' ? 'superadmin' : view === 'operationalHistory' ? 'history' : view} setTab={setView} handleLogout={noop}>{page}</AppLayout>}
   </CatalogContext.Provider></TenantContext.Provider></SessionResourcesContext.Provider>;
 }

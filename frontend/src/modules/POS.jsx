@@ -1,7 +1,9 @@
 import FirestoreQueryError from '../components/FirestoreQueryError';
 import { useCatalogData } from '../features/catalog/context/CatalogContext';
 import { isBranchOperational } from '../features/branches/domain/branchPolicy';
-import { useState, useMemo } from 'react';
+import { useContext, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { MobileDockContext } from '../layouts/MobileDockContext';
 import { Banknote, Info, LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
 import { checkoutBlockReason } from '../features/sales/domain/checkoutPolicy.js';
 import { parsePaymentCents, saleAmountCents } from '../features/sales/domain/saleModel.js';
@@ -20,6 +22,7 @@ import { CashStatus, SaleStatus, Ticket } from './pos/TicketParts';
 import { DraftSaleReview } from './sales-history/DraftSaleReview.jsx';
 
 function POS({ user }) {
+  const mobileDock = useContext(MobileDockContext);
   const { businessBranches, activeBranchId } = useTenantData();
   const { error: catalogError, retry: retryCatalog } = useCatalogData();
 
@@ -139,6 +142,10 @@ function POS({ user }) {
       <PaymentSelector inTicket payment={payment} onSelect={selectPayment} disabled={branchStatus.isReadOnly||isProcessing} />
       <PaymentFields inTicket payment={payment} amountPaid={amountPaid} onAmountPaid={setAmountPaid} splitEfectivo={splitEfectivo} onSplitEfectivo={handleSplitEfectivoChange} splitYape={splitYape} onSplitYape={handleSplitYapeChange} total={total} validation={paymentValidation} disabled={branchStatus.isReadOnly||isProcessing} />
     </Ticket>;
+  const ticketLauncher = <Button className="pos-cart-launcher w-full min-h-12 justify-between rounded-2xl border-white/20 shadow-float lg:hidden" onClick={()=>setIsCartOpen(true)}>
+    <span className="flex min-w-0 items-center gap-2"><ShoppingBag aria-hidden="true" className="size-4 shrink-0" /><span>Ver ticket ({cart.length})</span></span>
+    <span className="min-w-0 text-right tabular-nums">S/ {total.toFixed(2)}</span>
+  </Button>;
   return <><div className="pos-workspace min-w-0 space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0">
     {!isOnline && <Alert variant="info">Sin conexión: puedes guardar un ticket sin cobrar. No se moverá inventario ni se enviará automáticamente al reconectar.</Alert>}
     {!branchStatus.isReadOnly && <CashRecoveryStatus session={currentSession} isExpired={isExpired} expiresAt={expiresAt}
@@ -149,24 +156,24 @@ function POS({ user }) {
       <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight"><ShoppingBag aria-hidden="true" className="size-5 text-primary" />Punto de venta</h1>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <CashStatus inPOS readOnly={branchStatus.isReadOnly} session={currentSession} isExpired={isExpired} expiresAt={expiresAt} remainingMinutes={remainingMinutes} />
-        {currentSession&&!isExpired&&!branchStatus.isReadOnly&&(!currentSession.needsForceClose||currentSession.canForceClose)&&<Button variant="danger" size="sm" disabled={isProcessing} onClick={showCashClosing}><LockKeyhole aria-hidden="true" />{currentSession.needsForceClose?'Revisar cierre anterior':'Cerrar caja'}</Button>}
+        {currentSession&&!isExpired&&!branchStatus.isReadOnly&&(!currentSession.needsForceClose||currentSession.canForceClose)&&<Button variant="danger" size="sm" className="max-lg:min-h-11" disabled={isProcessing} onClick={showCashClosing}><LockKeyhole aria-hidden="true" />{currentSession.needsForceClose?'Revisar cierre anterior':'Cerrar caja'}</Button>}
       </div>
     </header>
     {branchStatus.isReadOnly&&<p role="status" className="flex shrink-0 items-start gap-2 rounded-xl border border-warning/25 bg-warning-soft px-3 py-2 text-sm text-warning"><Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><span>{branchStatus.reason==='global'?<><strong>Vista global · Solo lectura.</strong> Elige una sucursal en el selector de sede para vender.</>:<><strong>Solo lectura.</strong> La sucursal {branchStatus.name} está inactiva.</>}</span></p>}
     {currentSession?.needsForceClose&&!isExpired&&!branchStatus.isReadOnly&&<Alert variant="warning" title="Caja a cargo de otro responsable"><p>{businessBranches?.find(branch=>branch.id===currentSession.branchId)?.name??'Esta sede'} · {currentSession.cashierName||'Responsable sin nombre registrado'}</p><p>{currentSession.canForceClose?'Revisa los movimientos y realiza el arqueo antes de cerrar este turno.':'Solicita al dueño que realice el arqueo y cierre el turno anterior.'}</p></Alert>}
     <div className="grid min-w-0 items-start gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1fr)_23rem]">
-      <section aria-label="Catálogo de productos" className="pos-catalog min-w-0 space-y-3 pb-20 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-0">
-        <div className="pos-catalog-tools sticky top-0 z-10 space-y-1 bg-canvas pb-2">
+      <section aria-label="Catálogo de productos" className="pos-catalog min-w-0 space-y-1 lg:h-full lg:min-h-0 lg:space-y-3 lg:overflow-y-auto lg:overscroll-contain">
+        <div className="pos-catalog-tools space-y-1 bg-canvas pb-2 lg:sticky lg:top-0 lg:z-10">
         <ProductSearch value={search} onChange={setSearch} />
         <CategoryFilters categories={activeCategories} selected={selectedCategory} onSelect={setSelectedCategory} />
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {displayedProducts.length?displayedProducts.map(product=><ProductCard key={product.id} product={product} stock={getSafeStock(product,activeBranchId)} disabled={isGlobalDisabled||isProcessing||!canAddDistinctProduct(cart,product.id)} onAdd={addToCart} />):catalogError?null:<EmptyState title="No hay productos" description={search?`No se encontraron productos para “${search}”.`:'No hay productos registrados en esta selección.'} />}
+        <div className="pos-catalog-grid grid gap-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {displayedProducts.length?displayedProducts.map(product=><ProductCard key={product.id} product={product} stock={getSafeStock(product,activeBranchId)} disabled={isGlobalDisabled||isProcessing||!canAddDistinctProduct(cart,product.id)} onAdd={addToCart} />):catalogError?null:<div className="col-span-full"><EmptyState title="No hay productos" description={search?`No se encontraron productos para “${search}”.`:'No hay productos registrados en esta selección.'} /></div>}
         </div>
       </section>
       <aside aria-label="Ticket" className="pos-ticket-desktop hidden min-w-0 lg:block">{ticket}</aside>
     </div>
-    <Button className="pos-cart-launcher fixed inset-x-4 z-20 min-h-14 justify-between rounded-2xl border-white/20 shadow-float sm:inset-x-6 lg:hidden" onClick={()=>setIsCartOpen(true)}><span className="flex items-center gap-2"><ShoppingBag />Ver ticket ({cart.length})</span><span className="tabular-nums">S/ {total.toFixed(2)}</span></Button>
+    {mobileDock ? createPortal(ticketLauncher, mobileDock) : ticketLauncher}
     {isCartOpen&&<Drawer bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4" title="Tu ticket" description="Revisa los productos y el método de pago." icon={ShoppingBag} onClose={()=>setIsCartOpen(false)} busy={isProcessing}>{ticket}</Drawer>}
     {showQrModal&&<Dialog title="Escanea para pagar" description="Verifica en tu celular que el abono se haya realizado." onClose={()=>setShowQrModal(false)} busy={isProcessing} className="max-w-sm">
       <p className="text-center text-3xl font-bold text-accent">S/ {payment==='mixto'?Number(splitYape).toFixed(2):total.toFixed(2)}</p>

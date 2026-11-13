@@ -75,7 +75,7 @@ const ContractCard = memo(({
   const balanceTone = isCancelled ? 'border-line bg-subtle text-muted' : isPaid ? 'border-finance-line bg-success-soft text-success'
     : criticalDebt ? 'border-danger/20 bg-danger-soft text-danger' : 'border-warning/20 bg-warning-soft text-warning';
   return <Card as="article" className={cn(
-    'grid gap-3 border-t-4 bg-linear-to-br from-panel via-panel p-3.5 hover:shadow-md focus-within:border-primary/35 motion-safe:transition-[border-color,box-shadow] sm:p-4',
+    'grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 border-t-4 bg-linear-to-br from-panel via-panel p-3 hover:shadow-md focus-within:border-primary/35 motion-safe:transition-[border-color,box-shadow] sm:p-4',
     isCancelled || criticalDebt ? 'border-t-danger/55 to-danger-soft/40' : 'border-t-primary/40 to-primary-soft/40',
   )}>
     <header className="flex flex-wrap items-start justify-between gap-3">
@@ -83,7 +83,7 @@ const ContractCard = memo(({
         <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-xl border border-primary/15 bg-primary-soft text-lg font-extrabold text-primary">{contract.clientName.charAt(0).toUpperCase()}</span>
         <div className="min-w-0">
           <h2 className="text-base font-extrabold text-brand-deep wrap-anywhere sm:text-lg">{contract.clientName}</h2>
-          {contract.clientPhone && <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted"><Phone aria-hidden="true" className="size-3 shrink-0" />{contract.clientPhone}</p>}
+          {contract.clientPhone && <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted"><Phone aria-hidden="true" className="size-3 shrink-0" /><span className="min-w-0 wrap-anywhere">{contract.clientPhone}</span></p>}
         </div>
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -99,7 +99,7 @@ const ContractCard = memo(({
           <p className="text-sm font-extrabold tabular-nums">{formatDateTime(contract.deliveryDate)}</p>
           {urgency && <Badge variant={urgency.variant} className="px-2 py-0.5">{urgency.label}</Badge>}
         </div>
-        <p className="flex items-center gap-1.5 text-xs text-muted"><DeliveryIcon aria-hidden="true" className="size-3.5 shrink-0" />{deliveryText}</p>
+        <p className="flex items-center gap-1.5 text-xs text-muted"><DeliveryIcon aria-hidden="true" className="size-3.5 shrink-0" /><span className="min-w-0 wrap-anywhere">{deliveryText}</span></p>
       </section>
       <section className="min-w-0 rounded-xl border border-finance-line bg-linear-to-br from-success-soft/85 to-panel px-3 py-2.5">
         <h3 className="flex items-center gap-1.5 text-xs font-bold text-success"><WalletCards aria-hidden="true" className="size-4 shrink-0" />Resumen financiero</h3>
@@ -119,11 +119,11 @@ const ContractCard = memo(({
         </dl>
       </section>
     </div>
-    <footer className="grid gap-2 border-t border-line/80 pt-2.5 sm:flex sm:items-center sm:justify-between">
-      <div role="group" aria-label="Imprimir pedido" className="grid grid-cols-3 gap-1.5 sm:flex sm:gap-2">
-        <Button onClick={() => onPrint(contract)} title="Imprimir Ticket" size="sm" variant="secondary" className="gap-1 px-1.5 sm:px-2.5"><Printer aria-hidden="true" />Ticket</Button>
-        <Button onClick={() => onPrintProduction(contract)} title="Imprimir Orden de Taller" size="sm" variant="secondary" className="gap-1 px-1.5 sm:px-2.5"><ClipboardList aria-hidden="true" />Orden</Button>
-        <Button onClick={() => onPrintTextOnly(contract)} title="Imprimir Texto Solo" size="sm" variant="secondary" className="gap-1 px-1.5 sm:px-2.5"><FileText aria-hidden="true" />Texto</Button>
+    <footer className="grid min-w-0 gap-2 border-t border-line/80 pt-2.5 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
+      <div role="group" aria-label="Imprimir pedido" className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,4.5rem),1fr))] gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
+        <Button onClick={() => onPrint(contract)} aria-label="Imprimir Ticket" title="Imprimir Ticket" size="sm" variant="secondary" className="gap-1 px-1.5 sm:px-2.5 max-lg:min-h-11"><Printer aria-hidden="true" />Ticket</Button>
+        <Button onClick={() => onPrintProduction(contract)} aria-label="Imprimir Orden de Taller" title="Imprimir Orden de Taller" size="sm" variant="secondary" className="gap-1 px-1.5 sm:px-2.5 max-lg:min-h-11"><ClipboardList aria-hidden="true" />Orden</Button>
+        <Button onClick={() => onPrintTextOnly(contract)} aria-label="Imprimir Texto Solo" title="Imprimir Texto Solo" size="sm" variant="secondary" className="gap-1 px-1.5 sm:px-2.5 max-lg:min-h-11"><FileText aria-hidden="true" />Texto</Button>
       </div>
       <Button onClick={() => onView(contract)} className="sm:min-w-36" variant="primary">
         {isCancelled ? 'Historial' : criticalDebt ? 'Cobrar deuda' : 'Gestionar'}<ArrowRight aria-hidden="true" />

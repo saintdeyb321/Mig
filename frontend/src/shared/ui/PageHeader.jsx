@@ -1,7 +1,7 @@
 import { Layers3 } from 'lucide-react';
 import { cn } from './cn';
 
-export function PageHeader({ title, description, eyebrow, icon = Layers3, actions, children, className, ...props }) {
+export function PageHeader({ title, description, eyebrow, icon = Layers3, actions, actionsClassName, children, className, ...props }) {
   const Icon = icon;
   return <header className={cn('relative flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-card border border-line border-t-2 border-t-primary/50 bg-linear-to-br from-panel via-panel to-accent-soft/35 p-4 shadow-card sm:p-5', className)} {...props}>
     {title ? <div className="flex min-w-0 flex-1 basis-full items-center gap-3 sm:basis-64 sm:gap-4"><span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-primary to-accent text-white shadow-md shadow-primary/20 sm:size-12"><Icon aria-hidden="true" className="size-5 sm:size-6" /></span>
@@ -10,6 +10,6 @@ export function PageHeader({ title, description, eyebrow, icon = Layers3, action
         {description && <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">{description}</p>}
       </div>
     </div> : children}
-    {actions && <div className="flex w-full max-w-full flex-wrap items-center justify-end gap-2 sm:w-auto">{actions}</div>}
+    {actions && <div className={cn('flex w-full min-w-0 max-w-full flex-wrap items-center justify-end gap-2 sm:w-auto', actionsClassName)}>{actions}</div>}
   </header>;
 }
