@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { resolve, dirname, extname } from 'node:path';
+import { readFileSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSync, rmdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { resolve, dirname, extname, join } from 'node:path';
 import { escapeHtml, escapeAttribute, multilineHtml, safeImageUrl } from '../frontend/src/shared/security/html.js';
 import { brand, configuredHttpsUrl } from '../frontend/src/config/brand.js';
 import { isWithinShift, limaTime, watchShift } from '../frontend/src/core/auth/shiftAccess.js';
@@ -11,6 +13,9 @@ import { generateContractProductionHTML, generateContractTextOnlyHTML } from '..
 import { resolveImageSources, usingImageSources } from '../frontend/src/features/contracts/application/imageSources.js';
 import { hostingHeaders, environmentFor } from '../frontend/src/config/environments.js';
 import { queryErrorDiagnostic, realIndexCreationUrl, withQueryContext } from '../frontend/src/core/firebase/queryErrors.js';
+import { hasCurrentTerms, legalPublication, termsFor } from '../frontend/src/features/legal/publication.js';
+import { validateLegalPublication } from '../frontend/config/validateLegalPublication.js';
+import { fileURLToPath } from 'node:url';
 
 const attack = '<img src=x onerror="parent.__xss=1"><script>parent.__xss=1</script>\' &';
 const settings = { companyData: { razonSocial: attack, ruc: attack, direccion: attack, telefono: attack } };
@@ -50,14 +55,29 @@ describe('Printable tenant data', () => {
     assert.equal(escapeAttribute('"\n\x00'), '&quot;&#10;&#0;');
     assert.equal(multilineHtml('A\r\n<b>B</b>\rC\nD'), 'A<br>&lt;b&gt;B&lt;/b&gt;<br>C<br>D');
   });
-  it('escapes every POS field including historical payment, cashier and void reason', () => {
+  it('escapes the printed POS fields including historical payment and void reason', () => {
     const html = generateReceiptHTML(sale, settings, branches[0]);
     assert.ok(html.includes(escapeHtml(attack)));
     assert.ok(html.includes('Sucursal: ' + escapeHtml(attack)));
-    assert.ok(html.includes('CAJERO:</span> ' + escapeHtml(attack)));
+    assert.ok(html.includes('text-transform: uppercase;">' + escapeHtml(attack)));
+    assert.ok(html.includes('class="col-desc">' + escapeHtml(attack) + '</td>'));
     assert.ok(html.includes('ANULACIÓN:</span> ' + escapeHtml(attack)));
     assert.ok(!html.includes('<script>')); assert.ok(!html.includes('<img'));
     assert.ok(!html.includes('&amp;lt;'));
+  });
+  it('omits cashier names and IDs in new, historical, pending, and draft public tickets', () => {
+    const privateName = 'María & López <img src=x onerror="parent.__cashier=1">';
+    for (const ticket of [
+      { ...sale, status: 'confirmed', financialState: 'confirmed', createdAt: '2026-11-14T12:00:00Z' },
+      { ...sale, date: '2024-06-17', voidReason: 'Anulación histórica' },
+      { ...sale, isOffline: true, status: 'pending' },
+      { ...sale, isOffline: true, financialState: 'draft_offline' },
+    ]) {
+      const html = generateReceiptHTML({ ...ticket, cashierName: privateName, userId: 'private-cashier-id', cashierId: 'private-cashier-uid' }, settings, branches[0]);
+      assert.equal(html, generateReceiptHTML({ ...ticket, cashierName: undefined }, settings, branches[0]));
+      assert.doesNotMatch(html, /CAJERO:|María|López|__cashier|private-cashier/);
+      assert.match(html, /TICKET:.*FECHA:.*Método de Pago:.*S\/ 10\.00/s);
+    }
   });
   for (const template of [generateContractReceiptHTML, generateContractProductionHTML, generateContractTextOnlyHTML]) {
     it(`${template.name} escapes clients, delivery, details, voids and historical labels`, () => {
@@ -88,6 +108,73 @@ describe('Printable tenant data', () => {
       assert.ok(!html.includes('Dirección general')); assert.ok(!html.includes('Teléfono tenant'));
     }
     assert.ok(generateReceiptHTML(sale, { companyData }).includes('Dirección general'));
+  });
+});
+
+describe('P20 legal publication and access', () => {
+  it('ships just verified historical terms and rejects activation without real legal metadata', () => {
+    const directory = fileURLToPath(new URL('../frontend/public/legal/', import.meta.url));
+    const rules = source('firestore.rules');
+    validateLegalPublication(directory, rules);
+    assert.equal(legalPublication.terms.version, '1.1');
+    assert.equal(legalPublication.privacy, null);
+    assert.throws(() => validateLegalPublication(directory, rules, { ...legalPublication, state: 'approved' }));
+    assert.throws(() => validateLegalPublication(directory, rules.replace("'termsVersion': '1.1'", "'termsVersion': '2.0'")), /mismos documentos/);
+  });
+
+  it('checks the exact bytes, registered assets, and both hashes when simulating an approval', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'migapos-p20-'));
+    const termsPath = join(directory, 'terminos-2.0.txt');
+    const privacyPath = join(directory, 'privacidad-1.0.txt');
+    const legacyPath = join(directory, 'terminos-1.1.txt');
+    const draftPath = join(directory, 'draft.md');
+    const termsText = '## P20 terms fixture\n\nUn borrador sin conexión no registra el cobro.\n';
+    const privacyText = '## P20 privacy fixture\n\nCanal ARCO de prueba.\n';
+    const hash = text => createHash('sha256').update(text).digest('hex');
+    const approved = {
+      state: 'approved',
+      terms: { path: '/legal/terminos-2.0.txt', version: '2.0', sha256: hash(termsText), dateLabel: 'Fecha de prueba' },
+      privacy: { path: '/legal/privacidad-1.0.txt', version: '1.0', sha256: hash(privacyText), dateLabel: 'Fecha de prueba' },
+      provider: { name: 'Fixture', ruc: '00000000000', address: 'Domicilio de prueba', supportEmail: 'soporte@example.test',
+        privacyEmail: 'arco@example.test', complaintsRequired: true, complaintsUrl: 'https://example.test/libro' },
+    };
+    const pins = JSON.stringify({ termsVersion: '2.0', termsSha256: approved.terms.sha256, privacyVersion: '1.0', privacySha256: approved.privacy.sha256 });
+    const rules = `function legalPublication() { return ${pins}; }`;
+    try {
+      writeFileSync(legacyPath, source('frontend/public/legal/terminos-1.1.txt'));
+      writeFileSync(termsPath, termsText);
+      writeFileSync(privacyPath, privacyText);
+      validateLegalPublication(directory, rules, approved);
+      writeFileSync(draftPath, 'Documento de trabajo');
+      assert.throws(() => validateLegalPublication(directory, rules, approved), /sin registrar/);
+      rmSync(draftPath);
+      writeFileSync(privacyPath, '[COMPLETAR]');
+      assert.throws(() => validateLegalPublication(directory, rules, approved), /Texto pendiente/);
+      writeFileSync(privacyPath, privacyText + 'Cambio');
+      assert.throws(() => validateLegalPublication(directory, rules, approved), /Hash legal incorrecto/);
+    } finally {
+      for (const file of [legacyPath, termsPath, privacyPath, draftPath]) rmSync(file, { force: true });
+      rmdirSync(directory);
+    }
+  });
+
+  it('preserves legacy profiles and requires evidence for the exact new terms and account scope', () => {
+    const approved = { state: 'approved', terms: { version: '2.0', sha256: 'a'.repeat(64) }, privacy: { version: '1.0', sha256: 'b'.repeat(64) } };
+    for (const role of ['dueño', 'cajero']) {
+      const profile = { uid: 'p20-user', businessId: 'p20-business', role, hasAcceptedTerms: true, termsVersion: '1.1' };
+      assert.equal(hasCurrentTerms(profile), true);
+      assert.equal(hasCurrentTerms({ ...profile, termsVersion: undefined }), true);
+      assert.equal(hasCurrentTerms({ ...profile, termsVersion: '99.0' }), false);
+      assert.equal(hasCurrentTerms(profile, approved), false);
+      const legalAcceptance = { id: 'A'.repeat(20), uid: profile.uid, businessId: profile.businessId, role, termsVersion: '2.0', termsSha256: approved.terms.sha256 };
+      assert.equal(hasCurrentTerms({ ...profile, legalAcceptance }, approved), true);
+      for (const change of [{ uid: 'other' }, { businessId: 'other' }, { role: 'other' }, { termsSha256: 'forged' }, { id: null }]) {
+        assert.equal(hasCurrentTerms({ ...profile, legalAcceptance: { ...legalAcceptance, ...change } }, approved), false);
+      }
+    }
+    const platform = { role: 'superadmin', hasAcceptedTerms: true, termsVersion: '1.1' };
+    assert.equal(termsFor(platform, approved).version, '1.1');
+    assert.equal(hasCurrentTerms(platform, approved), true);
   });
 });
 
@@ -251,7 +338,9 @@ describe('Hosting policy and conservative cleanup', () => {
       'docs/PLAN-P17-RC-CIERRE-VENCIMIENTO-14H-CI.md', 'docs/RESULTADOS-P17-RC-CIERRE-14H.md',
       'docs/PLAN-P18-IMAGENES-MULTIDISPOSITIVO-OFFLINE-SPARK.md', 'docs/RESULTADOS-P18-IMAGENES-OFFLINE.md',
       'docs/PLAN-UX-MOVIL-RESPONSIVE-MIGAPOS-P19.md', 'docs/PROMPT-CODEX-P19-UX-MOVIL-MIGAPOS.md',
-      'docs/RESULTADOS-P19-UX-MOVIL.md'];
+      'docs/RESULTADOS-P19-UX-MOVIL.md', 'docs/MIGAPOS-P20-AUDITORIA-Y-PLAN-LEGAL.md',
+      'docs/MIGAPOS-TERMINOS-v2-BORRADOR.md', 'docs/MIGAPOS-PRIVACIDAD-v1-BORRADOR.md',
+      'docs/MIGAPOS-P20-PROMPT-CODEX-LEGAL.md', 'docs/RESULTADOS-P20-LEGAL.md'];
     assert.deepEqual(markdown.filter(path => !allowedMarkdown.includes(path)), [], 'Documentos Markdown inesperados en el inventario local');
   });
 });

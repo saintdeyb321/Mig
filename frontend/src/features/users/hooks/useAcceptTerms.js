@@ -1,23 +1,28 @@
-import { brand } from '../../../config/brand';
-import { useState } from 'react';
-import toast from 'react-hot-toast';
+import { useRef, useState } from 'react';
 import { acceptTerms } from '../infrastructure/userRepository';
-import { firebaseErrorMessage } from '../../../core/errors/firebaseErrors.js';
+import { getFirebaseErrorCode } from '../../../core/errors/firebaseErrors.js';
+import { withAccessDeadline } from '../../../core/session/accessDeadline.js';
 
-export function useAcceptTerms(user, onAccepted) {
+export function useAcceptTerms(user) {
   const [isAccepting, setIsAccepting] = useState(false);
+  const [error, setError] = useState('');
+  const pending = useRef(false);
   const handleAccept = async () => {
+    if (pending.current) return;
+    pending.current = true;
     setIsAccepting(true);
-    const loadId = toast.loading('Registrando aceptación...');
+    setError('');
     try {
-      await acceptTerms(user.uid);
-      toast.success(`¡Bienvenido a ${brand.name}!`, { id: loadId });
-      onAccepted?.();
-    } catch (error) {
-      console.error('Error al aceptar términos:', error);
-      toast.error(firebaseErrorMessage(error), { id: loadId });
+      await withAccessDeadline(() => acceptTerms(user));
+      // The existing server profile subscription dismisses the gate.
+    } catch (failure) {
+      const code = getFirebaseErrorCode(failure);
+      setError(['permission-denied', 'unauthenticated'].includes(code)
+        ? 'Tu cuenta no tiene permiso para registrar la aceptación. Comprueba tu acceso con el administrador.'
+        : 'Aún no se pudo confirmar la aceptación. Comprueba la conexión y vuelve a intentarlo.');
+      pending.current = false;
       setIsAccepting(false);
     }
   };
-  return { isAccepting, handleAccept };
+  return { isAccepting, handleAccept, error };
 }

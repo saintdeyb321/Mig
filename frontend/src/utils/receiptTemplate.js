@@ -107,7 +107,6 @@ export const generateReceiptHTML = (saleData, settings, currentBranch = null) =>
         <div class="text-sm">
           <div><span class="bold">TICKET:</span> ${escapeHtml(saleData.localId ? String(saleData.localId).substring(0,8).toUpperCase() : '000001')}</div>
           <div><span class="bold">FECHA:</span> ${dateStr} ${timeStr}</div>
-          ${saleData.cashierName ? `<div><span class="bold">CAJERO:</span> ${escapeHtml(saleData.cashierName)}</div>` : ''}
           ${saleData.voidReason ? `<div><span class="bold">ANULACIÓN:</span> ${multilineHtml(saleData.voidReason)}</div>` : ''}
         </div>
         

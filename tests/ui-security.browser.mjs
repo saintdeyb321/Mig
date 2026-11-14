@@ -39,7 +39,7 @@ try {
   const dataImage = await new Promise(resolve => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsDataURL(blob); });
   const temporary = URL.createObjectURL(blob);
   check(safeImageUrl(temporary) === temporary && safeImageUrl(dataImage) === dataImage, 'Browser Blob and validated legacy data images accepted');
-  let beforePrint = 0, inspections = 0;
+  let beforePrint = 0, inspections = 0, privatePrints = 0;
   const stop = observePrint(frame => {
     const doc = frame.contentDocument;
     inspections++;
@@ -47,13 +47,19 @@ try {
     assert(!frame.sandbox.contains('allow-scripts') && frame.sandbox.contains('allow-modals'), 'Unsafe sandbox');
     assert([...doc.images].every(image => image.complete && image.naturalWidth > 0), 'Print started before images loaded');
     assert(doc.body.textContent.includes(attack), 'Escaped tenant text was lost or double-escaped');
+    if (doc.body.textContent.includes('TICKET:')) {
+      assert(!/CAJERO:|Nombre privado|Álvarez|p20-private-uid/.test(doc.body.textContent), 'Cashier data leaked into a public POS print');
+      privatePrints++;
+    }
     assert(getComputedStyle(doc.body).fontFamily.includes('Helvetica') || getComputedStyle(doc.body).fontFamily.includes('Segoe'), 'Ticket styles blocked');
     frame.contentWindow.addEventListener('beforeprint', () => beforePrint++);
   });
   const company = { companyData: { razonSocial: attack, direccion: attack, telefono: attack } };
-  const sale = { localId: 'test', cashierName: attack, total: 10, payment: attack, items: [{ name: attack, price: 10, qty: 1 }] };
+  const sale = { localId: 'test', cashierName: 'Nombre privado & Álvarez ' + attack, userId: 'p20-private-uid', total: 10, payment: attack, items: [{ name: attack, price: 10, qty: 1 }] };
   await createPrintJob({ finishTimeout: 300 }).print(generateReceiptHTML(sale, company));
   check(inspections === 1 && beforePrint > 0, 'Native POS print works with sandbox and CSP');
+  await createPrintJob({ finishTimeout: 300 }).print(generateReceiptHTML({ ...sale, date: '2024-06-17', voidReason: attack }, company));
+  check(privatePrints === 2, 'Neither first print nor historical reprint contains the cashier identity');
   check(!document.querySelector('iframe'), 'POS frame removed after printing');
   const contract = { contractId: 'fixture', clientName: attack, clientPhone: attack, details: `Primera\n${attack}\nÚltima`, deliveryType: 'domicilio', deliveryAddress: attack,
     referenceImage: temporary, referenceImages: [temporary, dataImage], total: 10, balance: 5, payments: [{ method: attack, label: attack, amount: 5 }] };
@@ -61,7 +67,7 @@ try {
     await createPrintJob({ finishTimeout: 300 }).print(template(contract, company));
   }
   stop(); URL.revokeObjectURL(temporary);
-  check(inspections === 4 && !window.__xss && !document.querySelector('iframe'), 'All contract templates preserve text and image loading without script execution');
+  check(inspections === 5 && !window.__xss && !document.querySelector('iframe'), 'All contract templates preserve text and image loading without script execution');
 
   let defenceChecked = false;
   const stopDefence = observePrint(frame => {

@@ -13,6 +13,7 @@ import { isBusinessSession } from '../core/session/context.js';
 import { Badge, Button, IconButton } from '../shared/ui';
 import { useVisualViewport } from '../shared/ui/useVisualViewport';
 import { MobileDockContext } from './MobileDockContext';
+import { LegalLinks } from '../features/legal/LegalDocuments';
 
 const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
   useVisualViewport();
@@ -58,7 +59,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
         {canSelectBranch && <BranchSelector dark />}
         {assignedBranchName && <p className="flex items-center gap-2 text-xs text-sidebar-muted"><MapPin aria-hidden="true" strokeWidth={1.85} className="size-4 shrink-0" />{assignedBranchName}</p>}
       </div>
-      <div className="sidebar-scroll min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 pb-4 focus-visible:outline-2 focus-visible:outline-focus" tabIndex={0} role="region" aria-label="Lista de módulos"><p className="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-muted">Espacio de trabajo</p><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop /></div>
+      <div className="sidebar-scroll min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 pb-4 focus-visible:outline-2 focus-visible:outline-focus" tabIndex={0} role="region" aria-label="Lista de módulos"><p className="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-muted">Espacio de trabajo</p><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop /><LegalLinks newTab className="px-3 text-sidebar-muted" /></div>
       <div className="sidebar-footer shrink-0 border-t border-white/10 p-4">
         <Button variant="ghost" className="w-full justify-start text-sidebar-muted hover:bg-white/10 hover:text-white" onClick={handleLogout}><LogOut aria-hidden="true" strokeWidth={1.85} />Cerrar sesión</Button>
       </div>

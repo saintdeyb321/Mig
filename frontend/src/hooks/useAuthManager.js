@@ -5,6 +5,7 @@ import { auth } from '../core/firebase/client';
 import { acceptInvitedProfile, getInviteFromServer, getProfileFromServer, subscribeProfile } from '../features/users/infrastructure/userRepository';
 import { createProfileSession } from '../core/session/profileSession.js';
 import { isWithinShift } from '../core/auth/shiftAccess';
+import { hasCurrentTerms } from '../features/legal/publication.js';
 
 export const useAuthManager = () => {
   const [state, setState] = useState({ uid: null, status: 'loading', profile: null });
@@ -28,10 +29,10 @@ export const useAuthManager = () => {
         withinShift: userData => isWithinShift(userData), onState: next => {
           if (active && auth.currentUser?.uid === next.uid) {
             setProfileAuthority(next.profile, next.status === 'ready');
-            if (next.status !== 'loading') businessGuard = ['dueño', 'cajero'].includes(next.profile?.role) && next.profile.hasAcceptedTerms === true;
+            if (next.status !== 'loading') businessGuard = ['dueño', 'cajero'].includes(next.profile?.role) && hasCurrentTerms(next.profile);
             setState(previous => next.status === 'loading' && previous.uid === next.uid
               && ['ready', 'offline-assisted'].includes(previous.status)
-              && ['dueño', 'cajero'].includes(previous.profile?.role) && previous.profile.hasAcceptedTerms === true
+              && ['dueño', 'cajero'].includes(previous.profile?.role) && hasCurrentTerms(previous.profile)
               ? { ...previous, status: 'offline-assisted', profile: { ...previous.profile, accessVerified: false } } : next);
           }
         } });

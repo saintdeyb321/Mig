@@ -7,6 +7,7 @@ import { auth } from '../core/firebase/client';
 import toast from 'react-hot-toast';
 import InstallButton from '../components/InstallButton';
 import { brand } from '../config/brand';
+import { LegalLinks } from '../features/legal/LegalDocuments';
 const Auth = memo(({
   onLogin
 }) => {
@@ -60,7 +61,10 @@ const Auth = memo(({
         </div>
         <div className="space-y-5 border-t border-line pt-5">
           <p className="flex items-center justify-center gap-2 text-xs text-muted"><LockKeyhole aria-hidden="true" className="size-4 text-success" />Acceso seguro con tu cuenta Google</p>
-          <footer className="text-xs text-muted">© {new Date().getFullYear()} {brand.name}</footer>
+          <footer className="text-xs text-muted">
+            <LegalLinks className="justify-center text-primary" />
+            <p>© {new Date().getFullYear()} {brand.name}</p>
+          </footer>
         </div>
       </Card>
     </div>

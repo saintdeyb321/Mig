@@ -136,6 +136,9 @@
 }
 .dialog-body { scroll-padding-block: 0.75rem; }
 .dialog-body :is(input, select, textarea) { scroll-margin-block: 0.75rem; }
+.legal-dialog { height: min(46rem, 100%); }
+.legal-dialog .legal-actions { max-height: 55%; overflow-y: auto; }
+.legal-document:focus-visible { outline-offset: -3px; }
 @container ui-drawer (height < 19rem) {
   .dialog-body:has(.pos-ticket-drawer) { overflow-y: auto; }
   .pos-ticket-drawer { flex: 0 0 auto; height: auto; max-height: none; }

@@ -168,16 +168,63 @@ service cloud.firestore {
         && profile.get('shiftEnd', null) == resource.data.get('shiftEnd', null);
     }
 
+    function legalPublication() {
+      // Approve both immutable texts together and pin their exact SHA-256 values.
+      return { 'termsVersion': '1.1', 'termsSha256': 'c6ffe9ffddd9eaae1e0cf4854feb054c9023a438d927b0a24e75b79148a12254',
+        'privacyVersion': null, 'privacySha256': null };
+    }
+
+    function legalEvidencePath(userId, id) {
+      return /databases/$(database)/documents/users/$(userId)/legal_acceptances/$(id);
+    }
+
+    function legalAcceptanceMarker(data) {
+      return { 'id': data.id, 'uid': data.uid, 'businessId': data.businessId, 'role': data.role,
+        'termsVersion': data.termsVersion, 'termsSha256': data.termsSha256 };
+    }
+
+    function validLegalAcceptance(userId, id) {
+      let data = request.resource.data;
+      let release = legalPublication();
+      let profile = currentUser();
+      return release.privacyVersion != null
+        && data.keys().hasOnly(['id', 'uid', 'businessId', 'role', 'termsVersion', 'termsSha256',
+          'privacyVersion', 'privacySha256', 'acceptedAt'])
+        && data.id == id && data.uid == userId
+        && data.businessId == profile.businessId && data.businessId != 'platform-admin'
+        && data.role == profile.role && data.role in ['dueño', 'cajero']
+        && data.termsVersion == release.termsVersion && data.termsSha256 == release.termsSha256
+        && data.privacyVersion == release.privacyVersion && data.privacySha256 == release.privacySha256
+        && data.acceptedAt == request.time
+        && profile.get('legalAcceptance', {}) != legalAcceptanceMarker(data)
+        && getAfter(/databases/$(database)/documents/users/$(userId)).data.legalAcceptance == legalAcceptanceMarker(data);
+    }
+
+    function legalProfileUpdate(userId, data) {
+      let path = legalEvidencePath(userId, data.id);
+      let old = resource.data.get('legalAcceptance', {});
+      return legalPublication().privacyVersion != null && data.id.matches('^[A-Za-z0-9]{20}$')
+        && !(old.get('businessId', null) == data.businessId && old.get('role', null) == data.role
+        && old.get('termsVersion', null) == data.termsVersion && old.get('termsSha256', null) == data.termsSha256)
+        && !exists(path) && legalAcceptanceMarker(getAfter(path).data) == data;
+    }
+
+    function legacyTermsUpdate(data) {
+      return (legalPublication().privacyVersion == null || superadmin())
+        && data.hasAcceptedTerms == true && data.termsAcceptedAt == request.time && data.termsVersion == '1.1'
+        && !(resource.data.get('hasAcceptedTerms', false) == true && resource.data.get('termsVersion', '1.1') in [null, '1.1']);
+    }
+
     function personalUpdate(userId) {
       let data = request.resource.data;
       let changed = data.diff(resource.data).affectedKeys();
       return activeUser() && userId == request.auth.uid
         && (superadmin() || tenantEnabled(currentBusiness()))
-        && changed.hasOnly(['firstName', 'lastName', 'hasAcceptedTerms', 'termsAcceptedAt', 'termsVersion'])
-        && data.get('firstName', '') is string && data.get('lastName', '') is string
-        && (!changed.hasAny(['hasAcceptedTerms', 'termsAcceptedAt', 'termsVersion'])
-          || (data.hasAcceptedTerms == true && data.termsAcceptedAt == request.time
-            && data.termsVersion is string));
+        && (changed.hasAny(['legalAcceptance'])
+          ? (changed.hasOnly(['legalAcceptance']) && legalProfileUpdate(userId, data.legalAcceptance))
+          : (changed.hasOnly(['firstName', 'lastName', 'hasAcceptedTerms', 'termsAcceptedAt', 'termsVersion'])
+            && data.get('firstName', '') is string && data.get('lastName', '') is string
+            && (!changed.hasAny(['hasAcceptedTerms', 'termsAcceptedAt', 'termsVersion']) || legacyTermsUpdate(data))));
     }
 
     function managedUserUpdate() {
@@ -996,6 +1043,13 @@ service cloud.firestore {
       allow create: if authenticated() && invitedProfile(userId);
       allow update: if personalUpdate(userId) || managedUserUpdate();
       allow delete: if tenantManager() && resource.data.role != 'superadmin';
+
+      match /legal_acceptances/{id} {
+        allow get: if activeUser() && userId == request.auth.uid
+          && sameTenantResource() && resource.data.uid == request.auth.uid;
+        allow create: if authenticated() && userId == request.auth.uid && validLegalAcceptance(userId, id);
+        allow list, update, delete: if false;
+      }
     }
 
     match /invites/{emailId} {

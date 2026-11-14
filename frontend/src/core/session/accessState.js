@@ -1,5 +1,6 @@
 import { toDateSafe } from '../dates/dateValues.js';
 import { getFirebaseErrorCode } from '../errors/firebaseErrors.js';
+import { hasCurrentTerms } from '../../features/legal/publication.js';
 
 export const isServerSnapshot = metadata => metadata?.fromCache === false && metadata?.hasPendingWrites === false;
 
@@ -44,7 +45,7 @@ export function licenseAccess({ license, tenant, businessId, now = new Date() })
 export function cachedProfileAccess(data, metadata, user, withinShift) {
   return metadata?.hasPendingWrites === false && user?.emailVerified === true
     && user.providerData?.some(provider => provider.providerId === 'google.com')
-    && ['dueño', 'cajero'].includes(data?.role) && data.hasAcceptedTerms === true
+    && ['dueño', 'cajero'].includes(data?.role) && hasCurrentTerms({ ...data, uid: user.uid })
     && profileAccess(data, { fromCache: false, hasPendingWrites: false }, withinShift) === 'ready';
 }
 export function cachedLicenseAccess(records) {

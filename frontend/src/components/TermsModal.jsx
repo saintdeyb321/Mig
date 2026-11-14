@@ -1,83 +1,35 @@
-import { Dialog, Input, Button, cn } from "../shared/ui";
-import { brand } from '../config/brand';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useAcceptTerms } from '../features/users/hooks/useAcceptTerms';
-export default function TermsModal({
-  user,
-  onAccepted
-}) {
-  const [isChecked, setIsChecked] = useState(false);
-  const {
-    isAccepting,
-    handleAccept
-  } = useAcceptTerms(user, onAccepted);
-  return <Dialog title={<>Términos y Condiciones de {brand.name}</>} busy={isAccepting} className="max-w-3xl" dismissible={false}>
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { Button, Input } from '../shared/ui';
+import { LegalDocumentDialog } from '../features/legal/LegalDocuments';
+import { legalPublication, legalRoutes, requiresVersionedAcceptance, termsFor } from '../features/legal/publication.js';
 
-        <div className="text-xs text-muted">
-
-          <p>Última actualización: Abril 2026 | Versión {brand.termsVersion}</p>
-        </div>
-
-        <div className="space-y-4 text-sm leading-relaxed [&_h3]:pt-2 [&_h3]:font-semibold [&_h3]:text-ink">
-          <p>Bienvenido a {brand.name}. Para utilizar nuestro sistema, debes leer y aceptar las siguientes condiciones de servicio:</p>
-
-          <h3>1. Naturaleza y Alcance del Servicio</h3>
-          <p>
-            {brand.name} es una plataforma de software como servicio (SaaS) proporcionada "tal cual", diseñada exclusivamente para el <strong>control interno, gestión de inventario y registro de ventas operativas</strong>.
-            Los comprobantes generados son de carácter estrictamente administrativo. <strong>{brand.name} NO es un sistema de Facturación Electrónica homologado por la SUNAT.</strong> El usuario reconoce que el cumplimiento de sus obligaciones tributarias es de su entera responsabilidad.
-          </p>
-
-          <h3>2. Disponibilidad del Sistema y Terceros</h3>
-          <p>
-            {brand.name} opera utilizando infraestructura en la nube. <strong>No nos hacemos responsables por interrupciones del servicio o pérdida de acceso</strong> causadas por fallas en proveedores de terceros (como Google Cloud/Firebase), caídas generales de internet, o problemas con el proveedor local del usuario.
-          </p>
-
-          <h3>3. Modo Fuera de Línea (Offline)</h3>
-          <p>
-            El sistema permite operar temporalmente sin conexión guardando datos en el dispositivo. <strong>Es responsabilidad exclusiva del usuario no borrar la caché, datos de navegación, ni desinstalar la aplicación</strong> hasta que el sistema sincronice con la nube. {brand.name} no se responsabiliza por la pérdida de datos locales no sincronizados.
-          </p>
-
-          <h3>4. Responsabilidad de Caja y Empleados</h3>
-          <p>
-            <strong>{brand.name} se deslinda de toda responsabilidad legal o civil por pérdidas económicas, descuadres de caja, robos sistemáticos o negligencias</strong> cometidas por los empleados o administradores. La correcta delegación de roles en la plataforma y la supervisión del personal son responsabilidad absoluta del titular de la cuenta.
-          </p>
-
-          <h3>5. Propiedad de Datos, Privacidad y Derechos ARCO</h3>
-          <p>
-            La información registrada es propiedad exclusiva del usuario. El tratamiento de datos se rige por nuestra Política de Privacidad, detallando el ejercicio de los derechos ARCO conforme a la ley peruana. Al autenticarse mediante Google, <strong>no seremos responsables por filtraciones derivadas del acceso no autorizado a su cuenta de Google</strong>, pérdida de su dispositivo o equipos infectados por malware.
-          </p>
-
-          <h3>6. Suscripciones y Bloqueo de Servicio</h3>
-          <p>
-            El acceso a {brand.name} está condicionado al pago puntual de la suscripción. En caso de mora, <strong>el sistema bloqueará por completo el acceso a la interfaz y sus datos</strong> hasta la regularización del pago. Si la morosidad supera los 60 días calendario, {brand.name} se reserva el derecho de eliminar permanentemente la cuenta y sus datos asociados para liberar espacio, sin lugar a reclamo.
-          </p>
-
-          <h3>7. Límite de Responsabilidad Máxima</h3>
-          <p>
-            En la medida máxima permitida por la ley, la responsabilidad total y acumulada de {brand.name} frente al usuario por cualquier reclamo o daño, <strong>no superará el monto total pagado por el usuario por concepto de suscripción durante los últimos doce (12) meses</strong> anteriores al evento originario.
-          </p>
-
-          <h3>8. Modificaciones a los Términos</h3>
-          <p>
-            {brand.name} se reserva el derecho de modificar estos términos. Notificaremos sobre cambios con anticipación mediante la plataforma. El uso continuado del sistema constituye la aceptación de los nuevos términos.
-          </p>
-
-          <h3>9. Jurisdicción</h3>
-          <p>
-            Estos términos se rigen bajo las leyes del Perú. Cualquier controversia será sometida a la jurisdicción de los jueces y tribunales de la ciudad de Huancayo, Junín.
-          </p>
-        </div>
-
-        <div className="grid gap-4 border-t border-line pt-4">
-          <label className="text-sm leading-relaxed text-muted flex items-start gap-3 text-left cursor-pointer">
-            <Input type="checkbox" checked={isChecked} onChange={e => setIsChecked(e.target.checked)} className="w-5 h-5 mt-0.5 cursor-pointer" />
-            <span>He leído, entiendo y acepto expresamente las condiciones de servicio, la limitación de responsabilidad y el tratamiento de datos.</span>
-          </label>
-
-          <Button onClick={handleAccept} disabled={!isChecked || isAccepting} className={cn("w-full", !isChecked || isAccepting ? "opacity-60" : "opacity-100", !isChecked || isAccepting ? "cursor-not-allowed" : "cursor-pointer")} type="button" variant="primary">
-            {isAccepting ? 'Procesando...' : 'Aceptar y Continuar'}
-          </Button>
-        </div>
-
-      </Dialog>;
+export default function TermsModal({ user, onLogout }) {
+  const [checked, setChecked] = useState(false);
+  const online = useNetworkStatus();
+  const { isAccepting, handleAccept, error } = useAcceptTerms(user);
+  const versioned = requiresVersionedAcceptance(user);
+  const terms = termsFor(user);
+  const label = user.role === 'cajero' ? 'Acepto las reglas de uso que corresponden a mi rol.'
+    : versioned ? 'Declaro que puedo representar al negocio y acepto las condiciones del servicio.'
+      : 'Acepto las condiciones de uso de MigaPOS.';
+  return <LegalDocumentDialog kind="terms" document={terms} busy={isAccepting}>
+    {loaded => <div className="legal-actions grid shrink-0 gap-2 border-t border-line bg-panel px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-7">
+      {versioned && <a href={legalRoutes.privacy} target="_blank" rel="noopener" className="inline-flex min-h-11 items-center text-sm text-primary underline">
+        Consultar Política de Privacidad v{legalPublication.privacy.version}
+      </a>}
+      <label className="flex min-h-11 items-center gap-3 text-sm font-medium">
+        <Input type="checkbox" checked={checked} disabled={!loaded} onChange={event => setChecked(event.target.checked)} />
+        <span>{label}</span>
+      </label>
+      {(!online || user.accessVerified === false) && <p role="status" className="text-sm text-warning">Conéctate y espera la verificación de tu cuenta para registrar la aceptación.</p>}
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button variant="secondary" onClick={onLogout}>Cerrar sesión</Button>
+        <Button loading={isAccepting} disabled={!loaded || !checked || !online || user.accessVerified === false}
+          onClick={handleAccept}>{isAccepting ? 'Registrando…' : 'Aceptar y continuar'}</Button>
+      </div>
+    </div>}
+  </LegalDocumentDialog>;
 }

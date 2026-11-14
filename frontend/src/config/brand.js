@@ -1,3 +1,5 @@
+import { legalPublication } from '../features/legal/publication.js';
+
 const env = import.meta.env ?? {};
 export function configuredHttpsUrl(value) {
   if (typeof value !== 'string' || !value || /[\s\p{Cc}]/u.test(value)) return null;
@@ -5,7 +7,7 @@ export function configuredHttpsUrl(value) {
   catch { return null; }
 }
 export const brand = Object.freeze({
-  name: 'MigaPOS', symbol: '🥧', themeColor: '#341b3a', termsVersion: '1.1',
+  name: 'MigaPOS', symbol: '🥧', themeColor: '#341b3a', termsVersion: legalPublication.terms.version,
   logo: '/img/Logo_MP.png', icon192: '/img/Logo_192.png', icon512: '/img/Logo_512.png',
   supportUrl: configuredHttpsUrl(env.VITE_SUPPORT_URL), billingUrl: configuredHttpsUrl(env.VITE_BILLING_URL),
 });

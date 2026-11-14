@@ -7,10 +7,15 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path' 
 import { brand } from './src/config/brand.js'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { validateLegalPublication } from './config/validateLegalPublication.js'
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const env = { ...loadEnv(mode, process.cwd(), 'VITE_'), ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith('VITE_'))) };
   validateWebEnvironment(env);
+  if (command === 'build') validateLegalPublication(fileURLToPath(new URL('./public/legal/', import.meta.url)),
+    readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8'));
   return {
   // Stabilize the CommonJS optimizer entry without requesting Excel at startup.
   optimizeDeps: { include: ['xlsx-js-style'] },

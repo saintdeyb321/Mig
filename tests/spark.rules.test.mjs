@@ -12,6 +12,8 @@ import { updateProductTransaction } from '../frontend/src/features/catalog/infra
 import { cashLockId, createSparkCashRepository } from '../frontend/src/features/cash-register/infrastructure/sparkCashRepository.js';
 import { createCashStateReader, createCashPeriodReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
 import { createHash } from 'node:crypto';
+import { recordLegalAcceptance } from '../frontend/src/features/legal/acceptanceRepository.js';
+import { legalAcceptanceMarker } from '../frontend/src/features/legal/publication.js';
 
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080', 'Only the local demo-migapos Firestore Emulator is allowed.');
 assert.equal(process.env.GCLOUD_PROJECT, 'demo-migapos');
@@ -634,5 +636,105 @@ describe('Plan03 branch authority and quota concurrency', () => {
     assert.equal(resolveOperationalBranch({ role: 'dueño' }, rows, 'b'), 'a');
     assert.equal(resolveOperationalBranch({ role: 'dueño' }, rows, 'global'), 'global');
     assert.equal(resolveOperationalBranch({ role: 'cajero', branchId: 'b' }, rows, 'a'), null);
+  });
+});
+
+describe('P20 versioned legal acceptance', () => {
+  const tenant = 'p20-tenant';
+  const profile = (role, extra = {}) => ({ businessId: tenant, role, status: 'activo', ...extra });
+  const legacy = { hasAcceptedTerms: true, termsVersion: '1.1', termsAcceptedAt: Timestamp.fromMillis(1) };
+  const approved = { state: 'approved', terms: { version: '2.0', sha256: 'a'.repeat(64) }, privacy: { version: '1.0', sha256: 'b'.repeat(64) } };
+  const seedLegal = () => seed({
+    'users/p20-owner': profile('dueño', legacy),
+    'users/p20-cashier': profile('cajero', { branchId: 'p20-branch' }),
+    'users/p20-inactive': profile('cajero', { status: 'inactivo', branchId: 'p20-branch' }),
+    'users/p20-outsider': { ...profile('dueño'), businessId: 'p20-other' },
+    [`licenses/${tenant}`]: { businessId: tenant, status: 'activa', expiry: Timestamp.fromMillis(Date.now() + 86400000) },
+  });
+
+  it('keeps legacy v1.1 active and rejects fabricated or overwritten acceptances', async () => {
+    await seedLegal();
+    const uid = 'p20-cashier';
+    const database = dbFor(uid);
+    const own = doc(database, 'users', uid);
+    const stamp = { hasAcceptedTerms: true, termsAcceptedAt: serverTimestamp(), termsVersion: '1.1' };
+    await assertFails(updateDoc(own, { ...stamp, termsVersion: '2.0' }));
+    await assertFails(updateDoc(own, { ...stamp, termsAcceptedAt: Timestamp.fromMillis(1) }));
+    await assertFails(updateDoc(doc(database, 'users', 'p20-owner'), stamp));
+    await assertFails(recordLegalAcceptance(database, { uid, businessId: tenant, role: 'cajero' }, approved, sdk));
+    await updateDoc(own, stamp);
+    assert.equal((await getDoc(own)).data().termsVersion, '1.1');
+    await assertFails(updateDoc(own, stamp));
+    await updateDoc(own, { firstName: 'Nombre de prueba' });
+  });
+
+  it('tests a future approval in the emulator with scope, atomicity, version and immutable history', async () => {
+    await seedLegal();
+    const rules = readFileSync('firestore.rules', 'utf8');
+    const fixtureRules = rules.replace(/(function legalPublication\(\) \{[\s\S]*?return )\{[^}]+\}/, (_, start) =>
+      start + JSON.stringify({ termsVersion: approved.terms.version, termsSha256: approved.terms.sha256,
+        privacyVersion: approved.privacy.version, privacySha256: approved.privacy.sha256 }));
+    assert.notEqual(fixtureRules, rules);
+    const configure = rules => initializeTestEnvironment({ projectId: 'demo-migapos', firestore: { host: '127.0.0.1', port: 8080, rules } });
+    const future = await configure(fixtureRules);
+    try {
+      const uid = 'p20-owner', database = dbFor(uid), own = doc(database, 'users', uid);
+      const user = { uid, businessId: tenant, role: 'dueño' };
+      const id = 'A'.repeat(20);
+      const entry = { id, uid, businessId: tenant, role: user.role, termsVersion: '2.0', termsSha256: approved.terms.sha256,
+        privacyVersion: '1.0', privacySha256: approved.privacy.sha256, acceptedAt: serverTimestamp() };
+      const evidenceRef = doc(own, 'legal_acceptances', id);
+      const writePair = (data, target = evidenceRef) => writeBatch(database).set(target, data)
+        .update(own, { legalAcceptance: legalAcceptanceMarker(data) }).commit();
+      await assertFails(setDoc(evidenceRef, entry));
+      await assertFails(updateDoc(own, { legalAcceptance: legalAcceptanceMarker(entry) }));
+      for (const forged of [
+        { uid: 'p20-cashier' }, { businessId: 'p20-other' }, { role: 'cajero' }, { termsVersion: '99.0' },
+        { termsSha256: '0'.repeat(64) }, { privacyVersion: '9.0' }, { privacySha256: '0'.repeat(64) },
+        { acceptedAt: Timestamp.fromMillis(1) }, { ip: '127.0.0.1' },
+      ]) await assertFails(writePair({ ...entry, ...forged }));
+      await assertFails(writePair(entry, doc(own, 'legal_acceptances', 'B'.repeat(20))));
+      await assertFails(updateDoc(doc(dbFor('p20-cashier'), 'users', 'p20-cashier'), {
+        hasAcceptedTerms: true, termsVersion: '1.1', termsAcceptedAt: serverTimestamp(),
+      }));
+      const inactiveDb = dbFor('p20-inactive'), inactiveProfile = doc(inactiveDb, 'users', 'p20-inactive');
+      const inactiveEntry = { ...entry, uid: 'p20-inactive', role: 'cajero' };
+      await assertFails(writeBatch(inactiveDb).set(doc(inactiveProfile, 'legal_acceptances', id), inactiveEntry)
+        .update(inactiveProfile, { legalAcceptance: legalAcceptanceMarker(inactiveEntry) }).commit());
+
+      await Promise.all([recordLegalAcceptance(database, user, approved, sdk), recordLegalAcceptance(database, user, approved, sdk)]);
+      const acceptedProfile = (await getDoc(own)).data();
+      const accepted = acceptedProfile.legalAcceptance;
+      assert.equal(acceptedProfile.termsAcceptedAt.toMillis(), 1);
+      const historical = doc(own, 'legal_acceptances', accepted.id);
+      const evidence = (await getDoc(historical)).data();
+      assert.deepEqual(accepted, legalAcceptanceMarker(evidence));
+      assert.ok(evidence.acceptedAt.toMillis() > 1);
+      assert.equal(accepted.acceptedAt, undefined);
+      assert.equal(accepted.privacyVersion, undefined);
+      await env.withSecurityRulesDisabled(async context => {
+        const rows = await getDocs(collection(context.firestore(), 'users', uid, 'legal_acceptances'));
+        assert.equal(rows.size, 1, 'Concurrent retries must persist exactly one acceptance');
+      });
+      await assertFails(writePair(entry));
+      await assertFails(updateDoc(historical, { acceptedAt: serverTimestamp() }));
+      await assertFails(deleteDoc(historical));
+      await assertFails(getDocs(collection(own, 'legal_acceptances')));
+      for (const actor of ['admin', 'p20-cashier', 'p20-outsider']) {
+        const other = doc(dbFor(actor), historical.path);
+        await assertFails(getDoc(other));
+        await assertFails(deleteDoc(other));
+      }
+
+      const cashier = { uid: 'p20-cashier', businessId: tenant, role: 'cajero' };
+      const cashierDb = dbFor(cashier.uid);
+      await recordLegalAcceptance(cashierDb, cashier, approved, sdk);
+      assert.equal((await getDoc(doc(cashierDb, 'users', cashier.uid))).data().legalAcceptance.role, 'cajero');
+      await seed({ 'users/p20-owner': { ...acceptedProfile, businessId: 'p20-other' } });
+      await assertFails(getDoc(historical));
+    } finally {
+      await future.cleanup();
+      await (await configure(rules)).cleanup();
+    }
   });
 });

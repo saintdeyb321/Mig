@@ -89,6 +89,12 @@ jobs:
           browser="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
           test -n "$browser" || { echo 'Chromium is missing from the runner'; exit 1; }
           MIGAPOS_TEST_BROWSER="$browser" node --test --test-concurrency=1 tests/plan10-correction.browser.test.mjs tests/plan17-cash.browser.test.mjs tests/cash-amount.browser.test.mjs
+      - name: P20 public legal documents and POS print privacy
+        timeout-minutes: 3
+        run: |
+          browser="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$browser" || { echo 'Chromium is missing from the runner'; exit 1; }
+          MIGAPOS_TEST_BROWSER="$browser" node --test --test-concurrency=1 tests/p20-legal.browser.test.mjs tests/ui-security.browser.test.mjs
       - name: Plan 14 report and export regressions
         timeout-minutes: 3
         run: |

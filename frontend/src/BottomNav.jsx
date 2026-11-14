@@ -3,6 +3,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Boxes, Building2, ChartColumnIncreasing, Check, ClipboardList, Ellipsis, ReceiptText, Settings2, ShoppingCart, Tags, UsersRound } from 'lucide-react';
 import { getSessionModules } from './core/session/context.js';
 import { cn } from './shared/ui';
+import { legalPublication, legalRoutes, legalTitles } from './features/legal/publication.js';
 
 const items = [
   {id:'pos',label:'Punto de venta',icon:ShoppingCart}, {id:'contracts',label:'Contratos',icon:ClipboardList},
@@ -31,7 +32,7 @@ const BottomNav = memo(({ current, setCurrent, user, isDesktop }) => {
       <span className={cn('wrap-anywhere', isDesktop ? 'text-left' : 'text-center')}>{!isDesktop && id === 'pos' ? 'POS' : label}</span>
     </button>;
   };
-  const showMore = !isDesktop && secondary.length > 0;
+  const showMore = !isDesktop && (secondary.length > 0 || user?.role === 'cajero');
   return <nav aria-label={isDesktop?'Módulos':'Navegación principal'} className={isDesktop?'grid gap-1':'grid min-h-14 auto-cols-fr grid-flow-col gap-1 px-1 py-1'}>
     {(isDesktop?visible:primary).map(renderItem)}
     {showMore && <DropdownMenu.Root><DropdownMenu.Trigger className={cn('flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-0.5 py-1.5 text-xs leading-tight font-semibold outline-offset-[-3px]',secondary.some(item=>item.id===current)?'border-sidebar-active-line bg-sidebar-active text-white':'border-transparent text-sidebar-muted hover:bg-white/10 hover:text-white')}><span className="grid h-6 place-items-center"><Ellipsis aria-hidden="true" className="size-5" /></span>Más</DropdownMenu.Trigger>
@@ -40,6 +41,13 @@ const BottomNav = memo(({ current, setCurrent, user, isDesktop }) => {
         {secondary.map(({ id, label, icon: Icon }) => <DropdownMenu.Item key={id} onSelect={() => setCurrent(id)} aria-current={current === id ? 'page' : undefined} className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm text-white outline-none data-[highlighted]:bg-sidebar-active">
           <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-white/10 text-sidebar-muted">{createElement(Icon, { 'aria-hidden': true, strokeWidth: 1.85, className: 'size-4' })}</span>{label}{current === id && <Check aria-hidden="true" className="ml-auto size-4 text-sidebar-glow" />}
         </DropdownMenu.Item>)}
+        <DropdownMenu.Separator className="my-1 border-t border-white/20" />
+        {Object.entries(legalRoutes).map(([kind, route]) => <DropdownMenu.Item key={kind} asChild>
+          <a href={route} target="_blank" rel="noopener" className="flex min-h-11 items-center rounded-xl px-2.5 py-2 text-sm text-white outline-none data-[highlighted]:bg-sidebar-active">{legalTitles[kind]}</a>
+        </DropdownMenu.Item>)}
+        {legalPublication.provider?.complaintsUrl && <DropdownMenu.Item asChild>
+          <a href={legalPublication.provider.complaintsUrl} target="_blank" rel="noopener" className="flex min-h-11 items-center rounded-xl px-2.5 py-2 text-sm text-white outline-none data-[highlighted]:bg-sidebar-active">Libro de Reclamaciones</a>
+        </DropdownMenu.Item>}
       </DropdownMenu.Content></DropdownMenu.Portal>
     </DropdownMenu.Root>}
   </nav>;

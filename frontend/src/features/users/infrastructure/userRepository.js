@@ -1,9 +1,11 @@
 import { confirmedWrite } from '../../../core/firebase/confirmedWrite.js';
 import { withQueryContext } from '../../../core/firebase/queryErrors.js';
-import { collection, query, where, onSnapshot, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, getDocFromServer, setDoc, updateDoc, deleteDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import * as firestore from 'firebase/firestore';
 import { db } from '../../../core/firebase/client';
 import { mapDocuments } from '../../../core/firebase/documents';
-import { brand } from '../../../config/brand';
+import { hasCurrentTerms, legalPublication, legacyTerms, requiresVersionedAcceptance } from '../../legal/publication.js';
+import { recordLegalAcceptance } from '../../legal/acceptanceRepository.js';
 import { acceptInvitation } from './acceptInvitation.js';
 
 // Tenant equality is sufficient under owner Rules; avoid the unnecessary role inequality
@@ -41,6 +43,16 @@ export const subscribeProfile = (uid, onData, onError) => onSnapshot(
   doc(db, 'users', uid), { includeMetadataChanges: true },
   snapshot => onData(snapshot.exists() ? snapshot.data() : null, snapshot.metadata), onError,
 );
-export const acceptTerms = confirmedWrite(uid => updateDoc(doc(db, 'users', uid), {
-  hasAcceptedTerms: true, termsAcceptedAt: serverTimestamp(), termsVersion: brand.termsVersion,
-}), { profileOnly: true });
+export const acceptTerms = confirmedWrite(user => {
+  if (requiresVersionedAcceptance(user)) return recordLegalAcceptance(db, user, legalPublication, firestore);
+  const ref = doc(db, 'users', user.uid);
+  return runTransaction(db, async transaction => {
+    const profile = (await transaction.get(ref)).data();
+    if (!profile || profile.businessId !== user.businessId || profile.role !== user.role) {
+      throw new Error('La cuenta o el negocio cambió. Vuelve a comprobar tu acceso.');
+    }
+    if (!hasCurrentTerms(profile)) transaction.update(ref, {
+      hasAcceptedTerms: true, termsAcceptedAt: serverTimestamp(), termsVersion: legacyTerms.version,
+    });
+  });
+}, { profileOnly: true });

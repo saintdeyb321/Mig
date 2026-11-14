@@ -1,0 +1,19 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>P20</title><div id="root"></div>
+<script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import fixture from 'virtual:browser-fixture';
+import App from '/src/App.jsx';
+const style = document.createElement('style');
+style.textContent = fixture.css;
+document.head.append(style);
+let validDocument = true;
+const originalFetch = window.fetch.bind(window);
+window.fetch = (resource, options) => resource === '/legal/terminos-1.1.txt' && !validDocument
+  ? Promise.resolve(new Response('[PENDIENTE] <img src=x onerror="window.__legalExecuted=true">', { headers: { 'Content-Type': 'text/plain' } }))
+  : originalFetch(resource, options);
+window.__p20ValidDocument = valid => { validDocument = valid; };
+window.__p20Writes = 0;
+createRoot(document.getElementById('root')).render(React.createElement(App));
+await fetch('/__phase4-report', { method: 'POST', body: '{"ok":true}' });
+</script></html>

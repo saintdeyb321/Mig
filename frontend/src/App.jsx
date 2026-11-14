@@ -12,6 +12,7 @@ import { useMaintenance } from './hooks/useMaintenance';
 import { getSessionTab, isBusinessSession } from './core/session/context.js';
 import { getIdentityKey } from './core/session/identity.js';
 import { runtimeCapabilities } from './config/runtimeCapabilities.js';
+import { hasCurrentTerms } from './features/legal/publication.js';
 
 // Componentes y Layout
 import UserRoleGate from './components/UserRoleGate';
@@ -119,9 +120,9 @@ function App() {
       {!user ? <>
           <Toaster position="top-center" />
           <Auth onLogin={NO_OP_FUNCTION} />
-        </> : user.hasAcceptedTerms !== true ? <>
+        </> : !hasCurrentTerms(user) ? <>
           <Toaster position="top-center" />
-          <TermsModal user={user} onAccepted={() => window.location.reload()} />
+          <TermsModal key={getIdentityKey(user)} user={user} onLogout={handleLogout} />
         </> : <SessionGuards key={getIdentityKey(user)} user={user} handleLogout={handleLogout} recheckProfile={recheckProfile}>
 
               <Toaster position="top-right" reverseOrder={false} toastOptions={{

@@ -11,6 +11,6 @@ it('prints safely and cleans resources under the Hosting CSP in real Chromium', 
     // Fulfill ALL external requests locally, including Auth/Storage/Functions fixtures.
     setupPage: page => page.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] }),
   });
-  assert.equal(result.checks.length, 17);
+  assert.equal(result.checks.length, 18);
   console.log(`UI security: ${result.checks.length} browser checks passed (mocked external services; no production connection).`);
 });
