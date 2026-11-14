@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Download, FileText, ShieldCheck } from 'lucide-react';
+import { FileText, ShieldCheck } from 'lucide-react';
 import { Button, Dialog, cn } from '../../shared/ui';
 import { fetchLegalText, legalPublication, legalRoutes, legalTitles } from './publication.js';
 
-export function LegalLinks({ newTab = false, className }) {
+export function LegalLinks({ newTab = false, documentsOnly = false, className }) {
   const target = newTab ? '_blank' : undefined;
   const { provider } = legalPublication;
   return <nav aria-label="Información legal" className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 text-xs', className)}>
     {Object.entries(legalRoutes).map(([kind, route]) => <a key={kind} href={route} target={target} rel={newTab ? 'noopener' : undefined}
       className="inline-flex min-h-11 items-center underline underline-offset-4">{legalTitles[kind]}</a>)}
-    {provider?.complaintsUrl && <a href={provider.complaintsUrl} target={target} rel={newTab ? 'noopener' : undefined}
+    {!documentsOnly && provider?.complaintsUrl && <a href={provider.complaintsUrl} target={target} rel={newTab ? 'noopener' : undefined}
       className="inline-flex min-h-11 items-center underline underline-offset-4">Libro de Reclamaciones</a>}
-    {provider && <>
+    {!documentsOnly && provider && <>
       <a href={`mailto:${provider.supportEmail}`} className="inline-flex min-h-11 items-center underline underline-offset-4">Soporte</a>
       <p className="w-full">{provider.name} · RUC {provider.ruc}</p>
     </>}
@@ -43,9 +43,6 @@ export function LegalDocumentDialog({ kind, document = legalPublication[kind], o
           <Button variant="secondary" onClick={() => setAttempt(attempt + 1)}>Volver a cargar</Button>
         </div> : !current ? <p role="status" className="text-sm text-muted">Cargando documento…</p>
         : <>
-          <a href={document.path} download className="inline-flex min-h-11 flex-wrap items-center gap-2 font-semibold text-primary underline underline-offset-4">
-            <Download aria-hidden="true" className="size-4 shrink-0" /> Descargar texto v{document.version}
-          </a>
           <article className="space-y-4 text-base leading-relaxed wrap-anywhere">
             {current.text.trim().split(/\r?\n\s*\r?\n/).map((block, index) => block.startsWith('## ')
               ? <h3 key={index} className="pt-1 font-bold text-brand-deep">{block.slice(3)}</h3>

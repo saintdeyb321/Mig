@@ -4,16 +4,25 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import fixture from 'virtual:browser-fixture';
 import App from '/src/App.jsx';
+import { LegalDocumentDialog } from '/src/features/legal/LegalDocuments.jsx';
 const style = document.createElement('style');
 style.textContent = fixture.css;
 document.head.append(style);
 let validDocument = true;
 const originalFetch = window.fetch.bind(window);
-window.fetch = (resource, options) => resource === '/legal/terminos-1.1.txt' && !validDocument
-  ? Promise.resolve(new Response('[PENDIENTE] <img src=x onerror="window.__legalExecuted=true">', { headers: { 'Content-Type': 'text/plain' } }))
-  : originalFetch(resource, options);
+window.fetch = (resource, options) => {
+  if (resource === fixture.privacy.path) {
+    return Promise.resolve(new Response(fixture.privacyText, { headers: { 'Content-Type': 'text/plain' } }));
+  }
+  if (resource === '/legal/terminos-1.1.txt' && !validDocument) {
+    return Promise.resolve(new Response('[PENDIENTE] <img src=x onerror="window.__legalExecuted=true">', { headers: { 'Content-Type': 'text/plain' } }));
+  }
+  return originalFetch(resource, options);
+};
 window.__p20ValidDocument = valid => { validDocument = valid; };
 window.__p20Writes = 0;
-createRoot(document.getElementById('root')).render(React.createElement(App));
+const root = createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+window.__p20PreviewPrivacy = () => root.render(React.createElement(LegalDocumentDialog, { kind: 'privacy', document: fixture.privacy, onClose() {} }));
 await fetch('/__phase4-report', { method: 'POST', body: '{"ok":true}' });
 </script></html>

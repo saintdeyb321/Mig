@@ -6,6 +6,7 @@ import { readBrowserBuildCss, runBrowserFixture } from './helpers/browserHarness
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 
 const path = file => fileURLToPath(new URL('../frontend/src/' + file, import.meta.url)).replaceAll('\\', '/');
 async function until(work, message) {
@@ -18,9 +19,12 @@ async function until(work, message) {
 }
 
 it('P20 keeps documents public, locks acceptance until verified, and retries without duplicate writes', { timeout: 90000 }, async () => {
+  const draft = readFileSync(new URL('../docs/MIGAPOS-PRIVACIDAD-v1-BORRADOR.md', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  const privacyText = draft.slice(draft.indexOf('## 1.')).split('\n---\n', 1)[0].trim();
+  const privacy = { path: '/__p20-privacy-fixture', version: '1.0', dateLabel: 'Prueba aislada', sha256: createHash('sha256').update(privacyText).digest('hex') };
   await runBrowserFixture({
     htmlFile: new URL('./p20-legal.browser.html', import.meta.url), route: '/p20-local',
-    fixture: { css: await readBrowserBuildCss() },
+    fixture: { css: await readBrowserBuildCss(), privacy, privacyText },
     moduleMocks: {
       [path('core/firebase/client.js')]: 'export const auth = {}; export const db = {};',
       [path('hooks/useAuthManager.js')]: `import {useState} from 'react'; export function useAuthManager() {
@@ -72,7 +76,7 @@ it('P20 keeps documents public, locks acceptance until verified, and retries wit
       await until(() => evaluate(() => document.querySelectorAll('[role="dialog"] article h3').length === 9), 'Historical legal text did not load');
       assert.ok(await evaluate(() => {
         const checkbox = document.querySelector('input[type="checkbox"]');
-        return !checkbox.checked && document.querySelector('[download]').getAttribute('href') === '/legal/terminos-1.1.txt';
+        return !checkbox.checked && !document.querySelector('[role="dialog"] [download]');
       }));
       assert.equal(await button('Aceptar y continuar'), false);
       await evaluate(() => {
@@ -116,6 +120,19 @@ it('P20 keeps documents public, locks acceptance until verified, and retries wit
           && dialog.scrollWidth <= dialog.clientWidth + 1 && bounds.left >= 0 && bounds.bottom <= innerHeight
           && actions.getBoundingClientRect().bottom <= bounds.bottom;
       }));
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 640, deviceScaleFactor: 1, mobile: true });
+      await evaluate(() => window.__p20PreviewPrivacy());
+      await until(() => evaluate(() => document.querySelectorAll('[role="dialog"] article h3').length === 12), 'All 12 privacy sections must render in the isolated fixture');
+      assert.deepEqual(await evaluate(() => [...document.querySelectorAll('[role="dialog"] article > *')].map(block => block.textContent)),
+        privacyText.split(/\n\s*\n/).map(block => block.replace(/^## /, '')));
+      assert.ok(await evaluate(() => {
+        const dialog = document.querySelector('[role="dialog"]');
+        const region = dialog.querySelector('[role="region"]');
+        region.focus();
+        region.scrollTop = region.scrollHeight;
+        return document.activeElement === region && region.scrollTop > 0 && dialog.scrollWidth <= dialog.clientWidth + 1
+          && !dialog.querySelector('[download],input[type="checkbox"]');
+      }));
     },
   });
 });
@@ -148,7 +165,8 @@ it('P20 serves both legal routes from Hosting build without publishing drafts', 
     async inspectPage(page) {
       const evaluate = async expression => (await page.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })).result.value;
       await until(() => evaluate('document.querySelectorAll("[role=dialog] article h3").length === 9'), 'Public terms could not be opened');
-      assert.equal(await evaluate('document.querySelector("[download]").pathname'), '/legal/terminos-1.1.txt');
+      assert.equal(await evaluate('document.querySelectorAll("[role=dialog] [download]").length'), 0);
+      assert.equal(await evaluate('fetch("/legal/terminos-1.1.txt").then(res => res.ok && res.headers.get("Content-Type").startsWith("text/plain"))'), true);
       const origin = await evaluate('location.origin');
       await page.send('Page.navigate', { url: origin + '/legal/privacidad' });
       await until(() => evaluate('document.querySelector("[role=dialog]")?.textContent.includes("v1.0 se publicará")'), 'Privacy status should be public before sign-in');

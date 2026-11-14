@@ -43,6 +43,8 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
   const assignedBranchName = useMemo(() => user?.role === 'cajero' && user?.branchId
     ? businessBranches.find(branch => branch.id === user.branchId)?.name || 'Sede desconocida' : null, [user, businessBranches]);
   const canSelectBranch = isBusinessSession(user) && user?.role === 'dueño';
+  const cashierLegalLinks = user?.role === 'cajero'
+    && <LegalLinks newTab documentsOnly className="text-sidebar-muted" />;
   return <div ref={shell} className="app-shell min-h-dvh min-w-0 bg-canvas text-ink">
     <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-40 focus:rounded-xl focus:bg-panel focus:p-4 focus:text-primary focus:shadow-float">Ir al contenido</a>
     <aside className="nebula-brand fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/10 text-white shadow-xl shadow-sidebar/10 lg:flex xl:w-68" aria-label="Navegación de escritorio">
@@ -58,8 +60,9 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
         </div>
         {canSelectBranch && <BranchSelector dark />}
         {assignedBranchName && <p className="flex items-center gap-2 text-xs text-sidebar-muted"><MapPin aria-hidden="true" strokeWidth={1.85} className="size-4 shrink-0" />{assignedBranchName}</p>}
+        {cashierLegalLinks}
       </div>
-      <div className="sidebar-scroll min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 pb-4 focus-visible:outline-2 focus-visible:outline-focus" tabIndex={0} role="region" aria-label="Lista de módulos"><p className="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-muted">Espacio de trabajo</p><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop /><LegalLinks newTab className="px-3 text-sidebar-muted" /></div>
+      <div className="sidebar-scroll min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 pb-4 focus-visible:outline-2 focus-visible:outline-focus" tabIndex={0} role="region" aria-label="Lista de módulos"><p className="px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-muted">Espacio de trabajo</p><BottomNav current={tab} setCurrent={setTab} user={user} isDesktop /></div>
       <div className="sidebar-footer shrink-0 border-t border-white/10 p-4">
         <Button variant="ghost" className="w-full justify-start text-sidebar-muted hover:bg-white/10 hover:text-white" onClick={handleLogout}><LogOut aria-hidden="true" strokeWidth={1.85} />Cerrar sesión</Button>
       </div>
@@ -81,6 +84,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
         </div>
         {canSelectBranch && <BranchSelector dark compact />}
         {assignedBranchName && <Badge className="max-w-full justify-self-start bg-white/10 whitespace-normal text-white"><MapPin aria-hidden="true" strokeWidth={1.85} className="size-3 shrink-0" />{assignedBranchName}</Badge>}
+        {cashierLegalLinks}
       </header>
       <main id="main-content" tabIndex={-1} className="app-main mx-auto w-full min-w-0 max-w-[1680px] flex-1 space-y-6 px-3 pt-4 sm:px-6 lg:p-6 xl:p-8">
         {!online && <p role="status" className="rounded-xl border border-warning/20 bg-warning-soft px-4 py-3 text-sm text-warning">Trabajando sin conexión. Los pendientes del dispositivo se conservan. Puedes consultar datos locales; las operaciones online siguen bloqueadas.</p>}

@@ -4,6 +4,7 @@ import CapabilitiesPanel from '../components/CapabilitiesPanel';
 import { useState } from 'react';
 import { useSettings } from '../features/settings/hooks/useSettings';
 import BranchManager from './BranchManager';
+import { LegalLinks } from '../features/legal/LegalDocuments';
 function Settings({
   user
 }) {
@@ -102,6 +103,10 @@ function Settings({
       </Card>
 
       <CapabilitiesPanel />
+      <Card aria-labelledby="settings-legal">
+        <h2 id="settings-legal" className="text-base font-extrabold text-brand-deep">Información legal</h2>
+        <LegalLinks newTab documentsOnly className="text-primary" />
+      </Card>
     </div>;
 }
 export default Settings;

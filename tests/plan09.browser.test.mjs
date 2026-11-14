@@ -369,7 +369,7 @@ it('P19 measures the mobile shell and operational modules', { timeout: 180000 },
         return result.result.value;
       };
       const viewport = (width, height) => page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 1024 });
-      const show = (view) => evaluate(async view => { await window.__p09.show(view); scrollTo(0, 0); await window.__p09.frames(); }, view);
+      const show = (view, role) => evaluate(async (view, role) => { await window.__p09.show(view, role ?? undefined); scrollTo(0, 0); await window.__p09.frames(); }, view, role);
       const press = async (key, code = key) => {
         await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code });
         await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code });
@@ -577,10 +577,26 @@ it('P19 measures the mobile shell and operational modules', { timeout: 180000 },
         await press('Escape');
         await evaluate(() => document.querySelector('[aria-label="Navegación principal"] button:last-child').focus());
         await press('Enter');
-        assert.ok(await evaluate(() => document.querySelector('[role="menu"]')?.textContent.includes('Categorías')));
+        assert.ok(await evaluate(() => {
+          const menu = document.querySelector('[role="menu"]');
+          return menu?.textContent.includes('Categorías') && !menu.querySelector('a[href^="/legal/"]');
+        }));
         await press('Escape');
         assert.ok(await evaluate(() => document.activeElement.textContent === 'Más'));
-        await show('categories');
+        const legalPaths = ['/legal/terminos', '/legal/privacidad'];
+        await show('settings');
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll('section[aria-labelledby="settings-legal"] a')].map(a => a.pathname)), legalPaths);
+        assert.equal(await evaluate(() => document.querySelectorAll('aside a[href^="/legal/"], .app-mobile-header a[href^="/legal/"]').length), 0);
+        await show('pos', 'cajero');
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll('.app-mobile-header a[href^="/legal/"]')]
+          .filter(a => a.getBoundingClientRect().height >= 44).map(a => a.pathname)), legalPaths);
+        assert.ok(await evaluate(() => !document.querySelector('[aria-label="Navegación principal"] button[aria-haspopup]')
+          && !document.querySelector('nav[aria-label="Módulos"] button[title="Ajustes"], .sidebar-scroll a[href^="/legal/"]')));
+        await viewport(1280, 560);
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll('.sidebar-identity a[href^="/legal/"]')]
+          .filter(a => a.getBoundingClientRect().height >= 44).map(a => a.pathname)), legalPaths);
+        await viewport(320, 640);
+        await show('categories', 'dueño');
         const zoom = await evaluate(async () => {
           document.documentElement.style.fontSize = '200%';
           await window.__p09.frames();
