@@ -1,5 +1,5 @@
 import { Banknote, ChevronDown, ClipboardCheck, WalletCards } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Alert, Button, Dialog, DialogFooter, FormField, Input, Textarea, cn } from '../shared/ui';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
@@ -70,26 +70,32 @@ export function CashCountSummary({ summary }) {
 
 export const CashRegisterModals = ({
   showOpenModal, setShowOpenModal, showCloseModal, setShowCloseModal,
-  currentSession, isLoadingSession, checkSession, recoverySession, expiryState,
+  currentSession, isLoadingSession, recoverySession, expiryState, openingId,
   authorizeOffline, openRegister, calculateClose, confirmClose
 }) => {
   const [openingAmount, setOpeningAmount] = useState('');
-  const [needsOpeningCheck, setNeedsOpeningCheck] = useState(false);
+  const [openingUnconfirmed, setOpeningUnconfirmed] = useState(false);
   const [declaredAmount, setDeclaredAmount] = useState('');
   const [tempSummary, setTempSummary] = useState(null);
   const [closeNotes, setCloseNotes] = useState('');
   const hasOpenSession = currentSession?.status === 'open';
   const replacingExpired = Boolean(recoverySession && currentSession?.id === recoverySession.id);
-  const confirmedOpening = hasOpenSession && !replacingExpired
-    && currentSession.serverConfirmed === true && !currentSession.heldByOther;
-  const openingBlocked = (hasOpenSession && !replacingExpired) || expiryState?.busy;
+  const finalizingCurrent = expiryState?.busy && expiryState.id === currentSession?.id;
+  const openingBlocked = (hasOpenSession && !replacingExpired) || finalizingCurrent;
+  const confirmedOpening = hasOpenSession && !replacingExpired && openingId === currentSession.id
+    && currentSession.serverConfirmed && currentSession.sparkLockVerified && !currentSession.heldByOther;
 
+  const openingDismissed = useRef(false);
+  const dismissOpening = useCallback(() => {
+    if (openingDismissed.current) return;
+    openingDismissed.current = true;
+    setShowOpenModal(false);
+  }, [setShowOpenModal]);
   useEffect(() => {
-    // The availability watcher can confirm the turn before the opening promise settles.
-    if (showOpenModal && confirmedOpening) setShowOpenModal(false);
-  }, [showOpenModal, confirmedOpening, setShowOpenModal]);
-
-  const dismissOpening = () => setShowOpenModal(false);
+    if (!showOpenModal) openingDismissed.current = false;
+    else if (confirmedOpening) dismissOpening();
+  }, [showOpenModal, confirmedOpening, dismissOpening]);
+  const cancelOpening = () => { setOpeningUnconfirmed(false); dismissOpening(); };
   const dismissClosing = () => {
     setTempSummary(null);
     setShowCloseModal(false);
@@ -106,8 +112,9 @@ export const CashRegisterModals = ({
       toast.error(error.message, { id: MODAL_TOAST_ID });
       return;
     }
+    setOpeningUnconfirmed(false);
     if (await openRegister(amount)) dismissOpening();
-    else setNeedsOpeningCheck(true);
+    else setOpeningUnconfirmed(true);
   };
 
   const handleCalculate = async (e) => {
@@ -155,24 +162,22 @@ export const CashRegisterModals = ({
   };
 
   return <>
-    {showOpenModal && !confirmedOpening && <Dialog icon={WalletCards} title="Abrir caja" onClose={dismissOpening} busy={busy}
+    {showOpenModal && !confirmedOpening && <Dialog icon={WalletCards} title="Abrir caja" onClose={cancelOpening} busy={busy}
       description={`${replacingExpired ? 'El turno anterior venció sin arqueo. ' : ''}Escribe el fondo inicial disponible. Turno máximo: ${NEW_CASH_DURATION_HOURS} horas.`}>
       <form onSubmit={submit(handleOpen)}>
         <fieldset disabled={busy} className="space-y-4">
           <FormField label="Fondo inicial (S/)">
             <Input type="number" min="0" step="0.01" required value={openingAmount} onChange={e => setOpeningAmount(e.target.value)}
-              onKeyDown={event => { if (needsOpeningCheck && event.key === 'Enter') event.preventDefault(); }}
               placeholder="0.00" autoFocus className="min-h-16 border-finance-line bg-panel text-center text-3xl font-extrabold text-success" />
           </FormField>
-          {(openingBlocked || needsOpeningCheck) && <Alert variant="warning">
-            <p>{openingBlocked ? (expiryState?.busy ? 'Confirmando el vencimiento del turno anterior…'
-              : 'Ya hay un turno en esta sede. Comprueba su estado antes de volver a abrir.')
-              : 'La apertura aún no se confirmó. Puedes comprobar el estado de la caja antes de reintentar.'}</p>
-            {checkSession && !expiryState?.busy && <Button variant="secondary" size="sm" className="mt-2" onClick={submit(checkSession)}>Comprobar estado de caja</Button>}
+          {(openingBlocked || openingUnconfirmed) && <Alert variant="warning">
+            <p>{openingBlocked ? (finalizingCurrent ? 'Confirmando el vencimiento del turno anterior…'
+              : 'Ya hay un turno en esta sede. Cierra este formulario y revisa la caja disponible.')
+              : 'La apertura aún no se confirmó. Revisa el aviso y vuelve a intentar con el mismo fondo.'}</p>
           </Alert>}
           <DialogFooter>
-            <Button variant="secondary" onClick={dismissOpening}>Cancelar</Button>
-            <Button type="submit" loading={busy} disabled={openingBlocked}>{needsOpeningCheck ? 'Reintentar apertura' : 'Abrir caja'}</Button>
+            <Button variant="secondary" onClick={cancelOpening}>Cancelar</Button>
+            <Button type="submit" loading={busy} disabled={openingBlocked}>{openingUnconfirmed ? 'Reintentar apertura' : 'Abrir caja'}</Button>
           </DialogFooter>
         </fieldset>
       </form>

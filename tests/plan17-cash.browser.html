@@ -17,7 +17,7 @@ import {encrypt} from '/src/crypto.js';
 const uid = 'p17-cashier', businessId = 'p17-tenant', branchId = 'p17-branch', id = 'p17-private-turn-id';
 const user = {uid,businessId,branchId,role:'dueño'};
 const openedAt = new Date(Date.now() - 36000000 - 1000).toISOString();
-const model = globalThis.__p17 = {turn:{ id,businessId,branchId,userId:uid,openedAt,durationHours:10,runtime:'spark',status:'open' }, reads:0, writes:0, online:true};
+const model = globalThis.__p17 = {turn:{ id,businessId,branchId,userId:uid,openedAt,durationHours:10,runtime:'spark',status:'open',sparkLockVerified:true }, reads:0, writes:0, online:true};
 const resources = createSessionResources(), root = createRoot(document.getElementById('root'));
 const check = (ok, message) => { if (!ok) throw new Error(message); };
 const until = async predicate => {
@@ -27,12 +27,12 @@ const until = async predicate => {
 function Probe() {
   const cash = useCashRegister(user, branchId);
   const [open, setOpen] = useState(false);
-  return React.createElement('main', { className: 'space-y-3 p-4' },
+  return React.createElement('main', { className: 'space-y-3 p-4', 'data-can-sell': !!cash.currentSession?.serverConfirmed && !cash.isExpired && !cash.currentSession.heldByOther },
     React.createElement(CashRecoveryStatus, {
       session:cash.currentSession, isExpired:cash.isExpired, expiresAt:cash.expiresAt,
-      expiryState:cash.expiryState, onCheck:cash.checkSession, online:navigator.onLine,
+      expiryState:cash.expiryState, recoverable:!!cash.recoverySession, online:navigator.onLine,
+      onOpenNext: cash.recoverySession ? () => setOpen(true) : undefined,
     }),
-    cash.recoverySession && React.createElement('button', { onClick: () => setOpen(true) }, 'Abrir caja'),
     React.createElement(CashRegisterModals, { ...cash, showOpenModal:open, setShowOpenModal:setOpen }),
   );
 }
@@ -42,7 +42,7 @@ try {
   await offlineDB.sales.put({localId:'pending-p17',businessId,branchId,userId:uid,status:'pending',financialState:'submitted_uncertain',data:ciphertext});
   root.render(React.createElement(SessionResourcesContext.Provider,{value:resources},React.createElement(Probe)));
   await until(() => document.body.innerText.includes('Comprueba los tickets pendientes'));
-  check(model.writes===0 && document.body.innerText.includes('Comprobar estado') && !document.body.innerText.includes(id), 'Pending receipt blocks expiry and UI hides technical identifiers');
+  check(model.writes===0 && !document.body.innerText.includes('Comprobar estado') && !document.body.innerText.includes(id), 'Pending receipt blocks expiry and UI hides dead actions and technical identifiers');
   await offlineDB.sales.update('pending-p17',{status:'synced',financialAck:true});
   const toggle = online => {
     Object.defineProperty(navigator,'onLine',{configurable:true,value:online});
@@ -56,14 +56,19 @@ try {
   toggle(true);
   await until(() => document.body.innerText.includes('Finalización confirmada.'));
   check(model.writes===1 && model.reads>=2 && !document.body.innerText.includes('Comprobar estado'), 'Reconnect finalizes exactly once and removes unnecessary retry');
+  check(document.body.innerText.includes('Referencia pendiente de verificar'), 'No expected cash is invented before reading confirmed movements');
+  [...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Consultar referencia').click();
+  await until(() => document.body.innerText.includes('Referencia calculada; sin arqueo.'));
   check((await offlineDB.sales.get('pending-p17')).data===ciphertext,'Pending record ciphertext is preserved');
   user.role = 'cajero';
-  model.turn = { id, businessId, branchId, userId:uid, durationHours:14, runtime:'spark', status:'open',
+  model.turn = { id: 'p23-previous-cashier', businessId, branchId, userId:'p23-other', durationHours:14, runtime:'spark', status:'open', sparkLockVerified:true,
     openedAt:new Date(Date.now() - 50401000).toISOString() };
   toggle(true);
-  await until(() => document.querySelector('main > button'));
-  check(model.writes===1 && !document.body.innerText.includes('Finalizar turno vencido'), 'Cashier sees an ordinary opening action');
-  document.querySelector('main > button').click();
+  const openNext = () => [...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Abrir caja nueva');
+  await until(openNext);
+  check(model.writes===1 && document.querySelector('main').dataset.canSell==='false'
+    && !document.body.innerText.includes('Comprobar estado'), 'A different assigned cashier sees a real opening action but cannot collect yet');
+  openNext().click();
   await until(() => document.querySelector('[role=dialog] input'));
   const amount = document.querySelector('[role=dialog] input');
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(amount,'50.05');
@@ -75,8 +80,9 @@ try {
     form.requestSubmit();
     form.requestSubmit();
     await until(() => model.opens === 1 && !document.querySelector('[role=dialog]'));
-    check(model.writes===2 && model.turn.openingAmount===50.05 && model.turn.id!==id,
-      'A double submission produces exactly one confirmed independent opening');
+    check(model.writes===2 && model.turn.openingAmount===50.05 && model.turn.id!==id
+      && document.querySelector('main').dataset.canSell==='true',
+      'A double submission and lost response produce one confirmed independent opening before collection');
   };
   report={ok:true,checks:6};
 } catch(error) { report={ok:false,error:error.stack}; }

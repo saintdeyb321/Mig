@@ -57,9 +57,11 @@ export function createCashStateReader(database, { sdk = firestoreSDK } = {}) {
   const getDoc = checkedRead(sdk.getDocFromServer, 'cash-lock');
   return async (businessId, branchId, userId = null, { forOpening = false } = {}) => {
     if (!userId) {
-      const lock = await getDoc(sdk.doc(database, 'active_cash_sessions', await cashLockId(businessId, branchId)));
-      if (lock.metadata?.hasPendingWrites || lock.metadata?.fromCache) throw new Error('El candado de caja está pendiente de confirmar.');
-      if (lock.exists() && lock.data().runtime === 'spark') {
+      const lockRef = sdk.doc(database, 'active_cash_sessions', await cashLockId(businessId, branchId));
+      let lock = await getDoc(lockRef);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (lock.metadata?.hasPendingWrites || lock.metadata?.fromCache) throw new Error('El candado de caja está pendiente de confirmar.');
+        if (!lock.exists() || lock.data().runtime !== 'spark') break;
         const active = lock.data();
         if (active.businessId !== businessId || active.branchId !== branchId || active.status !== 'open'
           || typeof active.sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(active.sessionId)) throw new Error('El candado de caja requiere revisión administrativa.');
@@ -68,11 +70,18 @@ export function createCashStateReader(database, { sdk = firestoreSDK } = {}) {
         if (forOpening) return null;
         const snapshot = await getDoc(sdk.doc(database, 'cash_sessions', active.sessionId));
         const session = snapshot.data();
-        if (snapshot.metadata?.hasPendingWrites || snapshot.metadata?.fromCache || session?.status !== 'open'
-          || session.businessId !== businessId || session.branchId !== branchId || session.userId !== active.userId || session.runtime !== 'spark') {
-          throw new Error('La caja no coincide con el candado verificado. Comprueba su estado.');
+        if (!snapshot.metadata?.hasPendingWrites && !snapshot.metadata?.fromCache && session?.status === 'open'
+          && session.businessId === businessId && session.branchId === branchId && session.userId === active.userId && session.runtime === 'spark') {
+          return { ...session, id: snapshot.id, sparkLockVerified: true };
         }
-        return { ...session, id: snapshot.id };
+        if (attempt || snapshot.metadata?.hasPendingWrites || snapshot.metadata?.fromCache) {
+          throw new Error('La caja no coincide con su candado. Pide al administrador que revise la sede.');
+        }
+        // The previous turn can become expired between the two server reads.
+        lock = await getDoc(lockRef);
+        if (lock.exists() && lock.data().sessionId === active.sessionId) {
+          throw new Error('La caja no coincide con su candado. Pide al administrador que revise la sede.');
+        }
       }
     }
     const open = await getDocs(query(collection(database, 'cash_sessions'), where('businessId', '==', businessId),

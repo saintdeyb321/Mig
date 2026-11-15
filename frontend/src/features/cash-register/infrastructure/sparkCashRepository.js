@@ -98,7 +98,7 @@ export function createSparkCashRepository(database, { currentUser, beforeRollove
             || active.sessionId === sessionId || (recoverSessionId && active.sessionId !== recoverSessionId)
             || active.businessId !== businessId || active.branchId !== branchId
             || active.runtime !== 'spark' || active.status !== 'open') {
-            throw new Error('El turno de esta sede cambió. Comprueba su estado.');
+            throw Object.assign(new Error('El turno de esta sede cambió. Vuelve a intentar la apertura.'), { code: 'cash-turn-changed' });
           }
           const previousRef = sessionRef(active.sessionId);
           const previous = (await tx.get(previousRef)).data();
@@ -139,13 +139,13 @@ export function createSparkCashRepository(database, { currentUser, beforeRollove
         if (!confirmed(opening) || !matchesOpening(opening.data())
           || (lock && (!confirmed(lock) || !matchesLock(lock.data())))
           || (previous && (!confirmed(previous) || !matchesRecovery(previous.data())))) {
-          throw new Error('Apertura pendiente de comprobar. Reintenta con el mismo ID.');
+          throw Object.assign(new Error('El servidor aún no confirma esta apertura. Reintenta con el mismo fondo.'), { code: 'cash-opening-unverified' });
         }
         return { id: opening.id, ...opening.data(), ...(previous && { recoveredSession: { id: previous.id, ...previous.data() } }) };
       };
       try { await commit(); }
       catch (error) {
-        if (!uncertain(error)) throw error;
+        if (!uncertain(error) && error.code !== 'permission-denied') throw error;
         try { return await verify(true); } catch { throw error; }
       }
       return verify();

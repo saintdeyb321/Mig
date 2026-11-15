@@ -263,7 +263,11 @@ it('downloads from Vite preview, keeps Excel out of precache and retries an unav
   await mkdir(artifacts, { recursive: true });
   await runExcelFixture({ mode: 'preview', async inspectPage(page, { responses, network, downloads, failNext }) {
     const ev = evaluate(page), press = click(page), error = alert(ev);
-    await until(() => ev(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active)), 'Generated PWA registration activates');
+    await until(() => ev(async () => {
+      if (window.__excelFixture.pwaError) throw new Error(window.__excelFixture.pwaError);
+      const worker = (await navigator.serviceWorker.getRegistration())?.active;
+      return worker?.state === 'activated' && new URL(worker.scriptURL).pathname === '/sw.js';
+    }), 'Generated PWA registration activates');
     if (!await ev(() => Boolean(navigator.serviceWorker.controller))) {
       await reload(page, ev);
     }

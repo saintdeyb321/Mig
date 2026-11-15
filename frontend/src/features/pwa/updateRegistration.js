@@ -65,7 +65,10 @@ export function activateWaitingWorker(registration, worker, { serviceWorkers = n
     if (registration.waiting !== worker) { reject(new Error('La versión en espera cambió.')); return; }
     const previouslyControlled = Boolean(serviceWorkers.controller);
     const { port1, port2 } = new MessageChannel();
+    let settled = false;
     const finish = (activated, error) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       worker.removeEventListener('statechange', inspect);
       serviceWorkers.removeEventListener('controllerchange', inspect);
@@ -76,12 +79,17 @@ export function activateWaitingWorker(registration, worker, { serviceWorkers = n
       else resolve(activated);
     };
     const cancel = () => finish(false, signal.reason);
+    const controlsPage = () => worker.state === 'activated' && (serviceWorkers.controller === worker
+      || (!previouslyControlled && !serviceWorkers.controller && registration.active === worker));
     const inspect = () => {
-      if (worker.state === 'activated' && (serviceWorkers.controller === worker
-        || (!previouslyControlled && !serviceWorkers.controller && registration.active === worker))) finish(true);
+      if (controlsPage()) finish(true);
       else if (worker.state === 'redundant') finish(false, new Error('La versión preparada ya no está disponible.'));
     };
-    const timer = setTimeout(() => finish(false, new Error('La actualización no se confirmó.')), 10_000);
+    // A suspended client can miss the event even after its controller has switched.
+    const timer = setTimeout(() => {
+      if (controlsPage()) finish(true);
+      else finish(false, new Error('La actualización no se confirmó.'));
+    }, 10_000);
     worker.addEventListener('statechange', inspect);
     serviceWorkers.addEventListener('controllerchange', inspect);
     signal?.addEventListener('abort', cancel, { once: true });
@@ -89,7 +97,7 @@ export function activateWaitingWorker(registration, worker, { serviceWorkers = n
       if (data === false) finish(false);
       else if (data !== true) finish(false, new Error('Falló la activación del service worker.'));
     };
-    try { worker.postMessage({ type: 'MIGAPOS_ACTIVATE_UPDATE' }, [port2]); }
+    try { worker.postMessage({ type: 'MIGAPOS_ACTIVATE_UPDATE' }, [port2]); inspect(); }
     catch (error) { finish(false, error); }
   });
 }

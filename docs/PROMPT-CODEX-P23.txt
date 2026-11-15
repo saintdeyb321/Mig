@@ -1,0 +1,9 @@
+Implementa exactamente `docs/MIGAPOS-P23-AUDITORIA-PWA-CAJA-VENCIDA.md` sobre la rama actual `fix/migapos-production-readiness` con razonamiento MUY ALTO y respuesta corta.
+
+Antes de editar: `git status --short`, HEAD local, leer SOLO rutas indicadas por el MD. No reviertas cambios existentes.
+
+Prioridades: (1) diagnosticar botón antiguo «Ignorar (2h) / Actualizar», que puede enviar `SKIP_WAITING` bloqueado por `pwa-update-worker.js`; definir migración segura de clientes legados y asegurar botón moderno funcional, sin borrar IndexedDB ni forzar recargas de caja/ventas; (2) corregir vencimiento de caja para que un cajero nuevo pueda abrir turno después de las 10/14 h mediante rotación atómica del candado Spark y conservación del turno anterior `expired_unreconciled`; (3) quitar «Comprobar estado» inútil en vencimiento rutinario, mantener aviso, hora de cierre y referencia calculada/sin arqueo (nunca inventar dinero contado); (4) corregir CI P22 roja en P19 `plan09.browser.test.mjs:652` sin silenciar pruebas.
+
+Proteger permisos, otras sedes, idempotencia, ventas/pagos y cierre por hora del servidor. Sin cron/Functions/Blaze ni nuevas dependencias. No tocar TXT legales ni hashes. Pruebas: emulador Rules, navegadores, PWA, lint, build y CI equivalente; todos PASS. Si cambia Firestore Rules, justifica y prueba el mínimo cambio.
+
+No commit, push ni deploy. Entrega final máximo 12 líneas: archivos, causa de ambos defectos, pruebas PASS/FAIL y bloqueantes; nada de logs largos.

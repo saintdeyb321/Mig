@@ -389,7 +389,16 @@ describe('Plan 14: recovery of an expired Spark cash lock', () => {
     await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), setup.oldPath), {
       openedAt: new Timestamp(time.seconds - 50400, time.nanoseconds),
     }));
-    const next = await cashRepository(database, actor).open({ ...setup.command, recoverSessionId: undefined });
+    let next;
+    const readCash = createCashStateReader(database, { sdk: { ...sdk, async getDocFromServer(ref) {
+      if (ref.path === setup.oldPath && !next) {
+        next = await cashRepository(database, actor).open({ ...setup.command, recoverSessionId: undefined });
+      }
+      return sdk.getDocFromServer(ref);
+    } } });
+    const fresh = await readCash(setup.businessId, setup.branchId);
+    assert.equal(fresh.id, next.id, 'Reading an expired prior session during rotation must recheck its lock');
+    assert.equal(fresh.sparkLockVerified, true);
     assert.equal(next.durationHours, 14);
     assert.equal(next.recoveredSession.durationHours, 14);
     assert.ok(next.recoveredSession.expiredAt.isEqual(time));

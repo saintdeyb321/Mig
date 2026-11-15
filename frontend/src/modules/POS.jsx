@@ -27,7 +27,7 @@ function POS({ user, onUpdateSafety }) {
   const { error: catalogError, retry: retryCatalog } = useCatalogData();
 
   const {
-    currentSession, isExpired, expiresAt, recoverySession, expiryState, remainingMinutes, readError, checkSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
+    currentSession, isExpired, expiresAt, recoverySession, expiryState, openingId, remainingMinutes, readError, checkSession, isLoadingSession, authorizeOffline, openRegister, calculateClose, confirmClose
   } = useCashRegister(user, activeBranchId);
 
   const {
@@ -112,15 +112,16 @@ function POS({ user, onUpdateSafety }) {
   };
 
   const cashReady = currentSession?.serverConfirmed === true && !currentSession.needsForceClose && !isExpired && !readError;
-  const isGlobalDisabled = branchStatus.isReadOnly || (isOnline && !cashReady);
+  const isGlobalDisabled = branchStatus.isReadOnly || isExpired || (isOnline && !cashReady);
 
   const dismissCashModal = () => setCashModal(request => request === cashModal ? null : request);
+  const showCashOpening = () => setCashModal({ mode: 'open' });
   const showCashClosing = () => setCashModal({ mode: 'close', sessionId: currentSession.id });
   const cashModals = <CashRegisterModals
     key={cashModal?.mode === 'open' ? `${modalScope}:open` : `${modalScope}:${currentSession?.id ?? 'closed'}`}
     showOpenModal={cashModal?.mode === 'open'} setShowOpenModal={dismissCashModal}
     showCloseModal={cashModal?.mode === 'close' && !isExpired && cashModal.sessionId === currentSession?.id} setShowCloseModal={dismissCashModal}
-    currentSession={currentSession} recoverySession={recoverySession} expiryState={expiryState} isLoadingSession={isLoadingSession} checkSession={checkSession}
+    currentSession={currentSession} recoverySession={recoverySession} expiryState={expiryState} openingId={openingId} isLoadingSession={isLoadingSession}
     openRegister={openRegister} authorizeOffline={authorizeOffline} calculateClose={calculateClose} confirmClose={confirmClose}
   />;
   if (isLoading || isLoadingSession) return <><LoadingState>Preparando caja registradora…</LoadingState>{cashModals}</>;
@@ -136,7 +137,7 @@ function POS({ user, onUpdateSafety }) {
     handleCheckoutClick();
   };
   const action = readError && isOnline ? <Button variant="secondary" onClick={checkSession}>Reintentar lectura de caja</Button> : isOnline&&(!currentSession||recoverySession)&&!branchStatus.isReadOnly
-    ? <Button className="w-full" onClick={() => setCashModal({ mode: 'open' })}><UnlockKeyhole />{(recoverySession || expiryState?.finalized) ? 'Abrir caja nueva' : 'Abrir caja para vender'}</Button>
+    ? <Button className="w-full" onClick={showCashOpening}><UnlockKeyhole />{(recoverySession || expiryState?.finalized) ? 'Abrir caja nueva' : 'Abrir caja para vender'}</Button>
     : isOnline&&currentSession?.needsForceClose&&!isExpired
       ? currentSession.canForceClose ? <Button variant="danger" className="w-full" onClick={showCashClosing}>Revisar y cerrar turno anterior</Button>
         : <Button variant="secondary" className="w-full" onClick={checkSession}>Comprobar disponibilidad</Button>
@@ -158,7 +159,8 @@ function POS({ user, onUpdateSafety }) {
   return <><div className="pos-workspace min-w-0 space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0">
     {!isOnline && <Alert variant="info">Sin conexión: puedes guardar un ticket sin cobrar. No se moverá inventario ni se enviará automáticamente al reconectar.</Alert>}
     {!branchStatus.isReadOnly && <CashRecoveryStatus session={currentSession} isExpired={isExpired} expiresAt={expiresAt}
-      expiryState={expiryState} online={isOnline} onCheck={checkSession} />}
+      expiryState={expiryState} online={isOnline} recoverable={Boolean(recoverySession)}
+      onOpenNext={recoverySession && !readError && !isProcessing ? showCashOpening : undefined} />}
     <FirestoreQueryError error={readError} area="cash-open" user={user} onRetry={checkSession} />
     <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
     <header className="pos-toolbar flex shrink-0 flex-wrap items-center justify-between gap-2">

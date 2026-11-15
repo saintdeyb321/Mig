@@ -57,7 +57,8 @@ export const createSession = confirmedWrite(async data => {
     const existing = await readOpenSession(data.businessId, data.branchId, null, { forOpening: true });
     const previous = existing?.id !== data.sessionId ? existing : null;
     if (previous && !cashExpiryWindow(previous)) throw new Error('La caja anterior requiere revisión administrativa.');
-    return { ...sessionDTO(await sparkCash.open({ ...data, recoverSessionId: previous?.id })), serverConfirmed: true };
+    return { ...sessionDTO(await sparkCash.open({ ...data, recoverSessionId: previous?.id ?? data.recoverSessionId })),
+      serverConfirmed: true, sparkLockVerified: true };
   }
   const reserved = await reserveOfflineSession({ uid: data.userId, businessId: data.businessId }, data.branchId);
   if (reserved.status !== 'reserved') throw new Error('La caja anterior aún se está sincronizando.');

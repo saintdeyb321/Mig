@@ -236,7 +236,8 @@ it('P14 C03/C04/C08: recovery replaces exactly one lock and verifies the origina
   ['expired_unreconciled', 100, 'previous-cashier', uid, null, null, undefined, command.sessionId]);
   assert.equal(recoveredSession.expiredAt.toMillis(), openedAt.toMillis() + 36000000);
   assert.equal(h.writes.length, 3, 'replay and competing recovery never write');
-  assert.deepEqual(await createCashStateReader({}, { sdk })(businessId, branchId), current, 'the reader follows the canonical replacement lock');
+  assert.deepEqual(await createCashStateReader({}, { sdk })(businessId, branchId), { ...current, sparkLockVerified: true },
+    'the reader follows and verifies the canonical replacement lock');
   const close = createSparkCashClosingRepository({}, { sdk, currentUser: h.currentUser,
     readSales: async session => {
       assert.equal(session.id, current.id);

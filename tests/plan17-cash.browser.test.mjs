@@ -20,14 +20,15 @@ it('P17-RC preserves pending receipts, materializes on reconnect and opens once 
           if (!window.__p17.online || window.__p17.turn?.id !== sessionId) throw Error('Wrong scope');
           window.__p17.writes++; window.__p17.turn=null;
         }
-        export async function createSession(command) {
+        export async function readExpiredCashDetail() { return { expectedCash: 35.25, digitalTotal: 12 }; }
+        export async function createSession({ sessionId, recoverSessionId, ...command }) {
           const model = window.__p17;
-          if (!model.online || !model.turn || command.recoverSessionId || model.opens) throw Error('Unexpected opening');
+          if (!model.online || model.turn?.id !== recoverSessionId || model.turn.userId === command.userId || model.opens) throw Error('Unexpected opening');
           model.opens = 1; model.writes++;
-          model.turn = { ...command, status:'open', durationHours:14, runtime:'spark', openedAt:new Date().toISOString(), serverConfirmed:true };
+          model.turn = { ...command, id: sessionId, status:'open', durationHours:14, runtime:'spark', openedAt:new Date().toISOString(), serverConfirmed:true, sparkLockVerified:true };
           model.watch?.();
           await new Promise(resolve => setTimeout(resolve, 100));
-          return model.turn;
+          throw Object.assign(Error('Lost response after commit'), {code:'unavailable'});
         }
         const unexpected=()=>{throw Error('Unexpected cash operation')};
         export const updateSession=unexpected, cacheSession=unexpected, reserveOfflineSession=unexpected, previewSessionClose=unexpected;`,

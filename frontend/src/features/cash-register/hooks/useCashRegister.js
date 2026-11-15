@@ -26,6 +26,7 @@ export const useCashRegister = (user, currentBranchId) => {
   }, [scopeKey]);
   const processing = resources.value('cash:mutex:' + scopeKey, () => ({ current: false }));
   const openings = resources.value('cash:commands:' + scopeKey, () => ({ current: new Map() }));
+  const [openingId, setOpeningId] = useSessionState('cash:opening-id:' + scopeKey, null);
   const expiryAttempt = resources.value('cash:expiry-attempt:' + scopeKey, () => ({ sessionId: null }));
   const [expiryState, setExpiryState] = useSessionState('cash:expiry:' + scopeKey, null);
   const online = useNetworkStatus();
@@ -33,7 +34,9 @@ export const useCashRegister = (user, currentBranchId) => {
   const [clock, setClock] = useState(() => Date.now());
   const expiresAt = cashExpiryWindow(currentSession)?.expiresAt.getTime() ?? null;
   const isExpired = expiresAt !== null && clock >= expiresAt;
-  const recoverySession = isExpired && currentSession?.serverConfirmed && currentSession.status === 'open'
+  const recoverySession = isExpired && currentSession?.serverConfirmed && currentSession.sparkLockVerified && currentSession.status === 'open'
+    && currentSession.businessId === user?.businessId && currentSession.branchId === currentBranchId
+    && currentSession.closedAt == null && currentSession.declaredAmount == null && currentSession.difference == null && currentSession.closeEstimate == null
     && (user?.role === 'dueño' || user?.role === 'cajero' && user.branchId === currentBranchId) ? currentSession : null;
   useEffect(() => {
     if (expiresAt === null) return;
@@ -67,14 +70,17 @@ export const useCashRegister = (user, currentBranchId) => {
       } else {
         const session = await resources.read(readKey, () => findOpenSession(user.businessId, currentBranchId), 15000);
         if (!active()) return;
-        if (session?.userId === user.uid) {
-          const cached = session.runtime === 'spark' ? session : await cacheSession(session, { preservePending: true });
-          if (active()) setCurrentSession(cached.status === 'open' ? { ...cached, serverConfirmed: true } : null);
-        } else if (session) setCurrentSession({ ...session, serverConfirmed: true, heldByOther: true, needsForceClose: true, canForceClose: canForce });
-        else setCurrentSession(null);
+        const own = !!session && session.userId === user.uid;
+        const data = own && session.runtime !== 'spark' ? await cacheSession(session, { preservePending: true }) : session;
+        if (!active()) return;
+        const confirmed = data?.status === 'open' ? { ...data, serverConfirmed: true,
+          ...(!own && { heldByOther: true, needsForceClose: true, canForceClose: canForce }) } : null;
+        setClock(Date.now());
+        setCurrentSession(confirmed);
+        return confirmed;
       }
     } catch (error) {
-      if (active()) { setReadError(error); setCurrentSession(null); toast.error(error.message || 'No se pudo verificar la caja.'); }
+      if (active()) { setReadError(error); setCurrentSession(null); }
     } finally { if (active()) setIsLoadingSession(false); }
   }, [user?.businessId, user?.uid, currentBranchId, canForce, resources, readKey, sessionCell, setReadError, setCurrentSession, setIsLoadingSession]);
   useEffect(() => {
@@ -105,7 +111,7 @@ export const useCashRegister = (user, currentBranchId) => {
       if (!active() || sessionCell.get()?.id !== recoverySession.id) return false;
       await finalizeExpiredCash({ sessionId: recoverySession.id, businessId: user.businessId, branchId: currentBranchId });
       if (!active()) return false;
-      setExpiryState({ id: recoverySession.id, finalized: true });
+      setExpiryState({ id: recoverySession.id, session: recoverySession, finalized: true });
       if (sessionCell.get()?.id === recoverySession.id) setCurrentSession(null);
       invalidateReportScope(resources, user.businessId, currentBranchId);
       await refreshSession();
@@ -113,7 +119,10 @@ export const useCashRegister = (user, currentBranchId) => {
     } catch (error) {
       if (active()) setExpiryState({ id: recoverySession.id, error: error.message || 'No se pudo confirmar la finalización.' });
       return false;
-    } finally { processing.current = false; }
+    } finally {
+      processing.current = false;
+      if (active()) setExpiryState(previous => previous?.id === recoverySession.id && previous.busy ? null : previous);
+    }
   }, [recoverySession, online, processing, expiryAttempt, resources, user.uid, user.businessId, currentBranchId, sessionCell, setCurrentSession, setExpiryState, refreshSession]);
   useEffect(() => {
     if (user?.role !== 'dueño' || !recoverySession || !online || expiryAttempt.sessionId === recoverySession.id) return;
@@ -141,12 +150,30 @@ export const useCashRegister = (user, currentBranchId) => {
     processing.current = true;
     revision.current++;
     const toastId = toast.loading('Abriendo caja...');
+    const command = JSON.stringify([user.uid, user.businessId, currentBranchId, openingAmount, notes]);
+    if (!openings.current.has(command)) openings.current.set(command, crypto.randomUUID());
+    const sessionId = openings.current.get(command);
+    setOpeningId(sessionId);
+    const ownsScope = () => activeScope.current === scopeKey && resources.active && auth.currentUser?.uid === user.uid;
+    const acknowledge = session => {
+      resources.invalidate(readKey);
+      invalidateReportScope(resources, user.businessId, currentBranchId);
+      openings.current.delete(command);
+      if (!ownsScope()) { toast.dismiss(toastId); return false; }
+      revision.current++;
+      setClock(Date.now());
+      setIsLoadingSession(false);
+      setReadError(null);
+      setCurrentSession(session);
+      if (session.recoveredSession) {
+        setExpiryState({ id: session.recoveredSession.id, session: session.recoveredSession, finalized: true });
+      }
+      toast.success('Caja abierta y confirmada', { id: toastId }); return true;
+    };
     try {
       let session;
-      const command = JSON.stringify([user.uid, user.businessId, currentBranchId, openingAmount, notes]);
-      if (!openings.current.has(command)) openings.current.set(command, crypto.randomUUID());
       if (navigator.onLine) session = await createSession({ userId: user.uid, businessId: user.businessId, branchId: currentBranchId,
-        openingAmount, openingNote: notes, sessionId: openings.current.get(command) });
+        openingAmount, openingNote: notes, sessionId, recoverSessionId: recoverySession?.id });
       else {
         let reserved;
         for (const record of await offlineDB.cash_sessions.toArray()) {
@@ -162,17 +189,16 @@ export const useCashRegister = (user, currentBranchId) => {
         session = { ...reserved, status: 'open', openingAmount, openingNote: notes, openedAt: new Date().toISOString(), offlineAuthorized: true };
         await offlineDB.cash_sessions.put({ localId: session.id, data: await encrypt(JSON.stringify(session), user.uid), sync: false });
       }
-      resources.invalidate(readKey);
-      invalidateReportScope(resources, user.businessId, currentBranchId);
-      openings.current.delete(command);
-      if (activeScope.current !== scopeKey || !resources.active || auth.currentUser?.uid !== user.uid) { toast.dismiss(toastId); return false; }
-      revision.current++;
-      setIsLoadingSession(false);
-      setReadError(null);
-      setCurrentSession(session);
-      setExpiryState(null);
-      toast.success('Caja abierta y confirmada', { id: toastId }); return true;
-    } catch (error) { toast.error(error.message || 'No se pudo abrir la caja.', { id: toastId }); return false; }
+      return acknowledge(session);
+    } catch (error) {
+      if (!ownsScope()) { toast.dismiss(toastId); return false; }
+      if (['aborted', 'deadline-exceeded', 'unavailable', 'unknown', 'cash-turn-changed', 'cash-opening-unverified'].includes(error.code)) {
+        const confirmed = navigator.onLine && ((await refreshSession()) ?? sessionCell.get());
+        if (confirmed?.id === sessionId && confirmed.serverConfirmed && confirmed.sparkLockVerified && confirmed.userId === user.uid
+          && confirmed.openingAmount === openingAmount && confirmed.openingNote === notes) return acknowledge(confirmed);
+      }
+      toast.error(error.message || 'No se pudo abrir la caja.', { id: toastId }); return false;
+    }
     finally { processing.current = false; }
   };
   const calculateClose = async declaredAmount => {
@@ -218,5 +244,5 @@ export const useCashRegister = (user, currentBranchId) => {
     } catch (error) { toast.error(error.message || 'No se pudo cerrar la caja.', { id: toastId }); return false; }
     finally { processing.current = false; }
   };
-  return { currentSession, isExpired, expiresAt, recoverySession, expiryState, remainingMinutes: expiresAt === null ? null : Math.max(0, Math.ceil((expiresAt - clock) / 60000)), readError, isLoadingSession, checkSession: refreshSession, authorizeOffline, openRegister, calculateClose, confirmClose };
+  return { currentSession, isExpired, expiresAt, recoverySession, expiryState, openingId, remainingMinutes: expiresAt === null ? null : Math.max(0, Math.ceil((expiresAt - clock) / 60000)), readError, isLoadingSession, checkSession: refreshSession, authorizeOffline, openRegister, calculateClose, confirmClose };
 };

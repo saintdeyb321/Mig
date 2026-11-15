@@ -17,7 +17,7 @@ const messages = {
   pending: 'Revisa las operaciones pendientes de este dispositivo antes de actualizar.',
   tabs: 'Cierra las demás pestañas de MigaPOS y vuelve a intentarlo.',
   storage: 'No se pudo comprobar el estado de los datos locales. Vuelve a intentarlo.',
-  worker: 'No se pudo preparar la actualización. Reintenta o vuelve a abrir MigaPOS al terminar tu trabajo.',
+  worker: 'No se pudo preparar la actualización. Reintenta o, al terminar, cierra todas las pestañas y ventanas de MigaPOS y vuelve a abrir la app.',
 };
 
 export default function ReloadPrompt({ isLogin, signingIn, updating, beginLoginAction, endLoginAction, canUpdateSession }) {
@@ -74,6 +74,7 @@ export default function ReloadPrompt({ isLogin, signingIn, updating, beginLoginA
     const worker = registered?.waiting;
     if (!worker) {
       if (!automatic) {
+        setWaiting(null);
         if (watch.current) void watch.current.check();
         else retryRegistration(value => value + 1);
       }

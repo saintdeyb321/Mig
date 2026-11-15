@@ -19,7 +19,8 @@ import { createSparkContractsRepository } from '../frontend/src/features/contrac
 import { createSparkCashClosingRepository } from '../frontend/src/features/cash-register/infrastructure/sparkCashClosingRepository.js';
 import { createRequire } from 'node:module';
 import { buildSalesWorkbook } from '../frontend/src/features/reports/application/salesWorkbook.js';
-import { reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
+import { cashAuditEvents } from '../frontend/src/features/reports/application/cashAuditRows.js';
+import { reportDay, reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
 import { updateProductTransaction } from '../frontend/src/features/catalog/infrastructure/productWrites.js';
 import { canonicalSale, sameSaleOperation } from '../functions/src/sales/domain/saleModel.js';
 import { createSaleQueue } from '../frontend/src/features/sales/application/saleQueue.js';
@@ -1030,29 +1031,51 @@ it('Plan04 preserves old-session policy and accepts new sessions before expiry; 
   assert.equal((await inspect('contracts/11111111-1111-4111-8111-111111111111')).data().paidTotal, 0);
 });
 
-it('Plan14 verifies a committed recovery after a lost response and accepts sales only in the replacement cash session', async () => {
-  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'cash_sessions', sessionId), {
-    durationHours: 10, openedAt: Timestamp.fromMillis(Date.now() - 5 * 86400000),
-  }));
-  const db = database();
+it('P23 opens for a different cashier after a lost response, sells under the new turn and reports the expiry without a count', async () => {
+  const nextCashier = 'p23-next-cashier';
+  await env.withSecurityRulesDisabled(async ctx => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'users', nextCashier), { role: 'cajero', businessId, branchId, status: 'activo' });
+    await updateDoc(doc(db, 'cash_sessions', sessionId), { durationHours: 10, openedAt: Timestamp.fromMillis(Date.now() - 5 * 86400000) });
+  });
+  const db = env.authenticatedContext(nextCashier).firestore();
   let commits = 0;
-  const repository = createSparkCashRepository(db, { currentUser: () => ({ uid }), sdk: { ...sdk,
+  const repository = createSparkCashRepository(db, { currentUser: () => ({ uid: nextCashier }), sdk: { ...sdk,
     async runTransaction(...args) {
       await sdk.runTransaction(...args);
       if (++commits === 1) throw Object.assign(new Error('Connection lost after commit'), { code: 'unavailable' });
     },
   } });
-  const command = { businessId, branchId, sessionId: 'plan14-new-cash-session', openingAmount: 50 };
+  const command = { businessId, branchId, sessionId: 'plan14-new-cash-session', recoverSessionId: sessionId, openingAmount: 50.05 };
   const result = await repository.open(command);
   assert.equal(result.recoveredSession.status, 'expired_unreconciled');
-  assert.equal(result.openingAmount, 50);
+  assert.equal(result.openingAmount, 50.05);
   assert.ok((await repository.open(command)).openedAt.isEqual(result.openedAt));
   await assertFails(commit(payload('plan14-stale-session-sale', 1)));
   assert.equal((await inspect('sales/plan14-stale-session-sale')).exists(), false);
-  await commit({ ...payload('plan14-replacement-session-sale', 1), sessionId: result.id });
+  const sales = createSparkSalesRepository(db, { sdk, currentUser: () => ({ uid: nextCashier }) });
+  await sales.submit({ ...payload('plan14-replacement-session-sale', 1), userId: nextCashier, sessionId: result.id });
   assert.equal((await inspect('sales/plan14-replacement-session-sale')).data().sessionId, result.id);
   assert.equal((await inspect('products/bread')).data().stock[branchId], 9);
-  assert.equal((await inspect('cash_sessions/' + sessionId)).data().declaredAmount, null);
+  const previous = result.recoveredSession;
+  assert.equal(previous.userId, uid);
+  assert.equal(previous.recoveredBy, nextCashier);
+  assert.equal(previous.closedAt, undefined);
+  assert.equal(previous.declaredAmount, null);
+  assert.equal(previous.difference, null);
+  const readSales = createSalesSessionReader(db, { sdk }), payments = createPaymentRepository(db, { sdk });
+  const readPayments = (session, options) => payments.getPaymentsBySession(businessId, session.id, branchId, options);
+  const readExpiry = createSparkCashClosingRepository(db, { sdk, currentUser: () => ({ uid: nextCashier }), readSales,
+    readPayments: async (session, options) => [...await readPayments(session, options),
+      ...voidCashPayments(await createPosVoidReader(db, { sdk }).bySession(session, options))] });
+  assert.equal((await readExpiry.inspectExpiry({ businessId, branchId, sessionId })).expectedCash, 10);
+  const period = { start: reportDay(previous.openedAt), end: reportDay(result.openedAt),
+    startDate: previous.openedAt.toDate(), endDate: result.openedAt.toDate() };
+  const events = cashAuditEvents([previous, result], { businessId, branchId, period,
+    cashReferenceAsOf: previous.recoveredAt.toMillis(), sales: await readSales(result), payments: [], voids: [] });
+  const expired = events.find(event => event.kind === 'expiry');
+  assert.equal(expired.date.getTime(), previous.expiredAt.toMillis());
+  assert.deepEqual([expired.reference, expired.counted, expired.difference], [10, null, null]);
 });
 
 describe('P18 private contract media', () => {

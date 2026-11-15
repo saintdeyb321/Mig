@@ -153,6 +153,7 @@ it('P21 checks both documents in invitation and existing-account flows before ha
 
 it('PWA protects POS work and other tabs, then updates manually or at safe login', { timeout: 90000 }, async () => {
   const errors = [];
+  const versions = new Map();
   await runBrowserFixture({
     htmlFile: new URL('./p20-legal.browser.html', import.meta.url), route: '/p20-pwa-local',
     fixture: { updates: true, css: await readBrowserBuildCss() },
@@ -192,6 +193,9 @@ it('PWA protects POS work and other tabs, then updates manually or at safe login
     },
     onPageEvent(event) {
       if (event.method === 'Runtime.exceptionThrown') errors.push(event.params.exceptionDetails.exception?.description || event.params.exceptionDetails.text);
+      if (event.method === 'ServiceWorker.workerVersionUpdated') {
+        for (const version of event.params.versions) versions.set(version.versionId, version);
+      }
     },
     async inspectPage(page) {
       const evaluate = async (fn, ...args) => {
@@ -271,12 +275,47 @@ it('PWA protects POS work and other tabs, then updates manually or at safe login
       await click('Reintentar');
       await boot(2, '/pwa-update-worker.js');
       await until(() => evaluate(() => document.body.textContent.includes('Ingresar con Google')), 'The isolated second boot must reach login');
-      await evaluate(() => { navigator.serviceWorker.register('/pwa-update-worker.js?p22=next'); });
+      await evaluate(() => {
+        window.__pwaAuth({ authIssue: 'permission-denied' });
+        navigator.serviceWorker.register('/pwa-update-worker.js?p22=next');
+      });
+      await until(() => evaluate(async () => (await navigator.serviceWorker.getRegistration()).waiting?.scriptURL.endsWith('?p22=next')),
+        'The next modern update must be prepared before testing offline activation');
+      const connection = offline => page.send('Network.emulateNetworkConditions', {
+        offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+      });
+      await connection(true);
+      await until(() => evaluate(() => !navigator.onLine), 'Chromium must enter offline mode');
+      await evaluate(() => window.__pwaAuth({}));
+      await until(async () => (await notices())?.includes('Conéctate para actualizar'), 'Offline login must wait for reconnection');
+      assert.equal(await evaluate(() => window.__pwaBoots), 2);
+      await connection(false);
       await boot(3, '/pwa-update-worker.js?p22=next');
       assert.deepEqual(await evaluate(async () => {
         const registration = await navigator.serviceWorker.getRegistration();
         return { waiting: Boolean(registration.waiting), data: (await window.__pwaDb.sales.get('pwa-draft')).data, boots: window.__pwaBoots };
       }), { waiting: false, data: 'preserve-ciphertext', boots: 3 });
+      await page.send('ServiceWorker.enable');
+      const url = await evaluate(() => location.href);
+      await until(() => evaluate(() => Boolean(window.__pwaAuth)), 'The login fixture must mount before installing the legacy migration');
+      await evaluate(() => {
+        window.__pwaAuth({ authIssue: 'permission-denied' });
+        navigator.serviceWorker.register('/pwa-update-worker.js?p23=legacy');
+      });
+      await until(() => evaluate(async () => (await navigator.serviceWorker.getRegistration()).waiting?.scriptURL.endsWith('?p23=legacy')),
+        'Legacy migration update must wait while its last client is open');
+      await evaluate(async () => {
+        (await navigator.serviceWorker.getRegistration()).waiting.postMessage({ type: 'SKIP_WAITING' });
+      });
+      await until(() => [...versions.values()].some(version => version.scriptURL.endsWith('?p23=legacy') && version.status === 'installed'),
+        'DevTools must observe the installed worker waiting beside the legacy client');
+      assert.equal(await evaluate(() => window.__pwaBoots), 3);
+      await page.send('Page.navigate', { url: 'about:blank' });
+      await until(() => [...versions.values()].some(version => version.scriptURL.endsWith('?p23=legacy') && version.status === 'activated'),
+        'Closing the last application client must let the browser activate the legacy migration');
+      await page.send('Page.navigate', { url });
+      await boot(4, '/pwa-update-worker.js?p23=legacy');
+      assert.equal(await evaluate(async () => (await window.__pwaDb.sales.get('pwa-draft')).data), 'preserve-ciphertext');
     },
   });
 });

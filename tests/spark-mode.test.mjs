@@ -184,6 +184,21 @@ it('PWA waits for the requested worker to control an already controlled page', a
   assert.equal(activated, true);
 });
 
+it('PWA recovers a missed activation event only with current controller evidence', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const old = {}, serviceWorkers = Object.assign(new EventTarget(), { controller: old });
+  const worker = Object.assign(new EventTarget(), { state: 'installed', postMessage(_message, [port]) { port.close(); } });
+  const registration = { waiting: worker };
+  const unconfirmed = assert.rejects(activateWaitingWorker(registration, worker, { serviceWorkers }), /no se confirmó/);
+  t.mock.timers.tick(10_000);
+  await unconfirmed;
+  const confirmed = activateWaitingWorker(registration, worker, { serviceWorkers });
+  worker.state = 'activated';
+  serviceWorkers.controller = worker;
+  t.mock.timers.tick(10_000);
+  assert.equal(await confirmed, true);
+});
+
 
 it('preserves larger drafts but refuses checkout above the verified eight-line bound before any transaction', async () => {
   const { canonicalSale } = await import('../functions/src/sales/domain/saleModel.js');

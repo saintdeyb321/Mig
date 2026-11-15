@@ -6,9 +6,12 @@ import { TenantContext } from '../frontend/src/features/branches/context/TenantC
 import ExportSales from '../frontend/src/modules/ExportSales.jsx';
 import { invalidateReportScope } from '../frontend/src/features/reports/application/reportResource.js';
 import { getIdentityKey } from '../frontend/src/core/session/identity.js';
+import { registerPwa } from '../frontend/src/features/pwa/registerPwa.js';
 import '../frontend/src/index.css';
 
 const fixture = window.__excelFixture = { bootId: crypto.randomUUID(), reads: 0, fault: '', empty: false, compensated: false };
+// Preview replaces the app entry, including its mount of the production registrar.
+void registerPwa()?.catch(error => { fixture.pwaError = error.message; });
 const branch = { id: 'centro', name: 'Centro' };
 const secondBranch = { id: 'taller', name: 'Taller' };
 const user = { uid: 'RMux1Jm3vl7pofbT54G6YXkT2lP7', businessId: 'qa-excel', role: 'dueño', firstName: 'Ana', lastName: 'Quispe' };

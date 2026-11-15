@@ -619,46 +619,63 @@ it('P19 measures the mobile shell and operational modules', { timeout: 180000 },
           users.showInactive = true;
           users.toggleStatus = users.cancelInvite = window.__p09.forbidden;
           products.filteredProducts = [{ ...products.filteredProducts[0], name: 'ProductoLargo'.repeat(12), category: 'CategoríaLarga'.repeat(12) }];
+          window.__p09.notify('users');
+          window.__p09.notify('products');
         });
         for (const [width, height] of [[320, 568], [360, 740], [390, 844], [412, 915], [768, 1024], [1280, 560]]) {
           await viewport(width, height);
           const controls = async (view, title, primary) => {
             await show(view, 'dueño');
-            return evaluate(async (title, primary) => {
+            const staff = view === 'users';
+            return evaluate(async (title, primary, staff) => {
+              const selector = staff ? 'article footer button' : 'button[aria-label="Editar"]';
+              // A fixture route change can commit before the subscribed cards or the mobile dock.
+              for (let frame = 0; frame < 40; frame++) {
+                const workspace = document.querySelector('main');
+                const actions = workspace?.querySelectorAll(selector);
+                if (workspace?.querySelector('h1')?.textContent === title && actions?.length === (staff ? 6 : 1)) break;
+                await window.__p09.frames();
+              }
               const main = document.querySelector('main'), heading = main.querySelector('h1');
               const cta = [...main.querySelectorAll('button')].find(button => button.textContent.trim() === primary);
               const filter = main.querySelector('.view-toolbar label');
+              await Promise.allSettled(main.getAnimations({ subtree: true }).filter(animation =>
+                Number.isFinite(animation.effect.getComputedTiming().endTime)).map(animation => animation.finished));
               const box = element => {
                 const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
                 return { left, right, top, bottom, width, height };
               };
               const footers = [...main.querySelectorAll('article footer')].map(footer =>
                 [...footer.querySelectorAll('button')].map(button => ({ ...box(button), text: button.textContent.trim(), disabled: button.disabled })));
-              const last = [...main.querySelectorAll('article footer button, button[aria-label="Editar"]')].at(-1);
+              const actions = [...main.querySelectorAll(selector)];
+              if (actions.length !== (staff ? 6 : 1) || !cta || !filter) {
+                throw new Error(`Expected rendered cards for ${title}, found ${actions.length} actions`);
+              }
+              const last = actions.at(-1);
               last.focus({ preventScroll: true });
+              last.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+              await window.__p09.frames();
               const dockTop = document.querySelector('.app-mobile-dock')?.getBoundingClientRect().top || innerHeight;
               const visibleBottom = dockTop > 0 ? Math.min(dockTop, innerHeight) : innerHeight;
-              scrollTo(0, scrollY + last.getBoundingClientRect().top - visibleBottom / 2);
-              await window.__p09.frames();
               const center = box(last), hit = document.elementFromPoint(center.left + center.width / 2, center.top + center.height / 2);
               return { title: heading.textContent === title, overflow: document.documentElement.scrollWidth - innerWidth,
                 cta: box(cta), header: box(heading.closest('header')), filter: box(filter), toolbar: box(filter.parentElement),
                 footers, actionReachable: last.contains(hit) && center.bottom <= visibleBottom + 1, actionHeight: center.height };
-            }, title, primary);
+            }, title, primary, staff);
           };
           const staff = await controls('users', 'Personal', 'Nuevo empleado');
           const catalog = await controls('products', 'Productos', 'Nuevo producto');
-          for (const view of [staff, catalog]) {
+          for (const [module, view] of [['Personal', staff], ['Productos', catalog]]) {
             assert.ok(view.title && view.overflow <= 1 && view.cta.height >= 44 && view.cta.width < view.header.width - 25
               && view.filter.height >= 44 && view.filter.width < view.toolbar.width - 25 && view.actionReachable && view.actionHeight >= 44,
-            JSON.stringify({ width, view }));
+            JSON.stringify({ width, module, view }));
           }
           assert.ok(Math.abs(staff.cta.width - catalog.cta.width) <= 20, JSON.stringify({ width, staff: staff.cta, catalog: catalog.cta }));
           assert.ok(staff.footers.some(row => row.map(button => button.text).join('/') === 'Editar/Deshabilitar'));
           assert.ok(staff.footers.some(row => row[0]?.disabled && row[1]?.text === 'Habilitar'));
           assert.ok(staff.footers.some(row => row.length === 1 && row[0].text === 'Cancelar invitación'));
           for (const row of staff.footers) {
-            assert.ok(row.every(button => button.height >= 44));
+            assert.ok(row.every(button => button.height >= 44), JSON.stringify({ width, row }));
             if (width < 640 && row.length === 2) assert.ok(Math.abs(row[0].width - row[1].width) <= 1 && Math.abs(row[0].top - row[1].top) <= 1);
           }
         }

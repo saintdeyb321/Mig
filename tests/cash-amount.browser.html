@@ -44,7 +44,8 @@ try {
   }
   let resolveOpening, attempts = 0, dismissals = 0;
   const opening = new Promise(resolve => { resolveOpening = resolve; });
-  const renderOpening = currentSession => root.render(React.createElement(CashRegisterModals, { ...props, currentSession,
+  const openingId = 'p23-cash-amount-opening';
+  const renderOpening = currentSession => root.render(React.createElement(CashRegisterModals, { ...props, currentSession, openingId,
     showOpenModal: true, showCloseModal: false, setShowOpenModal: open => { if (!open) dismissals++; },
     openRegister: amount => { check(amount === 100, 'opening sends the declared amount'); attempts++; return opening; } }));
   renderOpening(null);
@@ -57,18 +58,22 @@ try {
   for (let click = 0; click < 2; click++) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   await wait(() => document.querySelector('fieldset').disabled);
   check(attempts === 1 && dismissals === 0, 'a double submit sends one opening and the busy modal remains visible');
-  renderOpening({ status: 'open', serverConfirmed: false });
+  renderOpening({ id: openingId, status: 'open', serverConfirmed: false, sparkLockVerified: true });
   await wait(() => document.body.innerText.includes('Ya hay un turno'));
   check(dismissals === 0 && document.querySelector('[role="dialog"]'), 'a cached shift never closes the dialog');
   resolveOpening(false);
   await wait(() => !document.querySelector('fieldset').disabled);
-  renderOpening({ status: 'open', serverConfirmed: true });
+  renderOpening({ id: 'unrelated-opening', status: 'open', serverConfirmed: true, sparkLockVerified: true });
+  await tick();
+  check(dismissals === 0 && document.querySelector('[role="dialog"]'), 'A different confirmed shift never acknowledges this opening');
+  renderOpening({ id: openingId, status: 'open', serverConfirmed: true, sparkLockVerified: true });
   await wait(() => dismissals === 1 && !document.querySelector('[role="dialog"]'));
   check(attempts === 1, 'confirmed shift closes the dialog without another opening');
   let verifyRecovery, recoveryAttempts = 0, recoveryDismissals = 0;
   const old = { id: 'previous', status: 'open', serverConfirmed: true, heldByOther: true };
+  const replacementId = 'p23-cash-amount-replacement';
   const renderRecovery = currentSession => root.render(React.createElement(CashRegisterModals, { ...props,
-    key: 'recover:' + old.id, currentSession, recoverySession: old, showOpenModal: true, showCloseModal: false,
+    key: 'recover:' + old.id, currentSession, recoverySession: old, openingId: replacementId, showOpenModal: true, showCloseModal: false,
     setShowOpenModal: open => { if (!open) recoveryDismissals++; },
     openRegister: (...command) => {
       check(JSON.stringify(command) === '[50]', 'ordinary opening sends only the independently entered fund');
@@ -90,7 +95,7 @@ try {
   verifyRecovery(false);
   await wait(() => document.body.innerText.includes('aún no se confirmó'));
   check(replacementFund.value === '50' && recoveryDismissals === 0, 'an uncertain result preserves the input without claiming recovery');
-  renderRecovery({ id: 'new', status: 'open', serverConfirmed: true });
+  renderRecovery({ id: replacementId, status: 'open', serverConfirmed: true, sparkLockVerified: true });
   await wait(() => recoveryDismissals === 1 && !document.querySelector('[role="dialog"]'));
   check(recoveryAttempts === 1, 'server-confirmed replacement closes the modal without another write');
   result = { ok: true, checks };
