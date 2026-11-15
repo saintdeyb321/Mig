@@ -1,9 +1,9 @@
 const CHECK_INTERVAL = 30 * 60_000;
 const MIN_CHECK_INTERVAL = 60_000;
 export function watchPwaRegistration(registration, { onWaiting, onFailure, onCheck, onChecked, onVisibility }, {
-  page = window, visibility = document, isOnline = () => navigator.onLine, now = Date.now,
+  page = window, visibility = document, isOnline = () => navigator.onLine, now = () => performance.now(),
 } = {}) {
-  let lastCheck = -Infinity, checking = false, stopped = false, observed = null;
+  let lastCheck = -Infinity, checking = false, stopped = false, observed = null, trailing = null;
   function inspect() {
     const worker = observed;
     onWaiting(registration.active ? registration.waiting : null);
@@ -19,8 +19,14 @@ export function watchPwaRegistration(registration, { onWaiting, onFailure, onChe
     inspect();
   }
   async function check() {
-    if (stopped || checking || registration.installing || !isOnline() || visibility.visibilityState !== 'visible'
-      || now() - lastCheck < MIN_CHECK_INTERVAL) return;
+    if (stopped || checking || registration.installing || !isOnline() || visibility.visibilityState !== 'visible') return;
+    const remaining = MIN_CHECK_INTERVAL - (now() - lastCheck);
+    if (remaining > 0) {
+      trailing ??= page.setTimeout(() => { trailing = null; void check(); }, remaining);
+      return;
+    }
+    if (trailing !== null) page.clearTimeout(trailing);
+    trailing = null;
     lastCheck = now();
     checking = true;
     onCheck(registration.waiting);
@@ -44,6 +50,7 @@ export function watchPwaRegistration(registration, { onWaiting, onFailure, onChe
     stop() {
       stopped = true;
       page.clearInterval(timer);
+      if (trailing !== null) page.clearTimeout(trailing);
       page.removeEventListener('online', check);
       visibility.removeEventListener('visibilitychange', handleVisibility);
       registration.removeEventListener('updatefound', observe);
@@ -52,24 +59,36 @@ export function watchPwaRegistration(registration, { onWaiting, onFailure, onChe
   };
 }
 
-export function activateWaitingWorker(worker) {
+export function activateWaitingWorker(registration, worker, { serviceWorkers = navigator.serviceWorker, signal } = {}) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(signal.reason); return; }
+    if (registration.waiting !== worker) { reject(new Error('La versión en espera cambió.')); return; }
+    const previouslyControlled = Boolean(serviceWorkers.controller);
     const { port1, port2 } = new MessageChannel();
     const finish = (activated, error) => {
       clearTimeout(timer);
       worker.removeEventListener('statechange', inspect);
+      serviceWorkers.removeEventListener('controllerchange', inspect);
+      signal?.removeEventListener('abort', cancel);
       port1.close();
       port2.close();
       if (error) reject(error);
       else resolve(activated);
     };
+    const cancel = () => finish(false, signal.reason);
     const inspect = () => {
-      if (worker.state === 'activated') finish(true);
-      if (worker.state === 'redundant') finish(false, new Error('La versión preparada ya no está disponible.'));
+      if (worker.state === 'activated' && (serviceWorkers.controller === worker
+        || (!previouslyControlled && !serviceWorkers.controller && registration.active === worker))) finish(true);
+      else if (worker.state === 'redundant') finish(false, new Error('La versión preparada ya no está disponible.'));
     };
     const timer = setTimeout(() => finish(false, new Error('La actualización no se confirmó.')), 10_000);
     worker.addEventListener('statechange', inspect);
-    port1.onmessage = ({ data }) => { if (data !== true) finish(false); };
+    serviceWorkers.addEventListener('controllerchange', inspect);
+    signal?.addEventListener('abort', cancel, { once: true });
+    port1.onmessage = ({ data }) => {
+      if (data === false) finish(false);
+      else if (data !== true) finish(false, new Error('Falló la activación del service worker.'));
+    };
     try { worker.postMessage({ type: 'MIGAPOS_ACTIVATE_UPDATE' }, [port2]); }
     catch (error) { finish(false, error); }
   });

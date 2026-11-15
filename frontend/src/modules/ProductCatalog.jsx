@@ -43,9 +43,9 @@ const ProductCard = memo(({
       </div>
 
       <div className="grid min-w-0 gap-1.5">
-        <h3 className={cn(`break-words font-semibold ${isAgotado ? "text-danger line-through" : ''} `)}>{p.name}</h3>
+        <h3 className={cn('font-semibold wrap-anywhere', isAgotado && 'text-danger line-through')}>{p.name}</h3>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-subtle px-2 py-1 text-xs font-medium text-muted">{p.category}</span>
+          <span className="min-w-0 max-w-full rounded-md bg-subtle px-2 py-1 text-xs font-medium text-muted wrap-anywhere">{p.category}</span>
           <span className={cn(stockClass)}>📦 {stockText}</span>
           {!isActivo && <span className="text-xs font-semibold text-danger">INACTIVO</span>}
         </div>
@@ -115,15 +115,15 @@ function ProductCatalog({
   }
   return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
 
-      <PageHeader title="Productos" icon={Package} eyebrow="Catálogo e inventario" description="Precios, existencias y referencias de cada sede." actions={<><Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
+      <PageHeader title="Productos" icon={Package} eyebrow="Catálogo e inventario" description="Precios, existencias y referencias de cada sede." actions={<Button onClick={openAddForm} className="shrink-0" type="button" variant="primary">
           <Plus aria-hidden="true" /> Nuevo producto
-        </Button></>} />
+        </Button>} />
 
       <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
       <div className="view-toolbar">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar producto..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
-        <label className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted">
+        <label className="inline-flex min-h-11 max-w-full cursor-pointer items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted focus-within:border-primary">
           <Input type="checkbox" className="shrink-0" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Ver archivados
         </label>

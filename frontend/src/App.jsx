@@ -52,6 +52,14 @@ function SessionGuards({
 }
 function App() {
   const [requestedTab, setTab] = useState('pos');
+  const posUpdateSafe = useRef(false);
+  // Other modules can leave writes in flight after navigation and do not report completion here.
+  const visitedOtherModule = useRef(false);
+  const reportPosUpdateSafety = useCallback(safe => { posUpdateSafe.current = safe; }, []);
+  const navigate = useCallback(next => {
+    if (next !== 'pos') visitedOtherModule.current = true;
+    setTab(next);
+  }, []);
   const [loginAction, setLoginAction] = useState(null);
   const activeLoginAction = useRef(null);
   const beginLoginAction = useCallback(action => {
@@ -119,9 +127,13 @@ function App() {
     return ADMIN_ROLES.includes(String(user.role).toLowerCase());
   }, [user]);
   const updating = loginAction === 'update';
+  const canUpdateSession = () => tab === 'pos' && user?.accessVerified === true && hasCurrentTerms(user)
+    && !authLoading && !authIssue && !isMaintenance
+    && !visitedOtherModule.current && posUpdateSafe.current && !runtimeCapabilities.offlineSync
+    && 'inert' in HTMLElement.prototype && !document.querySelector('[role="dialog"], [role="alertdialog"]');
   const updatePrompt = <ReloadPrompt isLogin={!isMaintenance && !authLoading && !authIssue && !user}
     signingIn={loginAction === 'sign-in'} updating={updating}
-    beginLoginAction={beginLoginAction} endLoginAction={endLoginAction} />;
+    beginLoginAction={beginLoginAction} endLoginAction={endLoginAction} canUpdateSession={canUpdateSession} />;
   if (isMaintenance) {
     return <>{updatePrompt}<MaintenanceScreen message={maintenanceMsg} /></>;
   }
@@ -151,11 +163,12 @@ function App() {
         }
       }} />
 
-              <AppLayout user={user} tab={tab} setTab={setTab} handleLogout={handleLogout}>
+              <div className="contents" inert={updating}>
+              <AppLayout user={user} tab={tab} setTab={navigate} handleLogout={handleLogout}>
                 <Suspense fallback={<LoadingState variant="module">Abriendo módulo…</LoadingState>}>
                   {/* === RUTAS DE LA APLICACIÓN === */}
                   {!tab && <p role="alert" className="rounded-xl border border-danger/20 bg-danger-soft p-3 text-sm text-danger">Tu perfil no tiene un contexto operativo válido. Contacta al administrador.</p>}
-                  {tab === 'pos' && <POS user={user} />}
+                  {tab === 'pos' && <POS user={user} onUpdateSafety={reportPosUpdateSafety} />}
 
 
                   {tab === 'contracts' && <UserRoleGate user={user} allowedRoles={ALL_ROLES}>
@@ -187,6 +200,7 @@ function App() {
                     </UserRoleGate>}
                 </Suspense>
               </AppLayout>
+              </div>
 
           </SessionGuards>}
     </>;

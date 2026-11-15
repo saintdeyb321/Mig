@@ -116,7 +116,9 @@ it('P21 checks both documents in invitation and existing-account flows before ha
       assert.equal(await click('Activar mi cuenta'), false);
       assert.equal(await evaluate(() => window.__p20Writes), 0);
       await setOffline(false);
-      await until(() => evaluate(() => navigator.onLine), 'Chromium did not reconnect');
+      await until(() => evaluate(() => navigator.onLine && [...document.querySelectorAll('button')]
+        .some(control => control.textContent.trim() === 'Activar mi cuenta' && !control.disabled)),
+      'Activation must re-enable after the network event reaches React with both documents verified');
       assert.equal(await click('Activar mi cuenta'), true);
       await until(() => evaluate(() => document.querySelector('[role="alert"]')?.textContent.includes('confirmar la activación')), 'The error must remain visible to retry');
       await evaluate(() => {
@@ -149,7 +151,8 @@ it('P21 checks both documents in invitation and existing-account flows before ha
   });
 });
 
-it('PWA detects a real waiting worker and only reloads an isolated, safe login', { timeout: 90000 }, async () => {
+it('PWA protects POS work and other tabs, then updates manually or at safe login', { timeout: 90000 }, async () => {
+  const errors = [];
   await runBrowserFixture({
     htmlFile: new URL('./p20-legal.browser.html', import.meta.url), route: '/p20-pwa-local',
     fixture: { updates: true, css: await readBrowserBuildCss() },
@@ -158,26 +161,53 @@ it('PWA detects a real waiting worker and only reloads an isolated, safe login',
       [path('features/pwa/registerPwa.js')]: 'export const registerPwa = () => navigator.serviceWorker.getRegistration();',
       [path('hooks/useAuthManager.js')]: `
         import {useState} from 'react';
+        import {legalAcceptanceEvidence, legalAcceptanceMarker, legalPublication} from '/src/features/legal/publication.js';
         export function useAuthManager() {
           const [state, setState] = useState({});
           window.__pwaAuth = setState;
+          window.__enterPOS = () => {
+            const user = { uid: 'owner', role: 'dueño', businessId: 'demo', accessVerified: true };
+            setState({ user: {...user, legalAcceptance: legalAcceptanceMarker(legalAcceptanceEvidence({...user,id:'A'.repeat(20)},legalPublication))} });
+          };
           return state;
         }`,
       [path('hooks/useMaintenance.js')]: 'export const useMaintenance = () => ({});',
       [path('components/LicenseGuard.jsx')]: 'export default function LicenseGuard({children}) {return children;}',
       [path('components/BranchGuard.jsx')]: 'export default function BranchGuard({children}) {return children;}',
       [path('app/providers/SessionProviders.jsx')]: 'export function SessionProviders({children}) {return children;}',
-      [path('layouts/AppLayout.jsx')]: 'export default function AppLayout() {return "Sesión operativa";}',
+      [path('layouts/AppLayout.jsx')]: 'export default function AppLayout({children}) {return children;}',
+      [path('features/catalog/context/CatalogContext.js')]: 'export const useCatalogData = () => ({});',
+      [path('features/branches/context/TenantContext.js')]: `export const useTenantData = () => ({
+        activeBranchId: 'sede', businessBranches: [{id:'sede',name:'Sede de prueba',status:'activo'}]
+      });`,
+      [path('features/sales/hooks/usePOS.js')]: `
+        import { validatePOSPayment } from '/src/features/sales/domain/saleModel.js';
+        const payment = { total: 0, payment: 'efectivo', amountPaid: '', splitEfectivo: '', splitYape: '' };
+        export const usePOS = () => ({
+          ...payment, filteredProducts: [], activeCategories: [], cart: [], search: '', catalogChanges: {},
+          paymentValidation: validatePOSPayment(payment), isOnline: true,
+        });`,
+      [path('features/cash-register/hooks/useCashRegister.js')]: 'export const useCashRegister = () => ({currentSession: null, isLoadingSession: false});',
+      [path('features/sales/infrastructure/saleTransactions.js')]: 'export const reviewDraftSaleTransaction = () => {}; export const confirmDraftSaleTransaction = () => {};',
+    },
+    onPageEvent(event) {
+      if (event.method === 'Runtime.exceptionThrown') errors.push(event.params.exceptionDetails.exception?.description || event.params.exceptionDetails.text);
     },
     async inspectPage(page) {
-      const evaluate = async fn => {
-        const result = await page.send('Runtime.evaluate', { expression: `(${fn})()`, awaitPromise: true, returnByValue: true })
+      const evaluate = async (fn, ...args) => {
+        const result = await page.send('Runtime.evaluate', { expression: `(${fn})(...${JSON.stringify(args)})`, awaitPromise: true, returnByValue: true })
           .catch(error => { throw new Error(`${error.message} PWA probe: ${String(fn).slice(0, 160)}`, { cause: error }); });
         if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
         return result.result.value;
       };
       const notices = () => evaluate(() => document.querySelector('[aria-label="Actualizaciones"]')?.textContent);
-      const gated = async () => (await notices())?.includes('vuelve al inicio de sesión');
+      const phase = name => evaluate(name => document.querySelector('[aria-label="Actualizaciones"]')?.dataset.updatePhase === name, name);
+      async function click(label) {
+        await until(() => evaluate(label => [...document.querySelectorAll('button')]
+          .some(button => !button.disabled && button.textContent.trim() === label), label), `${label} must be visible and enabled`);
+        await evaluate(label => [...document.querySelectorAll('button')].find(button => button.textContent.trim() === label).click(), label);
+      }
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
       await until(() => evaluate(() => !!window.__pwaAuth), 'Application did not start on controlled page');
       await evaluate(() => {
         window.__pwaAuth({ authIssue: 'needs-invite', invitation: { businessId: 'demo', email: 'fixture@example.test', role: 'dueño' } });
@@ -190,15 +220,27 @@ it('PWA detects a real waiting worker and only reloads an isolated, safe login',
         if (window.__pwaRegistrationError) throw new Error(window.__pwaRegistrationError);
         return Boolean((await navigator.serviceWorker.getRegistration()).waiting);
       }), 'The updated service worker did not enter waiting state');
-      await until(gated, 'Waiting update should be announced during invitation activation');
+      await until(() => phase('waiting'), 'Waiting update should be announced during invitation activation');
+      await click('Actualizar ahora');
+      await until(() => phase('blocked'), 'Invitation screen must block manual activation');
       await evaluate(() => window.__pwaAuth({ authIssue: 'permission-denied' }));
-      await until(gated, 'Waiting update should remain mounted on restricted access');
-      await evaluate(() => window.__pwaAuth({ user: { uid: 'admin', role: 'superadmin', hasAcceptedTerms: true } }));
-      await until(() => evaluate(() => document.body.textContent.includes('Sesión operativa')), 'The authenticated shell did not mount');
-      assert.ok(await gated());
+      await until(() => phase('blocked'), 'Waiting update should remain mounted on restricted access');
+      await evaluate(() => window.__enterPOS());
+      await until(() => {
+        assert.deepEqual(errors, [], 'The POS fixture must render without browser exceptions');
+        return evaluate(() => document.body.textContent.includes('Punto de venta'));
+      }, 'The authenticated POS did not mount');
+      await click('Abrir caja para vender');
+      await until(() => evaluate(() => Boolean(document.querySelector('[role="dialog"]'))), 'Opening cash form did not mount');
+      await click('Actualizar ahora');
+      await until(async () => (await notices())?.includes('guarda los formularios'), 'An open cash form must block manual update');
+      assert.ok(await evaluate(() => Boolean(document.querySelector('[role="dialog"]'))));
+      await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+      await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+      await until(() => evaluate(() => !document.querySelector('[role="dialog"]')), 'Closing the test form must restore an idle POS');
       assert.equal(await evaluate(() => window.__pwaBoots), 1);
-      await evaluate(() => window.__pwaAuth({}));
-      await until(async () => (await notices())?.includes('operaciones pendientes'), 'A pending local draft must block automatic activation at login');
+      await click('Reintentar');
+      await until(async () => (await notices())?.includes('operaciones pendientes'), 'A pending local draft must block a manual update');
       assert.equal(await evaluate(async () => (await window.__pwaDb.sales.get('pwa-draft')).data), 'preserve-ciphertext');
 
       await evaluate(async () => {
@@ -208,9 +250,7 @@ it('PWA detects a real waiting worker and only reloads an isolated, safe login',
       });
       await until(() => evaluate(() => window.__pwaOther?.location.pathname === '/legal/terminos-1.1.txt'), 'The second tab did not load');
       await page.send('Page.bringToFront');
-      const retry = () => evaluate(() => [...document.querySelectorAll('[aria-label="Actualizaciones"] button')]
-        .find(button => button.textContent === 'Reintentar').click());
-      await retry();
+      await click('Reintentar');
       await until(async () => (await notices())?.includes('Cierra las demás pestañas'), 'The service worker must decline activation with a second MigaPOS tab');
       assert.equal(await evaluate(() => window.__pwaBoots), 1);
       await evaluate(async () => {
@@ -218,26 +258,25 @@ it('PWA detects a real waiting worker and only reloads an isolated, safe login',
         window.__pwaOther.close();
         registration.waiting.postMessage({ type: 'SKIP_WAITING' });
       });
-      const network = offline => page.send('Network.emulateNetworkConditions', {
-        offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
-      });
-      await network(true);
-      await until(() => evaluate(() => !navigator.onLine), 'Chromium did not go offline');
       assert.equal(await evaluate(() => window.__pwaBoots), 1);
-      await network(false);
-      await until(async () => {
+      const boot = (boots, script) => until(async () => {
         try {
-          return await evaluate(() => window.__pwaBoots === 2
-            && navigator.serviceWorker.controller?.scriptURL.endsWith('/pwa-update-worker.js'));
+          return await evaluate((boots, script) => window.__pwaBoots === boots
+            && navigator.serviceWorker.controller?.scriptURL.endsWith(script), boots, script);
         } catch (error) {
           if (/context.*(destroyed|not found)|cannot find.*context/i.test(error.message)) return false;
           throw error;
         }
-      }, 'Reconnect at a safe login should reload with the activated worker');
+      }, `Expected boot ${boots} with controller ${script}`);
+      await click('Reintentar');
+      await boot(2, '/pwa-update-worker.js');
+      await until(() => evaluate(() => document.body.textContent.includes('Ingresar con Google')), 'The isolated second boot must reach login');
+      await evaluate(() => { navigator.serviceWorker.register('/pwa-update-worker.js?p22=next'); });
+      await boot(3, '/pwa-update-worker.js?p22=next');
       assert.deepEqual(await evaluate(async () => {
         const registration = await navigator.serviceWorker.getRegistration();
         return { waiting: Boolean(registration.waiting), data: (await window.__pwaDb.sales.get('pwa-draft')).data, boots: window.__pwaBoots };
-      }), { waiting: false, data: 'preserve-ciphertext', boots: 2 });
+      }), { waiting: false, data: 'preserve-ciphertext', boots: 3 });
     },
   });
 });

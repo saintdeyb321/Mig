@@ -17,6 +17,7 @@ const UserCard = memo(({
   const isDueño = u.role === 'dueño';
   const isSuperAdmin = u.role === 'superadmin';
   const isInvite = u.isInvite;
+  const canToggle = !isInvite && u.email !== user.email && !isSuperAdmin;
   const hasGlobalAccess = isDueño || isSuperAdmin;
   const branchName = hasGlobalAccess ? 'Acceso global' : branches.find(b => b.id === u.branchId)?.name || (isInvite ? 'Esperando registro' : 'Sin sede asignada');
   const roleLabel = isDueño ? 'Dueño' : isSuperAdmin ? 'SuperAdmin' : u.role === 'cajero' ? 'Cajero' : u.role;
@@ -47,12 +48,13 @@ const UserCard = memo(({
         <dd className="mt-0.5 text-sm font-medium tabular-nums">{u.shiftStart} – {u.shiftEnd}</dd>
       </div>}
     </dl>
-    <footer className="mt-auto flex flex-wrap items-center justify-end gap-2 border-t border-line/75 pt-2.5">
+    <footer className={cn('mt-auto grid gap-2 border-t border-line/75 pt-2.5 sm:flex sm:flex-wrap sm:justify-end sm:[&>button]:min-h-11',
+      canToggle ? 'grid-cols-2' : 'grid-cols-1')}>
       {isInvite ? <Button onClick={() => cancelInvite(u.id)} disabled={isLoading} size="sm" variant="secondary" className="border-danger/35 text-danger hover:border-danger hover:bg-danger-soft">
         <X aria-hidden="true" />Cancelar invitación
       </Button> : <>
         <Button onClick={() => openEditForm(u)} disabled={isLoading || isInactive} size="sm" variant="secondary"><Pencil aria-hidden="true" />Editar</Button>
-        {u.email !== user.email && !isSuperAdmin && <Button onClick={() => toggleStatus(u.id, u.status || 'activo')} disabled={isLoading} size="sm" variant={isInactive ? 'success' : 'secondary'} className={isInactive ? undefined : 'border-danger/35 text-danger hover:border-danger hover:bg-danger-soft'}>
+        {canToggle && <Button onClick={() => toggleStatus(u.id, u.status || 'activo')} disabled={isLoading} size="sm" variant={isInactive ? 'success' : 'secondary'} className={isInactive ? undefined : 'border-danger/35 text-danger hover:border-danger hover:bg-danger-soft'}>
           {isInactive ? <UnlockKeyhole aria-hidden="true" /> : <LockKeyhole aria-hidden="true" />}{isInactive ? 'Habilitar' : 'Deshabilitar'}
         </Button>}
       </>}
@@ -123,16 +125,16 @@ function UserManagement({
   return <div className="workspace-page max-w-6xl animate-enter motion-reduce:animate-none">
       {confirmation}
 
-      <PageHeader title="Personal" icon={UsersRound} eyebrow="Tu equipo" description="Administra los accesos, las sedes y los turnos del equipo." className="to-primary-soft/75" actions={<><Button onClick={openAddForm} className="w-full sm:w-auto" disabled={!canManage || isLoading} type="button" variant="primary">
+      <PageHeader title="Personal" icon={UsersRound} eyebrow="Tu equipo" description="Administra los accesos, las sedes y los turnos del equipo." className="to-primary-soft/75" actions={<Button onClick={openAddForm} className="shrink-0" disabled={!canManage || isLoading} type="button" variant="primary">
           <UserPlus aria-hidden="true" /> Nuevo empleado
-        </Button></>} />
+        </Button>} />
 
       <FirestoreQueryError error={error} area="personnel" user={user} onRetry={retry} />
       {isStale && sortedUsers.length > 0 && <Alert variant="warning">Datos de esta sesión pendientes de confirmar. La edición está bloqueada hasta verificar los permisos.</Alert>}
       <div className="view-toolbar border-primary/15 bg-linear-to-r from-panel to-primary-soft/40">
         <SearchField type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar por nombre o correo..." onClear={() => setSearchTerm('')} className="basis-full sm:basis-56" />
 
-        <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-primary/15 bg-panel px-3 text-sm font-medium text-ink focus-within:border-primary">
+        <label className="inline-flex min-h-11 max-w-full cursor-pointer items-center gap-2 rounded-xl border border-line bg-panel px-3 text-sm font-medium text-muted focus-within:border-primary">
           <Input type="checkbox" className="shrink-0" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           Mostrar bloqueados
         </label>

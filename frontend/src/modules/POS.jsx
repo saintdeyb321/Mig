@@ -1,7 +1,7 @@
 import FirestoreQueryError from '../components/FirestoreQueryError';
 import { useCatalogData } from '../features/catalog/context/CatalogContext';
 import { isBranchOperational } from '../features/branches/domain/branchPolicy';
-import { useContext, useState, useMemo } from 'react';
+import { useContext, useLayoutEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { MobileDockContext } from '../layouts/MobileDockContext';
 import { Banknote, Info, LockKeyhole, ShoppingBag, UnlockKeyhole } from 'lucide-react';
@@ -21,7 +21,7 @@ import { PaymentFields, PaymentSelector } from './pos/PaymentParts';
 import { CashStatus, SaleStatus, Ticket } from './pos/TicketParts';
 import { DraftSaleReview } from './sales-history/DraftSaleReview.jsx';
 
-function POS({ user }) {
+function POS({ user, onUpdateSafety }) {
   const mobileDock = useContext(MobileDockContext);
   const { businessBranches, activeBranchId } = useTenantData();
   const { error: catalogError, retry: retryCatalog } = useCatalogData();
@@ -51,6 +51,15 @@ function POS({ user }) {
     setPreviousModalScope(modalScope);
     setDraftReview(null); setCashModal(null); setIsCartOpen(false);
   }
+
+  const safeForUpdate = !isLoading && !isLoadingSession && !readError && !currentSession && !recoverySession && !expiryState?.busy
+    && !isProcessing && !cart.length && !isCartOpen && !cashModal && !showQrModal && !draftReview && !lastSale
+    && !amountPaid && !splitEfectivo && !splitYape;
+  useLayoutEffect(() => {
+    if (!onUpdateSafety) return;
+    onUpdateSafety(safeForUpdate);
+    return () => onUpdateSafety(false);
+  }, [onUpdateSafety, safeForUpdate]);
 
   const checkoutBlocked = checkoutBlockReason(cart);
 

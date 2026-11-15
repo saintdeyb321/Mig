@@ -5,8 +5,10 @@ function hasMatch(source, range, predicate) {
     const request = source.openCursor(range);
     request.onsuccess = () => {
       const cursor = request.result;
-      if (!cursor || predicate(cursor.value)) resolve(Boolean(cursor));
-      else cursor.continue();
+      try {
+        if (!cursor || predicate(cursor.value)) resolve(Boolean(cursor));
+        else cursor.continue();
+      } catch (error) { reject(error); }
     };
     request.onerror = () => reject(request.error);
   });
@@ -30,18 +32,23 @@ export async function hasPendingLocalWork() {
         const transaction = database.transaction(['sales', 'cash_sessions', 'settings'], 'readonly');
         const settings = transaction.objectStore('settings');
         const prefixed = (prefix, predicate) => hasMatch(settings, IDBKeyRange.bound(prefix, prefix + '\uffff'), predicate);
-        const checks = await Promise.all([
+        const finished = new Promise((complete, fail) => {
+          transaction.oncomplete = complete;
+          transaction.onabort = () => fail(transaction.error);
+        });
+        const checks = [
           hasMatch(transaction.objectStore('sales'), null, sale => {
             const { status } = migrateSaleRecord(sale);
-            return !['synced', 'failed'].includes(status) || sale.requiresFinancialReview === true;
+            return !['synced', 'failed'].includes(status) || sale.requiresFinancialReview === true || sale.requiresReceiptReview === true;
           }),
           hasMatch(transaction.objectStore('cash_sessions'), null, entry => entry.sync !== true),
-          prefixed('pos-void:', entry => entry.status === 'pending'),
+          prefixed('pos-void:', entry => !['confirmed', 'rejected'].includes(entry.status)),
           prefixed('cash-reconcile:', () => true),
           prefixed('contract-media:', () => true),
           prefixed('contract-media-order:', () => true),
-        ]);
-        resolve(checks.some(Boolean));
+        ];
+        const [results] = await Promise.all([Promise.all(checks), finished]);
+        resolve(results.some(Boolean));
       } catch (error) { reject(error); }
       finally { database.close(); }
     };

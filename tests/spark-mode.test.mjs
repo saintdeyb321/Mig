@@ -9,7 +9,7 @@ import { validateWebEnvironment, environments } from '../frontend/src/config/env
 import { brand } from '../frontend/src/config/brand.js';
 import { salesToDailyStats } from '../frontend/src/features/reports/domain/sparkReport.js';
 import { aggregateReport } from '../frontend/src/features/reports/domain/reportTotals.js';
-import { watchPwaRegistration } from '../frontend/src/features/pwa/updateRegistration.js';
+import { activateWaitingWorker, watchPwaRegistration } from '../frontend/src/features/pwa/updateRegistration.js';
 
 it('retains historical product names and totals without inventing absent cost or profit', () => {
   const stats = salesToDailyStats([{ businessId: 'tenant', branchId: 'branch', createdAt: '2026-10-23T12:00:00.000Z',
@@ -95,15 +95,17 @@ it('serves valid local branding/PWA PNGs and retains persistent caches without a
   assert.match(client, /persistentLocalCache/);
   const sw = readFileSync('frontend/src/components/ReloadPrompt.jsx', 'utf8');
   const safety = readFileSync('frontend/src/features/pwa/localUpdateSafety.js', 'utf8');
-  assert.match(sw, /activateWaitingWorker\(waiting\)/);
+  assert.match(sw, /activateWaitingWorker\(registered, worker,/);
   assert.doesNotMatch(sw + client + safety, /deleteDatabase|clearIndexedDbPersistence|indexedDB\.delete|offlineDB\.delete|caches\.delete/);
 });
 
 it('PWA checks registration, reconnect and foreground with a shared throttle and removes all listeners', async () => {
   const page = new EventTarget(), visibility = Object.assign(new EventTarget(), { visibilityState: 'visible' });
-  let time = 0, online = true, interval, calls = 0, failures = 0;
+  let time = 0, online = true, interval, trailing, queued = 0, calls = 0, failures = 0;
   page.setInterval = callback => { interval = callback; return 1; };
   page.clearInterval = id => { assert.equal(id, 1); interval = null; };
+  page.setTimeout = callback => { trailing = callback; queued++; return 2; };
+  page.clearTimeout = id => { assert.equal(id, 2); trailing = null; };
   const worker = Object.assign(new EventTarget(), { state: 'installing' });
   const registration = Object.assign(new EventTarget(), {
     active: {}, waiting: null,
@@ -119,6 +121,7 @@ it('PWA checks registration, reconnect and foreground with a shared throttle and
   page.dispatchEvent(new Event('online'));
   visibility.dispatchEvent(new Event('visibilitychange'));
   assert.equal(calls, 1);
+  assert.equal(queued, 1);
   time += 60_000;
   online = false;
   interval();
@@ -143,6 +146,11 @@ it('PWA checks registration, reconnect and foreground with a shared throttle and
   worker.state = 'installed';
   worker.dispatchEvent(new Event('statechange'));
   assert.equal(waiting.at(-1), worker);
+  await Promise.resolve();
+  void watcher.check();
+  void watcher.check();
+  assert.equal(queued, 2);
+  assert.equal(typeof trailing, 'function');
   watcher.stop();
   time += 60_000;
   const notices = waiting.length;
@@ -153,6 +161,27 @@ it('PWA checks registration, reconnect and foreground with a shared throttle and
   assert.equal(waiting.length, notices);
   assert.equal(calls, 3);
   assert.equal(interval, null);
+  assert.equal(trailing, null);
+});
+
+it('PWA waits for the requested worker to control an already controlled page', async () => {
+  const serviceWorkers = Object.assign(new EventTarget(), { controller: {} });
+  const worker = Object.assign(new EventTarget(), {
+    state: 'installed',
+    postMessage(message, [port]) { assert.equal(message.type, 'MIGAPOS_ACTIVATE_UPDATE'); port.postMessage(true); port.close(); },
+  });
+  const registration = { waiting: worker };
+  let activated = false;
+  const result = activateWaitingWorker(registration, worker, { serviceWorkers }).then(value => { activated = value; });
+  registration.active = worker;
+  worker.state = 'activated';
+  worker.dispatchEvent(new Event('statechange'));
+  await Promise.resolve();
+  assert.equal(activated, false);
+  serviceWorkers.controller = worker;
+  serviceWorkers.dispatchEvent(new Event('controllerchange'));
+  await result;
+  assert.equal(activated, true);
 });
 
 

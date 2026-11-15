@@ -16,5 +16,5 @@ self.addEventListener('message', event => {
     }
     await self.skipWaiting();
     reply.postMessage(true);
-  })().catch(() => reply.postMessage(false)));
+  })().catch(() => reply.postMessage({ error: true })));
 });
