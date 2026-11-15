@@ -1,0 +1,7 @@
+Ejecuta P21 siguiendo **solo** `docs/MIGAPOS-P21-PLAN-INTEGRACION-LEGAL-ACTIVACION.md` en `fix/migapos-production-readiness`. Nivel de razonamiento alto; implementación autónoma y concisa.
+
+PRIMERO revisa `git status --short`, el diff local y los archivos pertinentes. **No reviertas cambios locales ni redactes textos**: `frontend/public/legal/terminos-1.1.txt` y `privacidad-1.0.txt` YA están finalizados. Mantén intactos sus bytes, calcula sus SHA-256 reales y sincroniza `publication.js`, validador y `firestore.rules`. Usa Términos **1.1** y Privacidad **1.0**; NO inventes términos 2.0.
+
+Implementa dos checks independientes desmarcados en «Activar mi cuenta», enlaces públicos y verificación SHA; registra perfil + evidencia de ambos documentos + consumo de invitación en una sola transacción, protegida por Rules (también ante llamadas SDK directas). Elimina modal largo obligatorio; para perfiles existentes usa tarjeta compacta, conserva SuperAdmin, login público, Ajustes, el Libro externo y controles actuales. No toques POS/caja/inventario/tickets ni agregues servicios, dependencias o listeners.
+
+Actualiza y EJECUTA pruebas P20, Rules/Spark, sesión, build production/check:build y lint. Corrige fallos reales, no debilites validadores ni aserciones de seguridad. Sin commit, push ni deploy. Respuesta FINAL máximo 12 líneas: archivos, PASS/FAIL, hashes, bloqueantes y pasos manuales; evita narrar cada comando.

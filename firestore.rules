@@ -142,9 +142,9 @@ service cloud.firestore {
         && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && exists(/databases/$(database)/documents/invites/$(request.auth.token.email))
         && data.keys().hasAll(['email', 'businessId', 'role', 'firstName', 'lastName',
-          'branchId', 'shiftStart', 'shiftEnd', 'status', 'createdAt'])
+          'branchId', 'shiftStart', 'shiftEnd', 'status', 'createdAt', 'legalAcceptance'])
         && data.keys().hasOnly(['email', 'businessId', 'role', 'firstName', 'lastName',
-          'branchId', 'shiftStart', 'shiftEnd', 'status', 'createdAt'])
+          'branchId', 'shiftStart', 'shiftEnd', 'status', 'createdAt', 'legalAcceptance'])
         && hasTenant(data) && data.email == request.auth.token.email
         && data.email == invitation.email && data.businessId == invitation.businessId
         && tenantEnabled(invitation.businessId)
@@ -156,12 +156,14 @@ service cloud.firestore {
         && data.firstName == invitation.get('firstName', '')
         && data.lastName == invitation.get('lastName', '')
         && data.createdAt is string && validAssignment(data)
-        && !existsAfter(/databases/$(database)/documents/invites/$(request.auth.token.email));
+        && !existsAfter(/databases/$(database)/documents/invites/$(request.auth.token.email))
+        && newLegalMarker(userId, data.legalAcceptance);
     }
 
     function acceptedInvitation(emailId) {
       let profile = getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-      return ownInvitation(emailId) && profile.email == emailId
+      return ownInvitation(emailId) && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && profile.email == emailId
         && profile.businessId == resource.data.businessId && profile.role == resource.data.role
         && profile.get('branchId', null) == resource.data.get('branchId', null)
         && profile.get('shiftStart', null) == resource.data.get('shiftStart', null)
@@ -170,8 +172,8 @@ service cloud.firestore {
 
     function legalPublication() {
       // Approve both immutable texts together and pin their exact SHA-256 values.
-      return { 'termsVersion': '1.1', 'termsSha256': 'c6ffe9ffddd9eaae1e0cf4854feb054c9023a438d927b0a24e75b79148a12254',
-        'privacyVersion': null, 'privacySha256': null };
+      return { 'termsVersion': '1.1', 'termsSha256': '0f012fdb5bef0a04ec051701964852453b3cf62d804184840b03b86405dd4771',
+        'privacyVersion': '1.0', 'privacySha256': 'abf245649048e8c50cd595d6aa90fc03271ed3f93a8b387727b44758ba0174d8' };
     }
 
     function legalEvidencePath(userId, id) {
@@ -180,13 +182,28 @@ service cloud.firestore {
 
     function legalAcceptanceMarker(data) {
       return { 'id': data.id, 'uid': data.uid, 'businessId': data.businessId, 'role': data.role,
-        'termsVersion': data.termsVersion, 'termsSha256': data.termsSha256 };
+        'termsVersion': data.termsVersion, 'termsSha256': data.termsSha256,
+        'privacyVersion': data.privacyVersion, 'privacySha256': data.privacySha256 };
+    }
+
+    function newLegalMarker(userId, data) {
+      let path = legalEvidencePath(userId, data.id);
+      return data.id.matches('^[A-Za-z0-9]{20}$') && !exists(path)
+        && legalAcceptanceMarker(getAfter(path).data) == data;
+    }
+
+    function legalProfileTransition(profilePath, marker) {
+      return exists(profilePath)
+        ? get(profilePath).data.get('legalAcceptance', {}) != marker
+        : verifiedEmail() && exists(/databases/$(database)/documents/invites/$(request.auth.token.email))
+          && !existsAfter(/databases/$(database)/documents/invites/$(request.auth.token.email));
     }
 
     function validLegalAcceptance(userId, id) {
       let data = request.resource.data;
       let release = legalPublication();
-      let profile = currentUser();
+      let profilePath = /databases/$(database)/documents/users/$(userId);
+      let profile = getAfter(profilePath).data;
       return release.privacyVersion != null
         && data.keys().hasOnly(['id', 'uid', 'businessId', 'role', 'termsVersion', 'termsSha256',
           'privacyVersion', 'privacySha256', 'acceptedAt'])
@@ -196,17 +213,17 @@ service cloud.firestore {
         && data.termsVersion == release.termsVersion && data.termsSha256 == release.termsSha256
         && data.privacyVersion == release.privacyVersion && data.privacySha256 == release.privacySha256
         && data.acceptedAt == request.time
-        && profile.get('legalAcceptance', {}) != legalAcceptanceMarker(data)
-        && getAfter(/databases/$(database)/documents/users/$(userId)).data.legalAcceptance == legalAcceptanceMarker(data);
+        && profile.legalAcceptance == legalAcceptanceMarker(data)
+        && legalProfileTransition(profilePath, profile.legalAcceptance);
     }
 
     function legalProfileUpdate(userId, data) {
-      let path = legalEvidencePath(userId, data.id);
       let old = resource.data.get('legalAcceptance', {});
-      return legalPublication().privacyVersion != null && data.id.matches('^[A-Za-z0-9]{20}$')
+      return legalPublication().privacyVersion != null
         && !(old.get('businessId', null) == data.businessId && old.get('role', null) == data.role
-        && old.get('termsVersion', null) == data.termsVersion && old.get('termsSha256', null) == data.termsSha256)
-        && !exists(path) && legalAcceptanceMarker(getAfter(path).data) == data;
+        && old.get('termsVersion', null) == data.termsVersion && old.get('termsSha256', null) == data.termsSha256
+        && old.get('privacyVersion', null) == data.privacyVersion && old.get('privacySha256', null) == data.privacySha256)
+        && newLegalMarker(userId, data);
     }
 
     function legacyTermsUpdate(data) {

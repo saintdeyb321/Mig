@@ -15,8 +15,12 @@ const https = value => {
 export function validateLegalPublication(directory, rules, publication = legalPublication) {
   const { state, terms, privacy, provider } = publication;
   if (state === 'approved') {
-    assert.ok(terms?.path === `/legal/terminos-${terms?.version}.txt` && terms.version !== legacyTerms.version
+    assert.ok(terms?.path === `/legal/terminos-${terms?.version}.txt`
       && privacy?.path === `/legal/privacidad-${privacy?.version}.txt`, 'La activación requiere Términos y Privacidad aprobados.');
+    if (terms.version === legacyTerms.version) {
+      assert.deepEqual(terms, legacyTerms, 'Los Términos 1.1 deben coincidir con el archivo 1.1 verificado.');
+      assert.equal(privacy.version, '1.0', 'La publicación inicial vincula Términos 1.1 y Privacidad 1.0.');
+    }
     assert.ok(provider && ['name', 'ruc', 'address', 'supportEmail', 'privacyEmail'].every(key => provider[key]?.trim() && !unresolved.test(provider[key])),
       'Completa la ficha del proveedor y los canales de soporte y privacidad.');
     assert.match(provider.ruc, /^\d{11}$/);
@@ -28,7 +32,7 @@ export function validateLegalPublication(directory, rules, publication = legalPu
     assert.deepEqual(publication, { state: 'legacy', terms: legacyTerms, privacy: null, provider: null });
   }
 
-  const documents = [...new Set([...legalArchives, terms, privacy].filter(Boolean))];
+  const documents = [...legalArchives.filter(document => document.path !== terms.path), terms, privacy].filter(Boolean);
   const filenames = new Set();
   for (const document of documents) {
     assert.match(document.version, /^\d+\.\d+$/);

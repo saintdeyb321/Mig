@@ -105,7 +105,7 @@ function Settings({
       <CapabilitiesPanel />
       <Card aria-labelledby="settings-legal">
         <h2 id="settings-legal" className="text-base font-extrabold text-brand-deep">Información legal</h2>
-        <LegalLinks newTab documentsOnly className="text-primary" />
+        <LegalLinks newTab className="text-primary" />
       </Card>
     </div>;
 }

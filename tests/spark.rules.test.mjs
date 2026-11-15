@@ -13,12 +13,13 @@ import { cashLockId, createSparkCashRepository } from '../frontend/src/features/
 import { createCashStateReader, createCashPeriodReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
 import { createHash } from 'node:crypto';
 import { recordLegalAcceptance } from '../frontend/src/features/legal/acceptanceRepository.js';
-import { legalAcceptanceMarker } from '../frontend/src/features/legal/publication.js';
+import { legalAcceptanceEvidence, legalAcceptanceMarker, legalPublication } from '../frontend/src/features/legal/publication.js';
 
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080', 'Only the local demo-migapos Firestore Emulator is allowed.');
 assert.equal(process.env.GCLOUD_PROJECT, 'demo-migapos');
 const { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc, deleteField, writeBatch, serverTimestamp, Timestamp, setLogLevel } = sdk;
 setLogLevel('silent');
+const confirmation = { acceptedTerms: true, acknowledgedPrivacy: true };
 let env;
 const claims = email => ({ email, email_verified: true, firebase: { sign_in_provider: 'google.com' } });
 const dbFor = (uid, email = `${uid}@gmail.com`, extra = {}) => env.authenticatedContext(uid, { ...claims(email), ...extra }).firestore();
@@ -34,7 +35,7 @@ const create = async (suffix = 'one') => { const data = input(suffix); const res
 const googleUser = (uid = 'owner', email = 'one@gmail.com') => ({ uid, email, emailVerified: true, providerData: [{ providerId: 'google.com' }] });
 const businessOwner = async () => {
   const created = await create(), user = googleUser(), database = dbFor(user.uid, user.email);
-  await acceptInvitation(database, user, { sdk });
+  await acceptInvitation(database, user, confirmation, { sdk });
   return { ...created, database, user };
 };
 const rawBundle = (database, data, { omit, mutate = entries => entries } = {}) => {
@@ -74,7 +75,7 @@ describe('SPARK-1 provisioning, identity and license authority', () => {
     for (const path of [`tenants/${businessId}`, `licenses/${businessId}`, `branches/${branchId}`, `settings/${businessId}`, 'invites/one@gmail.com', 'owner_email_claims/one@gmail.com']) assert.equal((await dump(path)).exists(), true, path);
     assert.deepEqual(await repository().createTenant(data), { businessId, branchId, status: 'active' });
     const owner = googleUser();
-    assert.equal((await acceptInvitation(dbFor(owner.uid, owner.email), owner, { sdk })).role, 'dueño');
+    assert.equal((await acceptInvitation(dbFor(owner.uid, owner.email), owner, confirmation, { sdk })).role, 'dueño');
     assert.equal((await dump('invites/one@gmail.com')).exists(), false);
     assert.deepEqual(await repository().createTenant(data), { businessId, branchId, status: 'active' });
     await assert.rejects(repository().createTenant({ ...data, businessName: 'Changed' }), { code: 'operation-conflict' });
@@ -113,19 +114,19 @@ describe('SPARK-1 provisioning, identity and license authority', () => {
   });
   it('refuses client provisioning, license forgery, profile escalation and overwriting SuperAdmin', async () => {
     const { businessId } = await create();
-    const user = googleUser(); await acceptInvitation(dbFor(user.uid, user.email), user, { sdk });
+    const user = googleUser(); await acceptInvitation(dbFor(user.uid, user.email), user, confirmation, { sdk });
     await assertFails(rawBundle(dbFor(user.uid, user.email), input('forged')));
     await assertFails(updateDoc(doc(dbFor(user.uid, user.email), 'licenses', businessId), { expiry: Timestamp.fromMillis(Date.now() + 864000000) }));
     await assertFails(updateDoc(doc(dbFor(user.uid, user.email), 'users', user.uid), { role: 'superadmin' }));
-    const existing = await acceptInvitation(dbFor('admin'), googleUser('admin', 'admin@gmail.com'), { sdk });
+    const existing = await acceptInvitation(dbFor('admin'), googleUser('admin', 'admin@gmail.com'), confirmation, { sdk });
     assert.equal(existing.role, 'superadmin');
     await assertFails(setDoc(doc(dbFor('stranger'), 'users', 'stranger'), { role: 'superadmin', businessId: 'platform-admin' }));
   });
   it('requires verified Google identity, matching invitation and atomic consumption', async () => {
     await create(); const user = googleUser();
-    await assertFails(acceptInvitation(dbFor(user.uid, user.email, { email_verified: false }), user, { sdk }));
-    await assertFails(acceptInvitation(dbFor(user.uid, user.email, { firebase: { sign_in_provider: 'password' } }), user, { sdk }));
-    await assertFails(acceptInvitation(dbFor('foreign', 'foreign@gmail.com'), googleUser('foreign'), { sdk }));
+    await assertFails(acceptInvitation(dbFor(user.uid, user.email, { email_verified: false }), user, confirmation, { sdk }));
+    await assertFails(acceptInvitation(dbFor(user.uid, user.email, { firebase: { sign_in_provider: 'password' } }), user, confirmation, { sdk }));
+    await assertFails(acceptInvitation(dbFor('foreign', 'foreign@gmail.com'), googleUser('foreign'), confirmation, { sdk }));
     await assertFails(setDoc(doc(dbFor(user.uid, user.email), 'users', user.uid), { email: user.email, firstName: 'Dueña', lastName: 'Prueba', role: 'dueño', businessId: input().operationId,
       branchId: 'global', shiftStart: null, shiftEnd: null, status: 'activo', createdAt: new Date().toISOString() }));
     assert.equal((await dump('users/owner')).exists(), false);
@@ -157,7 +158,7 @@ describe('SPARK-2 tenant operations and catalog invariants', () => {
     await updateDoc(doc(database, 'settings', businessId), { companyData: { razonSocial: 'Laboratorio', ruc: '', direccion: '', telefono: '' } });
     const invite = { businessId, email: 'cashier@gmail.com', firstName: 'Caja', lastName: 'Prueba', role: 'cajero', branchId, shiftStart: null, shiftEnd: null, status: 'activo', createdAt: new Date().toISOString() };
     await setDoc(doc(database, 'invites', invite.email), invite);
-    const cashier = dbFor('cashier', invite.email); await acceptInvitation(cashier, googleUser('cashier', invite.email), { sdk });
+    const cashier = dbFor('cashier', invite.email); await acceptInvitation(cashier, googleUser('cashier', invite.email), confirmation, { sdk });
     assert.equal((await getDocs(query(collection(cashier, 'products'), where('businessId', '==', businessId)))).size, 1);
     assert.equal((await getDocs(query(collection(database, 'categories'), where('businessId', '==', businessId)))).size, 1);
     for (const [path, value] of [['products/bread', { price: 0 }], [`settings/${businessId}`, { companyData: {} }], ['users/cashier', { role: 'dueño' }], ['users/cashier', { businessId: 'foreign' }]]) await assertFails(updateDoc(doc(cashier, path), value));
@@ -481,7 +482,7 @@ describe('Plan03 branch authority and quota concurrency', () => {
     const data = { ...input('quota'), maxActiveBranches: maximum, maxRegisteredBranches: registeredMaximum };
     const created = await repository().createTenant(data), user = googleUser();
     const database = dbFor(user.uid, data.ownerEmail);
-    await acceptInvitation(database, googleUser(user.uid, data.ownerEmail), { sdk });
+    await acceptInvitation(database, googleUser(user.uid, data.ownerEmail), confirmation, { sdk });
     return { ...created, database, save: createBranchWriter(database, { sdk, currentUser: () => user }) };
   };
   const branchData = businessId => ({ businessId, name: 'Sede adicional', address: '', phone: '', status: 'activo' });
@@ -639,11 +640,11 @@ describe('Plan03 branch authority and quota concurrency', () => {
   });
 });
 
-describe('P20 versioned legal acceptance', () => {
+describe('P21 versioned legal acceptance', () => {
   const tenant = 'p20-tenant';
   const profile = (role, extra = {}) => ({ businessId: tenant, role, status: 'activo', ...extra });
   const legacy = { hasAcceptedTerms: true, termsVersion: '1.1', termsAcceptedAt: Timestamp.fromMillis(1) };
-  const approved = { state: 'approved', terms: { version: '2.0', sha256: 'a'.repeat(64) }, privacy: { version: '1.0', sha256: 'b'.repeat(64) } };
+  const approved = legalPublication;
   const seedLegal = () => seed({
     'users/p20-owner': profile('dueño', legacy),
     'users/p20-cashier': profile('cajero', { branchId: 'p20-branch' }),
@@ -652,7 +653,75 @@ describe('P20 versioned legal acceptance', () => {
     [`licenses/${tenant}`]: { businessId: tenant, status: 'activa', expiry: Timestamp.fromMillis(Date.now() + 86400000) },
   });
 
-  it('keeps legacy v1.1 active and rejects fabricated or overwritten acceptances', async () => {
+  it('activates an invited account with both documents and consumes the invite exactly once', async () => {
+    const { businessId } = await create();
+    const user = googleUser(), database = dbFor(user.uid, user.email);
+    const own = doc(database, 'users', user.uid), invite = doc(database, 'invites', user.email);
+    const invited = (await getDoc(invite)).data();
+    const { email, firstName, lastName, role, branchId, businessId: scope, shiftStart, shiftEnd, status } = invited;
+    const id = 'A'.repeat(20), evidenceRef = doc(own, 'legal_acceptances', id);
+    const evidence = legalAcceptanceEvidence({ id, uid: user.uid, businessId: scope, role }, approved, serverTimestamp());
+    const data = { email, firstName, lastName, role, branchId, businessId: scope, shiftStart, shiftEnd, status, createdAt: new Date().toISOString() };
+    const write = ({ profile = true, row = true, consume = true, profileData = data, evidenceData = evidence, marker = evidence } = {}) => {
+      const batch = writeBatch(database);
+      if (profile) batch.set(own, { ...profileData, legalAcceptance: legalAcceptanceMarker(marker) });
+      if (row) batch.set(evidenceRef, evidenceData);
+      if (consume) batch.delete(invite);
+      return batch.commit();
+    };
+    await assert.rejects(acceptInvitation(database, user, { acceptedTerms: true }, { sdk }), /Política de Privacidad/);
+    await assert.rejects(acceptInvitation(database, user, confirmation, {
+      sdk, expectedInvitation: { businessId: 'changed', role, branchId },
+    }), /invitación cambió/);
+    await assertFails(write({ profile: false }));
+    await assertFails(write({ row: false }));
+    await assertFails(write({ consume: false }));
+    await assertFails(write({ evidenceData: { ...evidence, termsSha256: '0'.repeat(64) } }));
+    await assertFails(write({ evidenceData: { ...evidence, privacySha256: '0'.repeat(64) } }));
+    const { privacySha256: _omitted, ...withoutPrivacy } = evidence;
+    await assertFails(write({ evidenceData: withoutPrivacy }));
+    for (const change of [{ role: 'cajero', branchId: 'unassigned' }, { businessId: 'another-tenant' }]) {
+      const altered = { ...evidence, role: change.role ?? role, businessId: change.businessId ?? scope };
+      await assertFails(write({ profileData: { ...data, ...change }, marker: altered, evidenceData: altered }));
+    }
+    assert.equal((await getDoc(own)).exists(), false);
+    assert.equal((await getDoc(invite)).exists(), true);
+    const activate = () => acceptInvitation(database, user, confirmation, { sdk });
+    const [first, second] = await Promise.all([activate(), activate()]);
+    assert.equal(first.businessId, businessId);
+    assert.deepEqual(first.legalAcceptance, second.legalAcceptance);
+    assert.equal((await dump(invite.path)).exists(), false);
+    const saved = (await getDoc(doc(own, 'legal_acceptances', first.legalAcceptance.id))).data();
+    assert.deepEqual(first.legalAcceptance, legalAcceptanceMarker(saved));
+    assert.ok(saved.acceptedAt.toMillis() > 1);
+    await env.withSecurityRulesDisabled(async context => {
+      assert.equal((await getDocs(collection(context.firestore(), 'users', user.uid, 'legal_acceptances'))).size, 1);
+    });
+  });
+
+  it('leaves an offline activation unwritten and rejects a revoked invitation on reconnect', async () => {
+    await create();
+    const user = googleUser(), database = dbFor(user.uid, user.email);
+    const own = doc(database, 'users', user.uid), invite = doc(database, 'invites', user.email);
+    const { businessId, role, branchId } = (await getDoc(invite)).data();
+    const browser = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } });
+    try {
+      await assert.rejects(acceptInvitation(database, user, confirmation, { sdk }), /Conéctate para activar/);
+    } finally {
+      if (browser) Object.defineProperty(globalThis, 'navigator', browser);
+      else Reflect.deleteProperty(globalThis, 'navigator');
+    }
+    assert.equal((await getDoc(own)).exists(), false);
+    assert.equal((await getDoc(invite)).exists(), true);
+    await env.withSecurityRulesDisabled(context => deleteDoc(doc(context.firestore(), invite.path)));
+    await assert.rejects(acceptInvitation(database, user, confirmation, {
+      sdk, expectedInvitation: { businessId, role, branchId },
+    }), /no tiene una invitación/);
+    assert.equal((await getDoc(own)).exists(), false);
+  });
+
+  it('keeps the platform legacy flow and rejects unversioned acceptance for business users', async () => {
     await seedLegal();
     const uid = 'p20-cashier';
     const database = dbFor(uid);
@@ -661,80 +730,72 @@ describe('P20 versioned legal acceptance', () => {
     await assertFails(updateDoc(own, { ...stamp, termsVersion: '2.0' }));
     await assertFails(updateDoc(own, { ...stamp, termsAcceptedAt: Timestamp.fromMillis(1) }));
     await assertFails(updateDoc(doc(database, 'users', 'p20-owner'), stamp));
-    await assertFails(recordLegalAcceptance(database, { uid, businessId: tenant, role: 'cajero' }, approved, sdk));
-    await updateDoc(own, stamp);
-    assert.equal((await getDoc(own)).data().termsVersion, '1.1');
+    await assert.rejects(recordLegalAcceptance(database, { uid, businessId: tenant, role: 'cajero' }, approved, sdk),
+      /No hay documentos aprobados/);
     await assertFails(updateDoc(own, stamp));
+    const platform = doc(dbFor('admin'), 'users', 'admin');
+    await updateDoc(platform, stamp);
+    assert.equal((await getDoc(platform)).data().termsVersion, '1.1');
+    await assertFails(updateDoc(platform, stamp));
     await updateDoc(own, { firstName: 'Nombre de prueba' });
   });
 
-  it('tests a future approval in the emulator with scope, atomicity, version and immutable history', async () => {
+  it('enforces production pins, account scope, atomicity and immutable history', async () => {
     await seedLegal();
-    const rules = readFileSync('firestore.rules', 'utf8');
-    const fixtureRules = rules.replace(/(function legalPublication\(\) \{[\s\S]*?return )\{[^}]+\}/, (_, start) =>
-      start + JSON.stringify({ termsVersion: approved.terms.version, termsSha256: approved.terms.sha256,
-        privacyVersion: approved.privacy.version, privacySha256: approved.privacy.sha256 }));
-    assert.notEqual(fixtureRules, rules);
-    const configure = rules => initializeTestEnvironment({ projectId: 'demo-migapos', firestore: { host: '127.0.0.1', port: 8080, rules } });
-    const future = await configure(fixtureRules);
-    try {
-      const uid = 'p20-owner', database = dbFor(uid), own = doc(database, 'users', uid);
-      const user = { uid, businessId: tenant, role: 'dueño' };
-      const id = 'A'.repeat(20);
-      const entry = { id, uid, businessId: tenant, role: user.role, termsVersion: '2.0', termsSha256: approved.terms.sha256,
-        privacyVersion: '1.0', privacySha256: approved.privacy.sha256, acceptedAt: serverTimestamp() };
-      const evidenceRef = doc(own, 'legal_acceptances', id);
-      const writePair = (data, target = evidenceRef) => writeBatch(database).set(target, data)
-        .update(own, { legalAcceptance: legalAcceptanceMarker(data) }).commit();
-      await assertFails(setDoc(evidenceRef, entry));
-      await assertFails(updateDoc(own, { legalAcceptance: legalAcceptanceMarker(entry) }));
-      for (const forged of [
-        { uid: 'p20-cashier' }, { businessId: 'p20-other' }, { role: 'cajero' }, { termsVersion: '99.0' },
-        { termsSha256: '0'.repeat(64) }, { privacyVersion: '9.0' }, { privacySha256: '0'.repeat(64) },
-        { acceptedAt: Timestamp.fromMillis(1) }, { ip: '127.0.0.1' },
-      ]) await assertFails(writePair({ ...entry, ...forged }));
-      await assertFails(writePair(entry, doc(own, 'legal_acceptances', 'B'.repeat(20))));
-      await assertFails(updateDoc(doc(dbFor('p20-cashier'), 'users', 'p20-cashier'), {
-        hasAcceptedTerms: true, termsVersion: '1.1', termsAcceptedAt: serverTimestamp(),
-      }));
-      const inactiveDb = dbFor('p20-inactive'), inactiveProfile = doc(inactiveDb, 'users', 'p20-inactive');
-      const inactiveEntry = { ...entry, uid: 'p20-inactive', role: 'cajero' };
-      await assertFails(writeBatch(inactiveDb).set(doc(inactiveProfile, 'legal_acceptances', id), inactiveEntry)
-        .update(inactiveProfile, { legalAcceptance: legalAcceptanceMarker(inactiveEntry) }).commit());
+    const uid = 'p20-owner', database = dbFor(uid), own = doc(database, 'users', uid);
+    const user = { uid, businessId: tenant, role: 'dueño' };
+    const id = 'A'.repeat(20);
+    const entry = { id, uid, businessId: tenant, role: user.role, termsVersion: approved.terms.version, termsSha256: approved.terms.sha256,
+      privacyVersion: '1.0', privacySha256: approved.privacy.sha256, acceptedAt: serverTimestamp() };
+    const evidenceRef = doc(own, 'legal_acceptances', id);
+    const writePair = (data, target = evidenceRef) => writeBatch(database).set(target, data)
+      .update(own, { legalAcceptance: legalAcceptanceMarker(data) }).commit();
+    await assertFails(setDoc(evidenceRef, entry));
+    await assertFails(updateDoc(own, { legalAcceptance: legalAcceptanceMarker(entry) }));
+    for (const forged of [
+      { uid: 'p20-cashier' }, { businessId: 'p20-other' }, { role: 'cajero' }, { termsVersion: '99.0' },
+      { termsSha256: '0'.repeat(64) }, { privacyVersion: '9.0' }, { privacySha256: '0'.repeat(64) },
+      { acceptedAt: Timestamp.fromMillis(1) }, { ip: '127.0.0.1' },
+    ]) await assertFails(writePair({ ...entry, ...forged }));
+    await assertFails(writePair(entry, doc(own, 'legal_acceptances', 'B'.repeat(20))));
+    await assertFails(updateDoc(doc(dbFor('p20-cashier'), 'users', 'p20-cashier'), {
+      hasAcceptedTerms: true, termsVersion: '1.1', termsAcceptedAt: serverTimestamp(),
+    }));
+    const inactiveDb = dbFor('p20-inactive'), inactiveProfile = doc(inactiveDb, 'users', 'p20-inactive');
+    const inactiveEntry = { ...entry, uid: 'p20-inactive', role: 'cajero' };
+    await assertFails(writeBatch(inactiveDb).set(doc(inactiveProfile, 'legal_acceptances', id), inactiveEntry)
+      .update(inactiveProfile, { legalAcceptance: legalAcceptanceMarker(inactiveEntry) }).commit());
 
-      await Promise.all([recordLegalAcceptance(database, user, approved, sdk), recordLegalAcceptance(database, user, approved, sdk)]);
-      const acceptedProfile = (await getDoc(own)).data();
-      const accepted = acceptedProfile.legalAcceptance;
-      assert.equal(acceptedProfile.termsAcceptedAt.toMillis(), 1);
-      const historical = doc(own, 'legal_acceptances', accepted.id);
-      const evidence = (await getDoc(historical)).data();
-      assert.deepEqual(accepted, legalAcceptanceMarker(evidence));
-      assert.ok(evidence.acceptedAt.toMillis() > 1);
-      assert.equal(accepted.acceptedAt, undefined);
-      assert.equal(accepted.privacyVersion, undefined);
-      await env.withSecurityRulesDisabled(async context => {
-        const rows = await getDocs(collection(context.firestore(), 'users', uid, 'legal_acceptances'));
-        assert.equal(rows.size, 1, 'Concurrent retries must persist exactly one acceptance');
-      });
-      await assertFails(writePair(entry));
-      await assertFails(updateDoc(historical, { acceptedAt: serverTimestamp() }));
-      await assertFails(deleteDoc(historical));
-      await assertFails(getDocs(collection(own, 'legal_acceptances')));
-      for (const actor of ['admin', 'p20-cashier', 'p20-outsider']) {
-        const other = doc(dbFor(actor), historical.path);
-        await assertFails(getDoc(other));
-        await assertFails(deleteDoc(other));
-      }
-
-      const cashier = { uid: 'p20-cashier', businessId: tenant, role: 'cajero' };
-      const cashierDb = dbFor(cashier.uid);
-      await recordLegalAcceptance(cashierDb, cashier, approved, sdk);
-      assert.equal((await getDoc(doc(cashierDb, 'users', cashier.uid))).data().legalAcceptance.role, 'cajero');
-      await seed({ 'users/p20-owner': { ...acceptedProfile, businessId: 'p20-other' } });
-      await assertFails(getDoc(historical));
-    } finally {
-      await future.cleanup();
-      await (await configure(rules)).cleanup();
+    await Promise.all([recordLegalAcceptance(database, user, approved, sdk, confirmation), recordLegalAcceptance(database, user, approved, sdk, confirmation)]);
+    const acceptedProfile = (await getDoc(own)).data();
+    const accepted = acceptedProfile.legalAcceptance;
+    assert.equal(acceptedProfile.termsAcceptedAt.toMillis(), 1);
+    const historical = doc(own, 'legal_acceptances', accepted.id);
+    const evidence = (await getDoc(historical)).data();
+    assert.deepEqual(accepted, legalAcceptanceMarker(evidence));
+    assert.ok(evidence.acceptedAt.toMillis() > 1);
+    assert.equal(accepted.acceptedAt, undefined);
+    assert.equal(accepted.privacyVersion, approved.privacy.version);
+    assert.equal(accepted.privacySha256, approved.privacy.sha256);
+    await env.withSecurityRulesDisabled(async context => {
+      const rows = await getDocs(collection(context.firestore(), 'users', uid, 'legal_acceptances'));
+      assert.equal(rows.size, 1, 'Concurrent retries must persist exactly one acceptance');
+    });
+    await assertFails(writePair(entry));
+    await assertFails(updateDoc(historical, { acceptedAt: serverTimestamp() }));
+    await assertFails(deleteDoc(historical));
+    await assertFails(getDocs(collection(own, 'legal_acceptances')));
+    for (const actor of ['admin', 'p20-cashier', 'p20-outsider']) {
+      const other = doc(dbFor(actor), historical.path);
+      await assertFails(getDoc(other));
+      await assertFails(deleteDoc(other));
     }
+
+    const cashier = { uid: 'p20-cashier', businessId: tenant, role: 'cajero' };
+    const cashierDb = dbFor(cashier.uid);
+    await recordLegalAcceptance(cashierDb, cashier, approved, sdk, confirmation);
+    assert.equal((await getDoc(doc(cashierDb, 'users', cashier.uid))).data().legalAcceptance.role, 'cajero');
+    await seed({ 'users/p20-owner': { ...acceptedProfile, businessId: 'p20-other' } });
+    await assertFails(getDoc(historical));
   });
 });

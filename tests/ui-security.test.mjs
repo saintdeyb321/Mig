@@ -13,7 +13,7 @@ import { generateContractProductionHTML, generateContractTextOnlyHTML } from '..
 import { resolveImageSources, usingImageSources } from '../frontend/src/features/contracts/application/imageSources.js';
 import { hostingHeaders, environmentFor } from '../frontend/src/config/environments.js';
 import { queryErrorDiagnostic, realIndexCreationUrl, withQueryContext } from '../frontend/src/core/firebase/queryErrors.js';
-import { hasCurrentTerms, legalPublication, termsFor } from '../frontend/src/features/legal/publication.js';
+import { hasCurrentTerms, legalAcceptanceEvidence, legalAcceptanceMarker, legalPublication, legacyTerms, termsFor } from '../frontend/src/features/legal/publication.js';
 import { validateLegalPublication } from '../frontend/config/validateLegalPublication.js';
 import { fileURLToPath } from 'node:url';
 
@@ -112,13 +112,16 @@ describe('Printable tenant data', () => {
 });
 
 describe('P20 legal publication and access', () => {
-  it('ships just verified historical terms and rejects activation without real legal metadata', () => {
+  it('ships both official documents with exact production pins and verified provider metadata', () => {
     const directory = fileURLToPath(new URL('../frontend/public/legal/', import.meta.url));
     const rules = source('firestore.rules');
     validateLegalPublication(directory, rules);
     assert.equal(legalPublication.terms.version, '1.1');
-    assert.equal(legalPublication.privacy, null);
-    assert.throws(() => validateLegalPublication(directory, rules, { ...legalPublication, state: 'approved' }));
+    assert.equal(legalPublication.privacy.version, '1.0');
+    const privacy = readFileSync(join(directory, 'privacidad-1.0.txt'), 'utf8');
+    assert.equal([...privacy.matchAll(/^## \d+\./gm)].length, 12);
+    assert.deepEqual(readdirSync(directory).sort(), ['privacidad-1.0.txt', 'terminos-1.1.txt']);
+    assert.throws(() => validateLegalPublication(directory, rules, { ...legalPublication, provider: { ...legalPublication.provider, ruc: '' } }));
     assert.throws(() => validateLegalPublication(directory, rules.replace("'termsVersion': '1.1'", "'termsVersion': '2.0'")), /mismos documentos/);
   });
 
@@ -159,16 +162,17 @@ describe('P20 legal publication and access', () => {
   });
 
   it('preserves legacy profiles and requires evidence for the exact new terms and account scope', () => {
-    const approved = { state: 'approved', terms: { version: '2.0', sha256: 'a'.repeat(64) }, privacy: { version: '1.0', sha256: 'b'.repeat(64) } };
+    const approved = legalPublication;
+    const legacy = { state: 'legacy', terms: legacyTerms, privacy: null };
     for (const role of ['dueño', 'cajero']) {
       const profile = { uid: 'p20-user', businessId: 'p20-business', role, hasAcceptedTerms: true, termsVersion: '1.1' };
-      assert.equal(hasCurrentTerms(profile), true);
-      assert.equal(hasCurrentTerms({ ...profile, termsVersion: undefined }), true);
+      assert.equal(hasCurrentTerms(profile, legacy), true);
+      assert.equal(hasCurrentTerms({ ...profile, termsVersion: undefined }, legacy), true);
       assert.equal(hasCurrentTerms({ ...profile, termsVersion: '99.0' }), false);
       assert.equal(hasCurrentTerms(profile, approved), false);
-      const legalAcceptance = { id: 'A'.repeat(20), uid: profile.uid, businessId: profile.businessId, role, termsVersion: '2.0', termsSha256: approved.terms.sha256 };
+      const legalAcceptance = legalAcceptanceMarker(legalAcceptanceEvidence({ ...profile, id: 'A'.repeat(20) }, approved));
       assert.equal(hasCurrentTerms({ ...profile, legalAcceptance }, approved), true);
-      for (const change of [{ uid: 'other' }, { businessId: 'other' }, { role: 'other' }, { termsSha256: 'forged' }, { id: null }]) {
+      for (const change of [{ uid: 'other' }, { businessId: 'other' }, { role: 'other' }, { termsSha256: 'forged' }, { privacyVersion: undefined }, { privacySha256: 'forged' }, { id: null }]) {
         assert.equal(hasCurrentTerms({ ...profile, legalAcceptance: { ...legalAcceptance, ...change } }, approved), false);
       }
     }
@@ -341,7 +345,8 @@ describe('Hosting policy and conservative cleanup', () => {
       'docs/RESULTADOS-P19-UX-MOVIL.md', 'docs/MIGAPOS-P20-AUDITORIA-Y-PLAN-LEGAL.md',
       'docs/MIGAPOS-TERMINOS-v2-BORRADOR.md', 'docs/MIGAPOS-PRIVACIDAD-v1-BORRADOR.md',
       'docs/MIGAPOS-P20-PROMPT-CODEX-LEGAL.md', 'docs/RESULTADOS-P20-LEGAL.md',
-      'docs/MIGAPOS-P20-FIX-LEGAL-UX.md', 'docs/RESULTADOS-P20-FIX.md'];
+      'docs/MIGAPOS-P20-FIX-LEGAL-UX.md', 'docs/RESULTADOS-P20-FIX.md',
+      'docs/MIGAPOS-P21-PLAN-INTEGRACION-LEGAL-ACTIVACION.md'];
     assert.deepEqual(markdown.filter(path => !allowedMarkdown.includes(path)), [], 'Documentos Markdown inesperados en el inventario local');
   });
 });

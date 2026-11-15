@@ -585,7 +585,7 @@ it('P19 measures the mobile shell and operational modules', { timeout: 180000 },
         assert.ok(await evaluate(() => document.activeElement.textContent === 'Más'));
         const legalPaths = ['/legal/terminos', '/legal/privacidad'];
         await show('settings');
-        assert.deepEqual(await evaluate(() => [...document.querySelectorAll('section[aria-labelledby="settings-legal"] a')].map(a => a.pathname)), legalPaths);
+        assert.deepEqual(await evaluate(() => [...document.querySelectorAll('section[aria-labelledby="settings-legal"] a[href^="/legal/"]')].map(a => a.pathname)), legalPaths);
         assert.equal(await evaluate(() => document.querySelectorAll('aside a[href^="/legal/"], .app-mobile-header a[href^="/legal/"]').length), 0);
         await show('pos', 'cajero');
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll('.app-mobile-header a[href^="/legal/"]')]

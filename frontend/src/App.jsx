@@ -21,7 +21,7 @@ import LicenseGuard from './components/LicenseGuard';
 import ReloadPrompt from './components/ReloadPrompt';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import BranchGuard from './components/BranchGuard';
-import TermsModal from './components/TermsModal';
+import LegalAcceptanceCard from './components/LegalAcceptanceCard';
 import RestrictedAccess from './components/RestrictedAccess';
 import Auth from './modules/Auth';
 const POS = React.lazy(() => import('./modules/POS'));
@@ -112,8 +112,9 @@ function App() {
   if (authLoading) {
     return <FullscreenState loading title={`Iniciando ${brand.name}…`} />;
   }
-  if (authIssue === 'needs-invite') return <InvitationOnboarding invitation={invitation} onActivate={acceptProfileInvitation} onLogout={handleLogout} />;
-  if (authIssue) return <RestrictedAccess licenseState={authIssue} onRetry={retryAuth} onLogout={handleLogout} onAcceptInvitation={authIssue === 'needs-invite' ? acceptProfileInvitation : undefined} />;
+  if (authIssue === 'needs-invite') return <InvitationOnboarding key={JSON.stringify([invitation?.email, invitation?.businessId, invitation?.role, invitation?.branchId])}
+    invitation={invitation} onActivate={acceptProfileInvitation} onLogout={handleLogout} />;
+  if (authIssue) return <RestrictedAccess licenseState={authIssue} onRetry={retryAuth} onLogout={handleLogout} />;
   return <>
       <ReloadPrompt user={user} />
 
@@ -122,7 +123,7 @@ function App() {
           <Auth onLogin={NO_OP_FUNCTION} />
         </> : !hasCurrentTerms(user) ? <>
           <Toaster position="top-center" />
-          <TermsModal key={getIdentityKey(user)} user={user} onLogout={handleLogout} />
+          <LegalAcceptanceCard key={getIdentityKey(user)} user={user} onLogout={handleLogout} />
         </> : <SessionGuards key={getIdentityKey(user)} user={user} handleLogout={handleLogout} recheckProfile={recheckProfile}>
 
               <Toaster position="top-right" reverseOrder={false} toastOptions={{

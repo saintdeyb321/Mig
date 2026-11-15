@@ -1,40 +1,40 @@
 Términos y Condiciones de MigaPOS
-Versión 1.1 · Abril 2026
+Versión 1.1 · Noviembre 2026
 
-Bienvenido a MigaPOS. Para utilizar nuestro sistema, debes leer y aceptar las siguientes condiciones de servicio:
+Al utilizar MigaPOS, el usuario acepta las siguientes condiciones de servicio.
 
 ## 1. Naturaleza y Alcance del Servicio
 
-MigaPOS es una plataforma de software como servicio (SaaS) proporcionada "tal cual", diseñada exclusivamente para el control interno, gestión de inventario y registro de ventas operativas. Los comprobantes generados son de carácter estrictamente administrativo. MigaPOS NO es un sistema de Facturación Electrónica homologado por la SUNAT. El usuario reconoce que el cumplimiento de sus obligaciones tributarias es de su entera responsabilidad.
+MigaPOS es un servicio de software (SaaS) para gestionar ventas, inventarios, caja y operaciones comerciales. Sus tickets y reportes son documentos administrativos y no sustituyen comprobantes electrónicos autorizados por SUNAT. El titular del negocio es responsable de sus obligaciones tributarias, laborales y comerciales.
 
 ## 2. Disponibilidad del Sistema y Terceros
 
-MigaPOS opera utilizando infraestructura en la nube. No nos hacemos responsables por interrupciones del servicio o pérdida de acceso causadas por fallas en proveedores de terceros (como Google Cloud/Firebase), caídas generales de internet, o problemas con el proveedor local del usuario.
+MigaPOS utiliza infraestructura externa, incluidos Google Cloud y Firebase. No garantiza disponibilidad ininterrumpida ni responde automáticamente por caídas de internet, proveedores o dispositivos ajenos a su control. Adoptará medidas razonables ante incidentes bajo su responsabilidad, sin excluir los derechos reconocidos por la ley.
 
 ## 3. Modo Fuera de Línea (Offline)
 
-El sistema permite operar temporalmente sin conexión guardando datos en el dispositivo. Es responsabilidad exclusiva del usuario no borrar la caché, datos de navegación, ni desinstalar la aplicación hasta que el sistema sincronice con la nube. MigaPOS no se responsabiliza por la pérdida de datos locales no sincronizados.
+El modo offline está incompleto y no se ofrece como una función operativa garantizada. Se recomienda no utilizar MigaPOS sin conexión estable a internet, especialmente para ventas y cobros. Los datos no sincronizados pueden perderse y su recuperación no está garantizada. MigaPOS no responde por pérdidas atribuibles exclusivamente al uso de esta función advertida como incompleta, salvo responsabilidad legalmente exigible.
 
 ## 4. Responsabilidad de Caja y Empleados
 
-MigaPOS se deslinda de toda responsabilidad legal o civil por pérdidas económicas, descuadres de caja, robos sistemáticos o negligencias cometidas por los empleados o administradores. La correcta delegación de roles en la plataforma y la supervisión del personal son responsabilidad absoluta del titular de la cuenta.
+El titular administra a su personal, controla existencias y verifica cobros y arqueos. Los pagos por Yape, Plin u otros medios deben confirmarse directamente con el proveedor financiero. MigaPOS no responde por robos, fraudes, errores de personal o pérdidas ajenos a su actuación, sin perjuicio de la responsabilidad que pudiera corresponderle por fallas propias.
 
-## 5. Propiedad de Datos, Privacidad y Derechos ARCO
+## 5. Protección de Datos y Seguridad
 
-La información registrada es propiedad exclusiva del usuario. El tratamiento de datos se rige por nuestra Política de Privacidad, detallando el ejercicio de los derechos ARCO conforme a la ley peruana. Al autenticarse mediante Google, no seremos responsables por filtraciones derivadas del acceso no autorizado a su cuenta de Google, pérdida de su dispositivo o equipos infectados por malware.
+MigaPOS tratará los datos personales conforme a la Ley N.º 29733, su reglamento y la Política de Privacidad aplicable. El titular debe gestionar los accesos de su equipo y contar con base legal para registrar datos de clientes y empleados. MigaPOS adoptará las medidas de seguridad legalmente exigibles y facilitará canales para ejercer los derechos ARCO.
 
-## 6. Suscripciones y Bloqueo de Servicio
+## 6. Suscripciones y Suspensión del Servicio
 
-El acceso a MigaPOS está condicionado al pago puntual de la suscripción. En caso de mora, el sistema bloqueará por completo el acceso a la interfaz y sus datos hasta la regularización del pago. Si la morosidad supera los 60 días calendario, MigaPOS se reserva el derecho de eliminar permanentemente la cuenta y sus datos asociados para liberar espacio, sin lugar a reclamo.
+El acceso requiere una suscripción vigente y respeta el número de sucursales contratado. Las sedes adicionales requieren autorización y ajuste del plan. La falta de pago puede ocasionar suspensión del acceso conforme a las condiciones informadas al contratar. La suspensión no supone eliminación automática de los datos; su conservación y eventual eliminación se regirán por la normativa y las condiciones comunicadas al cliente.
 
-## 7. Límite de Responsabilidad Máxima
+## 7. Limitación de Responsabilidad
 
-En la medida máxima permitida por la ley, la responsabilidad total y acumulada de MigaPOS frente al usuario por cualquier reclamo o daño, no superará el monto total pagado por el usuario por concepto de suscripción durante los últimos doce (12) meses anteriores al evento originario.
+MigaPOS es una herramienta de apoyo operativo; no garantiza beneficios comerciales ni ausencia absoluta de errores. Cuando la ley lo permita, la responsabilidad contractual por incumplimientos ordinarios se limitará al importe pagado por el cliente durante los doce meses anteriores al hecho reclamado. Este límite no se aplica al dolo, culpa inexcusable, obligaciones imperativas ni otros supuestos en que la ley prohíba limitar la responsabilidad.
 
-## 8. Modificaciones a los Términos
+## 8. Modificaciones y Uso Autorizado
 
-MigaPOS se reserva el derecho de modificar estos términos. Notificaremos sobre cambios con anticipación mediante la plataforma. El uso continuado del sistema constituye la aceptación de los nuevos términos.
+La suscripción concede una licencia de uso no exclusiva, sin transferencia de propiedad intelectual. Se prohíbe copiar, revender o distribuir MigaPOS sin autorización, salvo excepciones legales. Los cambios contractuales relevantes se comunicarán y, cuando corresponda, requerirán nueva aceptación expresa; no se presumirá el consentimiento por silencio.
 
-## 9. Jurisdicción
+## 9. Legislación y Jurisdicción
 
-Estos términos se rigen bajo las leyes del Perú. Cualquier controversia será sometida a la jurisdicción de los jueces y tribunales de la ciudad de Huancayo, Junín.
+Estos términos se rigen por la legislación peruana. Las controversias se atenderán ante las autoridades y tribunales competentes; podrá corresponder Huancayo, Junín, cuando sea legalmente procedente, sin restringir derechos irrenunciables.

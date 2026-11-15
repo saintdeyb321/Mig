@@ -4,17 +4,29 @@ export const legalTitles = Object.freeze({ terms: 'Términos y Condiciones', pri
 export const legacyTerms = Object.freeze({
   version: '1.1',
   path: '/legal/terminos-1.1.txt',
-  sha256: 'c6ffe9ffddd9eaae1e0cf4854feb054c9023a438d927b0a24e75b79148a12254',
-  dateLabel: 'Abril de 2026',
+  sha256: '0f012fdb5bef0a04ec051701964852453b3cf62d804184840b03b86405dd4771',
+  dateLabel: 'Noviembre de 2026',
 });
 export const legalArchives = Object.freeze([legacyTerms]);
 
-// The proposed texts in docs/ are outside public/ and the application import graph.
 export const legalPublication = Object.freeze({
-  state: 'legacy',
+  state: 'approved',
   terms: legacyTerms,
-  privacy: null,
-  provider: null,
+  privacy: Object.freeze({
+    version: '1.0',
+    path: '/legal/privacidad-1.0.txt',
+    sha256: 'abf245649048e8c50cd595d6aa90fc03271ed3f93a8b387727b44758ba0174d8',
+    dateLabel: '15 de noviembre de 2026',
+  }),
+  provider: Object.freeze({
+    name: 'Deyvid Alexander Pariona Ramos',
+    ruc: '10735959811',
+    address: 'Av. Ramón Castilla S/N, Concepción, Junín, Perú',
+    supportEmail: 'deyvidparionaramos@gmail.com',
+    privacyEmail: 'deyvidparionaramos@gmail.com',
+    complaintsRequired: true,
+    complaintsUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSfobnWtfvGtFoDqeDMGcIQvFmBOpKdYkCFmyfA4rlzkHMAtKg/viewform?usp=publish-editor',
+  }),
 });
 
 export function requiresVersionedAcceptance(profile, publication = legalPublication) {
@@ -25,8 +37,20 @@ export function termsFor(profile, publication = legalPublication) {
   return profile?.role === 'superadmin' ? legacyTerms : publication.terms;
 }
 
-export function legalAcceptanceMarker({ id, uid, businessId, role, termsVersion, termsSha256 }) {
-  return { id, uid, businessId, role, termsVersion, termsSha256 };
+export function legalAcceptanceMarker({ id, uid, businessId, role, termsVersion, termsSha256, privacyVersion, privacySha256 }) {
+  return { id, uid, businessId, role, termsVersion, termsSha256, privacyVersion, privacySha256 };
+}
+
+export function legalConfirmationComplete(confirmation, needsPrivacy = true) {
+  return confirmation?.acceptedTerms === true && (!needsPrivacy || confirmation.acknowledgedPrivacy === true);
+}
+
+export function legalAcceptanceEvidence({ id, uid, businessId, role }, publication, acceptedAt) {
+  return {
+    id, uid, businessId, role, acceptedAt,
+    termsVersion: publication.terms.version, termsSha256: publication.terms.sha256,
+    privacyVersion: publication.privacy.version, privacySha256: publication.privacy.sha256,
+  };
 }
 
 export function hasCurrentTerms(profile, publication = legalPublication) {
@@ -35,13 +59,14 @@ export function hasCurrentTerms(profile, publication = legalPublication) {
     return profile.hasAcceptedTerms === true && (profile.termsVersion == null || profile.termsVersion === legacyTerms.version);
   }
   const evidence = profile.legalAcceptance;
-  return Boolean(evidence && profile.uid && evidence.uid === profile.uid && evidence.businessId === profile.businessId && evidence.role === profile.role
+  return Boolean(publication.privacy && evidence && profile.uid && evidence.uid === profile.uid && evidence.businessId === profile.businessId && evidence.role === profile.role
     && evidence.termsVersion === publication.terms.version && evidence.termsSha256 === publication.terms.sha256
-    && /^[A-Za-z0-9]{20}$/.test(evidence.id));
+    && evidence.privacyVersion === publication.privacy.version && evidence.privacySha256 === publication.privacy.sha256
+    && typeof evidence.id === 'string' && /^[A-Za-z0-9]{20}$/.test(evidence.id));
 }
 
 export async function fetchLegalText(document, signal) {
-  const response = await fetch(document.path, { signal });
+  const response = await fetch(document.path, { signal, cache: 'no-cache' });
   if (!response.ok || !response.headers.get('Content-Type')?.startsWith('text/plain')) {
     throw new Error('No se pudo cargar el documento oficial.');
   }

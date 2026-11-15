@@ -7,13 +7,13 @@ export function useAcceptTerms(user) {
   const [isAccepting, setIsAccepting] = useState(false);
   const [error, setError] = useState('');
   const pending = useRef(false);
-  const handleAccept = async () => {
+  const handleAccept = async confirmation => {
     if (pending.current) return;
     pending.current = true;
     setIsAccepting(true);
     setError('');
     try {
-      await withAccessDeadline(() => acceptTerms(user));
+      await withAccessDeadline(() => acceptTerms(user, confirmation));
       // The existing server profile subscription dismisses the gate.
     } catch (failure) {
       const code = getFirebaseErrorCode(failure);

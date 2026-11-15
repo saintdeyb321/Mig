@@ -4,7 +4,7 @@ import { collection, query, where, onSnapshot, doc, getDoc, getDocFromServer, se
 import * as firestore from 'firebase/firestore';
 import { db } from '../../../core/firebase/client';
 import { mapDocuments } from '../../../core/firebase/documents';
-import { hasCurrentTerms, legalPublication, legacyTerms, requiresVersionedAcceptance } from '../../legal/publication.js';
+import { hasCurrentTerms, legalConfirmationComplete, legalPublication, legacyTerms, requiresVersionedAcceptance } from '../../legal/publication.js';
 import { recordLegalAcceptance } from '../../legal/acceptanceRepository.js';
 import { acceptInvitation } from './acceptInvitation.js';
 
@@ -38,13 +38,14 @@ export const getInviteFromServer = async email => {
   const snapshot = await getDocFromServer(doc(db, 'invites', email));
   return snapshot.exists() ? snapshot.data() : null;
 };
-export const acceptInvitedProfile = user => acceptInvitation(db, user);
+export const acceptInvitedProfile = (user, confirmation, expectedInvitation) => acceptInvitation(db, user, confirmation, { expectedInvitation });
 export const subscribeProfile = (uid, onData, onError) => onSnapshot(
   doc(db, 'users', uid), { includeMetadataChanges: true },
   snapshot => onData(snapshot.exists() ? snapshot.data() : null, snapshot.metadata), onError,
 );
-export const acceptTerms = confirmedWrite(user => {
-  if (requiresVersionedAcceptance(user)) return recordLegalAcceptance(db, user, legalPublication, firestore);
+export const acceptTerms = confirmedWrite((user, confirmation) => {
+  if (requiresVersionedAcceptance(user)) return recordLegalAcceptance(db, user, legalPublication, firestore, confirmation);
+  if (!legalConfirmationComplete(confirmation, false)) throw new Error('Confirma los Términos antes de continuar.');
   const ref = doc(db, 'users', user.uid);
   return runTransaction(db, async transaction => {
     const profile = (await transaction.get(ref)).data();

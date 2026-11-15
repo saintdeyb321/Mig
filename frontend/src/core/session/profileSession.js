@@ -2,6 +2,7 @@ import { isAccessCacheDenied, recordAccessDenial } from './operationAccess.js';
 import { accessErrorState, profileAccess, cachedProfileAccess, isServerSnapshot } from './accessState.js';
 import { withAccessDeadline } from './accessDeadline.js';
 import { reportDiagnostic } from '../errors/diagnostics.js';
+import { legalConfirmationComplete } from '../../features/legal/publication.js';
 
 // Cache supports presentation only. A bounded neutral wait avoids F5 restriction flashes.
 export function createProfileSession({ user, subscribe, readInvite, acceptInvite, readProfile, refreshCredentials, withinShift, onState,
@@ -9,7 +10,7 @@ export function createProfileSession({ user, subscribe, readInvite, acceptInvite
   const denialScope = `profile:${user.uid}`;
   let cached = null;
   let active = true, revision = 0, accepting = false, currentState = 'loading', currentProfile = null, timer = null, expired = false;
-  let checking = null, watchFailed = false, stop = () => {}, watchGeneration = 0;
+  let checking = null, watchFailed = false, stop = () => {}, watchGeneration = 0, invitation = null;
   const clearWait = () => { if (timer !== null) cancel(timer); timer = null; expired = false; };
   const publish = (status, extra = {}) => {
     if (!active) return;
@@ -24,6 +25,7 @@ export function createProfileSession({ user, subscribe, readInvite, acceptInvite
   const receive = (data, metadata) => {
     if (!active) return;
     const generation = ++revision;
+    if (accepting && (!isServerSnapshot(metadata) || !data)) return;
     cached = cachedProfileAccess(data, metadata, user, withinShift) ? data : null;
     const status = profileAccess(data, metadata, withinShift);
     if (status === 'offline-unverified') {
@@ -38,7 +40,6 @@ export function createProfileSession({ user, subscribe, readInvite, acceptInvite
       return;
     }
     // Invitation discovery/acceptance is part of onboarding, never an interim error.
-    if (accepting) { wait(); return; }
     if (!user.email || !user.emailVerified || !user.providerData?.some(provider => provider.providerId === 'google.com')) {
       publish(status); return;
     }
@@ -48,8 +49,9 @@ export function createProfileSession({ user, subscribe, readInvite, acceptInvite
       clearWait();
       if (invite && invite.email === user.email && ['dueño', 'cajero'].includes(invite.role)
         && invite.businessId && invite.status !== 'inactivo') {
-        publish('needs-invite', { invitation: { businessId: invite.businessId, businessName: invite.businessName,
-          role: invite.role, firstName: invite.firstName, email: invite.email } });
+        invitation = { businessId: invite.businessId, businessName: invite.businessName,
+          role: invite.role, firstName: invite.firstName, email: invite.email, branchId: invite.branchId ?? null };
+        publish('needs-invite', { invitation });
       } else publish(status);
     }).catch(error => { if (active && revision === generation) { clearWait(); publish(accessErrorState(error)); } });
   };
@@ -100,14 +102,21 @@ export function createProfileSession({ user, subscribe, readInvite, acceptInvite
       }).finally(() => { checking = null; });
       return checking;
     },
-    async accept() {
+    async accept(confirmation) {
       if (!active || accepting || currentState !== 'needs-invite') return;
+      if (!legalConfirmationComplete(confirmation)) throw new Error('Confirma ambos documentos para activar tu cuenta.');
       accepting = true;
-      wait();
+      clearWait();
       try {
-        await acceptInvite(user);
-        if (active && readProfile) { const snapshot = await readProfile(user.uid); receive(snapshot.data, snapshot.metadata); }
-      } catch (error) { if (active && currentState !== 'ready') { clearWait(); publish(accessErrorState(error)); } }
+        await acceptInvite(user, confirmation, invitation);
+        if (active && readProfile && currentState === 'needs-invite') {
+          const snapshot = await withAccessDeadline(() => readProfile(user.uid), confirmationMs);
+          if (!snapshot.data || !isServerSnapshot(snapshot.metadata)) {
+            throw new Error('Aún no se pudo confirmar la activación. Comprueba la conexión y vuelve a intentarlo.');
+          }
+          receive(snapshot.data, snapshot.metadata);
+        }
+      } catch (error) { if (active && currentState !== 'ready') throw error; }
       finally { accepting = false; }
     },
   };

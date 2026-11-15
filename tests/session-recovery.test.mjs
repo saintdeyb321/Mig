@@ -1,3 +1,4 @@
+import { legalAcceptanceEvidence, legalAcceptanceMarker, legalPublication } from '../frontend/src/features/legal/publication.js';
 import assert from 'node:assert/strict';
 import { readViewPreference, writeViewPreference } from '../frontend/src/core/session/viewPreference.js';
 import { it } from 'node:test';
@@ -10,6 +11,8 @@ import { createNotificationRepository, projectFinancialNotice } from '../fronten
 const server = { fromCache: false, hasPendingWrites: false };
 const cached = { fromCache: true, hasPendingWrites: false };
 const owner = { role: 'dueño', businessId: 'tenant', status: 'activo' };
+const confirmation = { acceptedTerms: true, acknowledgedPrivacy: true };
+const acceptedProfile = (uid, profile = owner) => ({ ...profile, legalAcceptance: legalAcceptanceMarker(legalAcceptanceEvidence({ ...profile, uid, id: 'A'.repeat(20) }, legalPublication)) });
 
 it('Plan08 integrates confirmed and uncertain history while preserving rejections in secondary review', () => {
   const pending=Array.from({length:50},(_,i)=>({id:`local-${i}`,isOffline:true,queueStatus:i%2?'failed':'pending',createdAt:'2026-10-29T12:00:00Z'}));
@@ -188,7 +191,8 @@ it('keeps confirmed permissions distinct from connection errors and accepts an i
     withinShift: () => true, onState: state => states.push(state) });
   next(null, server); await Promise.resolve();
   assert.equal(states.at(-1).status, 'needs-invite'); assert.equal(accepted, 0);
-  const first = session.accept(); await session.accept(); assert.equal(accepted, 1);
+  await assert.rejects(session.accept({ acceptedTerms: true }), /ambos documentos/);
+  const first = session.accept(confirmation); await session.accept(confirmation); assert.equal(accepted, 1);
   finish(); await first; next(owner, server); assert.equal(states.at(-1).status, 'ready');
   fail({ code: 'permission-denied' }); assert.equal(states.at(-1).status, 'permission-denied');
   assert.equal(states.at(-1).profile, null); session.close();
@@ -242,13 +246,22 @@ it('waits neutrally through initial cache and invitation discovery, then verifie
   const session = createProfileSession({ user, subscribe: (_, onData) => { next = onData; return () => {}; },
     schedule: callback => { timeout = callback; return 1; }, cancel: () => {},
     readInvite: async () => ({ ...owner, email: user.email, firstName: 'Titular' }),
-    acceptInvite: async () => { activations++; next(null, cached); },
-    readProfile: async () => ({ data: owner, metadata: server }), withinShift: () => true, onState: state => states.push(state) });
+    acceptInvite: async (identity, acknowledgement, invitation) => {
+      assert.equal(identity, user);
+      assert.deepEqual(acknowledgement, confirmation);
+      assert.equal(invitation.businessId, owner.businessId);
+      activations++;
+      next(null, cached);
+      if (activations === 1) throw { code: 'unavailable' };
+    },
+    readProfile: async () => ({ data: acceptedProfile(user.uid), metadata: server }), withinShift: () => true, onState: state => states.push(state) });
   next(null, cached); assert.equal(states.at(-1).status, 'loading');
   timeout(); assert.equal(states.at(-1).status, 'offline-unverified');
   next(null, server); assert.equal(states.at(-1).status, 'loading'); await Promise.resolve();
   assert.equal(states.at(-1).status, 'needs-invite'); assert.equal(states.at(-1).invitation.businessId, 'tenant');
-  await session.accept(); assert.equal(activations, 1); assert.equal(states.at(-1).status, 'ready');
+  await assert.rejects(session.accept(confirmation), { code: 'unavailable' });
+  assert.equal(states.at(-1).status, 'needs-invite');
+  await session.accept(confirmation); assert.equal(activations, 2); assert.equal(states.at(-1).status, 'ready');
   assert.ok(!states.some(state => state.status === 'profile-not-found-confirmed')); session.close();
 });
 it('retains personnel only inside the same session after index failure and blocks confirmation', () => {
@@ -263,9 +276,11 @@ it('retains personnel only inside the same session after index failure and block
 it('bootstraps cached business profiles for presentation, then replaces them with server truth', () => {
   let receive, fail;
   const states = [], user = { uid: 'offline-owner', email: 'offline@example.test', emailVerified: true, providerData: [{ providerId: 'google.com' }] };
-  const profile = { ...owner, hasAcceptedTerms: true };
+  const profile = acceptedProfile(user.uid);
   const session = createProfileSession({ user, subscribe: (_, next, error) => { receive = next; fail = error; return () => {}; },
     readInvite: async () => null, withinShift: () => true, onState: next => states.push(next) });
+  receive({ ...owner, hasAcceptedTerms: true }, cached);
+  assert.notEqual(states.at(-1).status, 'offline-assisted');
   receive(profile, cached);
   assert.equal(states.at(-1).status, 'offline-assisted'); assert.equal(states.at(-1).profile.accessVerified, false);
   receive(profile, server); assert.equal(states.at(-1).status, 'ready'); assert.equal(states.at(-1).profile.accessVerified, true);
@@ -291,7 +306,7 @@ it('requires valid cached license and tenant data without pending writes or conf
 it('never authorizes writes from assisted cache, offline state or a different identity', async () => {
   const { setProfileAuthority, setLicenseAuthority, resetAccessAuthority, assertConfirmedWrite } = await import('../frontend/src/core/session/operationAccess.js');
   const { getIdentityKey } = await import('../frontend/src/core/session/identity.js');
-  const user = { uid: 'owner', ...owner }, request = { uid: 'owner', online: true };
+  const user = { uid: 'owner', ...acceptedProfile('owner') }, request = { uid: 'owner', online: true };
   const expiresAt = Date.now() + 60000;
   resetAccessAuthority(); setProfileAuthority(user, false); setLicenseAuthority(getIdentityKey(user), true, expiresAt);
   assert.throws(() => assertConfirmedWrite(request), /Operación bloqueada/);

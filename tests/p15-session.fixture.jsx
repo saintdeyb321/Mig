@@ -1,3 +1,4 @@
+import { legalAcceptanceEvidence, legalAcceptanceMarker, legalPublication } from '../frontend/src/features/legal/publication.js';
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useAuthManager } from '../frontend/src/hooks/useAuthManager.js';
@@ -13,7 +14,7 @@ const makeUser = uid => ({ uid, emailVerified: true, providerData: [{ providerId
     if (fixture.tokenError) throw Object.assign(Error('credencial sintética'), { code: fixture.tokenError });
     return 'synthetic';
   } });
-const owner = { role: 'dueño', businessId: 'tenant-a', status: 'activo', hasAcceptedTerms: true };
+const owner = { role: 'dueño', businessId: 'tenant-a', status: 'activo' };
 const boot = sessionStorage.getItem('p15:boot') || 'healthy';
 const fixture = window.__p15 = { bootId: crypto.randomUUID(), user: makeUser('owner-a'), profile: owner, watchMode: boot, readMode: 'healthy',
   online: true, visible: true, reads: [], token: 0, logouts: 0, observers: new Set(), watches: [], recoverStream: true };
@@ -24,7 +25,11 @@ Date.now = () => clock() + (fixture.elapsed ?? 0);
 const records = (kind, id, mode) => {
   if (mode === 'permission') throw Object.assign(Error('datos sintéticos'), { code: 'permission-denied' });
   if (mode === 'network') throw Object.assign(Error('datos sintéticos'), { code: 'unavailable' });
-  if (kind === 'profile') return fixture.profile;
+  if (kind === 'profile') {
+    const profile = fixture.profile, uid = fixture.user?.uid;
+    if (!profile || !uid) return profile;
+    return { ...profile, legalAcceptance: legalAcceptanceMarker(legalAcceptanceEvidence({ ...profile, uid, id: 'A'.repeat(20) }, legalPublication)) };
+  }
   if (mode === 'stale' || mode === 'absent' || kind === 'license' && mode === 'license-missing') return null;
   return kind === 'tenant' ? { businessId: id, status: 'active' } : { businessId: id,
     status: mode === 'suspended' ? 'inactiva' : 'activa', expiry: mode === 'expired' ? '2020-01-01' : '2099-01-01' };
@@ -45,7 +50,7 @@ fixture.switchUser = (uid, profile = owner) => {
 };
 fixture.changeProfile = profile => {
   fixture.profile = profile;
-  fixture.watches.filter(watch => watch.kind === 'profile' && watch.active).forEach(watch => watch.next(profile, server));
+  fixture.watches.filter(watch => watch.kind === 'profile' && watch.active).forEach(watch => watch.next(records('profile', fixture.user?.uid), server));
 };
 fixture.subscribe = (kind, id, next, fail) => {
   const watch = { kind, id, next, fail, active: true };

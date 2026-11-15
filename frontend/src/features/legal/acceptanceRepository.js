@@ -1,7 +1,7 @@
-import { hasCurrentTerms, legalAcceptanceMarker, requiresVersionedAcceptance } from './publication.js';
+import { hasCurrentTerms, legalAcceptanceEvidence, legalAcceptanceMarker, legalConfirmationComplete, requiresVersionedAcceptance } from './publication.js';
 
-export async function recordLegalAcceptance(db, user, publication, sdk) {
-  if (!requiresVersionedAcceptance(user, publication) || !publication.privacy || !user.uid || !user.businessId) {
+export async function recordLegalAcceptance(db, user, publication, sdk, confirmation) {
+  if (!requiresVersionedAcceptance(user, publication) || !publication.privacy || !user.uid || !user.businessId || !legalConfirmationComplete(confirmation)) {
     throw new Error('No hay documentos aprobados para esta cuenta.');
   }
   const { collection, doc, getDocFromServer, runTransaction, serverTimestamp } = sdk;
@@ -13,12 +13,7 @@ export async function recordLegalAcceptance(db, user, publication, sdk) {
       throw new Error('La cuenta o el negocio cambió. Vuelve a comprobar tu acceso.');
     }
     if (hasCurrentTerms(profile, publication)) return;
-    const evidence = {
-      id: evidenceRef.id, uid: user.uid, businessId: user.businessId, role: user.role,
-      termsVersion: publication.terms.version, termsSha256: publication.terms.sha256,
-      privacyVersion: publication.privacy.version, privacySha256: publication.privacy.sha256,
-      acceptedAt: serverTimestamp(),
-    };
+    const evidence = legalAcceptanceEvidence({ ...user, id: evidenceRef.id }, publication, serverTimestamp());
     transaction.set(evidenceRef, evidence);
     transaction.update(profileRef, { legalAcceptance: legalAcceptanceMarker(evidence) });
   };

@@ -2,16 +2,21 @@ import { useRef, useState } from 'react';
 import { Building2, CheckCircle2, LogOut, ShieldCheck } from 'lucide-react';
 import { Button, Card } from '../shared/ui';
 import { brand } from '../config/brand';
+import LegalConfirmation from './LegalConfirmation';
 
 export default function InvitationOnboarding({ invitation, onActivate, onLogout }) {
   const flight = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const activate = async () => {
+  const activate = async confirmation => {
     if (flight.current || !invitation) return;
     flight.current = true; setBusy(true); setError('');
-    try { await onActivate(); }
-    catch (failure) { setError(failure.message || 'No se pudo activar la cuenta. Reintenta.'); }
+    try { await onActivate(confirmation); }
+    catch (failure) {
+      const denied = ['permission-denied', 'unauthenticated'].includes(failure.code);
+      setError(denied ? 'No se autorizó la activación. Pide al administrador que compruebe tu invitación.'
+        : 'No se pudo confirmar la activación. Comprueba la conexión y vuelve a intentarlo.');
+    }
     finally { flight.current = false; setBusy(false); }
   };
   return <main className="flex min-h-dvh items-center justify-center bg-linear-to-br from-sidebar to-primary p-4">
@@ -25,7 +30,7 @@ export default function InvitationOnboarding({ invitation, onActivate, onLogout 
         <div><dt className="text-xs text-muted">Cuenta Google verificada</dt><dd className="break-all">{invitation?.email}</dd></div>
       </dl>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-      <Button className="w-full" size="lg" loading={busy} disabled={!invitation} onClick={activate}>Activar mi cuenta</Button>
+      <LegalConfirmation onConfirm={activate} busy={busy} disabled={!invitation} submitLabel="Activar mi cuenta" />
       <Button className="w-full" variant="ghost" disabled={busy} onClick={onLogout}><LogOut />Usar otra cuenta</Button>
     </Card>
   </main>;

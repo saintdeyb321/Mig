@@ -46,7 +46,7 @@ export const useAuthManager = () => {
     return () => { active = false; setProfileAuthority(null, false); stop(); unsubscribe(); window.removeEventListener('online', reconnect); };
   }, [recheckProfile]);
   const handleLogout = useCallback(() => signOut(auth), []);
-  const acceptProfileInvitation = useCallback(() => session.current?.accept(), []);
+  const acceptProfileInvitation = useCallback(confirmation => session.current?.accept(confirmation), []);
   const matches = state.uid === (auth.currentUser?.uid ?? null);
   return {
     user: matches && ['ready', 'offline-assisted'].includes(state.status) ? state.profile : null,

@@ -1,0 +1,75 @@
+Política de Privacidad de MigaPOS
+Versión 1.0 · 15 de noviembre de 2026
+
+En MigaPOS respetamos la privacidad de las personas que utilizan nuestra plataforma y de quienes figuran en los registros comerciales de los negocios usuarios. Esta política explica qué información se trata, para qué se utiliza, quién puede acceder a ella, dónde se almacena y cómo ejercer los derechos de protección de datos personales. El tratamiento se rige por la Ley N.º 29733, su Reglamento aprobado por Decreto Supremo N.º 016-2024-JUS y las normas peruanas aplicables.
+
+## 1. Responsable del servicio y canales de contacto
+
+MigaPOS es un servicio de software ofrecido por Deyvid Alexander Pariona Ramos, persona natural identificada con RUC N.º 10735959811. Domicilio de contacto declarado: avenida Ramón Castilla s/n, distrito y provincia de Concepción, departamento de Junín, Perú.
+
+Correo electrónico de soporte, privacidad y ejercicio de derechos ARCO: deyvidparionaramos@gmail.com.
+WhatsApp de atención: +51 928 318 947 (solo mensajes por WhatsApp; no llamadas telefónicas convencionales).
+
+## 2. Datos personales que podemos tratar
+
+Dependiendo de la relación con MigaPOS y las funciones utilizadas, podemos tratar: (a) nombre, apellido, correo electrónico asociado a la cuenta Google e identificadores técnicos de autenticación; (b) nombre del negocio, rol, sucursal, permisos y estado de acceso de sus usuarios; (c) información de contratación, vigencia de suscripciones, comunicaciones de soporte y constancias de aceptación de documentos legales; (d) registros operativos ingresados por las pastelerías, incluidos nombres y teléfonos de clientes, pedidos, contratos, pagos declarados e imágenes proporcionadas para gestionar encargos; (e) información técnica necesaria para seguridad, diagnóstico y funcionamiento, así como datos temporales almacenados en el dispositivo; y (f) información proporcionada voluntariamente al presentar consultas, solicitudes de privacidad o reclamaciones.
+
+No se solicita de manera general información biométrica ni datos sensibles para utilizar las operaciones ordinarias del punto de venta. Cada negocio debe evitar introducir información innecesaria o no autorizada.
+
+## 3. Finalidades y fundamento del tratamiento
+
+Utilizamos la información para verificar identidades y cuentas autorizadas, administrar accesos y sucursales contratadas, prestar las funciones de caja, ventas, inventario y pedidos solicitadas por el negocio, gestionar suscripciones y soporte, documentar aceptaciones y solicitudes, mantener la seguridad, prevenir accesos indebidos y cumplir obligaciones legales.
+
+El tratamiento se realizará con el fundamento jurídico que corresponda en cada caso, incluyendo la ejecución de la relación contractual, las excepciones previstas por ley o el consentimiento cuando sea exigible. La lectura de esta política no constituye, por sí sola, consentimiento para todas las finalidades. No utilizamos los datos de clientes o trabajadores de las pastelerías para vender bases de datos ni para publicidad propia sin una base legal adecuada.
+
+## 4. Quién decide sobre los datos y quién puede acceder
+
+Para la administración de cuentas de MigaPOS, contratación, soporte y reclamaciones del servicio, el proveedor determina las finalidades y medios del tratamiento que le correspondan. Cuando una pastelería registra datos de sus compradores o trabajadores para gestionar su operación, normalmente esa pastelería decide la finalidad del registro y MigaPOS brinda el tratamiento técnico necesario como proveedor del sistema.
+
+Cada negocio es responsable de informar a sus clientes y trabajadores, gestionar los permisos de su personal y contar con las autorizaciones exigibles. Dentro de MigaPOS, el acceso a información operativa depende del negocio, rol y sucursal autorizados. El proveedor atenderá solicitudes de acceso o asistencia únicamente en el ámbito necesario y legalmente permitido.
+
+## 5. Servicios tecnológicos, destinatarios y ubicación
+
+MigaPOS utiliza Google Firebase, incluidos Firebase Authentication y Cloud Firestore, para autenticación, gestión de sesiones y almacenamiento. El proyecto tiene configurado Cloud Firestore en la ubicación multirregional nam5, situada en Estados Unidos. La prestación del servicio puede implicar tratamiento de datos y transferencias internacionales por parte de Google y sus subproveedores, conforme a los servicios efectivamente habilitados y las garantías aplicables.
+
+Para recibir y gestionar reclamaciones puede utilizarse Google Forms y, en su caso, Google Sheets; estos servicios tratarán los datos que el reclamante proporcione con esa finalidad. Firebase Analytics es opcional y solo se utilizará en la medida en que esté activado y configurado en el entorno de producción. No afirmamos que todos los datos estén alojados exclusivamente en Perú.
+
+No vendemos información personal a terceros. Podremos comunicar la información que resulte estrictamente necesaria a proveedores tecnológicos que colaboran en la prestación del servicio y a autoridades competentes cuando exista una obligación legal válida.
+
+## 6. Confidencialidad y medidas de seguridad
+
+Aplicamos controles técnicos y organizativos acordes con la operación del servicio, entre ellos autenticación mediante Google, separación de negocios, permisos por roles y reglas de acceso a la base de datos. El titular del negocio debe proteger las cuentas y dispositivos de sus trabajadores y revisar periódicamente los accesos concedidos.
+
+Ninguna plataforma ofrece seguridad absoluta. Si se produce un incidente que afecte datos personales, evaluaremos su alcance, adoptaremos las medidas pertinentes y efectuaremos o facilitaremos las comunicaciones exigidas por la normativa aplicable.
+
+## 7. Conservación, suspensión y eliminación
+
+Los datos se conservan durante el tiempo necesario para prestar el servicio, atender solicitudes y cumplir obligaciones legales. Cuando vence una suscripción, MigaPOS puede restringir el acceso operativo conforme a las condiciones contratadas, sin que ello signifique la eliminación inmediata de los registros.
+
+Si transcurren 90 días calendario desde el vencimiento sin renovación, el proveedor podrá iniciar una revisión de baja y eventual eliminación, previa comprobación de la información involucrada y de los deberes legales de conservación. La eliminación no es automática: el sistema todavía no dispone de un procedimiento integral y verificado que suprima simultáneamente todos los documentos de Firestore, subcolecciones, cuentas de autenticación, copias y datos locales. Las solicitudes de supresión se analizarán conforme a la ley y a las posibilidades técnicas del proceso de baja, informando las limitaciones o excepciones que correspondan.
+
+## 8. Derechos de las personas titulares de datos
+
+Puedes solicitar acceso, rectificación, cancelación u oposición (derechos ARCO) y ejercer los demás derechos reconocidos por la legislación peruana enviando un mensaje a deyvidparionaramos@gmail.com con el asunto «Protección de datos — MigaPOS». Podremos requerir información razonable para verificar tu identidad y localizar los datos solicitados, sin exigir información excesiva.
+
+Cuando una solicitud afecte datos incorporados por una pastelería sobre sus clientes o trabajadores, podremos derivarla o coordinar su atención con el negocio responsable. Responderemos conforme a los plazos y procedimientos legales. Si consideras vulnerados tus derechos, puedes dirigirte a la Autoridad Nacional de Protección de Datos Personales del Perú.
+
+## 9. Consultas, quejas y reclamaciones
+
+Las consultas de soporte pueden enviarse al correo o WhatsApp indicados. Para reclamaciones relacionadas con el servicio, MigaPOS ofrece el canal de Libro de Reclamaciones virtual comunicado en la pantalla pública de acceso y en la sección de información legal, sujeto a su habilitación y funcionamiento efectivos. La información presentada en dicho canal se utilizará para registrar, gestionar, responder y conservar las reclamaciones conforme a la normativa aplicable.
+
+## 10. Datos de menores, imágenes y contenidos de terceros
+
+MigaPOS no está dirigido a menores de edad como titulares de cuentas operativas. Los negocios usuarios deben abstenerse de incorporar datos de menores, información sensible o imágenes identificables cuando no sean necesarios o no cuenten con el fundamento legal exigible. Las fotografías y demás archivos incorporados a contratos o pedidos se utilizan para la finalidad operativa indicada por el negocio, no para crear perfiles biométricos ni comercializar información de terceros.
+
+## 11. Datos almacenados en el navegador y analítica
+
+Para iniciar sesión, mantener preferencias y permitir determinadas funciones, la aplicación puede utilizar almacenamiento local del navegador, IndexedDB y mecanismos propios de Google Firebase. Pueden existir registros técnicos o identificadores necesarios para el funcionamiento y la seguridad. La operación fuera de línea permanece incompleta y no debe considerarse un mecanismo garantizado de almacenamiento o recuperación de ventas no sincronizadas.
+
+Si en el futuro incorporamos comunicaciones comerciales, seguimiento no necesario o finalidades independientes de la prestación del servicio, informaremos de ellas y solicitaremos el consentimiento específico cuando sea obligatorio. No condicionaremos el acceso a finalidades opcionales que requieran consentimiento libre.
+
+## 12. Cambios y vigencia de la política
+
+Esta política se mantiene disponible para su consulta antes del inicio de sesión y desde la sección «Información legal» de MigaPOS. Podremos actualizarla para reflejar cambios del servicio o nuevas obligaciones normativas. Identificaremos cada versión y comunicaremos las modificaciones relevantes. Cuando un nuevo tratamiento requiera consentimiento, lo solicitaremos por separado y conforme a la ley.
+
+Para consultas sobre esta política: deyvidparionaramos@gmail.com.
