@@ -3,18 +3,21 @@ import { FileText, ShieldCheck } from 'lucide-react';
 import { Button, Dialog, cn } from '../../shared/ui';
 import { fetchLegalText, legalPublication, legalRoutes, legalTitles } from './publication.js';
 
-export function LegalLinks({ newTab = false, documentsOnly = false, className }) {
+const linkClass = 'inline-flex min-h-11 items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus';
+const whatsappSupport = 'https://wa.me/51928318947?text=Hola%2C%20necesito%20soporte%20t%C3%A9cnico%20de%20MigaPOS';
+
+export function LegalLinks({ newTab = false, placement = 'documents', className }) {
   const target = newTab ? '_blank' : undefined;
-  const { provider } = legalPublication;
+  const complaintsUrl = legalPublication.provider?.complaintsUrl;
+  const settings = placement === 'settings';
   return <nav aria-label="Información legal" className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 text-xs', className)}>
-    {Object.entries(legalRoutes).map(([kind, route]) => <a key={kind} href={route} target={target} rel={newTab ? 'noopener' : undefined}
-      className="inline-flex min-h-11 items-center underline underline-offset-4">{legalTitles[kind]}</a>)}
-    {!documentsOnly && provider?.complaintsUrl && <a href={provider.complaintsUrl} target={target} rel={newTab ? 'noopener' : undefined}
-      className="inline-flex min-h-11 items-center underline underline-offset-4">Libro de Reclamaciones</a>}
-    {!documentsOnly && provider && <>
-      <a href={`mailto:${provider.supportEmail}`} className="inline-flex min-h-11 items-center underline underline-offset-4">Soporte</a>
-      <p className="w-full">{provider.name} · RUC {provider.ruc}</p>
-    </>}
+    {Object.entries(legalRoutes).map(([kind, route]) => <a key={kind} href={route} target={target} rel={newTab ? 'noopener noreferrer' : undefined}
+      className={linkClass}>{legalTitles[kind]}</a>)}
+    {settings && complaintsUrl && <a href={complaintsUrl} target="_blank" rel="noopener noreferrer" className={linkClass}>Libro de Reclamaciones</a>}
+    {(settings || placement === 'login') && <a href={whatsappSupport} target="_blank" rel="noopener noreferrer" className={linkClass}>
+      {settings ? 'Soporte técnico por WhatsApp · +51 928 318 947' : 'Soporte por WhatsApp'}
+    </a>}
+    {settings && <p className="w-full text-muted">Solo mensajes por WhatsApp. No se atienden llamadas telefónicas.</p>}
   </nav>;
 }
 
@@ -42,17 +45,11 @@ export function LegalDocumentDialog({ kind, document = legalPublication[kind], o
           <p role="alert" className="text-sm text-danger">No se pudo abrir el documento oficial. Comprueba la conexión y vuelve a intentarlo.</p>
           <Button variant="secondary" onClick={() => setAttempt(attempt + 1)}>Volver a cargar</Button>
         </div> : !current ? <p role="status" className="text-sm text-muted">Cargando documento…</p>
-        : <>
-          <article className="space-y-4 text-base leading-relaxed wrap-anywhere">
+        : <article className="space-y-4 text-base leading-relaxed wrap-anywhere">
             {current.text.trim().split(/\r?\n\s*\r?\n/).map((block, index) => block.startsWith('## ')
               ? <h3 key={index} className="pt-1 font-bold text-brand-deep">{block.slice(3)}</h3>
               : <p key={index} className="whitespace-pre-line">{block}</p>)}
-          </article>
-          {kind === 'privacy' && legalPublication.provider?.privacyEmail && <p className="text-sm">
-            <a className="inline-flex min-h-11 items-center font-semibold text-primary underline wrap-anywhere"
-              href={`mailto:${legalPublication.provider.privacyEmail}`}>Contactar para ejercer derechos ARCO</a>
-          </p>}
-        </>}
+          </article>}
       </div>
       {children?.(Boolean(current?.text))}
   </Dialog>;

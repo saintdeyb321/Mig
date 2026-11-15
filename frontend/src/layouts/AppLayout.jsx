@@ -44,7 +44,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
     ? businessBranches.find(branch => branch.id === user.branchId)?.name || 'Sede desconocida' : null, [user, businessBranches]);
   const canSelectBranch = isBusinessSession(user) && user?.role === 'dueño';
   const cashierLegalLinks = user?.role === 'cajero'
-    && <LegalLinks newTab documentsOnly className="text-sidebar-muted" />;
+    && <LegalLinks newTab className="text-sidebar-muted" />;
   return <div ref={shell} className="app-shell min-h-dvh min-w-0 bg-canvas text-ink">
     <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-40 focus:rounded-xl focus:bg-panel focus:p-4 focus:text-primary focus:shadow-float">Ir al contenido</a>
     <aside className="nebula-brand fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/10 text-white shadow-xl shadow-sidebar/10 lg:flex xl:w-68" aria-label="Navegación de escritorio">

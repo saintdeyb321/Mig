@@ -1,116 +1,95 @@
-import { Button } from "../shared/ui";
-import { brand } from '../config/brand';
 import { useEffect, useRef, useState } from 'react';
-import { useRegisterSW } from 'virtual:pwa-register/react';
-const AUTO_RELOAD_DELAY = 60 * 60 * 1000; // 1 hora
-const UPDATE_INTERVAL = 30 * 60 * 1000; // 30 minutos
-const IGNORE_DURATION = 2 * 60 * 60 * 1000; // 2 horas
+import { Button } from '../shared/ui';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { hasPendingLocalWork } from '../features/pwa/localUpdateSafety.js';
+import { registerPwa } from '../features/pwa/registerPwa.js';
+import { activateWaitingWorker, watchPwaRegistration } from '../features/pwa/updateRegistration.js';
 
-export default function ReloadPrompt({
-  user
-}) {
-  // 🚀 FIX DE ESLINT (Lazy Initialization):
-  // En lugar de usar un useEffect que renderiza doble, leemos el localStorage
-  // al momento exacto de crear el estado. Es más rápido, seguro y elimina la advertencia.
-  const [isIgnoredUI, setIsIgnoredUI] = useState(() => {
-    try {
-      const ignoredTimestamp = localStorage.getItem('ignoredUpdateTimestamp');
-      if (ignoredTimestamp) {
-        const elapsed = Date.now() - parseInt(ignoredTimestamp, 10);
-        if (elapsed < IGNORE_DURATION) {
-          return true; // Sigue ignorado
-        } else {
-          localStorage.removeItem('ignoredUpdateTimestamp'); // Ya pasó el castigo
-        }
-      }
-    } catch (error) {
-      console.warn("Error leyendo historial de actualizaciones", error);
-    }
-    return false;
-  });
-  const autoReloadTimerRef = useRef(null);
-  const intervalRef = useRef(null);
-  const visibilityHandlerRef = useRef(null);
-  const {
-    needRefresh: [needRefresh],
-    offlineReady: [offlineReady, setOfflineReady],
-    updateServiceWorker
-  } = useRegisterSW({
-    onRegistered(r) {
-      if (!r) return;
-      intervalRef.current = setInterval(() => {
-        if (navigator.onLine) r.update();
-      }, UPDATE_INTERVAL);
-      visibilityHandlerRef.current = () => {
-        if (document.visibilityState === 'visible' && navigator.onLine) {
-          r.update();
-        }
-      };
-      document.addEventListener('visibilitychange', visibilityHandlerRef.current);
-    },
-    onRegisterError(error) {
-      console.error('SW registration error', error);
-    }
-  });
+export default function ReloadPrompt({ isLogin, signingIn, updating, beginLoginAction, endLoginAction }) {
+  const online = useNetworkStatus();
+  const [waiting, setWaiting] = useState(null);
+  const [dismissed, setDismissed] = useState(null);
+  const [issue, setIssue] = useState(null);
+  const [check, setCheck] = useState(0);
+  const [visible, setVisible] = useState(() => document.visibilityState === 'visible');
+  const [registrationAttempt, retryRegistration] = useState(0);
+  const watch = useRef(null);
 
-  // Limpieza de memoria (Unmount)
   useEffect(() => {
+    const registration = registerPwa();
+    if (!registration) return;
+    let stopped = false;
+    const reconnect = () => retryRegistration(value => value + 1);
+    void registration.then(registered => {
+      if (stopped) return;
+      watch.current = watchPwaRegistration(registered, {
+        onWaiting: setWaiting,
+        onFailure: () => setIssue('load'),
+        onCheck: worker => { if (worker) setCheck(value => value + 1); },
+        onChecked: () => setIssue(previous => previous === 'load' ? null : previous),
+        onVisibility: setVisible,
+      });
+    }, () => {
+      if (stopped) return;
+      setIssue('load');
+      window.addEventListener('online', reconnect, { once: true });
+    });
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (visibilityHandlerRef.current) {
-        document.removeEventListener('visibilitychange', visibilityHandlerRef.current);
-      }
-      if (autoReloadTimerRef.current) clearTimeout(autoReloadTimerRef.current);
+      stopped = true;
+      window.removeEventListener('online', reconnect);
+      watch.current?.stop();
+      watch.current = null;
     };
-  }, []);
+  }, [registrationAttempt]);
 
-  // Recarga automática de seguridad (1 hora)
   useEffect(() => {
-    if (needRefresh) {
-      if (autoReloadTimerRef.current) clearTimeout(autoReloadTimerRef.current);
-      autoReloadTimerRef.current = setTimeout(() => {
-        console.log('Recarga automática ejecutada por actualización pendiente');
-        updateServiceWorker(true);
-      }, AUTO_RELOAD_DELAY);
+    if (!isLogin || signingIn || !waiting || !online || !visible) return;
+    let cancelled = false;
+    async function applyIfSafe() {
+      try {
+        if (await hasPendingLocalWork()) {
+          if (!cancelled) setIssue('pending');
+          return;
+        }
+      } catch {
+        if (!cancelled) setIssue('storage');
+        return;
+      }
+      if (cancelled || !navigator.onLine || document.visibilityState !== 'visible' || !beginLoginAction('update')) return;
+      try {
+        if (await activateWaitingWorker(waiting)) {
+          window.location.reload();
+          return;
+        }
+        setIssue('tabs');
+      } catch { setIssue('load'); }
+      endLoginAction();
     }
-  }, [needRefresh, updateServiceWorker]);
-  const handleIgnore = () => {
-    setIsIgnoredUI(true);
-    try {
-      localStorage.setItem('ignoredUpdateTimestamp', Date.now().toString());
-    } catch (error) {
-      console.warn("Error guardando el estado", error);
-    }
+    void applyIfSafe();
+    return () => { cancelled = true; };
+  }, [waiting, check, online, visible, isLogin, signingIn, beginLoginAction, endLoginAction]);
+
+  if ((!waiting && issue !== 'load') || (waiting && waiting === dismissed && !updating)) return null;
+  const message = !online ? 'Conéctate para comprobar la actualización.'
+    : !isLogin || signingIn ? 'Termina tu trabajo y vuelve al inicio de sesión para actualizar.'
+    : issue === 'pending' ? 'Revisa las operaciones pendientes de este dispositivo antes de actualizar.'
+    : issue === 'tabs' ? 'Cierra las demás pestañas de MigaPOS y vuelve a intentarlo.'
+    : issue === 'storage' ? 'No se pudo comprobar el estado de los datos locales. Vuelve a intentarlo.'
+    : issue === 'load' ? 'No se pudo preparar la actualización. Reintenta o, al terminar tu trabajo, cierra MigaPOS y vuelve a abrirlo.'
+    : 'Comprobando si es seguro actualizar…';
+  const retry = () => {
+    if (waiting) setCheck(value => value + 1);
+    else if (watch.current) void watch.current.check();
+    else retryRegistration(value => value + 1);
   };
-  if (!user) return null;
-
-  // Si no hay nada que actualizar, o si hay actualización pero el usuario le dio a "Ignorar"
-  if (!needRefresh && !offlineReady || needRefresh && isIgnoredUI) {
-    return null;
-  }
-  return <div className="animate-enter motion-reduce:animate-none fixed inset-x-4 bottom-[calc(9rem+env(safe-area-inset-bottom))] sm:left-auto sm:right-6 sm:bottom-6 bg-panel border border-line rounded-xl shadow-card p-5 z-50 sm:max-w-sm">
-      <div className="flex items-center gap-2.5 mb-2.5">
-        <span className="text-2xl">{needRefresh ? '🚀' : '📱'}</span>
-        <h4 className="m-0 text-lg text-ink">
-          {needRefresh ? 'Nueva actualización' : 'App lista sin conexión'}
-        </h4>
-      </div>
-
-      <p className="mb-4 text-sm leading-snug text-muted">
-        {needRefresh ? `Hay una nueva versión de ${brand.name} disponible. Actualiza para disfrutar las mejoras.` : 'La interfaz está disponible sin conexión. Las operaciones pendientes requieren un repositorio Spark habilitado para confirmarse.'}
-      </p>
-
-      <div className="flex gap-2.5">
-        {needRefresh ? <>
-            <Button onClick={handleIgnore} type="button" variant="secondary" className="min-w-0 flex-1 p-2 bg-transparent border border-line text-ink rounded-lg cursor-pointer text-sm font-bold">
-              Ignorar (2h)
-            </Button>
-            <Button onClick={() => updateServiceWorker(true)} type="button" variant="primary" className="min-w-0 flex-1 p-2 border-0 rounded-lg cursor-pointer text-sm font-bold">
-              Actualizar
-            </Button>
-          </> : <Button onClick={() => setOfflineReady(false)} type="button" variant="success" className="w-full p-2 border-0 rounded-lg cursor-pointer text-sm font-bold">
-            Entendido
-          </Button>}
-      </div>
-    </div>;
+  return <aside aria-label="Actualizaciones" className="fixed inset-x-4 bottom-[calc(9rem+env(safe-area-inset-bottom))] z-40 grid gap-2 rounded-xl border border-line bg-panel p-3 shadow-card sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-xs">
+    <div role="status">
+      <p className="text-sm font-bold text-brand-deep">{updating ? 'Actualizando MigaPOS…' : waiting ? 'Nueva actualización disponible' : 'Actualización pendiente'}</p>
+      {!updating && <p className="text-xs leading-relaxed text-muted">{message}</p>}
+    </div>
+    {!updating && <div className="flex flex-wrap gap-2">
+      {waiting && <Button onClick={() => setDismissed(waiting)} variant="ghost" size="sm">Más tarde</Button>}
+      {isLogin && !signingIn && issue && <Button onClick={retry} disabled={!online} variant="secondary" size="sm">Reintentar</Button>}
+    </div>}
+  </aside>;
 }

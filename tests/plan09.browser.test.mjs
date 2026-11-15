@@ -586,6 +586,16 @@ it('P19 measures the mobile shell and operational modules', { timeout: 180000 },
         const legalPaths = ['/legal/terminos', '/legal/privacidad'];
         await show('settings');
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll('section[aria-labelledby="settings-legal"] a[href^="/legal/"]')].map(a => a.pathname)), legalPaths);
+        assert.ok(await evaluate(() => {
+          const legal = document.querySelector('section[aria-labelledby="settings-legal"]');
+          const support = legal.querySelector('a[href^="https://wa.me/"]');
+          const complaints = legal.querySelector('a[href^="https://docs.google.com/forms/"]');
+          return legal.querySelectorAll('a').length === 4 && complaints.textContent === 'Libro de Reclamaciones'
+            && support.href === 'https://wa.me/51928318947?text=Hola%2C%20necesito%20soporte%20t%C3%A9cnico%20de%20MigaPOS'
+            && support.textContent.includes('+51 928 318 947') && support.target === '_blank' && support.relList.contains('noopener')
+            && legal.textContent.includes('Solo mensajes por WhatsApp. No se atienden llamadas telefónicas.')
+            && !/ruc|Deyvid/i.test(legal.textContent);
+        }));
         assert.equal(await evaluate(() => document.querySelectorAll('aside a[href^="/legal/"], .app-mobile-header a[href^="/legal/"]').length), 0);
         await show('pos', 'cajero');
         assert.deepEqual(await evaluate(() => [...document.querySelectorAll('.app-mobile-header a[href^="/legal/"]')]

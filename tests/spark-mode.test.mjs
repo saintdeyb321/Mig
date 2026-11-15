@@ -9,6 +9,7 @@ import { validateWebEnvironment, environments } from '../frontend/src/config/env
 import { brand } from '../frontend/src/config/brand.js';
 import { salesToDailyStats } from '../frontend/src/features/reports/domain/sparkReport.js';
 import { aggregateReport } from '../frontend/src/features/reports/domain/reportTotals.js';
+import { watchPwaRegistration } from '../frontend/src/features/pwa/updateRegistration.js';
 
 it('retains historical product names and totals without inventing absent cost or profit', () => {
   const stats = salesToDailyStats([{ businessId: 'tenant', branchId: 'branch', createdAt: '2026-10-23T12:00:00.000Z',
@@ -93,8 +94,65 @@ it('serves valid local branding/PWA PNGs and retains persistent caches without a
   const client = readFileSync('frontend/src/core/firebase/client.js', 'utf8');
   assert.match(client, /persistentLocalCache/);
   const sw = readFileSync('frontend/src/components/ReloadPrompt.jsx', 'utf8');
-  assert.match(sw, /updateServiceWorker\(true\)/);
-  assert.doesNotMatch(sw + client, /deleteDatabase|clearIndexedDbPersistence|indexedDB\.delete|offlineDB\.delete/);
+  const safety = readFileSync('frontend/src/features/pwa/localUpdateSafety.js', 'utf8');
+  assert.match(sw, /activateWaitingWorker\(waiting\)/);
+  assert.doesNotMatch(sw + client + safety, /deleteDatabase|clearIndexedDbPersistence|indexedDB\.delete|offlineDB\.delete|caches\.delete/);
+});
+
+it('PWA checks registration, reconnect and foreground with a shared throttle and removes all listeners', async () => {
+  const page = new EventTarget(), visibility = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+  let time = 0, online = true, interval, calls = 0, failures = 0;
+  page.setInterval = callback => { interval = callback; return 1; };
+  page.clearInterval = id => { assert.equal(id, 1); interval = null; };
+  const worker = Object.assign(new EventTarget(), { state: 'installing' });
+  const registration = Object.assign(new EventTarget(), {
+    active: {}, waiting: null,
+    async update() { calls++; if (calls === 2) throw new Error('Fetch failed'); },
+  });
+  const waiting = [];
+  const watcher = watchPwaRegistration(registration, {
+    onWaiting: value => waiting.push(value), onFailure: () => failures++,
+    onCheck() {}, onChecked() {}, onVisibility() {},
+  }, { page, visibility, isOnline: () => online, now: () => time });
+  assert.equal(calls, 1);
+  await Promise.resolve();
+  page.dispatchEvent(new Event('online'));
+  visibility.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(calls, 1);
+  time += 60_000;
+  online = false;
+  interval();
+  assert.equal(calls, 1);
+  online = true;
+  page.dispatchEvent(new Event('online'));
+  await Promise.resolve();
+  assert.equal(calls, 2);
+  assert.equal(failures, 1);
+  time += 60_000;
+  visibility.visibilityState = 'hidden';
+  interval();
+  assert.equal(calls, 2);
+  visibility.visibilityState = 'visible';
+  visibility.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(calls, 3);
+
+  registration.installing = worker;
+  registration.dispatchEvent(new Event('updatefound'));
+  registration.installing = null;
+  registration.waiting = worker;
+  worker.state = 'installed';
+  worker.dispatchEvent(new Event('statechange'));
+  assert.equal(waiting.at(-1), worker);
+  watcher.stop();
+  time += 60_000;
+  const notices = waiting.length;
+  worker.dispatchEvent(new Event('statechange'));
+  registration.dispatchEvent(new Event('updatefound'));
+  page.dispatchEvent(new Event('online'));
+  visibility.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(waiting.length, notices);
+  assert.equal(calls, 3);
+  assert.equal(interval, null);
 });
 
 

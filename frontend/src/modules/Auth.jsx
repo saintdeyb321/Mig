@@ -9,10 +9,11 @@ import InstallButton from '../components/InstallButton';
 import { brand } from '../config/brand';
 import { LegalLinks } from '../features/legal/LegalDocuments';
 const Auth = memo(({
-  onLogin
+  onLogin, beginLoginAction, endLoginAction, updating,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const handleGoogle = useCallback(async () => {
+    if (beginLoginAction && !beginLoginAction('sign-in')) return;
     setIsLoading(true);
     const loadId = toast.loading('Verificando credenciales con Google...');
     const provider = new GoogleAuthProvider();
@@ -34,8 +35,9 @@ const Auth = memo(({
       }
     } finally {
       setIsLoading(false);
+      endLoginAction?.();
     }
-  }, [onLogin]);
+  }, [onLogin, beginLoginAction, endLoginAction]);
   return <div className="nebula-brand flex min-h-dvh items-center justify-center px-4 py-8 sm:px-6">
     <div className="grid w-full max-w-5xl items-center gap-10 lg:grid-cols-[minmax(0,1fr)_25rem] lg:gap-16">
       <section className="hidden space-y-8 text-white lg:block">
@@ -54,7 +56,7 @@ const Auth = memo(({
         </div>
         <div className="grid gap-4">
           <p className="rounded-xl border border-primary/10 bg-primary-soft/50 p-3 text-xs leading-relaxed text-muted">Ingresa con la cuenta autorizada de tu negocio.</p>
-          <Button type="button" onClick={handleGoogle} loading={isLoading} size="lg" className="w-full">
+          <Button type="button" onClick={handleGoogle} disabled={updating} loading={isLoading} size="lg" className="w-full">
             {!isLoading && <span aria-hidden="true" className="flex size-7 items-center justify-center rounded-full bg-white text-base font-bold text-primary">G</span>}{isLoading ? 'Verificando acceso…' : 'Ingresar con Google'}
           </Button>
           <InstallButton />
@@ -62,8 +64,7 @@ const Auth = memo(({
         <div className="space-y-5 border-t border-line pt-5">
           <p className="flex items-center justify-center gap-2 text-xs text-muted"><LockKeyhole aria-hidden="true" className="size-4 text-success" />Acceso seguro con tu cuenta Google</p>
           <footer className="text-xs text-muted">
-            <LegalLinks className="justify-center text-primary" />
-            <p>© {new Date().getFullYear()} {brand.name}</p>
+            <LegalLinks placement="login" className="justify-center text-primary" />
           </footer>
         </div>
       </Card>

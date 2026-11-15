@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 
 const path = file => fileURLToPath(new URL('../frontend/src/' + file, import.meta.url)).replaceAll('\\', '/');
+const support = 'https://wa.me/51928318947?text=Hola%2C%20necesito%20soporte%20t%C3%A9cnico%20de%20MigaPOS';
 async function until(work, message) {
   for (let attempt = 0; attempt < 80; attempt++) {
     const result = await work();
@@ -69,11 +70,16 @@ it('P21 checks both documents in invitation and existing-account flows before ha
       const boxes = () => evaluate(() => [...document.querySelectorAll('fieldset input[type="checkbox"]')].map(el => ({ checked: el.checked, disabled: el.disabled })));
       const unlockedBoxes = async () => (await boxes()).filter(box => !box.disabled).length === 2;
       await page.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 640, deviceScaleFactor: 1, mobile: true });
-      const loginLinks = await until(() => evaluate(() => [...document.querySelectorAll('footer nav a')].map(anchor => anchor.getAttribute('href')).filter(Boolean).length === 4
-        && [...document.querySelectorAll('footer nav a')].map(anchor => anchor.getAttribute('href'))), 'Legal, complaints and support links are missing on login');
-      assert.deepEqual(loginLinks.slice(0, 2), ['/legal/terminos', '/legal/privacidad']);
-      assert.match(loginLinks[2], /^https:\/\/docs\.google\.com\/forms\//);
-      assert.equal(loginLinks[3], 'mailto:deyvidparionaramos@gmail.com');
+      const loginLinks = await until(() => evaluate(() => document.querySelectorAll('footer nav a').length === 3
+        && [...document.querySelectorAll('footer nav a')].map(anchor => anchor.getAttribute('href'))), 'Legal documents and WhatsApp must be visible on login');
+      assert.deepEqual(loginLinks, ['/legal/terminos', '/legal/privacidad', support]);
+      assert.ok(await evaluate(() => {
+        const legal = document.querySelector('footer nav');
+        const supportLink = legal.querySelector('a[href^="https://wa.me/"]');
+        return !/ruc|Deyvid|Libro de Reclamaciones/i.test(legal.textContent)
+          && supportLink.target === '_blank' && supportLink.relList.contains('noopener')
+          && supportLink.textContent.trim() === 'Soporte por WhatsApp';
+      }));
       await evaluate(() => {
         window.__p20ValidDocument(false);
         window.__p21Invite({ businessId: 'p21-demo', role: 'dueño', email: 'owner@example.test' });
@@ -143,6 +149,99 @@ it('P21 checks both documents in invitation and existing-account flows before ha
   });
 });
 
+it('PWA detects a real waiting worker and only reloads an isolated, safe login', { timeout: 90000 }, async () => {
+  await runBrowserFixture({
+    htmlFile: new URL('./p20-legal.browser.html', import.meta.url), route: '/p20-pwa-local',
+    fixture: { updates: true, css: await readBrowserBuildCss() },
+    moduleMocks: {
+      [path('core/firebase/client.js')]: 'export const auth = {}; export const db = {};',
+      [path('features/pwa/registerPwa.js')]: 'export const registerPwa = () => navigator.serviceWorker.getRegistration();',
+      [path('hooks/useAuthManager.js')]: `
+        import {useState} from 'react';
+        export function useAuthManager() {
+          const [state, setState] = useState({});
+          window.__pwaAuth = setState;
+          return state;
+        }`,
+      [path('hooks/useMaintenance.js')]: 'export const useMaintenance = () => ({});',
+      [path('components/LicenseGuard.jsx')]: 'export default function LicenseGuard({children}) {return children;}',
+      [path('components/BranchGuard.jsx')]: 'export default function BranchGuard({children}) {return children;}',
+      [path('app/providers/SessionProviders.jsx')]: 'export function SessionProviders({children}) {return children;}',
+      [path('layouts/AppLayout.jsx')]: 'export default function AppLayout() {return "Sesión operativa";}',
+    },
+    async inspectPage(page) {
+      const evaluate = async fn => {
+        const result = await page.send('Runtime.evaluate', { expression: `(${fn})()`, awaitPromise: true, returnByValue: true })
+          .catch(error => { throw new Error(`${error.message} PWA probe: ${String(fn).slice(0, 160)}`, { cause: error }); });
+        if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
+        return result.result.value;
+      };
+      const notices = () => evaluate(() => document.querySelector('[aria-label="Actualizaciones"]')?.textContent);
+      const gated = async () => (await notices())?.includes('vuelve al inicio de sesión');
+      await until(() => evaluate(() => !!window.__pwaAuth), 'Application did not start on controlled page');
+      await evaluate(() => {
+        window.__pwaAuth({ authIssue: 'needs-invite', invitation: { businessId: 'demo', email: 'fixture@example.test', role: 'dueño' } });
+      });
+      await evaluate(async () => { await window.__pwaDb.sales.put({ localId: 'pwa-draft', status: 'pending', data: 'preserve-ciphertext' }); });
+      await evaluate(() => {
+        navigator.serviceWorker.register('/pwa-update-worker.js').catch(error => { window.__pwaRegistrationError = error.message; });
+      });
+      await until(() => evaluate(async () => {
+        if (window.__pwaRegistrationError) throw new Error(window.__pwaRegistrationError);
+        return Boolean((await navigator.serviceWorker.getRegistration()).waiting);
+      }), 'The updated service worker did not enter waiting state');
+      await until(gated, 'Waiting update should be announced during invitation activation');
+      await evaluate(() => window.__pwaAuth({ authIssue: 'permission-denied' }));
+      await until(gated, 'Waiting update should remain mounted on restricted access');
+      await evaluate(() => window.__pwaAuth({ user: { uid: 'admin', role: 'superadmin', hasAcceptedTerms: true } }));
+      await until(() => evaluate(() => document.body.textContent.includes('Sesión operativa')), 'The authenticated shell did not mount');
+      assert.ok(await gated());
+      assert.equal(await evaluate(() => window.__pwaBoots), 1);
+      await evaluate(() => window.__pwaAuth({}));
+      await until(async () => (await notices())?.includes('operaciones pendientes'), 'A pending local draft must block automatic activation at login');
+      assert.equal(await evaluate(async () => (await window.__pwaDb.sales.get('pwa-draft')).data), 'preserve-ciphertext');
+
+      await evaluate(async () => {
+        window.__pwaOther = window.open('/legal/terminos-1.1.txt');
+        // Only the isolated test resolves its synthetic draft, never the updater.
+        await window.__pwaDb.sales.update('pwa-draft', { status: 'synced', financialAck: true });
+      });
+      await until(() => evaluate(() => window.__pwaOther?.location.pathname === '/legal/terminos-1.1.txt'), 'The second tab did not load');
+      await page.send('Page.bringToFront');
+      const retry = () => evaluate(() => [...document.querySelectorAll('[aria-label="Actualizaciones"] button')]
+        .find(button => button.textContent === 'Reintentar').click());
+      await retry();
+      await until(async () => (await notices())?.includes('Cierra las demás pestañas'), 'The service worker must decline activation with a second MigaPOS tab');
+      assert.equal(await evaluate(() => window.__pwaBoots), 1);
+      await evaluate(async () => {
+        const registration = await navigator.serviceWorker.getRegistration();
+        window.__pwaOther.close();
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      });
+      const network = offline => page.send('Network.emulateNetworkConditions', {
+        offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+      });
+      await network(true);
+      await until(() => evaluate(() => !navigator.onLine), 'Chromium did not go offline');
+      assert.equal(await evaluate(() => window.__pwaBoots), 1);
+      await network(false);
+      await until(async () => {
+        try {
+          return await evaluate(() => window.__pwaBoots === 2
+            && navigator.serviceWorker.controller?.scriptURL.endsWith('/pwa-update-worker.js'));
+        } catch (error) {
+          if (/context.*(destroyed|not found)|cannot find.*context/i.test(error.message)) return false;
+          throw error;
+        }
+      }, 'Reconnect at a safe login should reload with the activated worker');
+      assert.deepEqual(await evaluate(async () => {
+        const registration = await navigator.serviceWorker.getRegistration();
+        return { waiting: Boolean(registration.waiting), data: (await window.__pwaDb.sales.get('pwa-draft')).data, boots: window.__pwaBoots };
+      }), { waiting: false, data: 'preserve-ciphertext', boots: 2 });
+    },
+  });
+});
+
 it('P21 serves both full official documents from Hosting build without requiring sign-in', { timeout: 90000 }, async () => {
   const frontend = fileURLToPath(new URL('../frontend/', import.meta.url));
   const output = resolve(process.env.MIGAPOS_TEST_BUILD_DIR || 'frontend/dist');
@@ -187,8 +286,8 @@ it('P21 serves both full official documents from Hosting build without requiring
       const origin = await evaluate('location.origin');
       await page.send('Page.navigate', { url: origin + '/legal/privacidad' });
       await official('privacidad', 12);
-      assert.equal(await evaluate(`document.querySelector('[role="region"] a[href="mailto:deyvidparionaramos@gmail.com"]').textContent.trim()`),
-        'Contactar para ejercer derechos ARCO');
+      assert.equal(await evaluate(`document.querySelector('[role="region"] a[href^="mailto:"]') === null
+        && document.querySelector('[role="region"] article').textContent.includes('deyvidparionaramos@gmail.com')`), true);
       assert.equal(await evaluate(`fetch('/legal/terminos-2.0.txt').then(res => !res.headers.get('Content-Type')?.startsWith('text/plain'))`), true);
     },
   });

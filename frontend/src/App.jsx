@@ -2,7 +2,7 @@ import InvitationOnboarding from './components/InvitationOnboarding';
 import { LoadingState, FullscreenState } from "./shared/ui";
 import { brand } from './config/brand';
 // src/App.jsx
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import './index.css';
 import toast, { Toaster } from 'react-hot-toast';
 import { useAuthManager } from './hooks/useAuthManager';
@@ -52,6 +52,18 @@ function SessionGuards({
 }
 function App() {
   const [requestedTab, setTab] = useState('pos');
+  const [loginAction, setLoginAction] = useState(null);
+  const activeLoginAction = useRef(null);
+  const beginLoginAction = useCallback(action => {
+    if (activeLoginAction.current) return false;
+    activeLoginAction.current = action;
+    setLoginAction(action);
+    return true;
+  }, []);
+  const endLoginAction = useCallback(() => {
+    activeLoginAction.current = null;
+    setLoginAction(null);
+  }, []);
   const {
     user, recheckProfile,
     authLoading, authIssue, invitation, retryAuth, acceptProfileInvitation,
@@ -106,21 +118,25 @@ function App() {
     if (!user || !user.role) return false;
     return ADMIN_ROLES.includes(String(user.role).toLowerCase());
   }, [user]);
+  const updating = loginAction === 'update';
+  const updatePrompt = <ReloadPrompt isLogin={!isMaintenance && !authLoading && !authIssue && !user}
+    signingIn={loginAction === 'sign-in'} updating={updating}
+    beginLoginAction={beginLoginAction} endLoginAction={endLoginAction} />;
   if (isMaintenance) {
-    return <MaintenanceScreen message={maintenanceMsg} />;
+    return <>{updatePrompt}<MaintenanceScreen message={maintenanceMsg} /></>;
   }
   if (authLoading) {
-    return <FullscreenState loading title={`Iniciando ${brand.name}…`} />;
+    return <>{updatePrompt}<FullscreenState loading title={`Iniciando ${brand.name}…`} /></>;
   }
-  if (authIssue === 'needs-invite') return <InvitationOnboarding key={JSON.stringify([invitation?.email, invitation?.businessId, invitation?.role, invitation?.branchId])}
-    invitation={invitation} onActivate={acceptProfileInvitation} onLogout={handleLogout} />;
-  if (authIssue) return <RestrictedAccess licenseState={authIssue} onRetry={retryAuth} onLogout={handleLogout} />;
+  if (authIssue === 'needs-invite') return <>{updatePrompt}<InvitationOnboarding key={JSON.stringify([invitation?.email, invitation?.businessId, invitation?.role, invitation?.branchId])}
+    invitation={invitation} onActivate={acceptProfileInvitation} onLogout={handleLogout} /></>;
+  if (authIssue) return <>{updatePrompt}<RestrictedAccess licenseState={authIssue} onRetry={retryAuth} onLogout={handleLogout} /></>;
   return <>
-      <ReloadPrompt user={user} />
+      {updatePrompt}
 
       {!user ? <>
           <Toaster position="top-center" />
-          <Auth onLogin={NO_OP_FUNCTION} />
+          <Auth onLogin={NO_OP_FUNCTION} updating={updating} beginLoginAction={beginLoginAction} endLoginAction={endLoginAction} />
         </> : !hasCurrentTerms(user) ? <>
           <Toaster position="top-center" />
           <LegalAcceptanceCard key={getIdentityKey(user)} user={user} onLogout={handleLogout} />

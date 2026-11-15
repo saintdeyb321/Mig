@@ -10,6 +10,11 @@ const manifest = JSON.parse(await readFile(resolve(root, 'manifest.webmanifest')
 assert.equal(manifest.short_name, 'MigaPOS');
 for (const match of index.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) { assert.ok(/\bsrc=/.test(match[1])); assert.equal(match[2].trim(), '', 'CSP requires external scripts.'); }
 const sw = await readFile(resolve(root, 'sw.js'), 'utf8');
+const updateGuard = sw.indexOf('importScripts("/pwa-update-worker.js")');
+const legacyActivation = sw.indexOf('"SKIP_WAITING"');
+assert.ok(updateGuard >= 0 && updateGuard < legacyActivation, 'The waiting worker must intercept legacy activation messages first.');
+const updateWorker = await readFile(resolve(root, 'pwa-update-worker.js'), 'utf8');
+assert.match(updateWorker, /stopImmediatePropagation\(\)/);
 const precache = sw.match(/precacheAndRoute\((\[[\s\S]*?\]),/);
 assert.ok(precache, 'Generated service worker precache was not found.');
 assert.ok(!precache[1].includes('xlsx'), 'Excel must load on demand, not during initial PWA install.');

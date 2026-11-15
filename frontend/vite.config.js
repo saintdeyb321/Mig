@@ -25,15 +25,11 @@ export default defineConfig(({ mode, command }) => {
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'prompt', 
-      injectRegister: 'auto',
-      
-      devOptions: {
-        enabled: true,
-        type: 'module',
-      },
+      registerType: 'prompt',
+      injectRegister: false,
       includeAssets: [brand.logo.slice(1)],
       workbox: {
+        importScripts: ['/pwa-update-worker.js'],
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         // Excel is already lazy-loaded: avoid downloading 870 kB during the first PWA installation.
         globIgnores: ['**/xlsx*.js'],

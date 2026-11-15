@@ -17,7 +17,19 @@ window.fetch = (resource, options) => {
 };
 window.__p20ValidDocument = valid => { validDocument = valid; };
 window.__p20Writes = 0;
-const root = createRoot(document.getElementById('root'));
-root.render(React.createElement(App));
-await fetch('/__phase4-report', { method: 'POST', body: '{"ok":true}' });
+if (fixture.updates && !navigator.serviceWorker.controller) {
+  await navigator.serviceWorker.register('/__ui-sw.js');
+  await navigator.serviceWorker.ready;
+  location.reload();
+} else {
+  if (fixture.updates) {
+    const { default: database } = await import('/src/offlineDB.js');
+    window.__pwaDb = database;
+    window.__pwaBoots = Number(sessionStorage.getItem('pwa-fixture-boots') || 0) + 1;
+    sessionStorage.setItem('pwa-fixture-boots', window.__pwaBoots);
+  }
+  const root = createRoot(document.getElementById('root'));
+  root.render(React.createElement(App));
+  await fetch('/__phase4-report', { method: 'POST', body: '{"ok":true}' });
+}
 </script></html>
