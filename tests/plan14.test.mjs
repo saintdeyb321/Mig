@@ -15,9 +15,10 @@ import { reportPeriod } from '../frontend/src/features/reports/domain/reportPeri
 import { createReportExportCache } from '../frontend/src/features/reports/application/reportExportCache.js';
 import { plan08FinancialHarness, unavailable } from './helpers/plan08FinancialHarness.mjs';
 import { pairedTicket, saleDay, voidDay } from './helpers/plan13PeriodHarness.mjs';
+import { readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
 
 const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
-const sheets = (workbook, name) => XLSX.utils.sheet_to_json(workbook.Sheets[name]);
+const sheets = (workbook, name) => tableRows(XLSX, workbook, name);
 
 it('P17 measures direct SDK reads and writes for expiry, new opening and replay', async () => {
   const expiry = Date.parse('2026-11-05T06:00:00-05:00');
@@ -70,8 +71,8 @@ it('P17-RC distinguishes the exact logical deadline and reimports the verified S
   const { workbook, view } = buildSalesWorkbook(XLSX, { ...scope, sessions: [closed] });
   const restored = XLSX.read(writeSalesWorkbook(XLSX, workbook), { type: 'array', cellNF: true });
   const expiry = sheets(restored, 'Auditoría_Cajas').at(-1);
-  assert.deepEqual([expiry['Referencia calculada (S/)'], expiry['Yape/Plin registrado (S/)'],
-    expiry['Efectivo declarado (S/)'], expiry['Diferencia (S/)']], [150, 10, 'No declarado', 'No calculable']);
+  assert.deepEqual([expiry['Efectivo esperado (S/)'], expiry['Yape/Plin registrado (S/)'],
+    expiry['Efectivo contado (S/)'], expiry['Diferencia (S/)']], [150, 10, 'No declarado', 'No calculable']);
   const pdf = managementReportHtml(view, { period: scope.period, generatedAt: recoveredAt.toDate() });
   assert.match(pdf, /Efectivo esperado · referencia<\/dt> <dd>S\/ 150\.00/);
   assert.match(pdf, /Yape\/Plin registrado<\/dt> <dd>S\/ 10\.00/);
@@ -94,27 +95,27 @@ it('P14-RC reimports the October net totals per day and branch with semantic num
   const bytes = writeSalesWorkbook(XLSX, workbook);
   const book = XLSX.read(bytes, { type: 'array', cellNF: true });
   const archive = XLSX.CFB.read(bytes, { type: 'array' });
-  const headers = ['Fecha', 'Tickets de venta válidos', 'Ventas anuladas', 'Total neto registrado (S/)', 'Neto en efectivo (S/)',
-    'Neto por Yape/Plin (S/)', 'Neto de ventas en mostrador (S/)', 'Neto de pagos de pedidos (S/)', 'Pagos de pedidos (cantidad)'];
+  const headers = ['Fecha', 'Ventas mostrador (S/)', 'Pagos de pedidos (S/)', 'Efectivo (S/)', 'Yape / Plin (S/)',
+    'Ingreso neto (S/)', 'Tickets', 'Anulados'];
   for (const [branchId, date, expected] of [['centro', first, [1, 0, 6, 5.5, 0.5, 6, 0, 0]], ['taller', second, [1, 0, 222, 100, 122, 17, 205, 3]]]) {
     const name = `Resum_${branchesMap[branchId]}`;
     const sheet = book.Sheets[name];
-    assert.match(sheet.A2.v, /Total neto registrado = neto de ventas en mostrador \+ neto de pagos de pedidos/);
+    assert.match(sheet.A3.v, /Total neto registrado = neto de ventas en mostrador \+ neto de pagos de pedidos/);
     const filter = XLSX.utils.decode_range(sheet['!autofilter'].ref);
-    assert.equal(filter.s.r, 2);
+    assert.deepEqual([filter.s.r, filter.e.r], [3, 4]);
     assert.equal(filter.e.c, headers.length - 1);
     const [labels, row] = XLSX.utils.sheet_to_json(sheet, { range: filter.s.r, header: 1 });
     assert.deepEqual(labels, headers);
-    assert.deepEqual(row.slice(1), expected);
-    assert.equal(row[3], row[4] + row[5]);
-    assert.equal(row[3], row[6] + row[7]);
-    assert.equal(sheet.A4.t, 'n');
-    assert.equal(sheet.A4.w, branchId === 'centro' ? '24/10/2026' : '27/10/2026');
-    assert.equal(sheet.B4.z, '0');
-    assert.match(sheet.D4.z, /S\//);
-    assert.equal(sheet.I4.z, '0');
+    assert.deepEqual(row.slice(1), [expected[5], expected[6], expected[3], expected[4], expected[2], expected[0], expected[1]]);
+    assert.equal(row[5], row[3] + row[4]);
+    assert.equal(row[5], row[1] + row[2]);
+    assert.equal(sheet.A5.t, 'n');
+    assert.equal(sheet.A5.w, branchId === 'centro' ? '24/10/2026' : '27/10/2026');
+    assert.equal(sheet.G5.z, '0');
+    assert.match(sheet.D5.z, /S\//);
+    assert.equal(sheet.H5.z, '0');
     const xml = XLSX.CFB.find(archive, `/xl/worksheets/sheet${book.SheetNames.indexOf(name) + 1}.xml`);
-    assert.match(Buffer.from(xml.content).toString(), /<pane ySplit="3" topLeftCell="A4"[^>]+state="frozen"/);
+    assert.match(Buffer.from(xml.content).toString(), /<pane ySplit="4" topLeftCell="A5"[^>]+state="frozen"/);
     const scope = { period: reportPeriod('hoy', date), branchId, businessId };
     const dashboard = aggregateReport({ ...scope, sales, payments });
     const view = reportViewModel(dashboard, [], scope);
@@ -122,7 +123,7 @@ it('P14-RC reimports the October net totals per day and branch with semantic num
     assert.equal(view.summary.netRevenue, expected[2]);
     for (const value of expected.slice(2, 7)) assert.ok(html.includes(`S/ ${value.toFixed(2)}`));
   }
-  assert.deepEqual(sheets(book, 'Comparativa_Sedes').map(row => [row.Sucursal, row['Total neto registrado (S/)']]), [['Centro', 6], ['Taller', 222]]);
+  assert.deepEqual(sheets(book, 'Comparativa_Sedes').map(row => [row.Sede, row['Ingreso neto (S/)']]), [['Centro', 6], ['Taller', 222]]);
   assert.equal(model.summary.netRevenue, 228);
 });
 
@@ -185,7 +186,7 @@ it('P14 UX: Dashboard, XLSX and PDF preserve exact cents and the XLSX keeps the 
   const { workbook, view } = buildSalesWorkbook(XLSX, { ...input, model: dashboard });
   const bytes = writeSalesWorkbook(XLSX, workbook);
   const restored = XLSX.read(bytes, { type: 'array', cellNF: true });
-  const rows = Object.fromEntries(sheets(restored, 'Resumen_Financiero').map(row => [row.Concepto, row.Valor]));
+  const rows = readOverview(XLSX, restored);
   assert.deepEqual([rows['Total neto registrado (S/)'], rows['Neto en efectivo (S/)'], rows['Neto por Yape/Plin (S/)']],
     [dashboard.summary.netRevenue, dashboard.summary.cashRevenue, dashboard.summary.digitalRevenue]);
   assert.deepEqual([dashboard.summary.netRevenue, dashboard.summary.cashRevenue, dashboard.summary.digitalRevenue].map(value => Math.round(value * 100)),
@@ -193,17 +194,18 @@ it('P14 UX: Dashboard, XLSX and PDF preserve exact cents and the XLSX keeps the 
   const html = managementReportHtml(view, { period, business: 'Panadería', branch: 'Centro', operator: 'Ana Quispe', generatedAt: new Date(createdAt) });
   for (const value of ['10.05', '0.01', '10.04']) assert.ok(html.includes(`S/ ${value}`));
   const detail = restored.Sheets.Detalle_Centro;
-  const header = XLSX.utils.decode_range(detail['!autofilter'].ref).s.r;
+  const header = reportHeader(XLSX, detail);
   const labels = XLSX.utils.sheet_to_json(detail, { header: 1, range: header })[0];
   const cell = name => detail[XLSX.utils.encode_cell({ r: header + 1, c: labels.indexOf(name) })];
   assert.equal(cell('Fecha').w, '09/11/2026');
   assert.equal(cell('Fecha').z, 'dd/mm/yyyy');
   assert.equal(cell('Referencia').v, 'Venta de mostrador');
-  assert.equal(cell('Producto / concepto').t, 's');
-  assert.equal(cell('Producto / concepto').f, undefined);
+  const product = cell('Producto');
+  assert.equal(product.t, 's');
+  assert.equal(product.f, undefined);
   assert.equal(cell('Responsable').v, 'Empleado no identificado');
   assert.ok(Object.values(detail).every(cell => cell?.v !== internalId));
-  const xml = XLSX.CFB.find(XLSX.CFB.read(bytes, { type: 'array' }), `/xl/worksheets/sheet${restored.SheetNames.length}.xml`);
+  const xml = XLSX.CFB.find(XLSX.CFB.read(bytes, { type: 'array' }), `/xl/worksheets/sheet${restored.SheetNames.indexOf('Detalle_Centro') + 1}.xml`);
   assert.match(new TextDecoder().decode(new Uint8Array(xml.content)), new RegExp(`<pane ySplit="${header + 1}" topLeftCell="A${header + 2}"[^>]+state="frozen"`));
 });
 
@@ -276,20 +278,21 @@ it('P14 C09/C10/R01/R02: reimports a Lima opening, overnight expiry and independ
   const { workbook, view } = buildSalesWorkbook(XLSX, options);
   const restored = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
   const events = sheets(restored, 'Auditoría_Cajas');
-  assert.deepEqual(events.map(row => [row.Turno, row['Fondo inicial (S/)'], row['Referencia calculada (S/)'], row['Efectivo declarado (S/)'], row['Diferencia (S/)']]), [
-    ['APERTURA', 100, 'No aplica', 'No aplica', 'No aplica'],
-    ['CIERRE POR VENCIMIENTO · SIN ARQUEO', 100, 'Pendiente de verificar', 'No declarado', 'No calculable'],
-    ['APERTURA', 50, 'No aplica', 'No aplica', 'No aplica'],
+  assert.deepEqual(events.map(row => [row.Turno, row['Fondo inicial (S/)'], row['Efectivo esperado (S/)'], row['Efectivo contado (S/)'], row['Diferencia (S/)']]), [
+    ['APERTURA', 100, 'No aplica', 'No declarado', 'No calculable'],
+    ['VENCIMIENTO', 100, 'No verificable', 'No declarado', 'No calculable'],
+    ['APERTURA', 50, 'No aplica', 'No declarado', 'No calculable'],
     ['CIERRE MANUAL', 50, 70, 70, 0],
   ]);
-  assert.equal(XLSX.SSF.format('dd/mm/yyyy hh:mm', events[1]['Fecha y hora del movimiento']), '05/11/2026 06:00');
+  assert.equal(XLSX.SSF.format('dd/mm/yyyy hh:mm', events[1].Fecha + events[1].Hora), '05/11/2026 06:00');
   assert.equal(events[1]['Registrado por'], 'Luis Quispe');
-  assert.equal(events[0].Responsable, 'Empleado no identificado');
+  assert.equal(events[0].Cajero, 'Empleado no identificado');
+  assert.equal(events[1].Estado, 'Vencido sin arqueo');
   assert.match(events[1].Observación, /09\/11\/2026 08:00/);
   assert.match(events[3].Observación, /provisionales/);
   assert.equal(view.summary.netRevenue, 20);
   const onlyExpiry = buildSalesWorkbook(XLSX, { ...options, period: day }).workbook;
-  assert.deepEqual(sheets(onlyExpiry, 'Auditoría_Cajas').map(row => row.Turno), ['CIERRE POR VENCIMIENTO · SIN ARQUEO']);
+  assert.deepEqual(sheets(onlyExpiry, 'Auditoría_Cajas').map(row => row.Turno), ['VENCIMIENTO']);
 });
 
 it('P14 R03–R06: Excel and PDF share signed channels, per-branch totals and an explicit unresolved-history warning', () => {
@@ -304,7 +307,7 @@ it('P14 R03–R06: Excel and PDF share signed channels, per-branch totals and an
   assert.equal(view.summary.channels.digital.net, -30);
   assert.equal(view.branches.reduce((net, branch) => net + branch.netRevenue, 0), view.summary.netRevenue);
   assert.equal(view.historyUnresolved, 1);
-  const rows = Object.fromEntries(sheets(workbook, 'Resumen_Financiero').map(row => [row.Concepto, row.Valor]));
+  const rows = readOverview(XLSX, workbook);
   assert.equal(rows['Conciliación histórica pendiente'], view.warning);
   assert.equal(rows['Neto por Yape/Plin (S/)'], -30);
   const html = managementReportHtml(view, { period, business: '<img src="https://invalid.invalid">', branch: 'Global', operator: 'Cajera',

@@ -7,13 +7,16 @@ import { useExportSales } from '../features/reports/hooks/useExportSales';
 const statusMessages = {
   'module-load': 'Cargando módulo Excel…',
   'data-read': 'Consultando movimientos…',
-  integrity: 'Verificando el informe…',
+  'contract-audit': 'Comprobando referencias de pedidos…',
+  integrity: 'Verificando importes del período…',
+  document: 'Preparando el documento…',
   download: 'Iniciando la descarga…',
   started: 'Se solicitó la descarga al navegador.',
 };
 
 function errorCopy({ kind, error, offline }, diagnostic) {
-  if (error.code === 'report-timeout') return ['El informe tardó demasiado', 'Vuelve a intentar con el mismo período o selecciona un rango menor.'];
+  if (error.code === 'report-timeout') return [kind === 'module-load' ? 'No se pudo preparar Excel' : 'No se pudo completar la consulta',
+    'La respuesta tardó más de lo esperado. Comprueba la conexión y vuelve a intentar.'];
   if (error.code === 'report-stale') return ['Los datos del informe caducaron', 'Vuelve a preparar el informe para verificar los movimientos.'];
   if (kind === 'module-load') return ['No se pudo preparar Excel', offline
     ? 'Sin conexión. Conéctate para cargar el generador de archivos e intenta nuevamente.'
@@ -21,7 +24,8 @@ function errorCopy({ kind, error, offline }, diagnostic) {
   if (['permission-denied', 'unauthenticated'].includes(diagnostic?.code)) return ['Lectura de movimientos denegada', 'Tu cuenta no pudo acceder a estos movimientos. Solicita revisión al dueño.'];
   if (diagnostic?.missingIndex) return ['La consulta requiere preparación', 'Solicita al administrador que revise el índice indicado.'];
   if (/selecciona un período menor|reduce el período|supera 500 contratos/i.test(error?.message)) return ['El período supera el límite de exportación', 'Selecciona un período menor y vuelve a intentar.'];
-  if (kind === 'integrity') return ['Los movimientos no concilian', 'Revisa los datos del período antes de intentar otra exportación.'];
+  if (kind === 'integrity') return ['Hay movimientos de este período que requieren revisión', 'No se generó un informe parcial. Revisa los movimientos del período antes de reintentar.'];
+  if (kind === 'document') return ['No se pudo generar el documento', 'Vuelve a intentar con el período actual. Si continúa, prueba con un período menor.'];
   if (kind === 'download') return ['No se pudo iniciar la descarga', 'Comprueba que el navegador permita descargas y vuelve a intentar.'];
   return ['No se pudieron consultar los movimientos', offline || ['unavailable', 'deadline-exceeded'].includes(diagnostic?.code)
     ? 'Comprueba la conexión y vuelve a intentar.'
@@ -31,6 +35,7 @@ function errorCopy({ kind, error, offline }, diagnostic) {
 function ReportPreview({ html, expiresAt, expired, onClose }) {
   const frame = useRef(null);
   const inFlight = useRef(false);
+  const startedAt = useRef(performance.now());
   const [ready, setReady] = useState(false);
   const [status, setStatus] = useState('loading');
   useEffect(() => {
@@ -56,6 +61,7 @@ function ReportPreview({ html, expiresAt, expired, onClose }) {
     <iframe ref={frame} title="Vista previa del informe gerencial" sandbox="allow-same-origin allow-modals" srcDoc={html}
       onLoad={() => {
         if (!frame.current?.contentDocument?.querySelector('main')) return;
+        if (import.meta.env.DEV && !ready) performance.measure('migapos:report:preview', { start: startedAt.current });
         setReady(true);
         setStatus('ready');
       }} className="h-[52vh] min-h-48 w-full rounded-lg border border-line bg-panel" />
@@ -78,7 +84,9 @@ function ExportSales({ user }) {
   const headingId = useId(), periodId = useId(), formatId = useId(), noticeId = useId();
   const actionRef = useRef(null);
   const { isExporting, failure, phase, html, expiresAt, expired, exportData, closePreview, fetchedAt, reused, provisional, branchName } = useExportSales(user, timeFilter, format);
-  const diagnostic = failure?.kind === 'data-read' ? queryErrorDiagnostic(failure.error, 'reports') : null;
+  const diagnostic = ['data-read', 'contract-audit'].includes(failure?.kind) ? queryErrorDiagnostic(failure.error, 'reports') : null;
+  const code = diagnostic?.code || failure?.error?.code
+    || (failure?.kind === 'integrity' ? 'report-integrity' : failure?.kind === 'document' ? 'report-document' : '');
   const error = failure && errorCopy(failure, diagnostic);
   const admin = ['dueño', 'superadmin'].includes(user?.role) || import.meta.env.DEV;
   useEffect(() => {
@@ -119,7 +127,7 @@ function ExportSales({ user }) {
         ? 'Resumen para imprimir o guardar como PDF.' : 'Detalle y hojas de auditoría por período.'}</p>
       <Button ref={actionRef} aria-describedby={noticeId} type="submit" variant="success" size="lg" loading={isExporting}
         className="w-full sm:w-auto sm:min-w-56 sm:justify-self-center">
-        {format === 'pdf' ? <><Printer aria-hidden="true" />Preparar informe PDF</> : <><Download aria-hidden="true" />Descargar detalle Excel</>}
+        {format === 'pdf' ? <><Printer aria-hidden="true" />Ver resumen PDF</> : <><Download aria-hidden="true" />Descargar Excel</>}
       </Button>
     </form>
     <p role="status" aria-atomic="true" className={statusMessages[phase] || fetchedAt ? 'mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-muted' : 'sr-only'}>
@@ -131,16 +139,17 @@ function ExportSales({ user }) {
       <p>{error[1]}</p>
       <details className="mt-1 text-xs">
         <summary className="flex min-h-11 cursor-pointer items-center font-semibold">Detalles técnicos</summary>
-        <p>Etapa {failure.kind}{failure.kind === 'module-load' ? ' · xlsx-js-style' : ''}{diagnostic?.code && /^[a-z-]{1,48}$/.test(diagnostic.code) ? ' · ' + diagnostic.code : ''}.</p>
+        <p>Etapa {failure.kind}{failure.kind === 'module-load' ? ' · xlsx-js-style' : ''}{/^[a-z-]{1,48}$/.test(code) ? ' · ' + code : ''}.</p>
         {admin && diagnostic?.url && <a href={diagnostic.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center font-bold underline">Revisar índice en Firebase Console</a>}
       </details>
+      <Button variant="secondary" size="sm" className="mt-2 min-h-11" onClick={exportData}>Reintentar</Button>
     </Alert>}
     <details className="group mt-1 text-xs text-muted">
       <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 font-semibold">Detalles de exportación<ChevronDown aria-hidden="true" className="size-3.5 shrink-0 group-open:rotate-180" /></summary>
       <div className="space-y-2 border-t border-line py-2">
         <p>La descarga consulta los movimientos del período seleccionado.</p>
         <p>Incluye ventas, compensaciones POS y pagos del período. Una compensación contable no acredita entrega física de efectivo ni devolución digital.</p>
-        <p>Hoy y semana detallan cada movimiento. Mes y año resumen por día. Máximo 10 000 movimientos y 500 contratos históricos. Si falta información o se excede el límite, reduce el período antes de reintentar.</p>
+        <p>Hoy y semana separan los movimientos de los artículos por ticket. Mes y año resumen por día. Máximo 10 000 movimientos y 500 contratos históricos.</p>
       </div>
     </details>
     {html && <ReportPreview html={html} expiresAt={expiresAt} expired={expired} onClose={closePreview} />}

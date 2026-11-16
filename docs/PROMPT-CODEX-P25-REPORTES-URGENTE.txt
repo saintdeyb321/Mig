@@ -1,0 +1,9 @@
+Implementa COMPLETO `docs/MIGAPOS-P25-REFAC-REPORTES-EXCEL-PDF-URGENTE.md` en `fix/migapos-production-readiness`.
+
+Prioridad absoluta: 1) reproducir y solucionar el PDF semanal que muestra «El informe tardó demasiado · Etapa integrity», identificando la fase real sin inventar una causa ni simplemente elevar el timeout; 2) refactorizar el Excel entero hacia un informe visual, sencillo y profesional para dueños de pastelerías, con colores semánticos como las capturas de referencia, resumen inmediato, movimientos de una fila por operación y artículos en hoja separada; 3) mejorar el PDF ejecutivo y el copy de exportación.
+
+Inspecciona primero `git status --short`, HEAD y únicamente los archivos objetivo del MD. Respeta los cambios locales. Reutiliza `aggregateReport`, modelos financieros, caches, permisos, Excel actual y vista de impresión; cero dependencias nuevas, cero consultas redundantes y no edites Rules, índices, POS, contratos, PWA, textos legales o sus hashes. Un formato bonito jamás justifica cifras incorrectas, totales duplicados o presentar fondo de caja como ingresos.
+
+Entrega muestras XLSX/PDF y capturas REALES verificables en `.release/qa-p25/` (sin datos privados) y pruebas de reimportación/conciliación, UX PDF semanal/Chromium, períodos y sedes, timeout, caché, lint y build. No consideres terminado el trabajo porque pasen solo las pruebas: verifica la LEGIBILIDAD real del XLSX abierto, en especial resumen, movimientos y caja. Corrige fallos encontrados, sin desactivar pruebas ni ocultar errores. No hagas commit, push ni deploy.
+
+Respuesta final <=12 líneas: causa concreta del PDF, nuevo diseño Excel, tiempo/perf antes-después si medido, archivos editados, PASS/FAIL y bloqueantes. Evita logs y explicaciones largas.

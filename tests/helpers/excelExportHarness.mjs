@@ -48,7 +48,8 @@ export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', f
         export const sessionReportReads = createSessionReportReads({
           getSalesInPeriod: (business, start, _end, { branchId }) => window.__excelFixture.read('sales', day(start), branchId, business),
           getPaymentsInPeriod: async (business, start, _end, branchId) => (await window.__excelFixture.read('contracts', day(start), branchId, business)).payments,
-          getContractsInPeriod: async () => [],
+          getContractsInPeriod: (business, start, _end, branchId) => window.__excelFixture.reference === 'secondary'
+            ? window.__excelFixture.read('orders', day(start), branchId, business) : [],
           getContractAuditDocuments: business => window.__excelFixture.read('audit', '', 'global', business),
           readVoidsInPeriod: (business, start, _end, branchId) => window.__excelFixture.read('voids', day(start), branchId, business),
           getSessionsInPeriod: (business, start, _end, branchId) => window.__excelFixture.read('cash', day(start), branchId, business),

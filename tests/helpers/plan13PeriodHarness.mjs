@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { readOverview } from './reportWorkbook.mjs';
 import { createSessionResources } from '../../frontend/src/core/session/sessionResources.js';
 import { createReportCache, createReportResource, reportCacheKey } from '../../frontend/src/features/reports/application/reportResource.js';
 import { createSessionReportReads } from '../../frontend/src/features/reports/application/sessionReportReads.js';
@@ -87,7 +88,7 @@ export function reportPeriodHarness({ sales = [], voids = [], beforeQuery } = {}
         const { workbook, model } = buildSalesWorkbook(XLSX, { ...scope, sales, voids, payments, contracts, branchesMap,
           now: period.endDate, ...options });
         const wb = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
-        const summary = Object.fromEntries(XLSX.utils.sheet_to_json(wb.Sheets.Resumen_Financiero).map(row => [row.Concepto, row.Valor]));
+        const summary = readOverview(XLSX, wb);
         return { model, wb, summary };
       },
       close() { dashboard.close(); resources.close(); },

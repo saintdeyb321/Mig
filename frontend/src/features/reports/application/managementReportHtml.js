@@ -5,6 +5,7 @@ import { CHANNEL_BREAKDOWN_ROWS } from '../domain/reportTotals.js';
 
 const money = value => `S/ ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const dateTime = date => `${visibleDay(reportDay(date))} ${reportTime(date)}`;
+const countText = (count, singular, plural) => `${count} ${count === 1 ? singular : plural}`;
 const cell = (value, className) => `<td${className ? ` class="${className}"` : ''}>${text(value)}</td>`;
 const table = (headers, rows) => `<div class="table-wrap"><table><thead><tr>${headers.map(heading =>
   `<th scope="col">${text(heading)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.join('')}</tr>`).join('')}</tbody></table></div>`;
@@ -58,8 +59,8 @@ export function managementReportHtml(view, { period, business, branch, operator,
   const hasActivity = financial || view.orderCount || cashEvents.length;
   const channelRows = [{ name: 'Efectivo', value: cash.net }, { name: 'Yape / Plin', value: digital.net }];
   const cards = [
-    ['Cobros registrados', money(collections)], ['Ajustes contables', money(summary.refunds)],
-    ['Total neto registrado', money(summary.netRevenue)], ['Tickets de venta válidos', summary.posTicketCount],
+    ['Ventas mostrador', summary.posRevenue, 'pos'], ['Pagos de pedidos', summary.contractRevenue, 'orders'],
+    ['Efectivo', cash.net, 'cash'], ['Yape / Plin', digital.net, 'digital'],
   ];
   const counts = [['Pendientes', contractCounts.pending], ['Entregados', contractCounts.delivered],
     ['Cancelados', contractCounts.cancelled], ['Con saldo', contractCounts.withDebt]];
@@ -69,13 +70,19 @@ export function managementReportHtml(view, { period, business, branch, operator,
     @page{size:A4 portrait;margin:10mm 12mm}
     *{box-sizing:border-box} body{max-width:920px;margin:0 auto;padding:18px;color:#271d3d;background:#fffdfa;font:10.5pt/1.34 system-ui,Arial,sans-serif;overflow-wrap:anywhere}
     h1,h2,p{margin:0} h1{font-size:23pt;line-height:1.12;letter-spacing:-.035em} h2{font-size:13pt;line-height:1.2;margin-bottom:6px}
-    .masthead{border-top:5px solid #52368a;border-bottom:1px solid #cec2df;padding:9px 0 10px;break-inside:avoid}
+    .masthead{border-top:5px solid #3e2c63;border-bottom:1px solid #cec2df;padding:9px 0 10px;break-inside:avoid}
     .eyebrow{font-size:9pt;letter-spacing:.16em;text-transform:uppercase;color:#543c89;font-weight:800;margin-bottom:3px}
     .subtitle{margin:4px 0}.meta,.muted{font-size:9pt;color:#52485e}
     .section{margin-top:13px} .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
     .card,.pill{border:1px solid #c7bdd6;background:#f6f2fc;border-radius:6px;padding:7px 8px;break-inside:avoid}
-    .card.net{background:#ecf7f0;border-color:#7fa994;border-left:4px solid #1b684c}
-    .card strong{display:block;font-size:15pt;margin-top:2px;line-height:1.16}
+    .financial-summary{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,2fr);gap:6px;break-inside:avoid}
+    .financial-summary .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .card.net{display:grid;align-content:center;background:#dff5e7;border-color:#7fa994;border-left:4px solid #1b684c}
+    .card strong{display:block;font-size:14pt;margin-top:2px;line-height:1.16;font-variant-numeric:tabular-nums}
+    .card.net strong{font-size:23pt}
+    .card.pos{background:#ddf2fc}.card.orders,.card.digital{background:#eee6f9}.card.cash{background:#dff5e7}
+    .card.negative{background:#fce8e8;border-color:#b68083;color:#792e37}
+    .financial-summary + .muted{margin-top:4px}
     .pill strong{display:block;font-size:12pt}.pill{font-size:9pt}
     .chart{padding:6px 9px;border:1px solid #d3c9df;border-radius:5px;margin:5px 0 7px;break-inside:avoid}
     .bar-row{display:grid;grid-template-columns:minmax(6rem,1fr) 2fr minmax(6rem,1fr);align-items:center;gap:6px;min-height:20px;font-size:9pt}
@@ -95,7 +102,7 @@ export function managementReportHtml(view, { period, business, branch, operator,
     .review-row.danger{border-left-color:#973b43}.review-row h3{margin:0;color:#43265d;font-size:9.5pt}
     .review-amounts{margin:0;text-align:right;font-variant-numeric:tabular-nums}.review-amounts dt,.review-amounts dd{display:inline;margin:0}
     .review-amounts dd{font-weight:700}.review-action{grid-column:1/-1;color:#514451}
-    @media screen and (max-width:520px){body{padding:9px} .cards{grid-template-columns:repeat(2,minmax(0,1fr))}.card strong{font-size:13pt}.bar-row{grid-template-columns:1fr 1fr}.track{order:3;grid-column:1/-1;margin-bottom:3px}.review-row{grid-template-columns:1fr}.review-amounts{text-align:left}}
+    @media screen and (max-width:520px){body{padding:9px}.financial-summary{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.card strong{font-size:13pt}.bar-row{grid-template-columns:1fr 1fr}.track{order:3;grid-column:1/-1;margin-bottom:3px}.review-row{grid-template-columns:1fr}.review-amounts{text-align:left}}
     @media print{body{padding:0;background:#fff;print-color-adjust:exact;-webkit-print-color-adjust:exact}
       body{line-height:1.24} h2{margin-bottom:4px}
       .masthead{padding-block:4px}.section{margin-top:6px;orphans:2;widows:2}.card,.pill{padding-block:4px}
@@ -109,14 +116,16 @@ export function managementReportHtml(view, { period, business, branch, operator,
   </style></head><body><main>
     <header class="masthead"><p class="eyebrow">MigaPOS · Reporte gerencial</p><h1>Informe del negocio</h1>
       <p class="subtitle"><strong>${text(business)}</strong> · ${text(branch)}</p>
-      <p>${text(visibleDay(period.start))} al ${text(visibleDay(period.end))} · America/Lima <span class="meta">· Movimientos contables del período</span></p>
-      <p class="meta">Datos consultados ${text(dateTime(fetchedAt))} · Generado ${text(dateTime(generatedAt))} · ${text(operator)}</p>
+      <p>${text(visibleDay(period.start))} al ${text(visibleDay(period.end))}</p>
+      <p class="meta">Datos consultados ${text(dateTime(fetchedAt))} · Generado ${text(dateTime(generatedAt))} (hora de Lima) · ${text(operator)}</p>
     </header>
     ${warning ? `<p class="notice warning">${text(warning)}</p>` : ''}
-    ${financial ? `<section class="section"><h2>Panorama financiero</h2>
-      <div class="cards">${cards.map(([label, value], i) => `<div class="card ${i === 2 ? 'net' : ''}">${text(label)}<strong>${text(value)}</strong></div>`).join('')}</div>
-      <p class="muted">Neto de ventas en mostrador ${text(money(summary.posRevenue))} · Neto de pagos de pedidos ${text(money(summary.contractRevenue))}
-        · ${summary.voidedTicketCount} tickets anulados · ${summary.contractPaymentCount} pagos de pedidos</p>
+    ${financial ? `<section class="section"><h2>Ingresos del período</h2>
+      <div class="financial-summary"><div class="card net${summary.netRevenue < 0 ? ' negative' : ''}">Total neto registrado<strong>${text(money(summary.netRevenue))}</strong>
+        <p class="muted">${countText(summary.posTicketCount, 'ticket válido', 'tickets válidos')}</p></div>
+      <div class="cards">${cards.map(([label, value, tone]) => `<div class="card ${tone}${value < 0 ? ' negative' : ''}">${text(label)} · neto<strong>${text(money(value))}</strong></div>`).join('')}</div></div>
+      <p class="muted">Cobros registrados ${text(money(collections))} · Ajustes contables ${text(money(summary.refunds))}
+        · ${countText(summary.voidedTicketCount, 'ticket anulado', 'tickets anulados')} · ${countText(summary.contractPaymentCount, 'pago de pedido', 'pagos de pedidos')}. El neto registrado requiere cotejo con costos y arqueos.</p>
     </section>
     <section class="section"><h2>Neto por canal</h2><div class="channel-breakdown">${signedBars(channelRows)}
       ${table(['Movimiento', 'Efectivo', 'Yape / Plin'], CHANNEL_BREAKDOWN_ROWS.map(({ key, label }) =>
@@ -124,8 +133,8 @@ export function managementReportHtml(view, { period, business, branch, operator,
       ${channelRows.some(row => row.value < 0) ? '<p class="muted">El neto negativo incluye ajustes cuyos cobros pueden pertenecer a otro período.</p>' : ''}
     </section>` : `<div class="notice"><strong>${hasActivity ? 'Sin cobros ni ajustes contables en el período' : 'No se registraron movimientos confirmados en este período'}</strong>
       <p>Total neto registrado ${text(money(summary.netRevenue))}</p></div>`}
-    ${financial && sites.length ? `<section class="section"><h2>${sites.length > 1 ? 'Comparativa de sucursales' : 'Desempeño de la sede'}</h2>
-      ${sites.length > 1 ? signedBars(sites.map(site => ({ name: site.name, value: site.net }))) : ''}
+    ${financial && sites.length > 1 ? `<section class="section"><h2>Comparativa de sucursales</h2>
+      ${signedBars(sites.map(site => ({ name: site.name, value: site.net })))}
       ${table(['Sucursal', 'Neto POS', 'Neto pedidos', 'Neto total'], sites.map(site =>
         [cell(site.name, 'bounded'), cell(money(site.pos), 'num'), cell(money(site.orders), 'num'), cell(money(site.net), 'num')]))}
       ${comparisons.length > sites.length ? `<p class="muted">Se muestran ${sites.length} de ${comparisons.length} sucursales. Consulta el detalle en Excel.</p>`

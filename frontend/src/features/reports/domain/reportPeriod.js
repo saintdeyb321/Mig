@@ -9,7 +9,8 @@ export const reportDay = value => {
 export const dayDate = key => new Date(`${key}T00:00:00-05:00`);
 const keyUTC = date => date.toISOString().slice(0, 10);
 export const visibleDay = key => key.split('-').reverse().join('/');
-export const reportTime = value => new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(toDateSafe(value));
+const limaClock = new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+export const reportTime = value => limaClock.format(toDateSafe(value));
 export function reportPeriod(filter, now = new Date()) {
   const today = reportDay(now), [year, month, day] = today.split('-').map(Number);
   let start = today, end = today;

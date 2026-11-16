@@ -6,7 +6,11 @@ import { reportDay, visibleDay, reportTime } from '../domain/reportPeriod.js';
 import { branchReportName, employeeReportName, reportNote } from './reportNames.js';
 
 const monetaryValue = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
-const eventTitles = { opening: 'APERTURA', closing: 'CIERRE MANUAL', expiry: CASH_EXPIRY_LABEL.toUpperCase() };
+const eventTitles = { opening: 'APERTURA', closing: 'CIERRE MANUAL', expiry: 'VENCIMIENTO' };
+const excelStates = { Coincide: 'Cuadrado', 'Sobrante registrado': 'Sobrante', 'Faltante registrado': 'Faltante' };
+
+export const verifiedCashDifference = event => event.kind === 'closing' && !event.estimated
+  && Number.isFinite(event.counted) && Number.isFinite(event.difference);
 
 export function cashAuditEvents(sessions, scope, { branchesMap = {}, people } = {}) {
   const events = [];
@@ -32,15 +36,16 @@ export function cashAuditEvents(sessions, scope, { branchesMap = {}, people } = 
       if (!date) return;
       const day = reportDay(date);
       if (day < scope.period.start || day > scope.period.end) return;
-      events.push({ kind, date, day, branch: branchReportName(branchesMap, session.branchId),
+      events.push({ kind, date, day, branchId: session.branchId, branch: branchReportName(branchesMap, session.branchId),
         cashier: employeeReportName(people, session.userId, session.cashierName),
         opening: monetaryValue(session.openingAmount), reference: null, counted: null, difference: null, ...details });
     };
-    add(session.openedAt, 'opening', { actor: employeeReportName(people, session.userId, session.cashierName),
-      state: 'Fondo registrado', note: reportNote(session.openingNote, session.id, session.userId) });
     const window = cashExpiryWindow(session);
     const materialized = session.status === 'expired_unreconciled';
-    if (materialized || (session.status === 'open' && window?.expiresAt <= snapshotAt)) {
+    const expired = materialized || (session.status === 'open' && window?.expiresAt <= snapshotAt);
+    add(session.openedAt, 'opening', { actor: employeeReportName(people, session.userId, session.cashierName),
+      inProgress: session.status === 'open' && !expired, state: 'Fondo registrado', note: reportNote(session.openingNote, session.id, session.userId) });
+    if (expired) {
       const finalizedAt = materialized ? toDateSafe(session.recoveredAt) : null;
       const evidence = materializedCashExpiry(session);
       let totals;
@@ -75,17 +80,19 @@ export function cashAuditEvents(sessions, scope, { branchesMap = {}, people } = 
 
 export function cashAuditRows(events) {
   return events.map(event => ({
-    'Fecha y hora del movimiento': `${visibleDay(event.day)} ${reportTime(event.date)}`,
+    Fecha: visibleDay(event.day),
     Turno: eventTitles[event.kind],
+    Hora: reportTime(event.date),
     Sede: event.branch,
-    Responsable: event.cashier,
+    Cajero: event.cashier,
     'Registrado por': event.actor,
     'Fondo inicial (S/)': event.opening ?? 'No registrado',
-    'Referencia calculada (S/)': event.reference ?? (event.kind === 'opening' ? 'No aplica' : event.kind === 'expiry' ? 'Pendiente de verificar' : 'Sin referencia'),
+    'Efectivo esperado (S/)': event.reference ?? (event.kind === 'opening' ? 'No aplica' : event.kind === 'expiry' ? 'No verificable' : 'Sin referencia'),
     'Yape/Plin registrado (S/)': event.digital ?? (event.kind === 'expiry' ? 'Pendiente de verificar' : 'No aplica'),
-    'Efectivo declarado (S/)': event.counted ?? (event.kind === 'opening' ? 'No aplica' : 'No declarado'),
-    'Diferencia (S/)': event.difference ?? (event.kind === 'opening' ? 'No aplica' : 'No calculable'),
-    Estado: event.state,
+    'Efectivo contado (S/)': event.counted ?? 'No declarado',
+    'Diferencia (S/)': event.difference ?? 'No calculable',
+    Estado: event.kind === 'expiry' ? 'Vencido sin arqueo' : event.inProgress ? 'En curso' : excelStates[event.state] ?? event.state,
     Observación: (event.estimated ? 'Referencia y diferencia disponibles son provisionales. ' : '') + event.note,
+    _verifiedDifference: verifiedCashDifference(event),
   }));
 }

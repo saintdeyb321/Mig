@@ -12,6 +12,7 @@ import { createCashPeriodReader } from '../frontend/src/features/cash-register/i
 import { createSalesPeriodReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
 import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
 import { createSheet } from '../frontend/src/utils/excelHelpers.js';
+import { readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
 
 const require = createRequire(new URL('../frontend/package.json', import.meta.url));
 const XLSX = require('xlsx-js-style');
@@ -29,10 +30,7 @@ const payments = [{ ...base, id: 'a', sourceId: 'doc-id', contractNumber: 'PED-1
   { ...base, id: 'c', sourceId: 'doc-id', contractNumber: 'PED-100', type: 'refund', amount: -5, method: 'efectivo', occurredAt: date('13') }];
 const branchesMap = { b1: 'Centro', b2: 'Taller' };
 const build = options => buildSalesWorkbook(XLSX, { ...scope, stats, sales, payments, branchesMap, ...options });
-const rows = (wb, name) => {
-  const sheet = wb.Sheets[name];
-  return XLSX.utils.sheet_to_json(sheet, { defval: '', range: XLSX.utils.decode_range(sheet['!autofilter'].ref).s.r });
-};
+const rows = (wb, name) => tableRows(XLSX, wb, name);
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 it('reimports S/163.30 in registered collections without counting products or order payments twice', () => {
@@ -51,30 +49,33 @@ it('reimports S/163.30 in registered collections without counting products or or
   const copy = XLSX.read(writeSalesWorkbook(XLSX, workbook), { type: 'array', cellNF: true, cellStyles: true });
   const sheet = copy.Sheets.Detalle_Centro;
   assert.doesNotMatch(sheet.A1.v, /\(Lima\)/);
-  const headerRow = XLSX.utils.decode_range(sheet['!autofilter'].ref).s.r;
-  const detail = XLSX.utils.sheet_to_json(sheet, { range: headerRow, defval: '' });
+  const headerRow = reportHeader(XLSX, sheet);
+  const detail = rows(copy, 'Detalle_Centro');
   assert.ok(detail.every(row => !('Sucursal' in row)));
-  const amounts = detail.map(row => row['Importe movimiento (S/)']).filter(value => typeof value === 'number');
+  const amounts = detail.map(row => row['Importe neto movimiento (S/)']).filter(value => typeof value === 'number');
   assert.deepEqual(amounts.sort((a, b) => a - b), [6, 20, 20, 37.30, 80]);
   assert.equal(amounts.reduce((sum, value) => sum + Math.round(value * 100), 0), 16330);
   assert.equal(model.summary.netRevenue, 163.30);
-  const summary = new Map(rows(copy, 'Resumen_Financiero').map(row => [row.Concepto, row.Valor]));
+  const summary = new Map(Object.entries(readOverview(XLSX, copy)));
   assert.equal(summary.get('Cobros registrados'), 163.30);
-  assert.equal(detail.filter(row => row.Movimiento === 'DETALLE TICKET').length, 1);
-  assert.equal(detail.find(row => row.Movimiento === 'DETALLE TICKET')['Importe movimiento (S/)'], '');
+  assert.equal(detail.filter(row => typeof row['Importe neto movimiento (S/)'] === 'number').length, 5);
+  assert.equal(detail.filter(row => row['Precio unitario'] === 'TOTAL TICKET').length, 3);
   assert.deepEqual(detail.filter(row => ['ADELANTO PEDIDO', 'ABONO PEDIDO'].includes(row.Movimiento)).map(row => [
-    row.Referencia, row['Producto / concepto'], row.Cantidad, row['Precio unitario'], row['Subtotal producto'],
-  ]), Array.from({ length: 2 }, () => ['PED-2A010C09', 'Pago de pedido · Edith', '', '', '']));
-  assert.ok(detail.some(row => row['Producto / concepto'] === '10'));
+    row.Referencia, row.Observaciones, row.Cantidad, row['Subtotal (S/)'],
+  ]), Array.from({ length: 2 }, () => ['PED-2A010C09', 'Edith', '', '']));
+  const products = detail.filter(row => row.Producto);
+  assert.equal(products.length, 4);
+  assert.ok(products.some(row => row.Producto === '10'));
+  assert.ok(products.every(row => !/PEDIDO$/.test(row.Movimiento)));
   assert.ok(Object.values(sheet).some(cell => cell.t === 's' && cell.v === '=1+1' && !cell.f));
   const header = XLSX.utils.sheet_to_json(sheet, { header: 1, range: headerRow })[0];
   const cell = (name, offset = 1) => sheet[XLSX.utils.encode_cell({ r: headerRow + offset, c: header.indexOf(name) })];
   assert.equal(cell('Fecha').w, '22/10/2026');
   assert.equal(cell('Hora').w, '09:00');
-  assert.equal(cell('Importe movimiento (S/)').t, 'n');
-  assert.match(cell('Importe movimiento (S/)').z, /S\//);
-  assert.equal(cell('Cantidad', 2).z, '0');
-  assert.match(cell('Precio unitario', 2).z, /S\//);
+  assert.equal(cell('Importe neto movimiento (S/)').t, 'n');
+  assert.match(cell('Importe neto movimiento (S/)').z, /S\//);
+  assert.equal(cell('Cantidad', 3).z, '0');
+  assert.match(cell('Precio unitario', 3).z, /S\//);
   assert.equal(copy.SheetNames.includes('Comparativa_Sedes'), false);
   assert.equal(copy.SheetNames.includes('Productos_Sedes'), false);
   const [order] = rows(copy, 'Auditoría_Pedidos');
@@ -82,9 +83,9 @@ it('reimports S/163.30 in registered collections without counting products or or
   const [otherOrder] = rows(copy, 'Estado_Pedidos');
   assert.deepEqual([otherOrder.Pedido, otherOrder.Cliente, otherOrder.Sede], ['Sin número comercial', 'Cliente sin nombre', undefined]);
   const [opening, expiry] = rows(copy, 'Auditoría_Cajas');
-  assert.equal(opening.Sede, undefined);
-  assert.deepEqual([opening['Fondo inicial (S/)'], opening['Efectivo declarado (S/)'], expiry['Efectivo declarado (S/)'], expiry['Diferencia (S/)']],
-    [100, 'No aplica', 'No declarado', 'No calculable']);
+  assert.equal(opening.Sede, 'Centro');
+  assert.deepEqual([opening['Fondo inicial (S/)'], opening['Efectivo contado (S/)'], expiry['Efectivo contado (S/)'], expiry['Diferencia (S/)']],
+    [100, 'No declarado', 'No declarado', 'No calculable']);
 });
 
 it('Plan05 keeps stale presentation for prefixed network errors and withdraws figures after permission denial', async () => {
@@ -108,15 +109,15 @@ it('Plan05 accounts an immutable POS refund once with negative detailed items an
   assert.ok(model.products.every(row => row.qty === 0 && row.revenue === 0));
   const copy = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
   const details = rows(copy, copy.SheetNames.find(name => name.startsWith('Detalle_')));
-  const summary = new Map(rows(copy, 'Resumen_Financiero').map(row => [row.Concepto, row.Valor]));
+  const summary = new Map(Object.entries(readOverview(XLSX, copy)));
   assert.equal(summary.get('Compensaciones POS · Yape / Plin'), -25);
   assert.equal(summary.get('Neto por Yape/Plin (S/)'), 0);
-  assert.equal(details.filter(row => row.Cantidad === -2).length, 1);
-  assert.equal(details.reduce((sum, row) => sum + (Number(row['Importe movimiento (S/)']) || 0), 0), 0);
+  assert.equal(details.filter(row => row.Producto && row.Cantidad === -2).length, 1);
+  assert.equal(details.reduce((sum, row) => sum + (Number(row['Importe neto movimiento (S/)']) || 0), 0), 0);
   const priorSale = { ...original, createdAt: '2026-10-21T10:00:00-05:00' };
   const dashboard = aggregateReport({ ...scope, stats: salesToDailyStats([priorSale]), voids: [refund] }).summary;
   const priorDayExport = build({ sales: [priorSale], payments: [], voids: [refund] });
-  const priorDayRows = new Map(rows(priorDayExport.workbook, 'Resumen_Financiero').map(row => [row.Concepto, row.Valor]));
+  const priorDayRows = new Map(Object.entries(readOverview(XLSX, priorDayExport.workbook)));
   assert.deepEqual(priorDayExport.model.summary.channels, dashboard.channels);
   assert.equal(priorDayRows.get('Neto por Yape/Plin (S/)'), -25);
   assert.throws(() => build({ voids: [{ ...refund, items: [{ ...item, qty: 1 }] }] }), /no verificable/);
@@ -158,7 +159,7 @@ describe('Phase 7 canonical financial reports', () => {
     const { workbook, model } = build({ sales: [], payments: overlapping });
     assert.equal(model.summary.contractRevenue, 30);
     const detail = workbook.SheetNames.filter(name => name.startsWith('Detalle_')).flatMap(name => rows(workbook, name));
-    assert.equal(detail.reduce((sum, row) => sum + row['Importe movimiento (S/)'], 0), 30);
+    assert.equal(detail.reduce((sum, row) => sum + (row['Importe neto movimiento (S/)'] || 0), 0), 30);
     assert.equal(rows(workbook, 'Auditoría_Pedidos').reduce((sum, row) => sum + row['Neto Movimiento (S/)'], 0), 30);
   });
   it('payments use their real branch rather than contract origin', () => {
@@ -177,24 +178,24 @@ describe('Phase 7 canonical financial reports', () => {
   });
   it('POS and contract income on the same Lima day merge into one canonical daily row', () => {
     const result = processDailyStats(stats, payments, scope).dailyRowsByBranch.b1;
-    assert.equal(result.length, 1); assert.equal(result[0].Fecha, '22/10/2026'); assert.equal(result[0]['Total neto registrado (S/)'], 75);
-    assert.equal(result[0]['Tickets de venta válidos'], 2); assert.equal(result[0]['Pagos de pedidos (cantidad)'], 1);
+    assert.equal(result.length, 1); assert.equal(result[0].Fecha, '22/10/2026'); assert.equal(result[0]['Ingreso neto (S/)'], 75);
+    assert.equal(result[0].Tickets, 2); assert.equal(result[0]['Pagos de pedidos (S/)'], 15);
   });
   it('details are ordered by real timestamps within a day', () => {
-    const result = processSales(sales, branchesMap, [...payments].reverse(), scope).ticketsRowsByBranch.b1;
-    const firstRows = result.filter(row => row.Hora);
+    const result = processSales(sales, [...payments].reverse(), scope).groupsByBranch.b1;
+    const firstRows = result.map(group => group.movement);
     assert.deepEqual(firstRows.map(row => row.Hora), ['09:00', '10:00', '11:00', '13:00', '14:00']);
   });
   it('every POS and payment detail row uses the same columns', () => {
-    const result = processSales(sales, branchesMap, payments, scope).ticketsRowsByBranch;
-    for (const row of Object.values(result).flat()) assert.deepEqual(Object.keys(row), DETAIL_HEADERS);
+    const result = processSales(sales, payments, scope).groupsByBranch;
+    for (const { movement } of Object.values(result).flat()) assert.deepEqual(Object.keys(movement), DETAIL_HEADERS);
   });
   it('invalid money or unreconciled splits never become NaN, Infinity or plausible partial totals', () => {
     assert.throws(() => aggregateReport({ stats: [{ ...stats[0], totalRevenue: Infinity }] }));
     assert.throws(() => aggregateReport({ stats: [{ ...stats[0], totalRevenue: NaN }] }));
     assert.throws(() => aggregateReport({ payments: [{ ...payments[0], method: 'mixto', splitPayments: { efectivo: 1 } }] }));
     assert.throws(() => createSheet(XLSX, [{ Ingreso: NaN }], []));
-    assert.throws(() => processSales([{ ...sales[1], total: 100 }], branchesMap), /no concilia/);
+    assert.throws(() => processSales([{ ...sales[1], total: 100 }]), /no concilia/);
   });
   it('nested and dotted legacy aggregate increments combine without shadowing zero fields', () => {
     const stat = { ...stats[0], totalRevenue: 70, paymentMethods: { efectivo: 10, yape: 0 }, productSales: { p1: { name: 'Pan', qty: 1, revenue: 10 } } };
@@ -204,7 +205,11 @@ describe('Phase 7 canonical financial reports', () => {
   it('empty data yields explicit zeros and a complete date skeleton', () => {
     const result = aggregateReport(scope); assert.equal(result.summary.netRevenue, 0); assert.equal(result.summary.posAverageTicket, 0);
     assert.equal(result.chartData.length, 1); assert.equal(result.topProducts.length, 0);
-    assert.deepEqual(build({ stats: [], sales: [], payments: [] }).workbook.SheetNames, ['Resumen_Financiero']);
+    assert.deepEqual(build({ stats: [], sales: [], payments: [], branchId: 'b1' }).workbook.SheetNames, ['Resumen_Financiero']);
+    const { workbook } = build({ stats: [], sales: [], payments: [] });
+    assert.deepEqual(rows(workbook, 'Comparativa_Sedes').map(row => [row.Sede, row.Tickets, row['Ingreso neto (S/)']]),
+      [['Centro', 0, 0], ['Taller', 0, 0]]);
+    assert.equal(workbook.Sheets.Detalle_Taller, undefined);
   });
   it('Lima day/week/month/year boundaries ignore the browser timezone', () => {
     assert.equal(reportDay('2026-01-01T04:59:59Z'), '2025-12-31');
@@ -224,12 +229,12 @@ describe('Phase 7 workbooks in memory', () => {
   it('detailed and monthly summaries reconcile with independent product and financial columns', () => {
     const detailed = build({ detailed: true });
     const detail = detailed.workbook.SheetNames.filter(name => name.startsWith('Detalle_')).flatMap(name => rows(detailed.workbook, name));
-    assert.equal(detail.reduce((sum, row) => sum + Number(row['Subtotal producto'] || 0), 0), 60);
-    assert.equal(detail.reduce((sum, row) => sum + Number(row['Importe movimiento (S/)'] || 0), 0), 90);
-    assert.equal(rows(detailed.workbook, 'Comparativa_Sedes').reduce((sum, row) => sum + row['Total neto registrado (S/)'], 0), 90);
+    assert.equal(detail.filter(row => row.Producto).reduce((sum, row) => sum + row['Subtotal (S/)'], 0), 60);
+    assert.equal(detail.reduce((sum, row) => sum + Number(row['Importe neto movimiento (S/)'] || 0), 0), 90);
+    assert.equal(rows(detailed.workbook, 'Comparativa_Sedes').reduce((sum, row) => sum + row['Ingreso neto (S/)'], 0), 90);
     const monthly = build({ period: reportPeriod('mes', date('12')), detailed: false });
     const daily = monthly.workbook.SheetNames.filter(name => name.startsWith('Resum_')).flatMap(name => rows(monthly.workbook, name));
-    assert.equal(daily.reduce((sum, row) => sum + row['Total neto registrado (S/)'], 0), 90);
+    assert.equal(daily.reduce((sum, row) => sum + row['Ingreso neto (S/)'], 0), 90);
     assert.deepEqual(monthly.model.summary, detailed.model.summary);
   });
   it('contract audit uses document ID separately from commercial number, payment date and negative refunds', () => {
@@ -255,8 +260,8 @@ describe('Phase 7 workbooks in memory', () => {
     }
     const audit = rows(restored, 'Auditoría_Cajas');
     assert.equal(audit[0]['Fondo inicial (S/)'], 10);
-    assert.equal(audit[0]['Efectivo declarado (S/)'], 'No aplica');
-    assert.equal(audit[1]['Efectivo declarado (S/)'], 'No declarado');
+    assert.equal(audit[0]['Efectivo contado (S/)'], 'No declarado');
+    assert.equal(audit[1]['Efectivo contado (S/)'], 'No declarado');
     assert.equal(audit[1]['Diferencia (S/)'], 'No calculable');
   });
   it('cash audit includes an overnight session closing in the selected Lima day', () => {
@@ -264,7 +269,7 @@ describe('Phase 7 workbooks in memory', () => {
       openingAmount: 10, openingDiscrepancy: 0, declaredAmount: 75, expectedCash: 75, difference: 0 }] });
     const audit = rows(workbook, 'Auditoría_Cajas');
     assert.equal(audit.length, 1);
-    assert.equal(XLSX.SSF.format('dd/mm/yyyy hh:mm', audit[0]['Fecha y hora del movimiento']), '22/10/2026 08:00');
+    assert.equal(XLSX.SSF.format('dd/mm/yyyy hh:mm', audit[0].Fecha + audit[0].Hora), '22/10/2026 08:00');
     assert.equal(audit[0].Turno, 'CIERRE MANUAL');
     assert.equal(build({}).model.summary.netRevenue, 90);
   });
@@ -276,16 +281,21 @@ describe('Phase 7 workbooks in memory', () => {
   it('a huge line-item dataset is refused before allocating worksheet rows', () => {
     assert.throws(() => build({ sales: [{ ...sales[0], items: Array(10001).fill(item) }] }), /Demasiadas filas/);
   });
-  it('reimports exactly 10,000 product lines at the worksheet limit', () => {
+  it('reimports exactly 10,000 product lines at the worksheet limit', context => {
     const items = Array.from({ length: 8 }, (_, index) => ({ ...item, id: `product-${index}`, price: 1 }));
     const sales = Array.from({ length: MAX_EXPORT_ROWS / items.length }, (_, index) => ({ ...base,
       id: `ticket-${index}`, total: 8, payment: 'efectivo', items }));
+    const start = performance.now();
     const { workbook } = build({ sales, payments: [] });
-    const copy = XLSX.read(writeSalesWorkbook(XLSX, workbook), { type: 'array' });
+    const built = performance.now(), bytes = writeSalesWorkbook(XLSX, workbook);
+    const serialized = performance.now(), copy = XLSX.read(bytes, { type: 'array' });
+    context.diagnostic(JSON.stringify({ tickets: sales.length, productLines: MAX_EXPORT_ROWS, bytes: bytes.byteLength,
+      buildMs: Math.round(built - start), serializeMs: Math.round(serialized - built), reimportMs: Math.round(performance.now() - serialized) }));
     const detail = rows(copy, 'Detalle_Centro');
-    assert.equal(detail.length, MAX_EXPORT_ROWS);
+    assert.equal(detail.filter(row => row.Producto).length, MAX_EXPORT_ROWS);
+    assert.equal(detail.length, MAX_EXPORT_ROWS + sales.length);
     assert.equal(detail.filter(row => row.Movimiento === 'VENTA POS').length, sales.length);
-    assert.equal(detail.reduce((sum, row) => sum + (row['Importe movimiento (S/)'] || 0), 0), MAX_EXPORT_ROWS);
+    assert.equal(detail.reduce((sum, row) => sum + (row['Importe neto movimiento (S/)'] || 0), 0), MAX_EXPORT_ROWS);
   });
 });
 

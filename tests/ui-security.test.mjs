@@ -347,7 +347,8 @@ describe('Hosting policy and conservative cleanup', () => {
       'docs/MIGAPOS-P20-PROMPT-CODEX-LEGAL.md', 'docs/RESULTADOS-P20-LEGAL.md',
       'docs/MIGAPOS-P20-FIX-LEGAL-UX.md', 'docs/RESULTADOS-P20-FIX.md',
       'docs/MIGAPOS-P21-PLAN-INTEGRACION-LEGAL-ACTIVACION.md', 'docs/MIGAPOS-P22-PWA-UX-MOVIL.md',
-      'docs/MIGAPOS-P23-AUDITORIA-PWA-CAJA-VENCIDA.md', 'docs/MIGAPOS-P24-AUDITORIA-CACHE-FIRESTORE.md'];
+      'docs/MIGAPOS-P23-AUDITORIA-PWA-CAJA-VENCIDA.md', 'docs/MIGAPOS-P24-AUDITORIA-CACHE-FIRESTORE.md',
+      'docs/MIGAPOS-P25-REFAC-REPORTES-EXCEL-PDF-URGENTE.md', 'docs/MIGAPOS-P25-V2-EXCEL-UX-GUIA-SIN-IMAGENES.md'];
     assert.deepEqual(markdown.filter(path => !allowedMarkdown.includes(path)), [], 'Documentos Markdown inesperados en el inventario local');
   });
 });
