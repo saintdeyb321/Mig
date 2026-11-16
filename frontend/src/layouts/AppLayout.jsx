@@ -10,6 +10,7 @@ import { NotificationBell } from '../components/NotificationBell';
 import { useTenantData } from '../features/branches/context/TenantContext';
 import { useAlerts } from '../features/notifications/hooks/useAlerts';
 import { isBusinessSession } from '../core/session/context.js';
+import { getIdentityKey } from '../core/session/identity.js';
 import { Badge, Button, IconButton } from '../shared/ui';
 import { useVisualViewport } from '../shared/ui/useVisualViewport';
 import { MobileDockContext } from './MobileDockContext';
@@ -20,6 +21,10 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
   const header = useRef(null);
   const dock = useRef(null);
   const [dockSlot, setDockSlot] = useState(null);
+  const [bell, setBell] = useState(null);
+  const identityKey = getIdentityKey(user);
+  const openBell = bell?.identityKey === identityKey ? bell.placement : null;
+  const openNotifications = placement => setBell({ identityKey, placement });
   useLayoutEffect(() => {
     const layout = shell.current;
     const mobileHeader = header.current;
@@ -35,7 +40,7 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
     return () => observer.disconnect();
   }, []);
   const { businessBranches = [] } = useTenantData() ?? {};
-  const notifications = useAlerts(user);
+  const notifications = useAlerts(user, openBell !== null);
   const online = useNetworkStatus();
   const assisted = useAssistedAccess();
   const fullName = useMemo(() => user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : 'Usuario del sistema', [user]);
@@ -47,7 +52,8 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
     <aside className="nebula-brand fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/10 text-white shadow-xl shadow-sidebar/10 lg:flex xl:w-68" aria-label="Navegación de escritorio">
       <div className="sidebar-identity shrink-0 space-y-3 px-4 pb-4 pt-5">
         <div className="flex items-center gap-3"><img src={brand.logo} alt="" className="size-9 rounded-xl bg-white object-contain p-1" /><div><p className="text-lg font-bold tracking-tight">{brand.name}</p></div></div>
-        <div className="flex min-h-11 items-center justify-between gap-3 border-b border-white/10" aria-label="Conectividad y notificaciones"><NetworkBadge dark /><NotificationBell onOpenCashAudit={() => setTab('history')} user={user} {...notifications} isDesktop /></div>
+        <div className="flex min-h-11 items-center justify-between gap-3 border-b border-white/10" aria-label="Conectividad y notificaciones"><NetworkBadge dark /><NotificationBell onOpenCashAudit={() => setTab('history')} user={user} {...notifications}
+          isOpen={openBell === 'desktop'} onOpen={() => openNotifications('desktop')} onClose={() => setBell(null)} /></div>
         <div className="flex items-start gap-3 py-2">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/10"><UserRound aria-hidden="true" strokeWidth={1.85} className="size-4" /></span>
           <div className="min-w-0">
@@ -74,7 +80,8 @@ const AppLayout = memo(({ user, tab, setTab, handleLogout, children }) => {
         </div>
           <div className="flex shrink-0 items-center gap-1">
             <NetworkBadge dark compact />
-            <NotificationBell dark onOpenCashAudit={() => setTab('history')} user={user} {...notifications} />
+            <NotificationBell dark onOpenCashAudit={() => setTab('history')} user={user} {...notifications}
+              isOpen={openBell === 'mobile'} onOpen={() => openNotifications('mobile')} onClose={() => setBell(null)} />
             <IconButton label="Cerrar sesión" className="text-sidebar-muted hover:bg-white/10 hover:text-white" onClick={handleLogout}><LogOut aria-hidden="true" strokeWidth={1.85} /></IconButton>
           </div>
         </div>

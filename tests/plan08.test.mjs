@@ -82,21 +82,44 @@ it('P08 a verified void stays confirmed when local acknowledgement persistence f
   assert.equal(h.writes.length, writes); assert.equal([...rows.values()][0].status, 'pending');
 });
 
-it('P08 compensation listeners preserve authority, reuse unchanged IDs and stop after disposal', () => {
-  const callbacks = new Map(), stopped = [], values = [], starts = [];
-  const reader = createPosVoidReader({}, { sdk: { where: (...args) => args, doc: (_db, name, id) => ({ name, id }),
-    onSnapshot: (ref, _options, callback) => { starts.push(ref.id); callbacks.set(ref.id, callback); return () => { stopped.push(ref.id); }; } } });
-  const stop = reader.subscribeIds('p08-tenant', 'p08-branch', ['one', 'one'], (rows, metadata) => values.push({ rows, metadata }), assert.fail);
-  const snapshot = (fromCache, id = 'one') => ({ id, exists: () => true, data: () => ({ businessId: 'p08-tenant', branchId: 'p08-branch' }), metadata: { fromCache, hasPendingWrites: false } });
-  callbacks.get('one')(snapshot(true)); assert.equal(values.at(-1).rows[0].serverConfirmed, false);
-  callbacks.get('one')(snapshot(false)); assert.equal(values.at(-1).rows[0].serverConfirmed, true);
-  stop.update(['one', 'two']); assert.deepEqual(starts, ['one', 'two']);
-  assert.equal(values.at(-1).rows[0].serverConfirmed, true); assert.equal(values.at(-1).metadata.fromCache, true);
-  callbacks.get('two')(snapshot(false, 'two')); assert.equal(values.at(-1).metadata.fromCache, false);
-  stop.update(['two']); assert.deepEqual(stopped, ['one']);
+it('P08 compensation batches preserve authority, reuse unchanged IDs and stop after disposal', () => {
+  const values = [], starts = [];
+  const reader = createPosVoidReader({}, { sdk: { where: (...args) => args, collection: (_db, name) => name,
+    query: (name, ...filters) => ({ name, filters }),
+    onSnapshot: (ref, _options, callback) => {
+      const listener = { ref, callback, stopped: false };
+      starts.push(listener);
+      return () => { listener.stopped = true; };
+    } } });
+  const ids = Array.from({ length: 50 }, (_, index) => 'id-' + index);
+  const stop = reader.subscribeIds('p08-tenant', 'p08-branch', [...ids, ids[0]], (rows, metadata) => values.push({ rows, metadata }), assert.fail);
+  const snapshot = (fromCache, ...ids) => {
+    const metadata = { fromCache, hasPendingWrites: false };
+    return { metadata, size: ids.length, docs: ids.map(id => ({ id, metadata, data: () => ({ saleId: id, businessId: 'p08-tenant', branchId: 'p08-branch' }) })) };
+  };
+  const [first, second] = starts;
+  assert.equal(starts.length, 2);
+  assert.deepEqual(first.ref.filters.slice(0, 2), [['businessId', '==', 'p08-tenant'], ['branchId', '==', 'p08-branch']]);
+  assert.deepEqual(starts.map(row => row.ref.filters.at(-1)[2].length), [30, 20]);
+  first.callback(snapshot(true, ids[0]));
+  assert.equal(values.at(-1).rows[0].serverConfirmed, false);
+  first.callback(snapshot(false, ids[0]));
+  assert.equal(values.at(-1).rows[0].serverConfirmed, true);
+  assert.equal(values.at(-1).metadata.fromCache, true);
+  second.callback(snapshot(false, ids[49]));
+  assert.equal(values.at(-1).metadata.fromCache, false);
+  stop.update([...ids].reverse()); assert.equal(starts.length, 2);
+  stop.update(['new', ...ids.slice(1)]);
+  assert.equal(starts.length, 3);
+  assert.equal(first.stopped, true);
+  assert.equal(second.stopped, false);
+  assert.deepEqual(values.at(-1).rows.map(row => row.id), [ids[49]]);
   const count = values.length;
-  callbacks.get('one')(snapshot(false)); assert.equal(values.length, count);
-  stop(); callbacks.get('two')(snapshot(false, 'two')); assert.equal(values.length, count); assert.deepEqual(stopped, ['one', 'two']);
+  first.callback(snapshot(false, ids[0])); assert.equal(values.length, count);
+  starts.at(-1).callback(snapshot(false, 'new'));
+  assert.equal(values.at(-1).metadata.fromCache, false);
+  stop(); second.callback(snapshot(false));
+  assert.equal(values.length, count + 1); assert.ok(starts.every(row => row.stopped));
   assert.throws(() => reader.subscribeIds('p08-tenant', 'p08-branch', Array.from({ length: 51 }, (_, i) => 'id' + i), () => {}, assert.fail));
 });
 

@@ -60,9 +60,8 @@ function ExpiryDetail({ notice, logical }) {
   </>;
 }
 
-export function NotificationBell({ user, alerts = [], notificationError, isAdmin, canViewNotifications=false, markAsRead, markAllAsRead, retryNotifications, isMarkingRead, notificationsStale, onOpenCashAudit, dark = false }) {
+export function NotificationBell({ user, alerts = [], confirmedUnreadCount = null, notificationError, isAdmin, canViewNotifications=false, markAsRead, markAllAsRead, retryNotifications, isMarkingRead, notificationsStale, onOpenCashAudit, dark = false, isOpen, onOpen, onClose }) {
   const {businessBranches=[],settings}=useTenantData()??{};
-  const [isOpen,setIsOpen]=useState(false);
   const [logicalCash, setLogicalCash] = useState(null);
   const scope = JSON.stringify([user?.uid, user?.businessId]);
   const owner = isAdmin && user?.role === 'dueño';
@@ -78,14 +77,21 @@ export function NotificationBell({ user, alerts = [], notificationError, isAdmin
     } catch (failure) { error(failure); }
     return () => { active = false; stop?.(); };
   }, [owner, isOpen, user?.uid, user?.businessId, scope]);
-  const close = () => { setIsOpen(false); setLogicalCash(null); };
-  const observations = owner && logicalCash?.scope === scope ? logicalCash : null;
+  const close = () => { onClose(); setLogicalCash(null); };
+  const observations = owner && isOpen && logicalCash?.scope === scope ? logicalCash : null;
   const seen = new Set(alerts.map(row => row.id));
   const visible = [...alerts, ...(observations?.rows ?? []).filter(row => !seen.has(row.id))];
   if(!canViewNotifications&&!isAdmin) return null;
+  const waiting = confirmedUnreadCount === null;
+  const stale = waiting || notificationsStale || Boolean(notificationError);
   return <>
-    <span className="relative inline-flex"><IconButton label="Notificaciones" onClick={()=>setIsOpen(true)} className={dark ? 'text-sidebar-muted hover:bg-white/10 hover:text-white' : 'text-inherit'}><Bell /></IconButton>
-      {(notificationError||alerts.length>0)&&<span className="pointer-events-none absolute right-0 top-0 flex min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">{notificationError?'!':alerts.length}</span>}
+    <span className="relative inline-flex"><IconButton label="Notificaciones" onClick={onOpen} className={dark ? 'text-sidebar-muted hover:bg-white/10 hover:text-white' : 'text-inherit'}><Bell /></IconButton>
+      {(stale || confirmedUnreadCount > 0) && <span role="status" className={cn('pointer-events-none absolute right-0 top-0 flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold',
+        stale ? 'bg-panel text-muted ring-1 ring-line' : 'bg-danger text-white')}>
+        <span aria-hidden="true">{waiting ? '–' : confirmedUnreadCount}</span>
+        <span className="sr-only">{waiting ? 'Recuento de avisos pendiente de confirmar'
+          : `${confirmedUnreadCount} avisos sin leer${stale ? ', último recuento confirmado' : ''}`}</span>
+      </span>}
     </span>
     {isOpen&&<Dialog title="Notificaciones" description="Avisos de tus operaciones y de tu negocio." onClose={close} busy={isMarkingRead}>
       <FirestoreQueryError error={notificationError} area="notifications-unread" user={user} onRetry={retryNotifications} commercial />
@@ -94,7 +100,7 @@ export function NotificationBell({ user, alerts = [], notificationError, isAdmin
       {observations?.stale && <p role="status" className="text-xs text-muted">Comprobando turnos pendientes de finalización…</p>}
       {observations?.error && <p role="status" className="text-xs text-warning">No se pudieron comprobar los turnos pendientes de finalización.</p>}
       {observations?.limited && <p className="text-xs text-muted">Vista acotada a 10 turnos abiertos candidatos. Para otros períodos, consulta Auditoría de caja.</p>}
-      {!notificationError&&!notificationsStale&&!observations?.stale&&!observations?.error&&!visible.length&&<EmptyState title={isAdmin?'Sin avisos recientes pendientes':'Todo al día'} description={isAdmin?'Consulta el historial para revisar operaciones de períodos anteriores.':'No tienes notificaciones pendientes.'} />}
+      {!notificationError&&!notificationsStale&&!waiting&&!observations?.stale&&!observations?.error&&!visible.length&&<EmptyState title={isAdmin?'Sin avisos recientes pendientes':'Todo al día'} description={isAdmin?'Consulta el historial para revisar operaciones de períodos anteriores.':'No tienes notificaciones pendientes.'} />}
       {alerts.length>0&&markAllAsRead&&<Button variant="secondary" size="sm" onClick={markAllAsRead} loading={isMarkingRead}>Marcar visibles como leídas</Button>}
       {visible.map(notification=>{
         const metadata = notification.metadata ?? {};

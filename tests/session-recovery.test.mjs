@@ -39,26 +39,65 @@ it('Plan06 projects confirmed refunds and estimated close differences without cl
   assert.equal(projectFinancialNotice('cash-close',{...close,status:'open'},'tenant','owner'),null);
 });
 
-it('Plan06 financial inbox keeps read state with source-only acknowledgements and ignores callbacks after disposal', async () => {
+it('P24 verifies the inbox only after current evidence and acknowledgements agree', async () => {
   const listeners=[],writes=[],states=[];
   const sdk={collection:(_,name)=>({name}),query:(ref,...filters)=>({...ref,filters}),where:(...args)=>args,orderBy:(...args)=>args,limit:n=>n,
     doc:(_,name,id)=>({path:`${name}/${id}`}),onSnapshot:(ref,options,next,error)=>{const listener={ref,next,error,stopped:false};listeners.push(listener);return()=>{listener.stopped=true;};},
     serverTimestamp:()=> 'SERVER',setDoc:async(ref,data)=>writes.push({ref,data}),writeBatch:()=>({set:(ref,data)=>writes.push({ref,data}),update:(ref,data)=>writes.push({ref,data}),commit:async()=>{}})};
-  const repository=createNotificationRepository({}, {sdk});
-  const stop=repository.subscribeUnreadNotifications('tenant','owner',rows=>states.push(rows),error=>assert.fail(error.message),{owner:true});
-  const snapshot=docs=>({docs:docs.map(data=>({id:data.id,metadata:server,data:()=>data})),metadata:server});
-  listeners.find(l=>l.ref.name==='notifications').next(snapshot([]));
-  listeners.find(l=>l.ref.name==='pos_voids').next(snapshot([{id:'ticket',saleId:'ticket',businessId:'tenant',branchId:'branch',userId:'cashier',authority:'pos-compensation',protocol:1,amount:-6,reason:'Devolución verificada',occurredAt:'2026-10-29T12:00:00Z'}]));
-  listeners.find(l=>l.ref.name==='cash_sessions').next(snapshot([]));
-  const marker=listeners.find(l=>l.ref.path?.includes('read_pos-void'));
-  marker.next({exists:()=>false,metadata:server});
-  const notice=states.at(-1)[0];assert.equal(notice.metadata.amount,6);
+  let uid = 'owner';
+  const repository=createNotificationRepository({}, {sdk, currentUser: () => ({ uid })});
+  const stop=repository.subscribeUnreadNotifications('tenant','owner',(rows, meta)=>states.push({rows, meta}),error=>assert.fail(error.message),{owner:true});
+  const snapshot=(docs, metadata=server, rowMetadata=metadata)=>({docs:docs.map(data=>({id:data.id,metadata:rowMetadata,data:()=>data})),metadata});
+  const [legacy, evidence, close, expiry] = listeners;
+  const ticket = id => ({ id, saleId:id, businessId:'tenant',branchId:'branch',userId:'cashier',authority:'pos-compensation',
+    protocol:1,amount:-6,reason:'Devolución verificada',occurredAt:'2026-10-29T12:00:00Z' });
+  const old = Array.from({ length: 14 }, (_, i) => ticket('old-' + i));
+  const read = id => ({ id: 'read_pos-void_' + id + '_owner', readAt: 'SERVER' });
+  const markers = old.map(row => read(row.id));
+  [legacy, close, expiry].forEach(listener => listener.next(snapshot([])));
+  evidence.next(snapshot(old,cached));
+  assert.equal(listeners.length,4,'Cached evidence does not start marker listeners');
+  evidence.next(snapshot(old));
+  const firstBatch=listeners.at(-1);
+  assert.deepEqual(firstBatch.ref.filters, [['businessId','==','tenant'],['userId','==','owner'],['sourceType','==','pos-void'],
+    ['sourceId','in',old.map(row=>row.id).sort()]]);
+  firstBatch.next(snapshot([],cached));
+  firstBatch.next(snapshot(markers,server,{...server,hasPendingWrites:true}));
+  assert.ok(states.every(({rows,meta})=>meta.fromCache && rows.length===0));
+  firstBatch.next(snapshot(markers));
+  assert.deepEqual(states.at(-1),{rows:[],meta:{fromCache:false}});
+
+  evidence.next(snapshot([...old,ticket('new')]));
+  const nextBatch=listeners.at(-1);
+  assert.ok(firstBatch.stopped);
+  assert.notEqual(nextBatch, firstBatch);
+  const beforeLate = states.length;
+  firstBatch.next(snapshot([]));
+  assert.equal(states.length,beforeLate);
+  nextBatch.next(snapshot(markers));
+  const [notice]=states.at(-1).rows;
+  assert.equal(states.at(-1).rows.length,1);
+  assert.equal(notice.id,'read_pos-void_new_owner');
+  assert.equal(notice.metadata.amount,6);
   await repository.markNotificationRead(notice);
   assert.deepEqual(Object.keys(writes[0].data).sort(),['authority','businessId','readAt','sourceId','sourceType','userId']);
   await repository.markAllNotificationsRead('tenant','owner',[notice]);assert.equal(writes.length,2);
   await assert.rejects(repository.markAllNotificationsRead('foreign','owner',[notice]));
-  marker.next({exists:()=>true,data:()=>({readAt:'SERVER'}),metadata:server});assert.equal(states.at(-1).length,0);
-  stop();const count=states.length;listeners.forEach(l=>l.next(l.ref.path?{exists:()=>false,metadata:server}:snapshot([])));
+  nextBatch.next(snapshot([...markers, read('new')], {...server,hasPendingWrites:true}));
+  legacy.next(snapshot([],cached));
+  assert.deepEqual(states.at(-1),{rows:[notice],meta:{fromCache:true}});
+  nextBatch.next(snapshot([...markers, read('new')]));
+  assert.deepEqual(states.at(-1),{rows:[notice],meta:{fromCache:true}});
+  legacy.next(snapshot([]));
+  assert.deepEqual(states.at(-1),{rows:[],meta:{fromCache:false}});
+  evidence.next(snapshot([...old,ticket('new')]));
+  assert.equal(listeners.length,6,'An unchanged ID set reuses the query');
+  assert.equal(states.at(-1).rows.length,0);
+  uid = 'another-owner';
+  const count=states.length;
+  nextBatch.next(snapshot([]));
+  await assert.rejects(repository.markNotificationRead(notice),{code:'session-changed'});
+  stop();listeners.forEach(l=>l.next(snapshot([])));
   assert.equal(states.length,count);assert.ok(listeners.every(l=>l.stopped));
 });
 
@@ -201,6 +240,44 @@ it('keeps confirmed permissions distinct from connection errors and accepts an i
 
 // Focused lifecycle checks: no browser, account, Firebase writes or offline DB mutations.
 const { createSessionResources } = await import('../frontend/src/core/session/sessionResources.js');
+it('P24 evicts idle watches across scopes, retains active consumers, and bounds completed reads', async () => {
+  const timers = new Set(), stopped = [], callbacks = new Map();
+  const resources = createSessionResources({ maxListeners: 2, schedule: fn => { timers.add(fn); return fn; }, cancel: fn => timers.delete(fn) });
+  const getWatch = key => resources.watch(key, next => { callbacks.set(key, next); return () => stopped.push(key); });
+  const always = getWatch('always'), offAlways = always.subscribe(() => {});
+  const first = getWatch('first'), offFirst = first.subscribe(() => {});
+  callbacks.get('first')([1], server);
+  offFirst();
+  for (let i = 0; i < 5; i++) {
+    const cleanup = getWatch('scope-' + i).subscribe(() => {});
+    cleanup();
+  }
+  assert.deepEqual(stopped, ['first', 'scope-0', 'scope-1', 'scope-2', 'scope-3']);
+  assert.equal(resources.peekWatch('first'), undefined);
+  assert.notEqual(resources.peekWatch('always'), undefined);
+  [...timers].forEach(fn => fn());
+  assert.equal(resources.peekWatch('scope-4'), undefined);
+  const restarted = getWatch('first'), offNew = restarted.subscribe(() => {}, { retain: false });
+  const offShared = first.subscribe(() => {}, { retain: false });
+  callbacks.get('first')([2], server);
+  assert.deepEqual(first.get().data, [2]);
+  offNew();
+  assert.notEqual(resources.peekWatch('first'), undefined);
+  offShared();
+  assert.equal(resources.peekWatch('first'), undefined);
+
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const requests = Array.from({ length: 20 }, (_, i) => resources.read('read-' + i, () => held));
+  assert.equal(resources.read('read-19', assert.fail), requests[19]);
+  release();
+  await Promise.all(requests);
+  assert.equal(Array.from({ length: 20 }, (_, i) => resources.readLoadedAt('read-' + i)).filter(Number.isFinite).length, 12);
+  offAlways();
+  resources.close();
+  assert.equal(stopped.at(-1), 'always');
+  assert.equal(timers.size, 0);
+});
 it('retains visited listeners/pages during navigation, deduplicates consumers and expires idle resources', () => {
   const timers = new Map(); let sequence = 0, starts = 0, stops = 0, deliver;
   const resources = createSessionResources({ schedule: fn => { timers.set(++sequence, fn); return sequence; }, cancel: id => timers.delete(id) });

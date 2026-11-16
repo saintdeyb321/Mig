@@ -5,6 +5,8 @@ import { mapDocuments } from '../../../core/firebase/documents.js';
 import { toMillisSafe } from '../../../core/dates/dateValues.js';
 
 export const NOTIFICATION_LIMIT = 30;
+// Each IN member expands to four filters, plus the query's implicit document order.
+const MARKER_BATCH_SIZE = 24;
 export function createNotificationRepository(database, { sdk = firestoreSDK, currentUser } = {}) {
   const { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, serverTimestamp, writeBatch, getDocFromServer, Timestamp } = sdk;
   const unread = (businessId, userId) => [where('businessId', '==', businessId), where('userId', '==', userId), where('readAt', '==', null)];
@@ -49,52 +51,97 @@ export function createNotificationRepository(database, { sdk = firestoreSDK, cur
   }
   return {
     subscribeUnreadNotifications: (businessId, userId, onData, onError, { owner = false } = {}) => {
-      let closed = false, failure = false, legacy = [], legacyConfirmed = false;
-      const evidence = new Map(), markers = new Map(), markerStops = new Map(), metadata = new Map();
+      const sources = owner ? [
+        ['pos-void', 'pos_voids', 'occurredAt', NOTIFICATION_LIMIT],
+        ['cash-close', 'cash_sessions', 'closedAt', NOTIFICATION_LIMIT],
+        ['cash-expiry', 'cash_sessions', 'recoveredAt', 10],
+      ] : [];
+      const evidence = new Map(sources.map(([type]) => [type, { current: false, rows: [], markers: new Map() }]));
       const stops = [];
-      const fail = error => { if (!closed) { failure = true; onError(withQueryContext(error, 'notifications-evidence')); } };
+      let closed = false, legacy = [], legacyCurrent = false, verified = [];
+      const active = () => !closed && (!currentUser || currentUser()?.uid === userId);
+      const confirmed = metadata => metadata.fromCache === false && metadata.hasPendingWrites === false;
+      const stop = () => {
+        if (closed) return;
+        closed = true;
+        stops.forEach(unsubscribe => unsubscribe());
+        evidence.forEach(source => source.markers.forEach(batch => batch.stop?.()));
+      };
+      const fail = (error, area = 'notifications-evidence') => {
+        if (!active()) return;
+        stop();
+        onError(withQueryContext(error, area));
+      };
       const publish = () => {
-        if (closed || failure) return;
-        const projected = [...evidence.values()].flat().filter(notice => !markers.get(notice.id));
-        onData([...projected, ...legacy].sort((a,b)=>toMillisSafe(b.createdAt)-toMillisSafe(a.createdAt)).slice(0, NOTIFICATION_LIMIT),
-          { fromCache: [...metadata.values()].some(meta=>meta.fromCache||meta.hasPendingWrites) });
-      };
-      const refreshMarkers = () => {
-        const rows = new Map([...evidence.values()].flat().map(notice => [notice.id, notice]));
-        for (const [id, stop] of markerStops) if (!rows.has(id)) { stop(); markerStops.delete(id); markers.delete(id); metadata.delete(id); }
-        for (const [id] of rows) if (!markerStops.has(id)) {
-          metadata.set(id, { fromCache: true });
-          markerStops.set(id, onSnapshot(doc(database, 'notifications', id), { includeMetadataChanges: true }, snapshot => {
-            if (closed || failure || !markerStops.has(id)) return;
-            if (!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites) markers.set(id, snapshot.exists() && snapshot.data().readAt != null);
-            metadata.set(id, snapshot.metadata); publish();
-          }, fail));
+        if (!active()) return;
+        const current = legacyCurrent && [...evidence.values()].every(source => source.current
+          && [...source.markers.values()].every(batch => batch.current));
+        if (current) {
+          const unreadEvidence = [...evidence.values()].flatMap(source => {
+            const read = new Set([...source.markers.values()].flatMap(batch => [...batch.read]));
+            return source.rows.filter(notice => !read.has(notice.id));
+          });
+          verified = [...unreadEvidence, ...legacy].sort((a, b) => toMillisSafe(b.createdAt) - toMillisSafe(a.createdAt)).slice(0, NOTIFICATION_LIMIT);
         }
+        onData(verified, { fromCache: !current });
       };
-      metadata.set('legacy', { fromCache: true });
-      stops.push(onSnapshot(query(collection(database, 'notifications'), ...unread(businessId, userId), orderBy('createdAt', 'desc'), limit(NOTIFICATION_LIMIT)),
-        { includeMetadataChanges: true }, snapshot => {
-          if (closed || failure) return;
-          const confirmed = !snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites;
-          if (confirmed || !legacyConfirmed) {
-            legacy = mapDocuments({ docs: snapshot.docs.filter(row=>row.metadata.hasPendingWrites===false) }).filter(row=>!owner||row.authority!=='informational');
+      const listen = (ref, next, onFailure) => {
+        const unsubscribe = onSnapshot(ref, { includeMetadataChanges: true }, next, onFailure);
+        if (closed) unsubscribe();
+        return unsubscribe;
+      };
+      stops.push(listen(query(collection(database, 'notifications'), ...unread(businessId, userId),
+        orderBy('createdAt', 'desc'), limit(NOTIFICATION_LIMIT)), snapshot => {
+        if (!active()) return;
+        legacyCurrent = confirmed(snapshot.metadata) && snapshot.docs.every(row => confirmed(row.metadata));
+        if (legacyCurrent) legacy = mapDocuments(snapshot).filter(row => !owner || row.authority !== 'informational');
+        publish();
+      }, error => fail(error, 'notifications-unread')));
+      for (const [type, name, field, size] of sources) {
+        if (closed) break;
+        const source = evidence.get(type);
+        const updateMarkers = () => {
+          const remaining = new Set(source.rows.map(notice => notice.sourceId));
+          // Preserve an unchanged batch when the sliding window of recent evidence moves.
+          const groups = [...source.markers.values()].map(batch => batch.ids.filter(id => remaining.delete(id)));
+          for (const id of remaining) {
+            let group = groups.find(ids => ids.length < MARKER_BATCH_SIZE);
+            if (!group) { group = []; groups.push(group); }
+            group.push(id);
           }
-          if (confirmed) legacyConfirmed = true;
-          metadata.set('legacy', snapshot.metadata); publish();
-        }, error => { if (!closed) { failure = true; onError(withQueryContext(error, 'notifications-unread')); } }));
-      if (owner) for (const [type, name, field, size] of [
-        ['pos-void','pos_voids','occurredAt', NOTIFICATION_LIMIT], ['cash-close','cash_sessions','closedAt', NOTIFICATION_LIMIT],
-        ['cash-expiry','cash_sessions','recoveredAt', 10],
-      ]) {
-        metadata.set(type, { fromCache: true });
-        stops.push(onSnapshot(query(collection(database, name), where('businessId','==',businessId), orderBy(field,'desc'), limit(size)),
-          { includeMetadataChanges: true }, snapshot => {
-            if (closed || failure) return;
-            evidence.set(type, snapshot.docs.filter(row=>row.metadata.hasPendingWrites===false).map(row=>projectFinancialNotice(type, { ...row.data(), id: row.id }, businessId, userId)).filter(Boolean));
-            metadata.set(type, snapshot.metadata); refreshMarkers(); publish();
-          }, fail));
+          const previous = source.markers;
+          source.markers = new Map(groups.filter(ids => ids.length).map(ids => {
+            const key = JSON.stringify(ids.sort());
+            return [key, previous.get(key) ?? { ids, current: false, read: new Set() }];
+          }));
+          previous.forEach((batch, key) => { if (!source.markers.has(key)) batch.stop?.(); });
+          for (const [key, batch] of source.markers) {
+            if (closed) break;
+            if (batch.stop) continue;
+            // Missing acknowledgements stay absent from this query; no document get is needed.
+            batch.stop = listen(query(collection(database, 'notifications'), where('businessId', '==', businessId),
+              where('userId', '==', userId), where('sourceType', '==', type), where('sourceId', 'in', batch.ids)), snapshot => {
+              if (!active() || source.markers.get(key) !== batch) return;
+              batch.current = confirmed(snapshot.metadata) && snapshot.docs.every(row => confirmed(row.metadata));
+              if (batch.current) {
+                batch.read = new Set(snapshot.docs.filter(row => row.data().readAt != null).map(row => row.id));
+              }
+              publish();
+            }, error => { if (source.markers.get(key) === batch) fail(error); });
+          }
+        };
+        stops.push(listen(query(collection(database, name), where('businessId', '==', businessId),
+          orderBy(field, 'desc'), limit(size)), snapshot => {
+          if (!active()) return;
+          source.current = confirmed(snapshot.metadata) && snapshot.docs.every(row => confirmed(row.metadata));
+          if (source.current) {
+            source.rows = mapDocuments(snapshot).map(row => projectFinancialNotice(type, row, businessId, userId)).filter(Boolean);
+            updateMarkers();
+          }
+          publish();
+        }, fail));
       }
-      return () => { closed = true; stops.forEach(stop=>stop()); markerStops.forEach(stop=>stop()); };
+      return stop;
     },
     subscribeLogicalCashExpiry(businessId, userId, onData, onError) {
       assertIdentity(userId);

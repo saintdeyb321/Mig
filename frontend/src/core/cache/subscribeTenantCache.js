@@ -1,10 +1,11 @@
 import { isServerSnapshot } from '../session/accessState.js';
-import { readTenantCache, syncTenantCache } from './tenantCache.js';
+import { readTenantCache, sameCacheRecord, syncTenantCache } from './tenantCache.js';
 import { createSubscriptionScope } from '../../shared/utils/subscriptionScope.js';
 
 export function subscribeTenantCache(database, tableName, businessId, subscribe, onData, onError, project = value => value) {
   const scope = createSubscriptionScope();
-  let receivedSnapshot = false;
+  let receivedSnapshot = false, closed = false;
+  let saved = null, writes = Promise.resolve();
   const local = readTenantCache(database, tableName, businessId).then(records => {
     if (!receivedSnapshot && records.length) scope.guard(onData)(records, { fromCache: true, hasPendingWrites: false });
     return records;
@@ -22,8 +23,13 @@ export function subscribeTenantCache(database, tableName, businessId, subscribe,
       if (!scope.isCurrent(token)) return;
       onData(data, metadata);
       if (!confirmed) return;
-      await syncTenantCache(database, tableName, businessId, data)
-        .catch(error => console.warn('Error guardando cache:', error));
+      // Keep durable snapshots in broadcast order even when a previous Dexie transaction is busy.
+      writes = writes.then(async () => {
+        if (closed || (saved?.size === data.length && data.every(row => sameCacheRecord(saved.get(row.id), row)))) return;
+        await syncTenantCache(database, tableName, businessId, data);
+        saved = new Map(data.map(row => [row.id, row]));
+      }).catch(() => console.warn('No se pudo guardar la caché local.'));
+      await writes;
     } catch (error) {
       if (scope.isCurrent(token)) {
         console.warn('Error procesando cache:', error);
@@ -31,5 +37,5 @@ export function subscribeTenantCache(database, tableName, businessId, subscribe,
       }
     }
   }, fail);
-  return () => { scope.close(); unsubscribe(); };
+  return () => { closed = true; scope.close(); unsubscribe(); };
 }

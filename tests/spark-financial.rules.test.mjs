@@ -215,16 +215,21 @@ describe('SPARK-4 integrated financial Rules', () => {
     for(const row of rows) { const p=(await inspect('products/'+row.id)).data(); assert.equal(p.stock[branchId],10); assert.equal(p.posStockVersion[branchId],2); }
     const ownerDb=env.authenticatedContext('manager').firestore();
     const notifications=createNotificationRepository(ownerDb,{sdk});
-    const notice=await new Promise((resolve,reject)=>{
+    const readInbox=()=>new Promise((resolve,reject)=>{
       let stop=()=>{}; const timer=setTimeout(()=>{stop();reject(Error('Owner evidence timed out'));},8000);
-      stop=notifications.subscribeUnreadNotifications(businessId,'manager',(rows,meta)=>{if(!meta.fromCache&&rows.some(row=>row.sourceId===sale.saleId)){ clearTimeout(timer);stop();resolve(rows.find(row=>row.sourceId===sale.saleId));}},reject,{owner:true});
+      const done=(error, rows)=>{ clearTimeout(timer); stop(); if(error) reject(error); else resolve(rows); };
+      stop=notifications.subscribeUnreadNotifications(businessId,'manager',(rows,meta)=>{if(!meta.fromCache) done(null,rows);},done,{owner:true});
     });
+    const notice=(await readInbox()).find(row=>row.sourceId===sale.saleId);
     assert.equal(notice.metadata.actorId,uid); assert.equal(notice.metadata.reason,command.reason); assert.equal(notice.metadata.amount,10);
     await notifications.markNotificationRead(notice); await notifications.markNotificationRead(notice);
     const ack=(await inspect('notifications/'+notice.id)).data(); assert.equal(ack.authority,'read-marker'); assert.equal(ack.userId,'manager'); assert.equal(ack.amount,undefined);
-    const bulk=Array.from({length:30},(_,i)=>({...compensation,id:`bulk-${i}`,saleId:`bulk-${i}`}));
+    const occurredAt=Timestamp.fromMillis(compensation.occurredAt.toMillis()+1000);
+    const bulk=Array.from({length:30},(_,i)=>({...compensation,id:`bulk-${i}`,saleId:`bulk-${i}`,occurredAt}));
     await env.withSecurityRulesDisabled(async ctx=>{const batch=writeBatch(ctx.firestore());for(const row of bulk) {const {id,...data}=row;batch.set(doc(ctx.firestore(),'pos_voids',id),data);}await batch.commit();});
+    assert.equal((await readInbox()).length,30);
     await notifications.markAllNotificationsRead(businessId,'manager',bulk.map(row=>projectFinancialNotice('pos-void',row,businessId,'manager')));
+    assert.deepEqual(await readInbox(),[]);
     assert.ok((await inspect('notifications/read_pos-void_bulk-29_manager')).exists());
     const marker={...ack,readAt:serverTimestamp()};
     await assertFails(setDoc(doc(database(),'notifications',`read_pos-void_${sale.saleId}_${uid}`),{...marker,userId:uid}));
@@ -279,6 +284,8 @@ describe('SPARK-4 integrated financial Rules', () => {
       assert.equal((await read(database(), businessId, branchId, ['history-existing', 'history-missing']))[0].saleId, 'history-existing');
     }
     await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', uid), { role: 'cajero' }));
+    const historyIds = ['history-existing', ...Array.from({ length: 49 }, (_, i) => 'missing-' + i)];
+    assert.deepEqual((await read(database(), businessId, branchId, historyIds)).map(row => row.saleId), ['history-existing']);
     await assert.rejects(read(database(), businessId, 'other', ['history-other']), { code: 'permission-denied' });
     await assert.rejects(read(database(), 'foreign', branchId, ['history-foreign']), { code: 'permission-denied' });
   });
@@ -781,20 +788,46 @@ describe('SPARK-4 integrated financial Rules', () => {
     assert.deepEqual(await logical(ownerDb), []);
     assert.equal(notice.id, 'read_cash-expiry_' + sessionId + '_p17-owner');
     assert.equal(projectFinancialNotice('cash-expiry', { ...saved, id: sessionId }, 'foreign', 'p17-owner'), null);
-    const notices = createNotificationRepository(ownerDb, { sdk, currentUser: () => ({ uid: 'p17-owner' }) });
-    const watch = expectExpiry => new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => { stop(); reject(new Error('El aviso no se confirmó.')); }, 8000);
-      const stop = notices.subscribeUnreadNotifications(businessId, 'p17-owner', (rows, state) => {
-        if (state.fromCache) return;
-        const expiries = rows.filter(row => row.sourceType === 'cash-expiry');
-        if (expiries.length === expectExpiry) { clearTimeout(timeout); stop(); resolve(expiries); }
-      }, error => { clearTimeout(timeout); stop(); reject(error); }, { owner: true });
-    });
-    const first = await Promise.all([watch(1), watch(1)]);
-    assert.deepEqual(first.map(rows => rows[0].id), [notice.id, notice.id]);
-    await assertFails(setDoc(doc(cashierDb, 'notifications', notice.id), { ...notice.readMarker, authority: 'read-marker', readAt: serverTimestamp() }));
-    await notices.markNotificationRead(notice);
-    await watch(0);
+    const secondDb = env.authenticatedContext('p17-owner').firestore();
+    const watch = db => {
+      const repository = createNotificationRepository(db, { sdk, currentUser: () => ({ uid: 'p17-owner' }) });
+      const states = [];
+      let error;
+      const stop = repository.subscribeUnreadNotifications(businessId, 'p17-owner', (rows, state) => {
+        states.push({ stale: state.fromCache, ids: rows.filter(row => row.sourceType === 'cash-expiry').map(row => row.id) });
+      }, failure => { error = failure; }, { owner: true });
+      const waitFor = async (ids, stale = false) => {
+        for (let i = 0; i < 160; i++) {
+          if (error) throw error;
+          const latest = states.at(-1);
+          if (latest?.stale === stale && JSON.stringify(latest.ids) === JSON.stringify(ids)) return;
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        assert.fail('El aviso no convergió en el cliente del emulador.');
+      };
+      return { repository, states, stop, waitFor };
+    };
+    const first = watch(ownerDb), second = watch(secondDb);
+    try {
+      await Promise.all([first.waitFor([notice.id]), second.waitFor([notice.id])]);
+      await assertFails(setDoc(doc(cashierDb, 'notifications', notice.id), { ...notice.readMarker, authority: 'read-marker', readAt: serverTimestamp() }));
+      // Both listeners stay open while one client acknowledges the notice.
+      await first.repository.markNotificationRead(notice);
+      await Promise.all([first.waitFor([]), second.waitFor([])]);
+      const confirmed = second.states.length;
+      await sdk.disableNetwork(secondDb);
+      await second.waitFor([], true);
+      await sdk.enableNetwork(secondDb);
+      await second.waitFor([]);
+      assert.ok(second.states.slice(confirmed).every(state => state.ids.length === 0));
+      const markerQuery = (db, userId, tenant = businessId) => sdk.query(sdk.collection(db, 'notifications'),
+        sdk.where('businessId', '==', tenant), sdk.where('userId', '==', userId),
+        sdk.where('sourceType', '==', 'cash-expiry'), sdk.where('sourceId', 'in', [sessionId, 'missing-source']));
+      assert.deepEqual((await sdk.getDocsFromServer(markerQuery(ownerDb, 'p17-owner'))).docs.map(row => row.id), [notice.id]);
+      await assertFails(sdk.getDocsFromServer(markerQuery(ownerDb, uid)));
+      await assertFails(sdk.getDocsFromServer(markerQuery(ownerDb, 'p17-owner', 'foreign')));
+      await assertFails(sdk.getDocsFromServer(markerQuery(cashierDb, 'p17-owner')));
+    } finally { first.stop(); second.stop(); }
     assert.ok((await inspect('cash_sessions/' + sessionId)).data().recoveredAt.isEqual(saved.recoveredAt));
     const payments = createPaymentRepository(ownerDb, { sdk }), voids = createPosVoidReader(ownerDb, { sdk });
     const reader = createSparkCashClosingRepository(ownerDb, { sdk, currentUser: () => ({ uid: 'p17-owner' }),

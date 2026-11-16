@@ -22,6 +22,21 @@ const mocks = {
     export const getTenantFromServer = id => window.__p15.read('tenant', id);`,
 };
 
+it('P24 renders only verified unread counts and opens detail streams for one bell at a time', { timeout: 90000 }, async () => {
+  await runBrowserFixture({ htmlFile: new URL('./p24-alerts.browser.html', import.meta.url), route: '/p24-alerts',
+    moduleMocks: {
+      [modulePath('core/firebase/client.js')]: 'export const auth = {}; export const db = {};',
+      [modulePath('features/branches/context/TenantContext.js')]: 'export const useTenantData = () => ({ businessBranches: [] });',
+      [modulePath('features/users/infrastructure/userRepository.js')]: `
+        export const subscribeUsers = (key, _role, next, error) => window.p24Subscribe('profiles', key, next, error);`,
+      [modulePath('features/notifications/infrastructure/notificationRepository.js')]: `
+        export const subscribeUnreadNotifications = (key, _uid, next, error) => window.p24Subscribe('inbox', key, next, error);
+        export const subscribeLogicalCashExpiry = (key, _uid, next, error) => window.p24Subscribe('expiry', key, next, error);
+        export const markNotificationRead = () => { throw Error('Unexpected write'); };
+        export const markAllNotificationsRead = markNotificationRead;`,
+    } });
+});
+
 it('P15 recovers a persisted identity after a stale access stream without removing drafts', { timeout: 90000 }, async () => {
   await runBrowserFixture({ htmlFile: new URL('./p15-session.browser.html', import.meta.url), route: '/p15-session', moduleMocks: mocks,
     async inspectPage(page) {

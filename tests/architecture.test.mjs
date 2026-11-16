@@ -75,6 +75,33 @@ describe('Tenant cache isolation', () => {
 });
 
 describe('Subscription lifecycle', () => {
+  it('P24 avoids Dexie writes for metadata and persists only changed rows in broadcast order', async () => {
+    const database = memoryDatabase(seed), put = database.products.bulkPut, writes = [];
+    database.products.bulkPut = rows => { writes.push(rows.map(row => row.id)); return put(rows); };
+    const writeReady = deferred(), continueWrite = deferred();
+    let transactions = 0, callback;
+    database.transaction = async (_mode, _table, action) => {
+      if (++transactions === 1) { writeReady.resolve(); await continueWrite.promise; }
+      return action();
+    };
+    const stop = subscribeTenantCache(database, 'products', 'a', onData => { callback = onData; return () => {}; },
+      () => {}, assert.fail);
+    const confirmed = { fromCache: false, hasPendingWrites: false };
+    const first = [{ ...seed[0], stock: { branch: 10 } }, seed[1]];
+    const second = [{ ...first[0], stock: { branch: 9 } }, seed[1]];
+    const firstRun = callback(first, confirmed);
+    await writeReady.promise;
+    const secondRun = callback(second, confirmed);
+    continueWrite.resolve();
+    await Promise.all([firstRun, secondRun]);
+    await callback(structuredClone(second).reverse(), confirmed);
+    await callback(first, { ...confirmed, hasPendingWrites: true });
+    assert.equal(transactions, 2);
+    assert.deepEqual(writes, [[seed[0].id], [seed[0].id]]);
+    assert.deepEqual(await readTenantCache(database, 'products', 'a'), second);
+    assert.deepEqual(await readTenantCache(database, 'products', 'b'), [seed[2]]);
+    stop();
+  });
   it('unsubscribing suppresses late snapshots and pending cache loads', async () => {
     const database = memoryDatabase(seed);
     const pending = deferred();
