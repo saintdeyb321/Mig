@@ -1,4 +1,4 @@
-import { processDailyStats, processSales, groupedTicketRows, DETAIL_HEADERS,
+import { processDailyStats, processSales, groupedTicketRows, DETAIL_HEADERS, netReportRow,
   ITEM_SUBTOTAL, MOVEMENT_AMOUNT, NET_REPORT_COLUMNS as labels } from '../../../utils/salesDataProcessor.js';
 import { createOverviewSheet, createSheet, uniqueSheetName, paymentTone, cashStateTone } from '../../../utils/excelHelpers.js';
 import { buildContractLedgerReport } from './contractLedgerReport.js';
@@ -6,14 +6,13 @@ import { cashAuditRows, verifiedCashDifference } from './cashAuditRows.js';
 import { reportViewModel } from './reportViewModel.js';
 import { cashReviewPresentation } from './managementReportHtml.js';
 import { reportRows, amount, CHANNEL_BREAKDOWN_ROWS, CHANNEL_EVIDENCE_NOTE, CHANNEL_NEGATIVE_NOTE } from '../domain/reportTotals.js';
-import { reportDay, visibleDay, reportTime } from '../domain/reportPeriod.js';
+import { visibleDay } from '../domain/reportPeriod.js';
 import { branchReportName, orderReportNumber, reportLabel } from './reportNames.js';
 
 export const MAX_EXPORT_ROWS = 10000;
 
 const productQuantity = 'Cantidad vendida';
 const productSales = 'Ventas (S/)';
-const productNote = 'Ventas menos anulaciones.';
 const moneyColumns = new Set(['Precio unitario', ITEM_SUBTOTAL, MOVEMENT_AMOUNT, labels.total, labels.cash, labels.digital,
   labels.pos, labels.orders, productSales, 'Total del pedido', 'Pagado', 'Saldo', 'Total Pedido (referencia)',
   'Neto Movimiento (S/)', 'Fondo inicial (S/)', 'Efectivo esperado (S/)', 'Yape/Plin registrado (S/)', 'Efectivo contado (S/)',
@@ -23,23 +22,23 @@ const movementTones = { 'VENTA POS': 'success', 'VENTA POS ANULADA': 'muted',
   'COMPENSACIÓN POS': 'muted', 'REEMBOLSO CONTABLE PEDIDO': 'danger',
   'ADELANTO PEDIDO': 'info', 'ABONO PEDIDO': 'info' };
 const columnOptions = {
-  Fecha: { width: 12, format: 'date', tone: 'info' }, Hora: { width: 9, format: 'time', tone: 'info' },
-  Movimiento: { width: 23, tone: (value, row) => row.Estado === 'Anulada' ? 'muted' : movementTones[value] },
-  Referencia: { width: 21, tone: 'info' },
-  Producto: { width: 33, tone: 'product' }, Cantidad: { width: 10 }, [productQuantity]: { width: 16 },
-  'Precio unitario': { width: 16 }, [ITEM_SUBTOTAL]: { width: 16, tone: 'info' },
-  'Medio de pago': { width: 25, tone: paymentTone },
-  Observaciones: { width: 40 }, Observación: { width: 40 },
-  Responsable: { width: 21 }, Cajero: { width: 21 }, 'Registrado por': { width: 21 },
+  Fecha: { width: 12, format: 'date', tone: 'info' }, Hora: { width: 10, format: 'time', tone: 'info' },
+  Movimiento: { width: 21, tone: (value, row) => row.Estado === 'Anulada' ? 'muted' : movementTones[value] },
+  Referencia: { width: 18, tone: 'info' },
+  Producto: { width: 33, tone: 'product' }, Cantidad: { width: 10, tone: 'value' }, [productQuantity]: { width: 16, tone: 'value' },
+  'Precio unitario': { width: 14, tone: 'value' }, [ITEM_SUBTOTAL]: { width: 15, tone: 'value' },
+  'Medio de pago': { width: 24, tone: paymentTone },
+  Observaciones: { width: 34 }, Observación: { width: 34 },
+  Responsable: { width: 19 }, Cajero: { width: 19 }, 'Registrado por': { width: 19 },
   'Fecha Pago': { width: 23, format: 'datetime', tone: 'info' },
   Sucursal: { width: 20, tone: 'info' }, Sede: { width: 20, tone: 'info' },
   'Sede Origen': { width: 19 }, 'Sede Recojo': { width: 19 }, 'Sede Movimiento': { width: 19 },
   'N.º de pedido': { width: 25, tone: 'info' }, Pedido: { width: 25, tone: 'info' }, Cliente: { width: 30 },
   [labels.total]: { width: 19, tone: 'success' }, [labels.cash]: { width: 18, tone: 'cash' }, [labels.digital]: { width: 18, tone: 'digital' },
   [labels.pos]: { width: 23, tone: 'mixed' }, [labels.orders]: { width: 22, tone: 'product' },
-  [productSales]: { width: 20, tone: 'cash' },
+  [productSales]: { width: 18, tone: 'value' },
   [labels.tickets]: { width: 11 },
-  [MOVEMENT_AMOUNT]: { width: 18, tone: (_, row) => row.Estado === 'Anulada' ? 'muted' : movementTones[row.Movimiento] },
+  [MOVEMENT_AMOUNT]: { width: 18, tone: (_, row) => row.Estado === 'Anulada' ? 'muted' : 'value' },
   'Neto Movimiento (S/)': { width: 17, tone: 'success' }, Pagado: { width: 16, tone: 'success' },
   Saldo: { width: 16, tone: value => value > 0 ? 'warning' : undefined },
   'Fondo inicial (S/)': { width: 14, tone: 'info' }, 'Efectivo esperado (S/)': { width: 17 },
@@ -81,7 +80,7 @@ export function writeSalesWorkbook(XLSX, workbook) {
 
 const periodNames = { hoy: 'Hoy', semana: 'Semana', mes: 'Mes', todo: 'Año' };
 
-function summarySheet(XLSX, view, { business, scopeName, dateRange, generatedAt, periodName }) {
+function summarySheet(XLSX, view, { business, scopeName, dateRange, periodName, showChannelEvidence, hasNegativeChannel }) {
   const metrics = view.summary;
   const { cash, digital } = metrics.channels;
   const review = cashReviewPresentation(view.cashEvents);
@@ -90,15 +89,14 @@ function summarySheet(XLSX, view, { business, scopeName, dateRange, generatedAt,
     sum + (Math.sign(event.difference) === sign ? event.difference : 0), 0)) : 'Sin datos verificados';
   const row = (label, value, tone, format, extra) => ({ label, value, tone, format, ...extra });
   const space = { height: 9 };
-  const note = (label, tone = 'ivory', height = 32) => ({ label, tone, height, note: true });
+  const note = (label, tone, height = 30) => ({ label, tone, height, note: true });
   return createOverviewSheet(XLSX, [
-    row('RESUMEN DEL NEGOCIO', periodName, 'header', undefined, { height: 32, size: 14 }),
-    ...(business ? [note(`Negocio: ${business}`, 'info', 26)] : []),
-    row('Sedes:', scopeName, 'info', undefined, { height: scopeName.length > 25 ? Math.min(92, 16 * Math.ceil(scopeName.length / 23)) : 24 }),
-    row('Período:', dateRange, 'info', undefined, { height: 28 }),
-    row('Generado:', generatedAt, 'info', 'generated'),
-    space, row('INGRESO NETO REGISTRADO', metrics.netRevenue, 'success', 'money', { height: 32, size: 14, bold: true }),
-    ...(view.warning ? [note(view.warning, 'warning', 46)] : []),
+    row('RESUMEN DEL NEGOCIO', undefined, 'header', undefined, { height: 25, size: 11, note: true }),
+    ...(business ? [note(`Negocio: ${business}`, 'info', 22)] : []),
+    row('Sedes:', scopeName, 'info'),
+    row('Período:', `${periodName} · ${dateRange}`, 'info', undefined, { height: 22 }),
+    space, row('INGRESO NETO REGISTRADO', metrics.netRevenue, 'success', 'money', { height: 23, size: 11, bold: true }),
+    ...(view.warning ? [note(view.warning, 'warning', 36)] : []),
     space, row('VENTAS DE MOSTRADOR', metrics.posRevenue, 'mixed', 'money', { bold: true }),
     row('Efectivo', metrics.posCash, 'cash', 'money'),
     row('Yape / Plin', metrics.posDigital, 'digital', 'money'),
@@ -108,22 +106,25 @@ function summarySheet(XLSX, view, { business, scopeName, dateRange, generatedAt,
     space, row('TICKETS COMPLETADOS', metrics.posTicketCount, 'mixed', 'count', { bold: true }),
     row('PAGOS DE PEDIDOS · CANTIDAD', metrics.contractPaymentCount, 'product', 'count'),
     row('TICKETS ANULADOS', metrics.voidedTicketCount, metrics.voidedTicketCount ? 'danger' : 'ivory', 'count'),
-    space, row('CAJAS QUE REQUIEREN REVISIÓN', review.totalCount, review.totalCount ? 'warning' : 'info', 'count', { bold: true }),
-    row('Sobrante confirmado', differenceBySign(1), 'warning', 'money'),
-    row('Faltante confirmado', differenceBySign(-1), differenceBySign(-1) < 0 ? 'danger' : 'ivory', 'money'),
+    ...(view.cashEvents.length ? [
+      space, row('CAJAS QUE REQUIEREN REVISIÓN', review.totalCount, review.totalCount ? 'warning' : 'info', 'count', { bold: true }),
+      row('Sobrante confirmado', differenceBySign(1), differenceBySign(1) > 0 ? 'warning' : undefined, 'money'),
+      row('Faltante confirmado', differenceBySign(-1), differenceBySign(-1) < 0 ? 'danger' : undefined, 'money'),
+      note('Fondo inicial y diferencias de caja van aparte.', undefined, 20),
+    ] : []),
     ...(metrics.refundCount ? [
       space, row('AJUSTES CONTABLES', metrics.refunds, 'warning', 'money', { bold: true, softNegative: true }),
       row('Anulaciones de mostrador', amount(cash.posCompensations + digital.posCompensations), 'ivory', 'money', { softNegative: true }),
       row('Reembolsos de pedidos', amount(cash.contractRefunds + digital.contractRefunds), 'ivory', 'money', { softNegative: true }),
     ] : []),
-    space, note('Fondo inicial y diferencias de caja van aparte.', 'ivory', 24),
+    ...(showChannelEvidence ? [space, note(CHANNEL_EVIDENCE_NOTE)] : []),
+    ...(hasNegativeChannel ? [note(CHANNEL_NEGATIVE_NOTE, 'warning', 36)] : []),
   ]);
 }
 
 function channelFooter(metrics, [title, cashColumn, digitalColumn]) {
   return [{ _kind: 'spacer' }, { [title]: 'Detalle por canal', [cashColumn]: 'Efectivo', [digitalColumn]: 'Yape / Plin', _kind: 'channel-heading' },
-    ...CHANNEL_BREAKDOWN_ROWS.map(({ key, label }) => ({ [title]: label, [cashColumn]: metrics.channels.cash[key], [digitalColumn]: metrics.channels.digital[key] })),
-    { [title]: CHANNEL_EVIDENCE_NOTE, _kind: 'channel-note' }, { [title]: CHANNEL_NEGATIVE_NOTE, _kind: 'channel-note' }];
+    ...CHANNEL_BREAKDOWN_ROWS.map(({ key, label }) => ({ [title]: label, [cashColumn]: metrics.channels.cash[key], [digitalColumn]: metrics.channels.digital[key] }))];
 }
 
 export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = [], voids = [], contracts = [], sessions = [], branchesMap = {}, people, model: prepared, period,
@@ -143,34 +144,36 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
   const wb = XLSX.utils.book_new();
   const firstDay = visibleDay(period.start), lastDay = visibleDay(period.end);
   const range = firstDay === lastDay ? firstDay : `${firstDay} – ${lastDay}`;
-  const shortRange = firstDay !== lastDay && firstDay.slice(2) === lastDay.slice(2) ? `${firstDay.slice(0, 2)}–${lastDay}` : range;
   const scopeName = branchId === 'global' ? 'Todas las sedes' : branchReportName(branchesMap, branchId);
-  const generatedDay = visibleDay(reportDay(now)), generatedTime = reportTime(now);
-  const append = (name, rows, { omit = [], columns = Object.keys(rows[0]), location = scopeName, ...options }) => {
-    const context = `${location} · ${shortRange}`;
-    const note = view.warning ? `${options.note} · Conciliación histórica pendiente.` : options.note;
-    const generated = `Generado: ${generatedDay} · ${generatedTime}`;
-    const sheet = createSheet(XLSX, rows, schemaFor(columns, omit), { ...options, context, generated, note });
+  const periodName = periodNames[period.filter];
+  wb.Props = { Title: 'Informe de ventas', Subject: `${periodName} · ${range}`, CreatedDate: now };
+  const append = (name, rows, { omit = [], columns = Object.keys(rows[0]), ...options } = {}) => {
+    const schema = schemaFor(columns, omit);
+    if (name.startsWith('Detalle_')) schema.Estado.width = 14;
+    const sheet = createSheet(XLSX, rows, schema, options);
     XLSX.utils.book_append_sheet(wb, sheet, uniqueSheetName(name, wb.SheetNames));
   };
-  XLSX.utils.book_append_sheet(wb, summarySheet(XLSX, view, { business, scopeName,
-    dateRange: range, generatedAt: `${generatedDay} ${generatedTime}`, periodName: periodNames[period.filter] }), 'Resumen_Financiero');
+  XLSX.utils.book_append_sheet(wb, summarySheet(XLSX, view, { business, scopeName, dateRange: range, periodName,
+    showChannelEvidence: model.branches.size > 0,
+    hasNegativeChannel: [...model.branches.values()].some(({ channels }) => channels.cash.net < 0 || channels.digital.net < 0),
+  }), 'Resumen_Financiero');
   const cashRows = cashAuditRows(view.cashEvents);
-  if (cashRows.length) append('Auditoría_Cajas', cashRows, { title: 'Auditoría de cajas',
-    note: cashRows.some(row => row.Estado === 'Vencido sin arqueo') ? 'Fondo inicial no es venta. Sin arqueo = pendiente.' : 'Fondo inicial no es venta.' });
+  if (cashRows.length) append('Auditoría_Cajas', cashRows);
   const branchName = id => branchReportName(branchesMap, id);
-  const ids = [...new Set([...Object.keys(branchesMap), ...model.branches.keys()])].sort((a, b) => branchName(a).localeCompare(branchName(b), 'es') || a.localeCompare(b));
+  const compareBranchNames = (a, b) => branchName(a).localeCompare(branchName(b), 'es') || a.localeCompare(b);
+  const ids = [...new Set([...Object.keys(branchesMap), ...model.branches.keys()])].sort(compareBranchNames);
   const compareBranches = branchId === 'global' && ids.length > 1;
-  if (compareBranches) {
+  if (branchId === 'global' && ids.length) {
     const differences = new Map();
     for (const event of view.cashEvents.filter(verifiedCashDifference)) {
       differences.set(event.branchId, amount((differences.get(event.branchId) ?? 0) + event.difference));
     }
     const comparison = (name, metrics) => ({ Sede: name, [labels.tickets]: metrics?.posTicketCount ?? 0,
       [labels.pos]: metrics?.posRevenue ?? 0, [labels.orders]: metrics?.contractRevenue ?? 0, [labels.total]: metrics?.netRevenue ?? 0 });
-    append('Comparativa_Sedes', ids.map(id => ({ ...comparison(branchName(id), model.branches.get(id)),
+    const netRevenue = id => model.branches.get(id)?.netRevenue ?? 0;
+    const rankedIds = [...ids].sort((a, b) => netRevenue(b) - netRevenue(a) || compareBranchNames(a, b));
+    append('Comparativa_Sedes', rankedIds.map(id => ({ ...comparison(branchName(id), model.branches.get(id)),
       ...(differences.size ? { 'Diferencia de caja confirmada (S/)': differences.get(id) ?? 'Sin arqueo' } : {}) })), {
-      title: 'Comparativa de sedes', note: differences.size ? 'Ventas por sucursal. Caja: diferencia confirmada.' : 'Ventas por sucursal.',
       footer: [{ _kind: 'spacer' }, { ...comparison('TOTAL NEGOCIO', model.summary), _kind: 'business-total' }],
     });
   }
@@ -188,28 +191,35 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
       if (!byBranch.has(product.branchId)) byBranch.set(product.branchId, []);
       byBranch.get(product.branchId).push(row);
     }
-    append('Productos_Global', [...byProduct.values()].sort(rank),
-      { title: 'PRODUCTOS VENDIDOS', note: productNote, filter: false });
+    append('Productos_Global', [...byProduct.values()].sort(rank));
     if (compareBranches) {
       const rows = [];
       for (const id of ids) {
         const products = byBranch.get(id);
         if (!products?.length) continue;
-        if (rows.length && model.products.length + byBranch.size - 1 <= MAX_EXPORT_ROWS) rows.push({ _kind: 'spacer' });
+        if (rows.length) rows.push({ _kind: 'spacer' });
         products.sort(rank).forEach((row, index) => rows.push({ Producto: row.Producto, Sucursal: index ? '' : branchName(id),
-          [productQuantity]: row[productQuantity], [productSales]: row[productSales] }));
+          [productQuantity]: row[productQuantity], [productSales]: row[productSales], ...(index === 0 && { _groupStart: true }) }));
       }
-      append('Productos_Sedes', rows, { title: 'Productos por sede', note: `Ventas por sucursal. ${productNote}`, filter: false });
+      append('Productos_Sedes', rows, { filter: false });
     }
   }
   const byBranch = detailed ? processed.groupsByBranch : processed.dailyRowsByBranch;
-  for (const id of ids.filter(id => Object.hasOwn(byBranch, id))) {
-    const name = branchName(id), rows = detailed ? groupedTicketRows(byBranch[id], MAX_EXPORT_ROWS) : byBranch[id];
+  const branchColumns = detailed ? DETAIL_HEADERS : ['Fecha', ...Object.keys(netReportRow(model.summary))];
+  for (const id of ids.filter(id => branchId === 'global' || Object.hasOwn(byBranch, id))) {
+    const name = branchName(id);
+    // Include every separator when measuring the rendered detail instead of omitting rows to fit.
+    const records = byBranch[id] ?? [];
+    const rows = detailed ? groupedTicketRows(records, Infinity) : records;
+    const metrics = model.branches.get(id);
+    const footer = metrics ? channelFooter(metrics, detailed ? ['Producto', 'Precio unitario', ITEM_SUBTOTAL] : [labels.pos, labels.cash, labels.digital]) : [];
+    if (detailed && rows.length + footer.length > MAX_EXPORT_ROWS) {
+      throw new Error('Demasiadas filas de detalle al incluir totales y separadores. Selecciona un período menor.');
+    }
     append(`${detailed ? 'Detalle' : 'Resum'}_${name}`, rows, {
-      ...(detailed && { columns: DETAIL_HEADERS, filter: false }),
-      location: name, title: detailed ? 'Detalle de tickets' : 'Resumen por día',
-      note: detailed ? 'Importe del movimiento = cobro o ajuste. Subtotal de producto = solo detalle.' : 'Ventas y pedidos, menos ajustes.',
-      footer: channelFooter(model.branches.get(id), detailed ? ['Producto', 'Precio unitario', ITEM_SUBTOTAL] : [labels.pos, labels.cash, labels.digital]),
+      columns: branchColumns,
+      filter: !detailed,
+      footer,
     });
   }
   if (scopedContracts.length) append('Estado_Pedidos', scopedContracts.map(contract => ({
@@ -217,7 +227,7 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
     Sede: branchName(contract.branchId), Estado: ({ pendiente: 'Pendiente', entregado: 'Entregado', cancelado: 'Cancelado',
       entregado_con_deuda: 'Entregado con saldo' })[contract.status] ?? contract.status,
     'Total del pedido': contract.total, Pagado: contract.paidTotal ?? '', Saldo: contract.balance,
-  })), { omit: branchId === 'global' ? [] : ['Sede'], title: 'Estado de pedidos', note: 'Pedidos y saldos.' });
+  })), { omit: branchId === 'global' ? [] : ['Sede'] });
   const audit = buildContractLedgerReport(scopedPayments, contracts.filter(row => !businessId || row.businessId === businessId), branchesMap, people);
   if (audit.contractPaymentRows.length) append('Auditoría_Pedidos', audit.contractPaymentRows.map(row => {
     const advance = row['Adelanto (S/)'] > 0, refund = row['Reembolso contable (S/)'] < 0;
@@ -227,7 +237,6 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
       'Neto Movimiento (S/)': row['Neto Movimiento (S/)'], 'Registrado por': row['Registrado por'], Estado: row.Estado,
       'Total Pedido (referencia)': row['Total Pedido (referencia)'], 'Sede Movimiento': row['Sede Movimiento'],
       'Sede Origen': row['Sede Origen'], 'Sede Recojo': row['Sede Recojo'] };
-  }), { omit: branchId === 'global' ? [] : ['Sede Movimiento'], title: 'Movimientos de pedidos',
-    note: 'Pagos y ajustes de pedidos.' });
+  }), { omit: branchId === 'global' ? [] : ['Sede Movimiento'] });
   return { workbook: wb, model, view };
 }

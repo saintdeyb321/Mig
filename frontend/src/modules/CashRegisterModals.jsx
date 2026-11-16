@@ -22,8 +22,8 @@ export function CashCountSummary({ summary }) {
   const collected = summary.posCash + (summary.contractCashCollected ?? summary.contractCash);
   const result = provisional ? 'Por revisar' : summary.difference === 0 ? 'Coincide'
     : summary.difference > 0 ? `Sobran ${amount(summary.difference)}` : `Faltan ${amount(-summary.difference)}`;
-  const resultTone = provisional || summary.difference < 0 ? 'border-warning/30 bg-warning-soft text-warning'
-    : summary.difference > 0 ? 'border-danger/30 bg-danger-soft text-danger' : 'border-finance-line bg-success-soft text-success';
+  const resultTone = provisional || summary.difference > 0 ? 'border-warning/30 bg-warning-soft text-warning'
+    : summary.difference < 0 ? 'border-danger/30 bg-danger-soft text-danger' : 'border-finance-line bg-success-soft text-success';
   const groups = [
     ['Fondo inicial', [['Fondo de apertura', summary.openingAmount]]],
     ['Cobros y medios de pago', [['Cobros en efectivo registrados', collected], ['Ventas POS en efectivo', summary.posCash], ['Contratos en efectivo (neto)', summary.contractCash], ['Yape / Plin (neto)', summary.digitalTotal]]],
@@ -31,7 +31,7 @@ export function CashCountSummary({ summary }) {
     ['Referencia y diferencia', [['Referencia de caja', summary.expectedAmount], [provisional ? 'Diferencia estimada' : 'Diferencia declarada', summary.difference]]],
   ];
   return <>
-    <dl className="grid gap-3 text-sm xs:grid-cols-2">
+    <dl className="grid grid-cols-2 gap-2 text-sm">
       <div className="rounded-xl border border-stellar/25 bg-stellar-soft p-3">
         <dt className="text-xs font-semibold text-stellar">{provisional ? 'Referencia calculada' : 'Dinero esperado'}</dt>
         <dd className="mt-1 text-xl font-extrabold tabular-nums">{amount(summary.expectedAmount)}</dd>
@@ -40,7 +40,7 @@ export function CashCountSummary({ summary }) {
         <dt className="text-xs font-semibold text-muted">Dinero contado</dt>
         <dd className="mt-1 text-xl font-extrabold tabular-nums">{amount(summary.declaredAmount)}</dd>
       </div>
-      <div className={cn('rounded-xl border p-3 xs:col-span-2', resultTone)}>
+      <div className={cn('col-span-2 rounded-xl border p-3', resultTone)}>
         <dt className="text-sm font-semibold">Resultado del conteo</dt><dd className="mt-1 text-2xl font-extrabold tabular-nums">{result}</dd>
         <dd className="mt-1 text-sm">{provisional ? 'Cuadre provisional: hay anulaciones o devoluciones por verificar. Revísalo con el dueño.' : summary.difference === 0 ? 'El conteo coincide con los movimientos registrados.' : 'Deja una observación para revisar la diferencia.'}</dd>
       </div>
@@ -189,19 +189,19 @@ export const CashRegisterModals = ({
         <DialogFooter><Button variant="secondary" onClick={dismissClosing}>Volver</Button><Button type="submit" loading={busy}>Siguiente</Button></DialogFooter>
       </fieldset></form>
     </Dialog>}
-    {showCloseModal && tempSummary && <Dialog icon={ClipboardCheck} title="Revisa el conteo" onClose={dismissClosing} busy={busy} description="Compara el dinero contado con los movimientos registrados." className="cash-confirm-dialog" bodyClassName="overflow-hidden p-0 sm:p-0">
-      <form onSubmit={submit(handleFinalSave)} className="flex min-h-0 flex-1 flex-col"><fieldset disabled={busy} className="flex min-h-0 flex-1 flex-col">
-        <div className="ui-scroll min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 sm:p-5">
+    {showCloseModal && tempSummary && <Dialog icon={ClipboardCheck} title="Revisa el conteo" onClose={dismissClosing} busy={busy} description="Compara el dinero contado con los movimientos registrados." className="cash-confirm-dialog" bodyClassName="flex-auto overflow-hidden p-0 sm:p-0">
+      <form onSubmit={submit(handleFinalSave)} className="flex min-h-0 flex-col">
+        <div className="ui-scroll min-h-0 space-y-3 overflow-y-auto overscroll-contain p-3 sm:p-5">
           <CashCountSummary summary={tempSummary} />
           {(tempSummary.difference !== 0 || tempSummary.hasUnverifiedDisbursements) && <FormField label="Observaciones para el dueño" required={tempSummary.difference !== 0} className="rounded-xl border border-warning/20 bg-warning-soft/60 p-3" hint="Si devolviste dinero de una venta de otro turno, indícalo aquí. No registres otro ticket para compensar.">
-            <Textarea value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder="Indica si hubo entrega de dinero o movimientos de otro turno." required={tempSummary.difference !== 0} />
+            <Textarea rows={2} className="min-h-16" value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder="Indica si hubo entrega de dinero o movimientos de otro turno." required={tempSummary.difference !== 0} />
           </FormField>}
         </div>
         <DialogFooter className="static m-0 grid grid-cols-2 gap-2 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:m-0 sm:px-5">
           <Button variant="secondary" className="px-2" onClick={() => setTempSummary(null)}>Volver a contar</Button>
           <Button type="submit" className="px-2" loading={busy}>Cerrar turno</Button>
         </DialogFooter>
-      </fieldset></form>
+      </form>
     </Dialog>}
   </>;
 };

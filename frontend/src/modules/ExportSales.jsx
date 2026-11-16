@@ -83,7 +83,7 @@ function ExportSales({ user }) {
   const [format, setFormat] = useState('pdf');
   const headingId = useId(), periodId = useId(), formatId = useId(), noticeId = useId();
   const actionRef = useRef(null);
-  const { isExporting, failure, phase, html, expiresAt, expired, exportData, closePreview, fetchedAt, reused, provisional, branchName } = useExportSales(user, timeFilter, format);
+  const { isExporting, failure, phase, html, expiresAt, expired, exportData, closePreview, fetchedAt, reused, provisional } = useExportSales(user, timeFilter, format);
   const diagnostic = ['data-read', 'contract-audit'].includes(failure?.kind) ? queryErrorDiagnostic(failure.error, 'reports') : null;
   const code = diagnostic?.code || failure?.error?.code
     || (failure?.kind === 'integrity' ? 'report-integrity' : failure?.kind === 'document' ? 'report-document' : '');
@@ -123,8 +123,7 @@ function ExportSales({ user }) {
           </Select>
         </div>
       </div>
-      <p id={noticeId} className="text-center text-xs text-muted">{branchName} · {format === 'pdf'
-        ? 'Resumen para imprimir o guardar como PDF.' : 'Detalle y hojas de auditoría por período.'}</p>
+      <p id={noticeId} className="text-center text-xs text-muted">Todas las sucursales · Un archivo incluye todas las sedes</p>
       <Button ref={actionRef} aria-describedby={noticeId} type="submit" variant="success" size="lg" loading={isExporting}
         className="w-full sm:w-auto sm:min-w-56 sm:justify-self-center">
         {format === 'pdf' ? <><Printer aria-hidden="true" />Ver resumen PDF</> : <><Download aria-hidden="true" />Descargar Excel</>}

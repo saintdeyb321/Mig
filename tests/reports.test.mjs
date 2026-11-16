@@ -12,6 +12,8 @@ import { createCashPeriodReader } from '../frontend/src/features/cash-register/i
 import { createSalesPeriodReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
 import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
 import { createSheet } from '../frontend/src/utils/excelHelpers.js';
+import { createSessionReportReads } from '../frontend/src/features/reports/application/sessionReportReads.js';
+import { createSessionResources } from '../frontend/src/core/session/sessionResources.js';
 import { assertWorkbookBorders, readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
 
 const require = createRequire(new URL('../frontend/package.json', import.meta.url));
@@ -209,7 +211,8 @@ describe('Phase 7 canonical financial reports', () => {
     const { workbook } = build({ stats: [], sales: [], payments: [] });
     assert.deepEqual(rows(workbook, 'Comparativa_Sedes').map(row => [row.Sede, row.Tickets, row['Ingreso neto (S/)']]),
       [['Centro', 0, 0], ['Taller', 0, 0]]);
-    assert.equal(workbook.Sheets.Detalle_Taller, undefined);
+    assert.equal(workbook.Sheets.Detalle_Taller['!ref'], 'A1:M1');
+    assert.deepEqual(rows(workbook, 'Detalle_Taller'), []);
   });
   it('Lima day/week/month/year boundaries ignore the browser timezone', () => {
     assert.equal(reportDay('2026-01-01T04:59:59Z'), '2025-12-31');
@@ -278,26 +281,147 @@ describe('Phase 7 workbooks in memory', () => {
     assert.equal(new Set(workbook.SheetNames.map(name => name.toLowerCase())).size, workbook.SheetNames.length);
     assert.ok(workbook.SheetNames.every(name => name.length <= 31));
   });
+  it('P27 keeps branch product rows compact with sparse separators and unchanged quantities and amounts', () => {
+    const biscuit = { id: 'p2', name: 'Bizcocho de vainilla con almendras', qty: 1, price: 5 };
+    const { workbook } = build({ payments: [], sales: [
+      { ...sales[1], total: 45, items: [{ ...item, qty: 2 }, biscuit] },
+      { ...sales[1], id: 'taller', branchId: 'b2', total: 65, items: [{ ...item, qty: 3 }, biscuit] },
+    ] });
+    const sheet = workbook.Sheets.Productos_Sedes;
+    assert.deepEqual(sheet['!cols'].slice(0, 2).map(column => column.wch), [33, 20]);
+    assert.deepEqual(sheet['!rows'].map(row => row.hpt), [25, 21, 21, 9, 21, 21]);
+    for (const start of [2, 5]) {
+      for (const col of 'ABCD') {
+        const group = sheet[col + start].s;
+        assert.equal(group.border.top.style, 'thin');
+        assert.equal(group.border.top.color.rgb.slice(-6), '000000');
+        assert.equal(Boolean(group.font.bold), col === 'B');
+      }
+      assert.deepEqual(['A', 'B', 'D'].map(col => sheet[col + start].s.fill.fgColor.rgb.slice(-6)), ['FFFFA6', '9DE0F6', 'B4C6E7']);
+    }
+    for (const col of 'ABCD') assert.equal(sheet[col + '4'], undefined);
+    assert.equal(sheet.B3, undefined);
+    assert.equal(sheet.B6, undefined);
+    const bytes = writeSalesWorkbook(XLSX, workbook), copy = XLSX.read(bytes, { type: 'array', cellStyles: true });
+    assertWorkbookBorders(XLSX, copy, bytes);
+    assert.deepEqual(rows(copy, 'Productos_Sedes'), [
+      { Producto: item.name, Sucursal: 'Centro', 'Cantidad vendida': 2, 'Ventas (S/)': 40 },
+      { Producto: biscuit.name, Sucursal: '', 'Cantidad vendida': 1, 'Ventas (S/)': 5 },
+      { Producto: item.name, Sucursal: 'Taller', 'Cantidad vendida': 3, 'Ventas (S/)': 60 },
+      { Producto: biscuit.name, Sucursal: '', 'Cantidad vendida': 1, 'Ventas (S/)': 5 },
+    ]);
+  });
+  it('P26 ranks branches by net revenue, then name and ID, independently of cash differences', () => {
+    const sessions = [
+      { ...base, openedAt: date('08'), closedAt: date('15'), status: 'closed', openingAmount: 10,
+        declaredAmount: 130, expectedCash: 30, difference: 100 },
+      { ...base, branchId: 'b3', openedAt: date('08'), closedAt: date('15'), status: 'closed', openingAmount: 10,
+        declaredAmount: 33, expectedCash: 30, difference: 3 },
+    ];
+    const { workbook } = build({ payments: [], sessions, branchesMap: { b4: 'Álamo', b3: 'Centro', b2: 'Taller', b1: 'Centro' },
+      sales: Object.entries({ b1: 20, b2: 40, b3: 20, b4: 20 }).map(([branchId, total]) => ({ ...sales[1],
+        branchId, id: `sale-${branchId}`, total, items: [{ ...item, price: total }] })) });
+    assert.deepEqual(rows(workbook, 'Comparativa_Sedes').map(row => [row.Sede, row['Ingreso neto (S/)'], row['Diferencia de caja confirmada (S/)']]),
+      [['Taller', 40, 'Sin arqueo'], ['Álamo', 20, 'Sin arqueo'], ['Centro', 20, 100], ['Centro', 20, 3]]);
+    assert.equal(workbook.Sheets.Comparativa_Sedes.A7.v, 'TOTAL NEGOCIO');
+    assert.equal(workbook.Sheets.Comparativa_Sedes.E7.v, 100);
+  });
   it('a huge line-item dataset is refused before allocating worksheet rows', () => {
     assert.throws(() => build({ sales: [{ ...sales[0], items: Array(10001).fill(item) }] }), /Demasiadas filas/);
   });
-  it('reimports exactly 10,000 product lines at the worksheet limit', context => {
+  it('P26 rejects over-limit detail and reimports exactly 10,000 rows with ticket totals and separators intact', context => {
     const items = Array.from({ length: 8 }, (_, index) => ({ ...item, id: `product-${index}`, price: 1 }));
-    const sales = Array.from({ length: MAX_EXPORT_ROWS / items.length }, (_, index) => ({ ...base,
+    const sales = Array.from({ length: 999 }, (_, index) => ({ ...base,
       id: `ticket-${index}`, total: 8, payment: 'efectivo', items }));
+    const last = { ...sales[0], id: 'ticket-end' };
+    assert.throws(() => build({ payments: [], sales: [...sales, { ...last, items: items.slice(0, 4), total: 4 }] }),
+      /Demasiadas filas de detalle al incluir totales y separadores\. Selecciona un período menor\./);
+    sales.push({ ...last, items: items.slice(0, 3), total: 3 });
+    const productLines = sales.reduce((sum, sale) => sum + sale.items.length, 0);
     const start = performance.now();
     const { workbook } = build({ sales, payments: [] });
     const built = performance.now(), bytes = writeSalesWorkbook(XLSX, workbook);
     const serialized = performance.now(), copy = XLSX.read(bytes, { type: 'array', cellStyles: true });
-    context.diagnostic(JSON.stringify({ tickets: sales.length, productLines: MAX_EXPORT_ROWS, bytes: bytes.byteLength,
+    context.diagnostic(JSON.stringify({ tickets: sales.length, productLines, bytes: bytes.byteLength,
       buildMs: Math.round(built - start), serializeMs: Math.round(serialized - built), reimportMs: Math.round(performance.now() - serialized) }));
     assertWorkbookBorders(XLSX, copy, bytes);
     const detail = rows(copy, 'Detalle_Centro');
-    assert.equal(detail.filter(row => row.Producto).length, MAX_EXPORT_ROWS);
-    assert.equal(detail.length, MAX_EXPORT_ROWS + sales.length);
+    const sheet = copy.Sheets.Detalle_Centro;
+    assert.equal(XLSX.utils.decode_range(sheet['!ref']).e.r - reportHeader(XLSX, sheet), MAX_EXPORT_ROWS);
+    assert.equal(sheet['!rows'].filter(row => row?.hpt === 9).length, sales.length);
+    assert.equal(detail.filter(row => row.Producto).length, productLines);
+    assert.equal(detail.length, productLines + sales.length);
+    assert.equal(detail.filter(row => row['Precio unitario'] === 'TOTAL TICKET').length, sales.length);
     assert.equal(detail.filter(row => row.Movimiento === 'VENTA POS').length, sales.length);
-    assert.equal(detail.reduce((sum, row) => sum + (row['Importe neto movimiento (S/)'] || 0), 0), MAX_EXPORT_ROWS);
+    assert.equal(detail.reduce((sum, row) => sum + (row['Importe neto movimiento (S/)'] || 0), 0), productLines);
   });
+});
+
+it('P27 reimports twelve tickets and an order payment with S/258.90 net and keeps cash differences separate', () => {
+  const fixtures = { b1: [6, 20, 15.10, 20.25, 15.25, 25], b2: [22, 29, 17.50, 18.20, 40.60, 20] };
+  const sales = Object.entries(fixtures).flatMap(([branchId, amounts]) => amounts.map((total, index) => ({ ...base, branchId,
+    id: `${branchId}-${index}`, total, payment: 'efectivo', items: index ? [{ ...item, price: total }]
+      : [{ ...item, id: 'first', price: 1 }, { ...item, price: total - 1 }] })));
+  const sessions = [3, -43.30, 0, -25.30, 32, null].map((difference, index) => ({ ...base, branchId: index < 3 ? 'b2' : 'b1',
+    id: `box-${index}`, openedAt: date('08'), openingAmount: 100, ...(difference == null
+      ? { status: 'expired_unreconciled', expiredAt: date('18') }
+      : { status: 'closed', closedAt: date('19'), expectedCash: 100, declaredAmount: 100 + difference, difference }) }));
+  const { workbook } = build({ sales, sessions, payments: [{ ...payments[1], amount: 10 }] });
+  const bytes = writeSalesWorkbook(XLSX, workbook), copy = XLSX.read(bytes, { type: 'array', cellStyles: true, cellNF: true });
+  assertWorkbookBorders(XLSX, copy, bytes);
+  const summary = readOverview(XLSX, copy);
+  assert.deepEqual([summary['Total neto registrado (S/)'], summary['Tickets de venta válidos'], summary['Neto de pagos de pedidos (S/)']], [258.90, 12, 10]);
+  assert.deepEqual(rows(copy, 'Comparativa_Sedes').map(row => [row.Sede, row.Tickets, row['Ingreso neto (S/)']]),
+    [['Taller', 6, 157.30], ['Centro', 6, 101.60]]);
+  const detail = ['Centro', 'Taller'].flatMap(name => rows(copy, `Detalle_${name}`));
+  assert.equal(detail.filter(row => row['Precio unitario'] === 'TOTAL TICKET').length, 12);
+  assert.equal(detail.filter(row => row.Movimiento === 'ABONO PEDIDO' && !row.Producto && !row.Cantidad).length, 1);
+  assert.equal(detail.reduce((sum, row) => sum + Math.round((row['Importe neto movimiento (S/)'] || 0) * 100), 0), 25890);
+  const audit = rows(copy, 'Auditoría_Cajas').map(row => row['Diferencia (S/)']);
+  for (const value of [3, -43.30, 0, -25.30, 32, 'No calculable']) assert.ok(audit.includes(value));
+});
+
+it('P27 starts all weekly sources together and retains them across a canceled wait and retry', async () => {
+  const resources = createSessionResources(), calls = [], pending = [];
+  const read = kind => (businessId, _start, _end, scope) => {
+    calls.push([kind, businessId, typeof scope === 'string' ? scope : scope.branchId]);
+    return new Promise(resolve => pending.push(() => resolve(kind === 'sales' ? Array(6000).fill({}) : [])));
+  };
+  const factory = createSessionReportReads({ getSalesInPeriod: read('sales'), getContractsInPeriod: read('contracts'),
+    getPaymentsInPeriod: read('payments'), readVoidsInPeriod: read('voids'), getSessionsInPeriod: read('cash') });
+  const scope = ['tenant-a', 'global', reportPeriod('semana', date('12')), { identityKey: 'operator', revision: 1 }];
+  try {
+    const reader = factory(resources, ...scope);
+    let authorized = true;
+    const first = assert.rejects(reader.exportSnapshot(() => authorized), { name: 'AbortError' });
+    await tick();
+    assert.deepEqual(calls.map(([kind]) => kind).sort(), ['cash', 'contracts', 'payments', 'sales', 'voids']);
+    assert.ok(calls.every(([, businessId, branchId]) => businessId === 'tenant-a' && branchId === 'global'));
+    reader.discardSnapshot(); // A retry cannot evict readings that the session still owns.
+    const retry = factory(resources, ...scope).exportSnapshot();
+    authorized = false;
+    await tick();
+    assert.equal(calls.length, 5);
+    pending.forEach(release => release());
+    const [, repeated] = await Promise.all([first, retry]);
+    assert.equal(repeated.sales.length, 6000);
+  } finally { resources.close(); }
+});
+
+it('P27 retains the annual sales gate without complementary reads', async () => {
+  const resources = createSessionResources();
+  let salesCalls = 0;
+  const unexpected = () => assert.fail('An oversized year cannot trigger supplementary reads');
+  const factory = createSessionReportReads({ getSalesInPeriod: async () => {
+    salesCalls++;
+    throw Object.assign(Error('Demasiados tickets'), { code: 'report-limit' });
+  }, getContractsInPeriod: unexpected, getPaymentsInPeriod: unexpected, readVoidsInPeriod: unexpected, getSessionsInPeriod: unexpected });
+  try {
+    const reader = factory(resources, 'tenant-a', 'global', reportPeriod('todo', date('12')));
+    await assert.rejects(reader.exportSnapshot(), { code: 'report-limit' });
+    await assert.rejects(reader.exportSnapshot(), { code: 'report-limit' });
+    assert.equal(salesCalls, 1);
+  } finally { resources.close(); }
 });
 
 describe('Phase 7 bounded data and lifecycle', () => {

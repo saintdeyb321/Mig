@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -9,7 +9,7 @@ import { runExcelFixture } from './helpers/excelExportHarness.mjs';
 import { assertWorkbookBorders, readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
 
 const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
-const artifacts = fileURLToPath(new URL('../.release/qa-p25-v3/', import.meta.url));
+const artifacts = fileURLToPath(new URL('../.release/qa-p27/', import.meta.url));
 const card = '.export-toolbar';
 const primary = card + ' button[type="submit"]';
 const retry = card + ' [role="alert"] button';
@@ -57,7 +57,7 @@ async function reload(page, ev, options) {
 }
 const offline = (page, offline) => page.send('Network.emulateNetworkConditions', { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
 
-async function workbook(downloads, previous, { net, cash, digital, label, artifact, detailed = true, empty = false, branches = ['Centro'], orders = true, cashAudit = true }) {
+async function workbook(downloads, previous, { net, cash, digital, label, artifact, detailed = true, empty = false, branches = ['Centro', 'Taller'], orders = true, cashAudit = true }) {
   const filename = await until(async () => (await downloadNames(downloads)).find(name => !previous.includes(name)), `Missing download ${label}`);
   assert.match(filename, new RegExp(`^Reporte_${label}_\\d{4}-\\d{2}-\\d{2}\\.xlsx$`));
   const bytes = await readFile(join(downloads, filename));
@@ -67,19 +67,23 @@ async function workbook(downloads, previous, { net, cash, digital, label, artifa
   const summary = readOverview(XLSX, book);
   const cover = book.Sheets.Resumen_Financiero;
   assert.equal(cover.A1.v, 'RESUMEN DEL NEGOCIO');
-  assert.equal(cover.A1.s.fgColor.rgb, '3E2C63');
+  assert.equal(cover.A1.s.fgColor.rgb, 'FCE4D6');
+  assert.ok(book.Props.CreatedDate instanceof Date);
+  assert.match(book.Props.Subject, /\d{2}\/\d{2}\/\d{4}/);
   const netRow = Object.keys(cover).find(key => cover[key]?.v === 'INGRESO NETO REGISTRADO').slice(1);
-  assert.equal(cover['B' + netRow].s.fgColor.rgb, net < 0 ? 'FBDADA' : 'C7F2D6');
+  assert.equal(cover['B' + netRow].s.fgColor.rgb, net < 0 ? 'FBDADA' : 'A9F08A');
   assert.match(cover['B' + netRow].z, /S\//);
   assert.equal(summary['Total neto registrado (S/)'], net);
   assert.equal(summary['Neto en efectivo (S/)'], cash);
   assert.equal(summary['Neto por Yape/Plin (S/)'], digital);
-  if (empty) assert.deepEqual(book.SheetNames, ['Resumen_Financiero']);
+  if (empty) assert.deepEqual(book.SheetNames, ['Resumen_Financiero', 'Comparativa_Sedes',
+    ...branches.map(branch => (detailed ? 'Detalle_' : 'Resum_') + branch)]);
   else {
     assert.ok(book.SheetNames.includes('Productos_Global'));
     assert.equal(book.SheetNames.includes('Auditoría_Pedidos'), orders);
     assert.equal(book.SheetNames.includes('Productos_por_Ticket'), false, 'The grouped details contain the complete item projection');
-    for (const name of ['Comparativa_Sedes', 'Productos_Sedes']) assert.equal(book.SheetNames.includes(name), branches.length > 1, name);
+    assert.ok(book.SheetNames.includes('Comparativa_Sedes'));
+    assert.equal(book.SheetNames.includes('Productos_Sedes'), branches.length > 1);
     assert.equal(book.SheetNames.includes('Auditoría_Cajas'), cashAudit);
     const column = detailed ? 'Importe neto movimiento (S/)' : 'Ingreso neto (S/)';
     const sheetNames = branches.map(branch => (detailed ? 'Detalle_' : 'Resum_') + branch);
@@ -96,17 +100,18 @@ async function workbook(downloads, previous, { net, cash, digital, label, artifa
       }
     }
     if (detailed) for (const sheet of movementSheets) {
-      assert.equal(sheet.A1.v, 'Detalle de tickets');
-      assert.match(sheet.A3.v, /^Generado: \d{2}\/\d{2}\/\d{4} · \d{2}:\d{2}$/);
+      assert.equal(sheet.A1.v, 'Fecha');
       const header = headerOf(sheet), labels = XLSX.utils.sheet_to_json(sheet, { header: 1, range: header })[0];
       const cell = name => sheet[XLSX.utils.encode_cell({ r: header + 1, c: labels.indexOf(name) })];
       assert.ok(!labels.includes('Sucursal'));
-      assert.equal(cell('Fecha').t, 'n');
-      const range = sheet.A2.v.split(' · ').at(-1);
-      const firstDay = range.replace(/^(\d{2})–\d{2}(\/\d{2}\/\d{4})$/, '$1$2').split(' – ')[0];
-      assert.equal(cell('Fecha').w, firstDay);
-      assert.equal(cell(column).t, 'n');
-      assert.match(cell(column).z, /S\//);
+      assert.equal(labels.length, 13);
+      if (cell('Fecha')) {
+        assert.equal(cell('Fecha').t, 'n');
+        const firstDay = book.Props.Subject.split(' · ').at(-1).split(' – ')[0];
+        assert.equal(cell('Fecha').w, firstDay);
+        assert.equal(cell(column).t, 'n');
+        assert.match(cell(column).z, /S\//);
+      }
       assert.ok(['Producto', 'Cantidad', 'Precio unitario', 'Subtotal (S/)'].every(name => labels.includes(name)));
       assert.ok(movements(book.SheetNames.find(name => book.Sheets[name] === sheet))
         .every(row => row.Fecha ? typeof row[column] === 'number' : row[column] === ''));
@@ -239,23 +244,39 @@ it('downloads actual XLSX from Vite dev, recovers an obsolete optimizer URL and 
     await error('No se pudo iniciar la descarga');
     assert.deepEqual(await downloadNames(downloads), names);
     await ev(() => { URL.createObjectURL = window.__excelFixture.makeBlob; });
+    const previousWeekly = names.find(name => name.startsWith('Reporte_Semanal_'));
+    await rename(join(downloads, previousWeekly), join(downloads, `anterior_${previousWeekly}`));
+    names = await downloadNames(downloads);
+    await select(ev)('semana');
     await ev(() => {
       const fixture = window.__excelFixture;
       fixture.resetReads();
       fixture.fault = 'hold';
       fixture.pending = [];
       fixture.setTimeout = window.setTimeout.bind(window);
-      window.setTimeout = (callback, ms, ...args) => fixture.setTimeout(callback, ms === 30000 ? 250 : ms, ...args);
+      window.setTimeout = (callback, ms, ...args) => fixture.setTimeout(callback, ms === 90000 ? 250 : ms, ...args);
     });
     await press(primary);
     await error('No se pudo completar la consulta');
+    assert.match(await ev(() => document.querySelector('.export-toolbar [role="alert"]').textContent), /Etapa data-read · report-timeout/);
+    assert.deepEqual(await downloadNames(downloads), names);
     await ev(() => {
       const fixture = window.__excelFixture;
       window.setTimeout = fixture.setTimeout;
+      fixture.fault = '';
+    });
+    const held = await ev(() => window.__excelFixture.pending.length);
+    assert.equal(held, 4);
+    await press(retry);
+    await until(() => ev(selector => document.querySelector(selector).disabled, primary), 'The retry is waiting on the data');
+    assert.equal(await ev(() => window.__excelFixture.pending.length), held);
+    await ev(() => {
+      const fixture = window.__excelFixture;
       fixture.pending.forEach(resolve => resolve());
     });
-    assert.deepEqual(await downloadNames(downloads), names);
-    for (const update of [{ branchId: 'taller' }, { identityKey: 'other' }, { businessId: 'another-tenant' }, { mounted: false }]) {
+    names = await workbook(downloads, names, { net: 85, cash: 28, digital: 57, label: 'Semanal_Detallado', artifact: 'reintento' });
+    await select(ev)('mes');
+    for (const update of [{ identityKey: 'other' }, { businessId: 'another-tenant' }, { mounted: false }]) {
       await ev(() => { window.__excelFixture.resetReads(); window.__excelFixture.fault = 'hold'; window.__excelFixture.pending = []; });
       await press(primary);
       await until(() => ev(() => window.__excelFixture.pending?.length === 1), 'Report reached the held sales read');
@@ -343,7 +364,7 @@ const previewReady = ev => until(() => ev(frameSelector => {
 }, frameSelector), 'PDF preview is shown and print is ready');
 const closePreview = ev => ev(() => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.textContent === 'Cerrar vista previa').click());
 
-it('P25 prepares the secondary branch weekly PDF while a background tab receives no animation frames', { timeout: 90000 }, async () => {
+it('P27 prepares a global weekly PDF in a background tab and reuses it after changing operational branch', { timeout: 90000 }, async () => {
   await mkdir(artifacts, { recursive: true });
   await runExcelFixture({ async inspectPage(page, { responses, downloads }) {
     const ev = evaluate(page);
@@ -353,7 +374,7 @@ it('P25 prepares the secondary branch weekly PDF while a background tab receives
       window.__excelFixture.setScope({ branchId: 'taller' });
     });
     await select(ev)('semana');
-    await until(() => ev(() => document.querySelector('.export-toolbar form').textContent.includes('Taller')), 'Secondary branch selected');
+    await until(() => ev(() => document.querySelector('.export-toolbar form').textContent.includes('Un archivo incluye todas las sedes')), 'Global scope displayed');
     await ev(() => {
       const fixture = window.__excelFixture;
       const frame = window.requestAnimationFrame.bind(window), timeout = window.setTimeout.bind(window);
@@ -368,7 +389,7 @@ it('P25 prepares the secondary branch weekly PDF while a background tab receives
         }
         return frame(callback);
       };
-      window.setTimeout = (callback, ms, ...args) => timeout(callback, ms === 30000 ? 400 : ms, ...args);
+      window.setTimeout = (callback, ms, ...args) => timeout(callback, ms === 90000 ? 400 : ms, ...args);
       document.querySelector('.export-toolbar form').requestSubmit();
     });
     const result = await until(() => ev(frameSelector => {
@@ -380,6 +401,7 @@ it('P25 prepares the secondary branch weekly PDF while a background tab receives
     assert.equal(result.preview, true, JSON.stringify(result));
     assert.equal(result.animationWaits, 0);
     assert.equal(result.reads, 5);
+    assert.ok(await ev(() => window.__excelFixture.calls.every(call => call.branchId === 'global')));
     assert.deepEqual(responses, [], 'The PDF needs no Excel module');
     await ev(() => window.__excelFixture.restore());
     const preview = await previewReady(ev);
@@ -401,6 +423,8 @@ it('P25 prepares the secondary branch weekly PDF while a background tab receives
     }, frameSelector), 'Mobile preview does not overflow its frame');
     await capture('pdf-semanal-movil.png');
     await page.send('Emulation.clearDeviceMetricsOverride');
+    await ev(() => window.__excelFixture.setScope({ branchId: 'centro' }));
+    assert.equal((await previewReady(ev)).html, preview.html, 'A branch change does not cancel the preview');
     await closePreview(ev);
     await ev(() => { window.__excelFixture.clickAt = performance.now(); document.querySelector('.export-toolbar form').requestSubmit(); });
     assert.equal((await previewReady(ev)).html, preview.html);
@@ -408,11 +432,17 @@ it('P25 prepares the secondary branch weekly PDF while a background tab receives
     await closePreview(ev);
     await select(ev, 1)('excel');
     await click(page)(primary);
-    await workbook(downloads, [], { net: 28, cash: 9, digital: 19, label: 'Semanal_Detallado', artifact: 'taller', branches: ['Taller'] });
+    await workbook(downloads, [], { net: 28, cash: 9, digital: 19, label: 'Semanal_Detallado', artifact: 'global-semanal' });
     const timing = await ev(() => ({ reads: window.__excelFixture.reads, sources: window.__excelFixture.timings,
       stages: performance.getEntriesByType('measure').filter(item => item.name.startsWith('migapos:report:'))
         .map(({ name, duration }) => ({ name, ms: duration })) }));
     assert.equal(timing.reads, 5, 'Warm PDF and Excel reuse five verified sources, including the known order');
+    await ev(() => window.__excelFixture.setScope({ businessId: 'other-p27-business' }));
+    await select(ev, 1)('pdf');
+    await click(page)(primary);
+    await previewReady(ev);
+    assert.deepEqual(await ev(() => window.__excelFixture.calls.slice(5).map(call => call.businessId)), Array(5).fill('other-p27-business'));
+    await closePreview(ev);
     await writeFile(resolve(artifacts, 'tiempos-semanal.json'), JSON.stringify({ coldMs: cold, warmMs: warm, ...timing }, null, 2));
     await ev(html => { document.open(); document.write(html); document.close(); }, preview.html);
     const pdf = Buffer.from((await page.send('Page.printToPDF', { preferCSSPageSize: true, printBackground: true })).data, 'base64');
@@ -515,7 +545,7 @@ it('Plan14 previews the authorized scope, prints sanitized A4 and reuses its sna
         assert.equal(await ev(() => window.__excelFixture.reads), reads);
         await press(primary);
         filenames = await workbook(downloads, filenames, { net, cash, digital, label: multi ? 'Semanal_Detallado' : 'Diario_Detallado',
-          branches: multi ? ['Centro', 'Taller'] : ['Centro'], artifact: scenario });
+          artifact: scenario });
         const additional = await ev(reads => window.__excelFixture.calls.slice(reads).map(call => call.kind), reads);
         assert.deepEqual(additional, ['audit'], 'Only Excel needs a missing historical order reference');
         excelExtra = additional.length;
@@ -558,7 +588,7 @@ it('P25 downloads the independent global sample with three tickets totaling S/68
   } });
 });
 
-it('P25-V3 downloads a fully bordered XLSX with nine tickets, two branches, cash and order evidence', { timeout: 90000 }, async () => {
+it('P27 downloads a compact XLSX with borders only on data, nine tickets, two branches, cash and order evidence', { timeout: 90000 }, async () => {
   await mkdir(artifacts, { recursive: true });
   await runExcelFixture({ async inspectPage(page, { downloads }) {
     const ev = evaluate(page);
@@ -568,7 +598,7 @@ it('P25-V3 downloads a fully bordered XLSX with nine tickets, two branches, cash
     await select(ev, 1)('excel');
     await click(page)(primary);
     const [name] = await workbook(downloads, [], { net: 225, cash: 134, digital: 91, label: 'Semanal_Detallado',
-      branches: ['Centro', 'Taller'], artifact: 'p25-v3' });
+      branches: ['Centro', 'Taller'], artifact: 'compacto' });
     const book = XLSX.read(await readFile(join(downloads, name)), { type: 'buffer', cellStyles: true, cellNF: true });
     assert.deepEqual(book.SheetNames, ['Resumen_Financiero', 'Auditoría_Cajas', 'Comparativa_Sedes',
       'Productos_Global', 'Productos_Sedes', 'Detalle_Centro', 'Detalle_Taller', 'Estado_Pedidos', 'Auditoría_Pedidos']);
@@ -578,50 +608,42 @@ it('P25-V3 downloads a fully bordered XLSX with nine tickets, two branches, cash
     const summary = Object.fromEntries(XLSX.utils.sheet_to_json(book.Sheets.Resumen_Financiero, { header: 1 }).filter(([key, value]) => key && value != null));
     assert.deepEqual([summary['Sobrante confirmado'], summary['Faltante confirmado'], summary['CAJAS QUE REQUIEREN REVISIÓN']], [7, -4, 4]);
     const cover = book.Sheets.Resumen_Financiero;
-    assert.deepEqual([cover.A2.v, cover.A3.v, cover.A4.v, cover.A5.v], ['Negocio: Pastelería Nube de ensayo', 'Sedes:', 'Período:', 'Generado:']);
-    assert.equal(cover.B5.t, 'n');
-    assert.match(cover.B5.w, /^\d{2}\/\d{2}\/\d{4} · \d{2}:\d{2}$/);
+    assert.deepEqual([cover.A2.v, cover.A3.v, cover.A4.v, cover.A5], ['Negocio: Pastelería Nube de ensayo', 'Sedes:', 'Período:', undefined]);
+    assert.equal(cover.B3.v, 'Todas las sedes');
+    assert.match(cover.B4.v, /^Semana · \d{2}\/\d{2}\/\d{4} – \d{2}\/\d{2}\/\d{4}$/);
     const product = book.Sheets.Productos_Global;
-    assert.equal(product.A1.v, 'PRODUCTOS VENDIDOS');
-    assert.match(product.A2.v, /^Todas las sedes · (?:\d{2}–\d{2}\/\d{2}\/\d{4}|\d{2}\/\d{2}\/\d{4} – \d{2}\/\d{2}\/\d{4})$/);
-    assert.equal(product.A4.v, 'Ventas menos anulaciones.');
-    assert.deepEqual([product.B5.v, product.C5.v], ['Cantidad vendida', 'Ventas (S/)']);
-    assert.equal(book.Sheets.Productos_Sedes.A4.v, 'Ventas por sucursal. Ventas menos anulaciones.');
-    assert.equal(book.Sheets.Comparativa_Sedes.A4.v, 'Ventas por sucursal. Caja: diferencia confirmada.');
-    assert.equal(book.Sheets.Auditoría_Cajas.A4.v, 'Fondo inicial no es venta. Sin arqueo = pendiente.');
-    assert.equal(book.Sheets.Estado_Pedidos.A4.v, 'Pedidos y saldos.');
-    assert.equal(book.Sheets.Auditoría_Pedidos.A4.v, 'Pagos y ajustes de pedidos.');
+    assert.deepEqual([product.A1.v, product.B1.v, product.C1.v], ['Producto', 'Cantidad vendida', 'Ventas (S/)']);
+    assert.equal(product.A1.s.fgColor.rgb, 'FCE4D6');
+    assert.match(product['!autofilter'].ref, /^A1:C\d+$/);
+    assert.deepEqual(['Productos_Sedes', 'Comparativa_Sedes', 'Auditoría_Cajas', 'Estado_Pedidos', 'Auditoría_Pedidos']
+      .map(sheet => book.Sheets[sheet].A1.v), ['Producto', 'Sede', 'Fecha', 'Pedido', 'Fecha Pago']);
     assert.deepEqual(tableRows(XLSX, book, 'Auditoría_Pedidos').map(row => row['Neto Movimiento (S/)']), [11, -11]);
     const detail = book.Sheets.Detalle_Taller;
-    assert.equal(detail.A4.v, 'Importe del movimiento = cobro o ajuste. Subtotal de producto = solo detalle.');
-    assert.equal(detail.C6.v, 'T-2101');
-    assert.equal(detail.D6.v, 'Completada');
-    assert.match(detail.E6.v, /Efectivo S\/ 22.00 · Yape\/Plin S\/ 31.00/);
-    assert.equal(detail.E6.s.fgColor.rgb, 'CDEBFA');
-    assert.equal(detail.F6.s.fgColor.rgb, 'FFF5C2');
-    assert.equal(detail.I6.s.fgColor.rgb, 'BDE7F5');
-    assert.deepEqual([detail.I6.v, detail.I7.v, detail.I8.v, detail.I9.v, detail.J6.v], [2, 46, 3, 2, 53]);
-    assert.deepEqual([detail.H10.v, detail.I10.v, detail.I10.s.fgColor.rgb], ['TOTAL TICKET', 53, 'C7F2D6']);
-    assert.ok(!detail.J10.v);
-    for (const row of [7, 8, 9]) for (const col of ['A', 'B', 'C', 'D', 'E', 'J', 'K']) assert.equal(detail[col + row].v, '');
-    for (const col of 'ABCDEFGHIJKLM') {
-      assert.equal(detail[col + '11'].v, '');
-      assert.equal(detail[col + '11'].s.fgColor.rgb, 'FFFFFF');
-    }
-    assert.equal(detail.C12.v, 'T-2102');
-    assert.equal(detail.F8.v, '=1+1');
-    assert.equal(detail.F8.t, 's');
-    assert.equal(detail.F8.f, undefined);
+    assert.equal(detail.C2.v, 'T-2101');
+    assert.equal(detail.D2.v, 'Completada');
+    assert.match(detail.E2.v, /Efectivo S\/ 22.00 · Yape\/Plin S\/ 31.00/);
+    assert.deepEqual(['C2', 'D2', 'E2', 'F2', 'I2'].map(cell => detail[cell].s.fgColor.rgb), ['9DE0F6', 'A9F08A', 'CDEBFA', 'FFFFA6', 'B4C6E7']);
+    assert.ok(detail['!cols'].every((column, i) => column.wch <= [12, 10, 18, 14, 24, 35, 10, 14, 15, 19, 20, 21, 36][i] + 1));
+    assert.deepEqual([detail.I2.v, detail.I3.v, detail.I4.v, detail.I5.v, detail.J2.v], [2, 46, 3, 2, 53]);
+    assert.deepEqual([detail.H6.v, detail.I6.v, detail.I6.s.fgColor.rgb], ['TOTAL TICKET', 53, 'A9F08A']);
+    assert.equal(detail.J6, undefined);
+    for (const row of [3, 4, 5]) for (const col of ['A', 'B', 'C', 'D', 'E', 'J', 'K']) assert.equal(detail[col + row], undefined);
+    for (const col of 'ABCDEFGHIJKLM') assert.equal(detail[col + '7'], undefined);
+    assert.equal(detail['!rows'][6].hpt, 9);
+    assert.equal(detail.C8.v, 'T-2102');
+    assert.equal(detail.F4.v, '=1+1');
+    assert.equal(detail.F4.t, 's');
+    assert.equal(detail.F4.f, undefined);
     const compared = tableRows(XLSX, book, 'Comparativa_Sedes');
     assert.deepEqual(compared.map(row => [row.Sede, row.Tickets, row['Ingreso neto (S/)'], row['Diferencia de caja confirmada (S/)']]),
-      [['Centro', 3, 68, 'Sin arqueo'], ['Taller', 6, 157, 3]]);
-    assert.equal(book.Sheets.Comparativa_Sedes['!autofilter'].ref, 'A5:F7');
-    assert.equal(book.Sheets.Comparativa_Sedes.A9.v, 'TOTAL NEGOCIO');
-    assert.equal(book.Sheets.Comparativa_Sedes.E9.v, 225);
+      [['Taller', 6, 157, 3], ['Centro', 3, 68, 'Sin arqueo']]);
+    assert.equal(book.Sheets.Comparativa_Sedes['!autofilter'].ref, 'A1:F3');
+    assert.equal(book.Sheets.Comparativa_Sedes.A5.v, 'TOTAL NEGOCIO');
+    assert.equal(book.Sheets.Comparativa_Sedes.E5.v, 225);
     const bySite = book.Sheets.Productos_Sedes;
     assert.equal(bySite['!autofilter'], undefined);
     assert.deepEqual(tableRows(XLSX, book, 'Productos_Sedes').map(row => row.Sucursal).filter(Boolean), ['Centro', 'Taller']);
-    assert.deepEqual([bySite.A9.v, bySite.B9.v], ['', ''], 'One white separator between branch groups');
+    assert.deepEqual([bySite.A5, bySite.B5], [undefined, undefined], 'One blank separator between branch groups');
     const audit = tableRows(XLSX, book, 'Auditoría_Cajas');
     for (const [state, expected] of [['Cuadrado', 0], ['Sobrante', 7], ['Faltante', -4], ['Conciliación pendiente', -2]]) {
       assert.equal(audit.find(row => row.Estado === state)['Diferencia (S/)'], expected);

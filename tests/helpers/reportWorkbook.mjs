@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-export const reportHeader = (XLSX, sheet) => sheet['!autofilter'] ? XLSX.utils.decode_range(sheet['!autofilter'].ref).s.r : 4;
+export const reportHeader = (XLSX, sheet) => XLSX.utils.decode_range(sheet['!ref']).s.r;
 
 export function assertWorkbookBorders(XLSX, workbook, bytes) {
   const archive = XLSX.CFB.read(new Uint8Array(bytes), { type: 'array' });
@@ -9,27 +9,25 @@ export function assertWorkbookBorders(XLSX, workbook, bytes) {
   const borders = [...styles.match(/<borders\b[^>]*>([\s\S]*?)<\/borders>/)[1].matchAll(/<border\b[^>]*>([\s\S]*?)<\/border>/g)].map(match => match[1]);
   const formats = [...styles.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/)[1].matchAll(/<xf\b[^>]*\bborderId="(\d+)"/g)]
     .map(([, id]) => borders[Number(id)]);
-  const complete = formats.map(border => ['top', 'bottom', 'left', 'right'].every(side => border?.includes(`<${side} style="thin">`)));
+  const black = formats.map(border => ['top', 'bottom', 'left', 'right'].every(side =>
+    new RegExp(`<${side} style="thin"><color rgb="(?:FF)?000000"\\s*\\/></${side}>`, 'i').test(border)));
   for (const [index, name] of workbook.SheetNames.entries()) {
     const sheetXml = xml(`/xl/worksheets/sheet${index + 1}.xml`);
-    const cells = new Map([...sheetXml.matchAll(/<c\b[^>]*\br="([A-Z]+\d+)"[^>]*\bs="(\d+)"/g)]
-      .map(([, address, style]) => [address, Number(style)]));
-    const sheet = workbook.Sheets[name], { s, e } = XLSX.utils.decode_range(sheet['!ref']);
-    assert.equal(cells.size, (e.r - s.r + 1) * (e.c - s.c + 1), name + ' has no unstyled or out-of-range cells');
-    for (let r = s.r; r <= e.r; r++) {
-      for (let c = s.c; c <= e.c; c++) {
-        const address = XLSX.utils.encode_cell({ r, c });
-        assert.ok(complete[cells.get(address)], `${name}!${address} must have four thin borders`);
-      }
+    const cells = new Map([...sheetXml.matchAll(/<c\b[^>]*\br="([A-Z]+\d+)"[^>]*>/g)]
+      .map(([tag, address]) => [address, Number(tag.match(/\bs="(\d+)"/)?.[1])]));
+    const sheet = workbook.Sheets[name];
+    const populated = Object.entries(sheet).filter(([address, cell]) => /^[A-Z]+\d+$/.test(address) && cell.v != null && cell.v !== '');
+    assert.equal(cells.size, populated.length, `${name} has no materialized blank cells`);
+    for (const [address, cell] of populated) {
+      assert.ok(black[cells.get(address)], `${name}!${address} must have four thin black borders`);
+      assert.doesNotMatch(String(cell.v), /^Generado:/);
     }
     assert.match(sheetXml, /<sheetView\b[^>]*showGridLines="1"/);
-    for (const merge of sheet['!merges'] ?? []) {
-      const address = XLSX.utils.encode_range(merge);
-      assert.ok(sheetXml.includes(`<mergeCell ref="${address}"/>`));
-      const perimeter = formats[cells.get(XLSX.utils.encode_cell(merge.s))];
-      for (let r = merge.s.r; r <= merge.e.r; r++) for (let c = merge.s.c; c <= merge.e.c; c++) {
-        assert.equal(formats[cells.get(XLSX.utils.encode_cell({ r, c }))], perimeter, `${name}!${address} has a consistent perimeter`);
-      }
+    if (name !== 'Resumen_Financiero') {
+      assert.match(sheetXml, /<pane ySplit="1" topLeftCell="A2"[^>]*state="frozen"/);
+      assert.doesNotMatch(sheetXml, /<mergeCells\b/);
+      assert.equal(sheet['!rows'][0].hpt, 25);
+      for (const row of sheet['!rows'].slice(1)) assert.ok([9, 21, 22].includes(row?.hpt), `${name}: ${row?.hpt}pt`);
     }
   }
 }
@@ -59,12 +57,15 @@ export function readOverview(XLSX, workbook) {
     'Neto por Yape/Plin (S/)': netChannel('Yape / Plin'),
     'Ventas anuladas': paired('TICKETS ANULADOS'),
     'Conciliación histórica pendiente': rows.find(row => /provisional y requiere conciliación histórica/.test(row[0]))?.[0],
+    'Neto negativo': rows.find(row => /El neto de un canal puede ser negativo/.test(row[0]))?.[0],
+    'Alcance de las compensaciones POS': rows.find(row => /son registros sin evidencia/.test(row[0]))?.[0],
   };
   const labels = ['Cobros registrados', 'Compensaciones POS', 'Reembolsos contables de pedidos', 'Neto contable'];
   for (const label of labels) for (const channel of ['Efectivo', 'Yape / Plin']) values[`${label} · ${channel}`] = 0;
   for (const name of workbook.SheetNames.filter(name => /^(Detalle|Resum)_/.test(name))) {
     const cells = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '', blankrows: false });
     const header = cells.findIndex(row => row.includes('Detalle por canal'));
+    if (cells.length === 1) continue; // Branch without movements: only the table header.
     if (header < 0) throw new Error('Falta el desglose por canal en ' + name);
     const [title, cashColumn, digitalColumn] = ['Detalle por canal', 'Efectivo', 'Yape / Plin'].map(name => cells[header].indexOf(name));
     for (const [index, label] of labels.entries()) {
@@ -73,8 +74,6 @@ export function readOverview(XLSX, workbook) {
       values[`${label} · Efectivo`] = money(values[`${label} · Efectivo`] + row[cashColumn]);
       values[`${label} · Yape / Plin`] = money(values[`${label} · Yape / Plin`] + row[digitalColumn]);
     }
-    values['Neto negativo'] = cells.flat().find(value => /El neto de un canal puede ser negativo/.test(value));
-    values['Alcance de las compensaciones POS'] = cells.flat().find(value => /son registros sin evidencia/.test(value));
   }
   values['Cobros registrados'] = money(values['Cobros registrados · Efectivo'] + values['Cobros registrados · Yape / Plin']);
   return values;

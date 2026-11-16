@@ -1,8 +1,10 @@
 import { reportTTL } from './reportResource.js';
 
 export function createSessionReportReads({ getSalesInPeriod, getContractsInPeriod, getPaymentsInPeriod, getContractAuditDocuments, readVoidsInPeriod, getSessionsInPeriod }) {
-  return function sessionReportReads(resources, businessId, branchId, period) {
+  return function sessionReportReads(resources, businessId, branchId, period, { identityKey, revision } = {}) {
     const key = JSON.stringify([businessId, branchId, period.start, period.end]);
+    const exportKey = JSON.stringify([key, period.key, identityKey, revision]);
+    const pendingExports = () => resources.value('report:pending-exports', () => new Map());
     const ttl = reportTTL(period), signal = resources.signal;
     const readFinancial = (kind, load) => resources.read(`report:${kind}:${key}`, async () => {
       const startedAt = Date.now();
@@ -24,6 +26,23 @@ export function createSessionReportReads({ getSalesInPeriod, getContractsInPerio
     const payments = () => readFinancial('payments', () => getPaymentsInPeriod(businessId, period.startDate, period.endDate, branchId, { requireMigrated: true, maxRows: 10000, signal }));
     const voids = () => readFinancial('voids', () => readVoidsInPeriod(businessId, period.startDate, period.endDate, branchId, { signal }));
     const sessions = () => resources.read(`report:cash:${key}`, () => getSessionsInPeriod(businessId, period.startDate, period.endDate, branchId, { signal }), ttl);
+    const loadSnapshot = async assertAuthorized => {
+      const supplementary = () => [payments(), contracts(), voids(), sessions()];
+      const parallel = ['hoy', 'semana'].includes(period.filter);
+      const results = parallel ? await Promise.all([sales(), ...supplementary()]) : [await sales()];
+      assertAuthorized();
+      // Reject an oversized month or year before querying the other collections.
+      if (!parallel) results.push(...await Promise.all(supplementary()));
+      assertAuthorized();
+      const [{ rows: tickets, startedAt: salesStart }, { rows: ledger, startedAt: paymentsStart }, orders,
+        { rows: adjustments, startedAt: voidsStart }, cash] = results;
+      if (tickets.length + ledger.length + adjustments.length > 10000) {
+        throw new Error('Demasiados movimientos para exportar. Selecciona un período menor.');
+      }
+      const loadedAt = Math.min(Date.now(), ...['sales', 'payments', 'contracts', 'voids', 'cash']
+        .map(kind => resources.readLoadedAt(`report:${kind}:${key}`) ?? 0));
+      return { sales: tickets, payments: ledger, contracts: orders, voids: adjustments, sessions: cash, loadedAt, cashReferenceAsOf: Math.min(salesStart, paymentsStart, voidsStart) };
+    };
     const withContractAudit = async ({ payments: rows, contracts: created, loadedAt }, isCurrent = () => true) => {
       signal.throwIfAborted();
       const known = new Set(created.map(row => row.id));
@@ -36,22 +55,33 @@ export function createSessionReportReads({ getSalesInPeriod, getContractsInPerio
     };
     return { sales: async () => (await sales()).rows, contracts, payments: async () => (await payments()).rows,
       voids: async () => (await voids()).rows, sessions, withContractAudit,
-      discardSnapshot: () => resources.invalidateWhere(candidate => candidate.startsWith('report:') && candidate.endsWith(key)),
+      discardSnapshot() {
+        if (!pendingExports().has(exportKey)) resources.invalidateWhere(candidate => candidate.startsWith('report:') && candidate.endsWith(key));
+      },
       async exportContracts(isCurrent) {
         const [{ rows }, created] = await Promise.all([payments(), contracts()]);
         return withContractAudit({ payments: rows, contracts: created }, isCurrent);
       },
-      async exportSnapshot(isCurrent = () => true) {
-        const { rows: tickets, startedAt: salesStart } = await sales(); // Refuse an oversized period before starting supplemental reads.
-        if (!isCurrent()) throw new DOMException('El alcance del informe cambió.', 'AbortError');
-        const [{ rows: ledger, startedAt: paymentsStart }, orders, { rows: adjustments, startedAt: voidsStart }, cash] = await Promise.all([payments(), contracts(), voids(), sessions()]);
-        signal.throwIfAborted();
-        if (tickets.length + ledger.length + adjustments.length > 10000) {
-          throw new Error('Demasiados movimientos para exportar. Selecciona un período menor.');
+      async exportSnapshot(isAuthorized = () => true) {
+        const assertAuthorized = check => {
+          signal.throwIfAborted();
+          if (!check()) throw new DOMException('El alcance del informe cambió.', 'AbortError');
+        };
+        assertAuthorized(isAuthorized);
+        const pending = pendingExports();
+        let entry = pending.get(exportKey);
+        if (!entry) {
+          const waiters = new Set();
+          const snapshot = loadSnapshot(() => assertAuthorized(() => [...waiters].some(check => check())));
+          entry = { waiters, snapshot: snapshot.finally(() => pending.delete(exportKey)) };
+          pending.set(exportKey, entry);
         }
-        const loadedAt = Math.min(Date.now(), ...['sales', 'payments', 'contracts', 'voids', 'cash']
-          .map(kind => resources.readLoadedAt(`report:${kind}:${key}`) ?? 0));
-        return { sales: tickets, payments: ledger, contracts: orders, voids: adjustments, sessions: cash, loadedAt, cashReferenceAsOf: Math.min(salesStart, paymentsStart, voidsStart) };
+        entry.waiters.add(isAuthorized);
+        try {
+          const snapshot = await entry.snapshot;
+          assertAuthorized(isAuthorized);
+          return snapshot;
+        } finally { entry.waiters.delete(isAuthorized); }
       },
     };
   };

@@ -14,7 +14,6 @@ import { useTenantData } from '../features/branches/context/TenantContext';
 import { useCashRegister } from '../features/cash-register/hooks/useCashRegister';
 import { runtimeCapabilities } from '../config/runtimeCapabilities.js';
 import { CashRegisterModals } from './CashRegisterModals';
-import CashRecoveryStatus from './CashRecoveryStatus.jsx';
 import { Alert, Button, Dialog, Drawer, EmptyState, LoadingState } from '../shared/ui';
 import { ProductSearch, CategoryFilters, ProductCard } from './pos/CatalogParts';
 import { PaymentFields, PaymentSelector } from './pos/PaymentParts';
@@ -158,9 +157,6 @@ function POS({ user, onUpdateSafety }) {
   </Button>;
   return <><div className="pos-workspace min-w-0 space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0">
     {!isOnline && <Alert variant="info">Sin conexión: puedes guardar un ticket sin cobrar. No se moverá inventario ni se enviará automáticamente al reconectar.</Alert>}
-    {!branchStatus.isReadOnly && <CashRecoveryStatus session={currentSession} isExpired={isExpired} expiresAt={expiresAt}
-      expiryState={expiryState} online={isOnline} recoverable={Boolean(recoverySession)}
-      onOpenNext={recoverySession && !readError && !isProcessing ? showCashOpening : undefined} />}
     <FirestoreQueryError error={readError} area="cash-open" user={user} onRetry={checkSession} />
     <FirestoreQueryError error={catalogError} area="catalog" user={user} onRetry={retryCatalog} />
     <header className="pos-toolbar flex shrink-0 flex-wrap items-center justify-between gap-2">

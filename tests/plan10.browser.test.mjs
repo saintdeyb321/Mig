@@ -27,7 +27,7 @@ const moduleMocks = { ...mockHooks,
     export const subscribeSaleAcknowledgement=()=>()=>{};export const reviewDraftSaleTransaction=()=>window.__p09.forbidden();export const confirmDraftSaleTransaction=()=>window.__p09.forbidden();`,
 };
 
-it('P10 keeps operational UX compact, accessible and financially explicit in isolated Chromium', {timeout:180000}, async () => {
+it('P10 keeps operational UX compact, accessible and financially explicit in isolated Chromium', {timeout:180000}, async context => {
   const css = await readBrowserBuildCss();
   const checks=[], metrics=[], captures=[];
   await runBrowserFixture({htmlFile:new URL('./plan09.browser.html',import.meta.url),fixture:{css},moduleMocks,
@@ -46,6 +46,15 @@ it('P10 keeps operational UX compact, accessible and financially explicit in iso
       const normal=()=>ev(async()=>{const m=window.__p09;m.cash.currentSession={id:'p09-session',userId:'p09-user',serverConfirmed:true};m.cash.isExpired=false;m.setBranch('p09-branch');m.notify('cash');Object.defineProperty(navigator,'onLine',{configurable:true,value:true});dispatchEvent(new Event('online'));await m.frames();});
 
       await size(1280,900);await normal();await show('pos');
+      await ev(async()=>{const m=window.__p09;m.cash.isExpired=true;m.cash.expiresAt=new Date(Date.now()-1000);m.cash.recoverySession=m.cash.currentSession;m.notify('cash');await m.frames();});
+      check(await ev(()=>{const pos=document.querySelector('.pos-workspace');return pos.innerText.includes('Abrir caja nueva')
+        && !/Consultar referencia|Cierre por vencimiento · sin arqueo/.test(pos.innerText) && !pos.querySelector('[data-pos-charge]');}),
+      'an expired POS cannot charge and offers the ordinary opening action without a recovery card');
+      await click('Abrir caja nueva');
+      check(await ev(()=>document.querySelector('[role="dialog"] input')?.type==='number'),'an expired POS can open the ordinary cash form');
+      context.diagnostic('P27 PASS: expired POS keeps collection blocked and opens a new cash session through the ordinary form.');
+      await press('Escape');
+      await ev(()=>{window.__p09.cash.recoverySession=null;});await normal();
       await ev(async()=>{const buttons=[...document.querySelectorAll('[aria-label="Catálogo de productos"] button')].filter(b=>b.title.startsWith('Producto'));for(const b of buttons.slice(0,8)){b.click();await window.__p09.frames();}});
       check(await ev(()=>document.querySelectorAll('aside[aria-label="Ticket"] button[aria-label^="Quitar"]').length===8&&document.querySelector('button[title="Producto de prueba 8"]').disabled),'eight-product guard survives; no ninth product can be added');
       for(const width of [320,390,768,1024,1280,1440])for(const height of [560,700,900]){
@@ -79,20 +88,20 @@ it('P10 keeps operational UX compact, accessible and financially explicit in iso
       await ev(()=>document.querySelector('[aria-label="Módulos"] button').focus());await press('Tab');
       check(await ev(()=>document.activeElement.matches(':focus-visible')&&getComputedStyle(document.activeElement).outlineStyle!=='none'),'keyboard navigation retains a visible focus indicator');
 
-      const summaries=[['match',30,0,false,'Coincide','text-success'],['short',25,-5,false,'Faltan S/ 5.00','text-danger'],['extra',35,5,false,'Sobran S/ 5.00','text-warning'],['provisional',25,-5,true,'Por revisar','text-warning']];
-      for(const width of [1440,320])for(const [name,counted,difference,provisional,label,color] of summaries){
-        await size(width,width===320?560:900);
-        await ev((counted,difference,provisional)=>{window.__p09.countSummary={openingAmount:10,posCash:20,contractCash:0,expectedAmount:30,declaredAmount:counted,difference,hasUnverifiedDisbursements:provisional,posCompensationCount:provisional?1:0};},counted,difference,provisional);await show('cash-summary');
-        check(await ev((label,color,provisional)=>{const d=document.querySelector('[role="dialog"]'),details=d.querySelector('details');return d.innerText.includes(label)&&d.querySelector('.'+color)&&!details.open&&details.querySelector('summary').textContent==='Ver detalle del cuadre'&&(!provisional||(!d.innerText.includes('Faltan')&&!d.innerText.includes('Sobran')&&d.innerText.includes('Referencia calculada')));},label,color,provisional),'cash summary '+name+' preserves reliable/provisional semantics at '+width);
+      const summaries=[['match',0,false,'Coincide','text-success'],['short',-43.30,false,'Faltan S/ 43.30','text-danger'],['extra',3,false,'Sobran S/ 3.00','text-warning'],['provisional',-43.30,true,'Por revisar','text-warning']];
+      for(const width of [1440,375])for(const [name,difference,provisional,label,color] of summaries){
+        await size(width,width===375?667:900);
+        await ev((difference,provisional)=>{window.__p09.countSummary={openingAmount:10,posCash:50,contractCash:0,expectedAmount:60,declaredAmount:60+difference,difference,hasUnverifiedDisbursements:provisional,posCompensationCount:provisional?1:0};},difference,provisional);await show('cash-summary');
+        check(await ev((label,color,provisional)=>{const d=document.querySelector('[role="dialog"]'),details=d.querySelector('details');const result=[...d.querySelectorAll('dt')].find(dt=>dt.textContent==='Resultado del conteo').parentElement;return result.innerText.includes(label)&&result.classList.contains(color)&&!details.open&&details.querySelector('summary').textContent==='Ver detalle del cuadre'&&(!provisional||(!result.innerText.includes('Faltan')&&!result.innerText.includes('Sobran')&&d.innerText.includes('Referencia calculada')));},label,color,provisional),'cash summary '+name+' preserves reliable/provisional semantics at '+width);
         check(await fit(),`cash ${name} fits ${width}`);await shot(`cash-${name}-${width}`);
         await ev(()=>document.querySelector('[role="dialog"] summary').focus());await press(' ' ,'Space');
-        check(await ev(()=>document.querySelector('details').open&&document.querySelector('[role="dialog"]').innerText.includes('no registrados no forman parte')&&!document.querySelector('[role="dialog"]').innerText.includes('Gastos: S/')),'keyboard reveals detail without inventing expenses');
+        check(await ev(()=>document.querySelector('details').open&&document.querySelector('[role="dialog"]').innerText.includes('no registrados quedan fuera de esta referencia')&&!document.querySelector('[role="dialog"]').innerText.includes('Gastos: S/')),'keyboard reveals detail without inventing expenses');
       }
       await ev(()=>{window.__p09.countSummary={openingAmount:0,posCash:0,contractCash:0,expectedAmount:-30,declaredAmount:0,difference:30};});await show('cash-summary');
       check(await ev(()=>{const d=document.querySelector('[role="dialog"]');return d.innerText.includes('Por revisar')&&!d.innerText.includes('Sobran')&&!d.innerText.includes('Faltan');}),'a negative reference never announces physical excess or shortage');
       await size(390,700);await ev(()=>{const m=window.__p09;m.openCalls=[];m.openRegister=async amount=>{m.openCalls.push(amount);return false;};});await show('cash-open');await setInput('[role="dialog"] input','10.05');await click('Abrir caja');
       check(await ev(()=>window.__p09.openCalls[0]===10.05&&document.querySelector('[role="dialog"] input').value==='10.05'),'opening cents pass unchanged and a failed opening retains input');
-      await setInput('[role="dialog"] input','0.001');await click('Abrir caja');
+      await setInput('[role="dialog"] input','0.001');await click('Reintentar apertura');
       check(await ev(()=>window.__p09.openCalls.length===1&&!document.querySelector('[role="dialog"] input').checkValidity()),'opening rejects extra decimals without silent rounding');
       await ev(()=>{const m=window.__p09;m.closeCalls=0;m.calculateClose=async amount=>({openingAmount:10,posCash:20,contractCash:0,expectedAmount:30,declaredAmount:amount,difference:-5});m.confirmClose=async()=>{m.closeCalls++;return new Promise(resolve=>{m.resolveClose=resolve;});};});await show('cash-close');await setInput('[role="dialog"] input','25.00');await click('Siguiente');
       await setInput('[role="dialog"] textarea','abcd');await click('Cerrar turno');
@@ -107,14 +116,30 @@ it('P10 keeps operational UX compact, accessible and financially explicit in iso
         await shot(`cash-confirm-${width}`);
         check(action.button<=height&&action.button<=action.panel,`cash confirmation footer stays visible ${width}/${height}: ${JSON.stringify(action)}`);
       }
+      for(const [width,height] of [[375,667],[1440,900]]){
+        await size(width,height);
+        const measure=()=>ev(()=>{const panel=document.querySelector('.cash-confirm-dialog');const box=panel.getBoundingClientRect();
+          const body=panel.querySelector('form .ui-scroll'), action=panel.querySelector('button[type="submit"]').getBoundingClientRect();
+          return {height:box.height, scroll:body.scrollHeight-body.clientHeight, contained:box.top>=0&&box.bottom<=innerHeight
+            && action.top>=box.top&&action.bottom<=box.bottom&&action.left>=box.left&&action.right<=box.right};});
+        const closed=await measure();
+        await ev(async()=>{document.querySelector('.cash-confirm-dialog summary').click();await window.__p09.frames();});
+        const opened=await measure();
+        check(closed.contained&&opened.contained&&opened.height>closed.height&&closed.height<height-24,
+          `cash confirmation grows from intrinsic height and preserves buttons ${width}×${height}: ${JSON.stringify({closed,opened})}`);
+        if(width===375)check(opened.scroll>0,'mobile detail scroll is confined to the confirmation body');
+        context.diagnostic(`P27 PASS: cash confirmation ${width}×${height} ${closed.height}→${opened.height}px; footer visible.`);
+        await ev(async()=>{document.querySelector('.cash-confirm-dialog summary').click();await window.__p09.frames();});
+      }
 
       await size(1440,900);await show('operationalHistory');
       check(await ev(()=>window.__p09.exportCalls.length===0&&!document.querySelector('.export-toolbar input[type="checkbox"]')&&!document.querySelector('.export-toolbar details').open),'export mount needs no checkbox and performs no query');
+      check(await ev(()=>document.querySelector('.export-toolbar').innerText.includes('Todas las sucursales · Un archivo incluye todas las sedes')),'export explains its global scope');
       await ev(async()=>{const select=document.querySelector('.export-toolbar select');select.value='mes';select.dispatchEvent(new Event('change',{bubbles:true}));await window.__p09.frames();});
       await ev(async()=>{const control=document.querySelectorAll('.export-toolbar select')[1];control.value='excel';control.dispatchEvent(new Event('change',{bubbles:true}));await window.__p09.frames();});
-      check(await ev(()=>window.__p09.exportCalls.length===0),'changing period and format does not query');await click('Descargar detalle Excel');
+      check(await ev(()=>window.__p09.exportCalls.length===0),'changing period and format does not query');await click('Descargar Excel');
       check(await ev(()=>JSON.stringify(window.__p09.exportCalls)==='[["mes","excel"]]'),'explicit download uses the chosen period and format');
-      await ev(async()=>{Object.assign(window.__p09.export,{isExporting:true,phase:'integrity'});window.__p09.notify('export');await window.__p09.frames();});await click('Descargar detalle Excel');
+      await ev(async()=>{Object.assign(window.__p09.export,{isExporting:true,phase:'integrity'});window.__p09.notify('export');await window.__p09.frames();});await click('Descargar Excel');
       check(await ev(()=>window.__p09.exportCalls.length===1&&document.querySelector('.export-toolbar button[type="submit"]').disabled),'busy export blocks repeat downloads');
       await ev(async()=>{Object.assign(window.__p09.export,{isExporting:false,phase:'error',failure:{kind:'data-read',error:{code:'permission-denied',message:'isolated-denial'}}});window.__p09.notify('export');await window.__p09.frames();});
       check(await ev(()=>document.querySelector('.export-toolbar').innerText.includes('Tu cuenta no pudo acceder')),'export permission errors remain visible outside the disclosure');

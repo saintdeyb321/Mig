@@ -44,7 +44,10 @@
   .dialog-drawer { bottom: var(--ui-keyboard-inset, 0px); height: calc(var(--ui-viewport-height, 100dvh) - max(0.75rem, env(safe-area-inset-top))); }
   .dialog-form-surface { height: min(52rem, calc(var(--ui-viewport-height, 100dvh) - 1.5rem)); }
   .dialog-form-surface > div:last-child > fieldset { height: 100%; }
-  .cash-confirm-dialog { height: min(42rem, calc(var(--ui-viewport-height, 100dvh) - 1.5rem)); }
+  .cash-confirm-dialog {
+    height: auto;
+    max-height: min(42rem, calc(var(--ui-viewport-height, 100dvh) - max(0.75rem, env(safe-area-inset-top)) - max(0.75rem, env(safe-area-inset-bottom))));
+  }
   .pos-ticket { height: 100%; max-height: calc(var(--ui-viewport-height, 100dvh) - 3rem); }
   .pos-ticket-items { min-height: 1.75rem; flex: 1 1 0; overflow-y: auto; overscroll-behavior: contain; }
   /* Reserve enough visible room for a complete focused control; articles yield first. */
@@ -135,6 +138,8 @@
   container: ui-drawer / size;
 }
 .dialog-body { scroll-padding-block: 0.75rem; }
+/* Keep the dialog's disabled fieldset while letting the cash form size its own content. */
+.cash-confirm-dialog .dialog-body > fieldset { display: contents; }
 .dialog-body :is(input, select, textarea) { scroll-margin-block: 0.75rem; }
 .legal-dialog { height: min(46rem, 100%); }
 .legal-dialog .legal-actions { max-height: 55%; overflow-y: auto; }
