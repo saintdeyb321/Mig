@@ -1,0 +1,11 @@
+Implementa SOLO `docs/MIGAPOS-P25-V3-BORDES-Y-TEXTOS-EXCEL.md` en `fix/migapos-production-readiness`. Usa razonamiento muy alto, trabajo focalizado y salida breve.
+
+Antes: revisa HEAD y `git status --short`; respeta cambios locales. Abre únicamente `frontend/src/utils/excelHelpers.js`, `frontend/src/features/reports/application/salesWorkbook.js` y pruebas afectadas. NO revises imágenes: el MD contiene requisitos precisos.
+
+PROBLEMA: `createOverviewSheet` no aplica bordes y `createSheet` solo aplica borde inferior, omitiendo celdas vacías. Solución: cuadrícula fina COMPLETA (4 lados) en todas las hojas XLSX, incluidas celdas vacías, separadores, totales, metadatos, títulos y contornos de merges, conservando colores pastel y filas blancas. No usar `showGridLines` como sustituto; no crear celdas fuera del rango utilizado ni romper autofiltros/freeze.
+
+Simplifica los títulos y notas visibles: «Todas las sedes · 09–15/11/2026», «Ventas menos anulaciones», «Productos vendidos», «Cantidad vendida», «Ventas (S/)», etc., respetando el significado financiero. Conserva la fecha/hora de generación y el negocio en metadatos claros. Evita párrafos en las tres primeras filas. Si cambias nombres de columnas, sincroniza esquema y pruebas; no cambies cálculos.
+
+Genera/reimporta XLSX real y verifica los cuatro bordes también en celdas en blanco y áreas fusionadas, además de estilos en Excel 16/capturas cuando esté disponible. Mantén S/225, nueve tickets, cash/mixto/anulaciones, integridad, 10k líneas, filtros y PDF. Ejecuta pruebas afectadas, lint, build, check:build y git diff --check. No modificar Rules, índices, POS, caja, PWA ni textos legales. Sin dependencias, commit, push o deploy.
+
+Entrega final MAX 10 líneas: archivos, PASS/FAIL y ubicación de muestras `.release/qa-p25-v3/`. Sin logs extensos.

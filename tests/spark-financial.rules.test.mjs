@@ -391,7 +391,7 @@ describe('SPARK-4 integrated financial Rules', () => {
     assert.ok(copy.SheetNames.filter(name => name.startsWith('Detalle_'))
       .some(name => {
         const sheet = copy.Sheets[name];
-        return XLSX.utils.sheet_to_json(sheet, { range: 3 }).some(row => row.Movimiento === 'COMPENSACIÓN POS' && row['Importe neto movimiento (S/)'] === -10)
+        return XLSX.utils.sheet_to_json(sheet, { range: 4 }).some(row => row.Movimiento === 'COMPENSACIÓN POS' && row['Importe neto movimiento (S/)'] === -10)
           && Object.values(sheet).some(cell => typeof cell?.v === 'string' && cell.v.includes('sin evidencia de desembolso físico'));
       }));
     await assertFails(reader.inPeriod('foreign', from, to, branchId));

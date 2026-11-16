@@ -1,4 +1,38 @@
-export const reportHeader = (XLSX, sheet) => sheet['!autofilter'] ? XLSX.utils.decode_range(sheet['!autofilter'].ref).s.r : 3;
+import assert from 'node:assert/strict';
+
+export const reportHeader = (XLSX, sheet) => sheet['!autofilter'] ? XLSX.utils.decode_range(sheet['!autofilter'].ref).s.r : 4;
+
+export function assertWorkbookBorders(XLSX, workbook, bytes) {
+  const archive = XLSX.CFB.read(new Uint8Array(bytes), { type: 'array' });
+  const xml = path => Buffer.from(XLSX.CFB.find(archive, path).content).toString('utf8');
+  const styles = xml('/xl/styles.xml');
+  const borders = [...styles.match(/<borders\b[^>]*>([\s\S]*?)<\/borders>/)[1].matchAll(/<border\b[^>]*>([\s\S]*?)<\/border>/g)].map(match => match[1]);
+  const formats = [...styles.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/)[1].matchAll(/<xf\b[^>]*\bborderId="(\d+)"/g)]
+    .map(([, id]) => borders[Number(id)]);
+  const complete = formats.map(border => ['top', 'bottom', 'left', 'right'].every(side => border?.includes(`<${side} style="thin">`)));
+  for (const [index, name] of workbook.SheetNames.entries()) {
+    const sheetXml = xml(`/xl/worksheets/sheet${index + 1}.xml`);
+    const cells = new Map([...sheetXml.matchAll(/<c\b[^>]*\br="([A-Z]+\d+)"[^>]*\bs="(\d+)"/g)]
+      .map(([, address, style]) => [address, Number(style)]));
+    const sheet = workbook.Sheets[name], { s, e } = XLSX.utils.decode_range(sheet['!ref']);
+    assert.equal(cells.size, (e.r - s.r + 1) * (e.c - s.c + 1), name + ' has no unstyled or out-of-range cells');
+    for (let r = s.r; r <= e.r; r++) {
+      for (let c = s.c; c <= e.c; c++) {
+        const address = XLSX.utils.encode_cell({ r, c });
+        assert.ok(complete[cells.get(address)], `${name}!${address} must have four thin borders`);
+      }
+    }
+    assert.match(sheetXml, /<sheetView\b[^>]*showGridLines="0"/);
+    for (const merge of sheet['!merges'] ?? []) {
+      const address = XLSX.utils.encode_range(merge);
+      assert.ok(sheetXml.includes(`<mergeCell ref="${address}"/>`));
+      const perimeter = formats[cells.get(XLSX.utils.encode_cell(merge.s))];
+      for (let r = merge.s.r; r <= merge.e.r; r++) for (let c = merge.s.c; c <= merge.e.c; c++) {
+        assert.equal(formats[cells.get(XLSX.utils.encode_cell({ r, c }))], perimeter, `${name}!${address} has a consistent perimeter`);
+      }
+    }
+  }
+}
 
 export function tableRows(XLSX, workbook, name) {
   const sheet = workbook.Sheets[name];

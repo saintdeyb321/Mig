@@ -12,7 +12,7 @@ import { createCashPeriodReader } from '../frontend/src/features/cash-register/i
 import { createSalesPeriodReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
 import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
 import { createSheet } from '../frontend/src/utils/excelHelpers.js';
-import { readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
+import { assertWorkbookBorders, readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
 
 const require = createRequire(new URL('../frontend/package.json', import.meta.url));
 const XLSX = require('xlsx-js-style');
@@ -288,9 +288,10 @@ describe('Phase 7 workbooks in memory', () => {
     const start = performance.now();
     const { workbook } = build({ sales, payments: [] });
     const built = performance.now(), bytes = writeSalesWorkbook(XLSX, workbook);
-    const serialized = performance.now(), copy = XLSX.read(bytes, { type: 'array' });
+    const serialized = performance.now(), copy = XLSX.read(bytes, { type: 'array', cellStyles: true });
     context.diagnostic(JSON.stringify({ tickets: sales.length, productLines: MAX_EXPORT_ROWS, bytes: bytes.byteLength,
       buildMs: Math.round(built - start), serializeMs: Math.round(serialized - built), reimportMs: Math.round(performance.now() - serialized) }));
+    assertWorkbookBorders(XLSX, copy, bytes);
     const detail = rows(copy, 'Detalle_Centro');
     assert.equal(detail.filter(row => row.Producto).length, MAX_EXPORT_ROWS);
     assert.equal(detail.length, MAX_EXPORT_ROWS + sales.length);

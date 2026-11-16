@@ -33,7 +33,7 @@ const readData = async (kind, day, branchId, businessId = user.businessId) => {
   const sale = (id, payment, total, extra = {}) => ({ ...base, id, payment, total, createdAt: at(day, '10'),
     items: [{ id: 'product-' + id, name: '=1+1', qty: 1, price: total }], ...extra });
   const yape = sale('digital', 'yape', 30);
-  if (fixture.reference === 'v2') {
+  if (fixture.reference === 'v3') {
     if (kind === 'sales') {
       const item = (id, name, qty, price) => ({ id, name, qty, price });
       const rows = [
@@ -49,7 +49,12 @@ const readData = async (kind, day, branchId, businessId = user.businessId) => {
       ];
       return rows.filter(row => branchId === 'global' || row.branchId === branchId);
     }
-    if (kind === 'contracts') return { payments: [] };
+    if (kind === 'contracts') return { payments: [
+      { ...base, id: 'p25v3-deposit', sourceId: orderId, type: 'advance', amount: 11, method: 'yape', occurredAt: at(day, '11') },
+      { ...base, id: 'p25v3-refund', sourceId: orderId, type: 'refund', amount: -11, method: 'yape', occurredAt: at(day, '12') },
+    ] };
+    if (kind === 'orders') return [{ ...base, id: orderId, contractNumber: 'PED-2026-0034', clientName: 'Clienta de ensayo',
+      createdAt: at(day, '08'), total: 25, paidTotal: 0, balance: 25, status: 'pendiente' }];
     if (kind === 'cash') {
       const taller = { ...base, branchId: secondBranch.id, cashierName: 'María de los Ángeles Valdivia', openingAmount: 100 };
       return [

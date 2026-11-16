@@ -75,7 +75,7 @@ function assertReconciled({ dashboard, model, wb, summary }) {
   }
   assert.equal(sumMoney([metrics.cashRevenue, metrics.digitalRevenue]), metrics.netRevenue);
   const compareBranches = XLSX.utils.sheet_to_json(wb.Sheets.Resumen_Financiero, { header: 1 })
-    .some(([label, value]) => label === 'Alcance' && value === 'Todas las sedes');
+    .some(([label, value]) => label === 'Sedes:' && value === 'Todas las sedes');
   assert.equal(wb.SheetNames.includes('Comparativa_Sedes'), compareBranches);
   const branchRows = compareBranches ? rows(wb, 'Comparativa_Sedes') : [];
   if (compareBranches) assert.equal(sumMoney(branchRows.map(row => row['Ingreso neto (S/)'])), metrics.netRevenue);
@@ -101,10 +101,10 @@ function assertReconciled({ dashboard, model, wb, summary }) {
       let branch;
       const grouped = rows(wb, 'Productos_Sedes').map(row => {
         branch = row.Sucursal || branch;
-        return [row.Producto, branch, row['Unidades netas'], row['Importe neto (S/)']];
+        return [row.Producto, branch, row['Cantidad vendida'], row['Ventas (S/)']];
       });
       assert.deepEqual(grouped.sort(), dashboard.products.map(row => [row.name, branchesMap[row.branchId] ?? row.branchId, row.qty, row.revenue]).sort());
-    } else assert.deepEqual(rows(wb, 'Productos_Global').map(row => [row.Producto, row['Unidades netas'], row['Importe neto (S/)']]),
+    } else assert.deepEqual(rows(wb, 'Productos_Global').map(row => [row.Producto, row['Cantidad vendida'], row['Ventas (S/)']]),
       [...dashboard.products].sort((a, b) => b.qty - a.qty || b.revenue - a.revenue || a.name.localeCompare(b.name, 'es'))
         .map(row => [row.name, row.qty, row.revenue]));
   }
