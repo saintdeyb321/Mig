@@ -270,7 +270,7 @@ it('Plan07 retains server-confirmed notification views through cached write snap
     onSnapshot: (ref, _options, callback) => { callbacks.set(ref, callback); return () => callbacks.delete(ref); } };
   const repo = createNotificationRepository({}, { sdk });
   const off = repo.subscribeUnreadNotifications('tenant', 'owner', (rows, meta) => views.push({ rows, meta }), assert.fail);
-  const row = { id: 'legacy', data: () => ({ businessId: 'tenant', userId: 'owner', readAt: null, createdAt: timestamp() }), metadata: { hasPendingWrites: false } };
+  const row = { id: 'legacy', data: () => ({ businessId: 'tenant', userId: 'owner', readAt: null, createdAt: timestamp() }), metadata: { fromCache: false, hasPendingWrites: false } };
   callbacks.get('notifications')({ docs: [row], metadata: { fromCache: false, hasPendingWrites: false } });
   callbacks.get('notifications')({ docs: [], metadata: { fromCache: true, hasPendingWrites: true } });
   callbacks.get('notifications')({ docs: [], metadata: { fromCache: true, hasPendingWrites: false } });
