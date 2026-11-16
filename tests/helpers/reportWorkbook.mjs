@@ -22,7 +22,7 @@ export function assertWorkbookBorders(XLSX, workbook, bytes) {
         assert.ok(complete[cells.get(address)], `${name}!${address} must have four thin borders`);
       }
     }
-    assert.match(sheetXml, /<sheetView\b[^>]*showGridLines="0"/);
+    assert.match(sheetXml, /<sheetView\b[^>]*showGridLines="1"/);
     for (const merge of sheet['!merges'] ?? []) {
       const address = XLSX.utils.encode_range(merge);
       assert.ok(sheetXml.includes(`<mergeCell ref="${address}"/>`));

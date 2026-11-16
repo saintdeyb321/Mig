@@ -23,9 +23,9 @@ const borders = rgb => {
   return { top: edge, bottom: edge, left: edge, right: edge };
 };
 const ink = '30243F';
-const grid = borders('D4D0DD');
-const headerGrid = borders('87779E');
-const spacerGrid = borders('E8E5ED');
+const grid = borders('8E8596');
+const headerGrid = borders('6C5B80');
+const spacerGrid = borders('C8C2D0');
 const tones = {
   header: { fill: { fgColor: { rgb: '3E2C63' } }, font: { bold: true, color: { rgb: 'FFFFFF' } } },
   info: { fill: { fgColor: { rgb: 'BDE7F5' } } },

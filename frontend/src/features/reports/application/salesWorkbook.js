@@ -70,7 +70,7 @@ export function writeSalesWorkbook(XLSX, workbook) {
     if (!file?.content) throw new Error('No se pudo inmovilizar el encabezado del informe.');
     const xml = decoder.decode(new Uint8Array(file.content));
     const selection = pane ? `<pane ySplit="${pane.ySplit}" topLeftCell="${pane.topLeftCell}" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="${pane.topLeftCell}" sqref="${pane.topLeftCell}"/>` : '';
-    const view = `<sheetView showGridLines="0" workbookViewId="0">${selection}</sheetView>`;
+    const view = `<sheetView showGridLines="1" workbookViewId="0">${selection}</sheetView>`;
     const frozen = xml.replace(/<sheetView\b[^>]*\/>|<sheetView\b[^>]*>[\s\S]*?<\/sheetView>/, view);
     if (frozen === xml) throw new Error('No se pudo inmovilizar el encabezado del informe.');
     file.content = encoder.encode(frozen);
