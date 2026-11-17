@@ -7,18 +7,27 @@
  * @typedef {DocumentReportReaders & { kind: 'summary', representation: 'document-fallback' }} SummaryReportSource
  */
 
-/** @returns {DetailedReportSource | SummaryReportSource | {kind: 'summary', representation: 'snapshots', readSummary: Function}} */
-export const reportSummariesEnabled = import.meta.env?.VITE_REPORT_SUMMARIES_ENABLED === 'true';
+export const reportExportSummariesEnabled = import.meta.env?.VITE_REPORT_EXPORT_SUMMARIES_ENABLED === 'true';
 export const isSummaryPeriod = period => ['mes', 'todo'].includes(period.filter);
 
-export function reportSourceForPeriod(period, reads, { readSummary } = {}) {
-  if (isSummaryPeriod(period) && readSummary) return { kind: 'summary', representation: 'snapshots', readSummary };
+/** @returns {DetailedReportSource | SummaryReportSource} */
+export function reportSourceForPeriod(period, reads) {
   const { sales, payments, contracts, voids, exportSnapshot, withContractAudit, discardSnapshot } = typeof reads === 'function' ? reads() : reads;
   const documentSource = {
     dashboardReads: { readSales: sales, readPayments: payments, readContracts: contracts, readVoids: voids },
     exportReads: { exportSnapshot, withContractAudit, discardSnapshot },
   };
   if (!isSummaryPeriod(period)) return { ...documentSource, kind: 'detailed', representation: 'documents' };
-  // The monthly/yearly adapter keeps the existing document source until a complete projection is verified.
+  // The dashboard and explicitly authorized historical exports use the existing document source.
   return { ...documentSource, kind: 'summary', representation: 'document-fallback' };
+}
+
+export function exportReportSourceForPeriod(period, reads, { readSummary, acceptHistorical = false,
+  enabled = reportExportSummariesEnabled } = {}) {
+  if (!isSummaryPeriod(period) || acceptHistorical) return reportSourceForPeriod(period, reads);
+  return { kind: 'summary', representation: 'snapshots', readSummary: async () => {
+    if (!enabled || !readSummary) throw Object.assign(new Error('Resumen no disponible. Falta habilitar la fuente verificada.'),
+      { code: 'report-summary-pending' });
+    return readSummary();
+  } };
 }

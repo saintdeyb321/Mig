@@ -11,6 +11,8 @@ import { registerPwa } from '../frontend/src/features/pwa/registerPwa.js';
 import '../frontend/src/index.css';
 
 const fixture = window.__excelFixture = { bootId: crypto.randomUUID(), reads: 0, fault: '', empty: false, compensated: false };
+fixture.confirmations = [];
+window.confirm = message => { fixture.confirmations.push(message); return fixture.allowHistory === true; };
 // Preview replaces the app entry, including its mount of the production registrar.
 void registerPwa()?.catch(error => { fixture.pwaError = error.message; });
 const branch = { id: 'centro', name: 'Centro' };

@@ -7,13 +7,19 @@ import { it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { runExcelFixture } from './helpers/excelExportHarness.mjs';
 import { assertWorkbookBorders, readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
-import { vector } from '../functions/src/reports/summaryModel.js';
+import { collections, keyOf, mergeProducts, rankProducts, total } from '../functions/src/reports/summaryModel.js';
+import { hash, normalizeContribution } from '../functions/src/reports/contributions.js';
+import { monthWindow, projectionFromRecords } from '../functions/src/reports/consolidation.js';
 
 const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
 const artifacts = fileURLToPath(new URL('../.release/qa-p29/', import.meta.url));
 const card = '.export-toolbar';
 const primary = card + ' button[type="submit"]';
 const retry = card + ' [role="alert"] button';
+const historicalExport = ev => ev(() => {
+  document.querySelector('.export-toolbar > details').open = true;
+  [...document.querySelectorAll('.export-toolbar button')].find(button => button.textContent === 'Exportar historial del período').click();
+});
 const downloadNames = async directory => (await readdir(directory).catch(error => {
   if (error.code === 'ENOENT') return [];
   throw error;
@@ -248,7 +254,7 @@ it('downloads actual XLSX from Vite dev, recovers an obsolete optimizer URL and 
       await error(message);
       assert.deepEqual(await downloadNames(downloads), names);
     }
-    await select(ev)('mes');
+    await select(ev)('semana');
     await until(() => ev(() => !document.querySelector('.export-toolbar [role="alert"]')), 'Period change clears old errors');
     await ev(() => {
       window.__excelFixture.fault = '';
@@ -292,10 +298,10 @@ it('downloads actual XLSX from Vite dev, recovers an obsolete optimizer URL and 
     names = await workbook(downloads, names, { net: 85, cash: 28, digital: 57, label: 'Semanal_Detallado', artifact: 'reintento' });
     await select(ev)('mes');
     for (const update of [{ identityKey: 'other' }, { businessId: 'another-tenant' }, { mounted: false }]) {
-      await ev(() => { window.__excelFixture.resetReads(); window.__excelFixture.fault = 'hold'; window.__excelFixture.pending = []; });
-      await press(primary);
+      await ev(() => { window.__excelFixture.allowHistory = true; window.__excelFixture.resetReads(); window.__excelFixture.fault = 'hold'; window.__excelFixture.pending = []; });
+      await historicalExport(ev);
       await until(() => ev(() => window.__excelFixture.pending?.length === 1), 'Report reached the held sales read');
-      await press(primary);
+      await historicalExport(ev);
       assert.equal(await ev(() => window.__excelFixture.pending.length), 1, 'A second click during the read cannot start another export');
       await ev(update => window.__excelFixture.setScope(update), update);
       await until(() => ev(() => !document.querySelector('.export-toolbar button[type="submit"]')?.disabled), 'Scope changed before resolving reads');
@@ -341,13 +347,17 @@ it('downloads from Vite preview, keeps Excel out of precache and retries an unav
     await ev(() => { window.__excelFixture.compensated = true; });
     await select(ev)('mes');
     await press(primary);
-    let names = await workbook(downloads, [], { net: 55, cash: 28, digital: 27, label: 'Mensual_Resumen', artifact: 'preview', detailed: false });
+    await error('Resumen no disponible');
+    assert.equal(await ev(() => window.__excelFixture.reads), 0);
+    await ev(() => { window.__excelFixture.allowHistory = true; });
+    await historicalExport(ev);
+    let names = await workbook(downloads, [], { net: 55, cash: 28, digital: 27, label: 'Mensual_Historico', artifact: 'preview', detailed: false });
     assert.ok(responses.some(row => row.status === 200 && /javascript/.test(row.mime)));
     await until(() => ev(async () => (await caches.keys()).includes('migapos-excel-v1')),
       'Excel runtime cache is filled after the click: ' + JSON.stringify(network));
     const afterExcel = await ev(() => window.__excelFixture.reads);
     await select(ev, 1)('pdf');
-    await press(primary);
+    await historicalExport(ev);
     await previewReady(ev);
     await verifyPrintWithoutEvent(ev, false);
     await closePreview(ev);
@@ -366,7 +376,10 @@ it('downloads from Vite preview, keeps Excel out of precache and retries an unav
     assert.ok(network.slice(networkCount).some(row => row.status === 200 && row.fromServiceWorker), 'Offline Excel comes from the active Workbox service worker');
     await offline(page, false);
     await press(retry);
-    names = await workbook(downloads, names, { net: 0, cash: 0, digital: 0, label: 'Anual_Resumen', artifact: 'preview', detailed: false, empty: true });
+    await error('Resumen no disponible');
+    await ev(() => { window.__excelFixture.allowHistory = true; });
+    await historicalExport(ev);
+    names = await workbook(downloads, names, { net: 0, cash: 0, digital: 0, label: 'Anual_Historico', artifact: 'preview', detailed: false, empty: true });
     console.log(JSON.stringify({ previewRequests: responses, network, files: names.length }));
   } });
 });
@@ -379,35 +392,88 @@ const previewReady = ev => until(() => ev(frameSelector => {
 }, frameSelector), 'PDF preview is shown and print is ready');
 const closePreview = ev => ev(() => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.textContent === 'Cerrar vista previa').click());
 
-it('P31 verified summaries draw the assigned dashboard and export global PDF/XLSX without historical reads', { timeout: 90000 }, async () => {
+function summaryDocumentsFixture(now) {
+  const businessId = 'qa-excel', branchId = 'centro', date = new Date(now - 1000);
+  const currentMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit' }).format(date);
+  const receipts = [['cash', 20, 'efectivo'], ['digital', 30, 'yape'], ['mixed', 20, 'mixto']].map(([id, amount, payment]) => ({
+    id, businessId, branchId, createdAt: date, total: amount, payment,
+    ...(payment === 'mixto' ? { splitPayments: { efectivo: 8, yape: 12 } } : {}),
+    items: [{ id: 'product-' + id, name: '=1+1', qty: 1, price: amount }],
+  }));
+  const sources = [
+    ...receipts.map(row => ['sales', row]),
+    ['payments', { id: 'advance', businessId, branchId, sourceId: 'order', type: 'advance', amount: 15, method: 'yape', occurredAt: date }],
+    ['pos_voids', { id: 'digital', saleId: 'digital', businessId, branchId, authority: 'pos-compensation', occurredAt: date,
+      amount: -30, cashAmount: 0, digitalAmount: -30, items: receipts[1].items }],
+    ['cash_sessions', { id: 'cash-session', businessId, branchId, openingAmount: 100, declaredAmount: 128,
+      status: 'closed', reconciliationPending: true, openedAt: date, closedAt: date }],
+  ];
+  const entries = sources.map(([source, row]) => ({ atoms: normalizeContribution(source, row.id, row, now,
+    { sale: receipts.find(sale => sale.id === row.saleId) }) }));
+  const documents = {}, catalogs = [], revisions = [];
+  for (let i = 1; i <= Number(currentMonth.slice(-2)); i++) {
+    const month = currentMonth.slice(0, 5) + String(i).padStart(2, '0');
+    const projection = projectionFromRecords(businessId, month, entries);
+    const rows = projection.buckets.map(({ branchId, day, values }) => ({ branchId, day, values }));
+    const revision = hash([month, rows]), periodEnd = +monthWindow(month).end;
+    const products = projection.products, top = rankProducts(products);
+    const base = { businessId, branchId: 'global', periodKey: month, schemaVersion: 2, revision };
+    documents[collections.months + '/' + keyOf(businessId, 'global', month)] = { ...base,
+      status: 'verified', calculatedThrough: Math.min(periodEnd, now), evidenceThrough: now, validUntil: now + 180000,
+      closed: periodEnd < now, mode: 'manual', rows, values: total(rows), branchIds: ['centro', 'taller'], top,
+      productPages: 1, productCount: products.length,
+      coverage: { sales: true, legacy: true, ledger: true, voids: true, orders: true, cash: true, products: true },
+      sourceProof: { epoch: 1, checkedDocuments: sources.length, checkedAt: now, contentHash: hash(sources) } };
+    documents[collections.products + '/' + keyOf(businessId, 'global', month, 0)] = { ...base,
+      page: 0, pageCount: 1, productCount: products.length, expiresAt: now + 180000, products, top };
+    revisions.push(revision);
+    catalogs.push(...products);
+  }
+  const products = mergeProducts(catalogs), year = 'year-' + currentMonth.slice(0, 4);
+  documents[collections.products + '/' + keyOf(businessId, 'global', year, 0)] = {
+    businessId, branchId: 'global', periodKey: year, schemaVersion: 2, page: 0, pageCount: 1,
+    revision: hash(revisions), revisions, productCount: products.length, products, top: rankProducts(products), expiresAt: now + 180000,
+  };
+  return documents;
+}
+
+it('P31 exports verified global monthly and annual PDF/XLSX without historical reads or dashboard additions', { timeout: 90000 }, async () => {
   await mkdir(artifacts, { recursive: true });
-  await runExcelFixture({ summary: true, async inspectPage(page, { downloads }) {
+  await runExcelFixture({ summary: true, mode: 'preview', async inspectPage(page, { downloads }) {
     const ev = evaluate(page);
-    await ev((center, workshop) => {
-      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    await ev(documents => {
       const fixture = window.__excelFixture;
-      fixture.summary = { verified: true, mode: 'manual', closed: false, loadedAt: Date.now(), calculatedThrough: Date.now(),
-        expiresAt: Date.now() + 120000, rows: [{ day: today, branchId: 'centro', values: center }, { day: today, branchId: 'taller', values: workshop }],
-        branchIds: ['centro', 'taller'], products: [], top: [] };
+      fixture.summaryDocuments = documents;
       sessionStorage.setItem('migapos:report-filter:original:centro', 'mes');
       fixture.setScope({ dashboard: true });
-    }, vector({ saleCash: 2105, tickets: 1, openings: 1 }), vector({ saleDigital: 3500, tickets: 1, created: 1, pending: 1 }));
-    await until(() => ev(() => document.body.innerText.includes('Fuente resumida verificada') && document.body.innerText.includes('21.05')), 'Branch dashboard is ready');
+    }, summaryDocumentsFixture(Date.now()));
+    await until(() => ev(() => document.body.innerText.includes('Consultar documentos históricos')), 'Dashboard protects the historical period');
+    assert.equal(await ev(() => /Caja del período|Auditorías/.test(document.body.innerText)), false);
     assert.equal(await ev(() => window.__excelFixture.reads), 0);
-    assert.equal(await ev(() => window.__excelFixture.auditCalls?.length ?? 0), 0);
-    await ev(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Auditorías').click());
-    assert.equal(await ev(() => window.__excelFixture.auditCalls?.length ?? 0), 0);
-    await ev(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Consultar').click());
-    await until(() => ev(() => document.body.innerText.includes('Sobrante por revisar')), 'Audit opens on demand');
-    await ev(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Siguiente página').click());
-    await until(() => ev(() => window.__excelFixture.auditCalls.length === 2), 'Only explicit pagination starts the second audit request');
-
+    assert.equal(await ev(() => window.__excelFixture.summaryPoints?.length ?? 0), 0);
+    await ev(() => {
+      window.__excelFixture.allowHistory = true;
+      window.__excelFixture.compensated = true;
+      [...document.querySelectorAll('button')].find(button => button.textContent === 'Consultar documentos históricos').click();
+    });
+    await until(() => ev(() => document.body.innerText.includes('Top 5 productos') && document.body.innerText.includes('S/ 55.00')), 'The authorized dashboard keeps its original KPIs and products');
+    assert.equal(await ev(() => /Caja del período|Auditorías/.test(document.body.innerText)), false);
+    assert.ok(await ev(() => window.__excelFixture.readerCalls.getSalesInPeriod > 0));
+    assert.equal(await ev(() => window.__excelFixture.summaryPoints?.length ?? 0), 0);
+    await ev(() => {
+      const fixture = window.__excelFixture;
+      fixture.setScope({ dashboard: false });
+      fixture.reads = 0;
+      fixture.readerCalls = {};
+      fixture.documentSources = 0;
+    });
     await select(ev)('mes');
     await click(page)(primary);
     const print = await previewReady(ev);
     assert.match(print.html, /Cajas — resumen/);
     assert.match(print.html, /Pedidos — resumen/);
-    assert.match(print.html, /S\/ 56\.05/);
+    assert.match(print.html, /S\/ 55\.00/);
+    assert.equal(await ev(() => window.__excelFixture.summaryPoints.length), 2);
     for (const [width, height] of [[320, 650], [1280, 800]]) {
       await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 320 });
       await until(() => ev(() => !document.querySelector('iframe') || document.documentElement.scrollWidth <= innerWidth + 1), 'Preview fits viewport');
@@ -417,21 +483,79 @@ it('P31 verified summaries draw the assigned dashboard and export global PDF/XLS
     await click(page)(primary);
     const monthly = await until(async () => (await downloadNames(downloads)).find(name => name.startsWith('Reporte_Mensual')), 'Summary workbook downloaded');
     const book = XLSX.read(await readFile(join(downloads, monthly)), { type: 'buffer', cellStyles: true });
-    assert.deepEqual(book.SheetNames, ['Resumen_Financiero', 'Comparativa_Sedes', 'Evolucion_Diaria', 'Resumen_Cajas', 'Resumen_Pedidos']);
-    assert.equal(readOverview(XLSX, book)['Total neto registrado (S/)'], 56.05);
+    assert.deepEqual(book.SheetNames, ['Resumen_Financiero', 'Comparativa_Sedes', 'Evolucion_Diaria', 'Resumen_Cajas', 'Resumen_Pedidos', 'Productos_Global', 'Productos_Sedes']);
+    assert.equal(readOverview(XLSX, book)['Total neto registrado (S/)'], 55);
+    assertWorkbookBorders(XLSX, book, await readFile(join(downloads, monthly)));
+    await copyFile(join(downloads, monthly), resolve(artifacts, 'p31-mensual-consolidado.xlsx'));
+    assert.equal(await ev(() => window.__excelFixture.summaryPoints.length), 2, 'PDF and XLSX reuse the same verified monthly data');
     await select(ev)('todo');
     await click(page)(primary);
     const annual = await until(async () => (await downloadNames(downloads)).find(name => name.startsWith('Reporte_Anual')), 'Annual workbook downloaded');
     const year = XLSX.read(await readFile(join(downloads, annual)), { type: 'buffer' });
     assert.ok(year.SheetNames.includes('Evolucion_Mensual'));
+    assert.ok(year.SheetNames.includes('Resumen_Cajas'));
+    assert.ok(year.SheetNames.includes('Resumen_Pedidos'));
     assert.ok(!year.SheetNames.some(name => /^(Auditoría|Detalle|Estado_Pedidos)/.test(name)));
+    assert.equal(readOverview(XLSX, year)['Total neto registrado (S/)'], 55);
+    await copyFile(join(downloads, annual), resolve(artifacts, 'p31-anual-consolidado.xlsx'));
     assert.deepEqual(await ev(() => window.__excelFixture.summaries.map(({ branchId, filter }) => [branchId, filter])),
-      [['centro', 'mes'], ['global', 'mes'], ['global', 'todo']]);
+      [['global', 'mes'], ['global', 'todo']]);
+    const pointReads = await ev(() => window.__excelFixture.summaryPoints.length);
+    assert.equal(pointReads, 2 + Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Lima', month: 'numeric' }).format(new Date())) + 1);
+    await select(ev, 1)('pdf');
+    await click(page)(primary);
+    const annualPrint = await previewReady(ev);
+    assert.match(annualPrint.html, /Informe anual/);
+    assert.match(annualPrint.html, /Cajas — resumen/);
+    assert.match(annualPrint.html, /Pedidos — resumen/);
+    assert.match(annualPrint.html, /S\/ 55\.00/);
+    assert.equal(await ev(() => window.__excelFixture.summaryPoints.length), pointReads);
+    await closePreview(ev);
     assert.equal(await ev(() => window.__excelFixture.reads), 0);
-    await ev(html => { document.open(); document.write(html); document.close(); }, print.html);
-    const pdf = Buffer.from((await page.send('Page.printToPDF', { preferCSSPageSize: true, printBackground: true })).data, 'base64');
-    assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
-    await writeFile(resolve(artifacts, 'p31-informe-mensual.pdf'), pdf);
+    assert.deepEqual(await ev(() => window.__excelFixture.readerCalls ?? {}), {});
+    assert.equal(await ev(() => window.__excelFixture.documentSources ?? 0), 0);
+    for (const [name, html] of [['mensual', print.html], ['anual', annualPrint.html]]) {
+      await ev(html => { document.open(); document.write(html); document.close(); }, html);
+      const pdf = Buffer.from((await page.send('Page.printToPDF', { preferCSSPageSize: true, printBackground: true })).data, 'base64');
+      assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
+      await writeFile(resolve(artifacts, `p31-informe-${name}.pdf`), pdf);
+    }
+    console.log(JSON.stringify({ consolidatedMonthlyPoints: 2, consolidatedAnnualPoints: pointReads - 2, documentFactories: 0, historicalCalls: 0 }));
+  } });
+});
+
+it('P31 disabled export gate and missing summaries never fall back, and history needs a separate confirmation', { timeout: 90000 }, async () => {
+  await runExcelFixture({ oldSummary: true, async inspectPage(page, { downloads }) {
+    const ev = evaluate(page), press = click(page), error = alert(ev);
+    await select(ev)('mes');
+    await press(primary);
+    await error('Resumen no disponible');
+    assert.equal(await ev(() => window.__excelFixture.reads), 0);
+    assert.deepEqual(await ev(() => window.__excelFixture.readerCalls ?? {}), {});
+    assert.equal(await ev(() => window.__excelFixture.summaryPoints?.length ?? 0), 0);
+    assert.deepEqual(await downloadNames(downloads), []);
+    await historicalExport(ev);
+    assert.equal(await ev(() => window.__excelFixture.confirmations.length), 1);
+    assert.equal(await ev(() => window.__excelFixture.reads), 0);
+    await ev(() => { window.__excelFixture.allowHistory = true; });
+    await historicalExport(ev);
+    await previewReady(ev);
+    assert.ok(await ev(() => window.__excelFixture.reads > 0));
+    await closePreview(ev);
+    const reads = await ev(() => window.__excelFixture.reads);
+    await press(primary);
+    await error('Resumen no disponible');
+    assert.equal(await ev(() => window.__excelFixture.reads), reads, 'A historical artifact must not be reused by the summary action');
+  } });
+  await runExcelFixture({ summary: true, async inspectPage(page, { downloads }) {
+    const ev = evaluate(page), error = alert(ev);
+    await select(ev)('mes');
+    await click(page)(primary);
+    await error('Resumen no disponible');
+    assert.equal(await ev(() => window.__excelFixture.summaryPoints.length), 1);
+    assert.equal(await ev(() => window.__excelFixture.reads), 0);
+    assert.deepEqual(await ev(() => window.__excelFixture.readerCalls ?? {}), {});
+    assert.deepEqual(await downloadNames(downloads), []);
   } });
 });
 

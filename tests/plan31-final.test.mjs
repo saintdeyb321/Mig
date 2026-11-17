@@ -7,7 +7,7 @@ import { collections, blank, financial, get, keyOf, mergeProducts, total, rankPr
 import { reportingFunctions } from '../functions/src/reports/entry.js';
 import { buildMonthlySnapshotV1 } from '../frontend/src/features/reports/domain/monthlySnapshot.js';
 import { reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
-import { reportSourceForPeriod } from '../frontend/src/features/reports/application/reportSources.js';
+import { exportReportSourceForPeriod } from '../frontend/src/features/reports/application/reportSources.js';
 import { createVerifiedSummaryReader } from '../frontend/src/features/reports/infrastructure/summaryReader.js';
 import { buildSummaryView } from '../frontend/src/features/reports/application/summaryView.js';
 import { buildSummaryWorkbook, managementSummaryReportHtml } from '../frontend/src/features/reports/application/summaryDocuments.js';
@@ -152,8 +152,8 @@ it('P31 final uses only point reads, reuses PDF/XLSX and blocks stale, partial, 
   const data = presentation('2026-11'), november = root('2026-11', data), id = keyOf(businessId, 'global', '2026-11');
   documents.set(collections.months + '/' + id, november);
   documents.set(collections.products + '/' + id + ':0', productPage('2026-11', [november.revision], data));
-  const source = reportSourceForPeriod(args.period, () => assert.fail('No se deben crear lectores de detalle.'),
-    { readSummary: () => read({ ...args, resources }) });
+  const source = exportReportSourceForPeriod(args.period, () => assert.fail('No se deben crear lectores de detalle.'),
+    { enabled: true, readSummary: () => read({ ...args, resources }) });
   assert.equal(source.representation, 'snapshots');
   assert.equal((await source.readSummary()).verified, true);
   assert.equal(calls.length, 1);
@@ -192,4 +192,53 @@ it('P31 final uses only point reads, reuses PDF/XLSX and blocks stale, partial, 
   assert.ok(calls.every(path => path.startsWith(collections.months + '/') || path.startsWith(collections.products + '/')));
   documents.delete(collections.months + '/' + keyOf(businessId, 'global', '2026-03'));
   await assert.rejects(run({ period: reportPeriod('todo', epoch) }), { code: 'report-summary-pending' });
+});
+
+it('P31 export routing blocks long periods without a verified source and isolates explicit historical reads', async () => {
+  let constructed = 0, historicalReads = 0, snapshotReads = 0;
+  const reads = () => {
+    constructed++;
+    return { exportSnapshot: async () => { historicalReads++; return 'history'; } };
+  };
+  const readSummary = async () => { snapshotReads++; return 'verified'; };
+  for (const filter of ['mes', 'todo']) {
+    const period = reportPeriod(filter, epoch);
+    await assert.rejects(exportReportSourceForPeriod(period, reads, { readSummary, enabled: false }).readSummary(),
+      { code: 'report-summary-pending' });
+    const source = exportReportSourceForPeriod(period, reads, { readSummary, enabled: true });
+    assert.equal(source.representation, 'snapshots');
+    assert.equal(await source.readSummary(), 'verified');
+    const missing = exportReportSourceForPeriod(period, reads, { enabled: true,
+      readSummary: async () => { throw Object.assign(new Error('Missing'), { code: 'report-summary-pending' }); } });
+    await assert.rejects(missing.readSummary(), { code: 'report-summary-pending' });
+    assert.equal(constructed, 0);
+  }
+  assert.equal(snapshotReads, 2);
+  assert.equal(historicalReads, 0);
+  for (const filter of ['hoy', 'semana', 'mes', 'todo']) {
+    const source = exportReportSourceForPeriod(reportPeriod(filter, epoch), reads, { acceptHistorical: true });
+    assert.equal(await source.exportReads.exportSnapshot(), 'history');
+  }
+  assert.equal(historicalReads, 4);
+});
+
+it('P31 annual consolidated XLSX and PDF reconcile intermonth voids, cash, orders and every product to the monthly oracle', () => {
+  const data = sample(), months = ['2026-10', '2026-11'].map(month => presentation(month, data));
+  const products = mergeProducts(months.flatMap(month => month.products));
+  const view = buildSummaryView({ ...months[1], products, rows: months.flatMap(month => month.rows), top: rankProducts(products) }, reportPeriod('todo', epoch));
+  const expected = ['2026-10', '2026-11'].map(periodKey => buildMonthlySnapshotV1({ ...data, businessId, periodKey,
+    coveredThrough: epoch, sourceRevision: 'fixture', coverage }));
+  const net = expected.reduce((sum, value) => sum + value.finance.netCents, 0);
+  assert.equal(financial(view.values).net, net);
+  const options = { period: reportPeriod('todo', epoch), business: 'Panadería de ensayo', branchesMap: { centro: 'Centro', taller: 'Taller' } };
+  const bytes = writeSalesWorkbook(XLSX, buildSummaryWorkbook(XLSX, view, options));
+  const book = XLSX.read(bytes, { type: 'array', cellNF: true, cellStyles: true });
+  assert.deepEqual(book.SheetNames, ['Resumen_Financiero', 'Comparativa_Sedes', 'Evolucion_Mensual', 'Resumen_Cajas', 'Resumen_Pedidos',
+    'Productos_Global', 'Productos_Sedes']);
+  assertWorkbookBorders(XLSX, book, bytes);
+  assert.equal(Object.fromEntries(XLSX.utils.sheet_to_json(book.Sheets.Resumen_Financiero, { header: 1 }))['INGRESO NETO REGISTRADO'], net / 100);
+  assert.equal(get(view.values, 'expired'), 1);
+  assert.equal(get(view.values, 'voids'), 1);
+  assert.equal(get(view.values, 'refunds'), 2);
+  assert.ok(managementSummaryReportHtml(view, options).includes('S/ ' + (net / 100).toFixed(2)));
 });

@@ -4,8 +4,6 @@ import { ChannelBreakdown, MetricCard, ChartColumn, OrderStatusChart, ReportPane
 import { Alert, LoadingState, Button, PageHeader, HelpDisclosure } from '../shared/ui';
 import { useMemo } from 'react';
 import { useReports } from '../features/reports/hooks/useReports';
-import { get } from '../../../functions/src/reports/summaryModel.js';
-import ReportAudits from './reports/ReportAudits.jsx';
 
 const TIME_FILTERS = {
   hoy: 'Hoy',
@@ -30,7 +28,7 @@ export default function Reports({
     timeFilter,
     setTimeFilter,
     refreshReport,
-    maxProductQty, updatedAt, warning, requestHistorical, verifiedSummary, cashSummary
+    maxProductQty, updatedAt, warning, requestHistorical
   } = useReports(user);
 
 
@@ -55,16 +53,12 @@ export default function Reports({
     } />;
   if (error && !hasData) return <div className="workspace-page max-w-7xl gap-3">
     {header}
-    {['report-summary-disabled', 'report-summary-pending'].includes(error.code) ? <Alert variant="warning" title="Resumen no disponible">
-      <p>El período está pendiente de consolidación.</p>
-      {updatedAt && <p>Último corte disponible {new Date(updatedAt).toLocaleString('es-PE', { timeZone: 'America/Lima' })} (Lima).</p>}
-      {error.code === 'report-summary-disabled'
-        ? <Button className="mt-2" onClick={requestHistorical}>Consultar documentos históricos</Button>
-        : <Button className="mt-2" onClick={refreshReport}>Comprobar resumen</Button>}
+    {error.code === 'report-history-confirmation' ? <Alert variant="warning" title="Consulta histórica pendiente">
+      <p>Este período puede consultar miles de movimientos. Confirma para cargar las estadísticas.</p>
+      <Button className="mt-2" onClick={requestHistorical}>Consultar documentos históricos</Button>
     </Alert> : error.code === 'report-limit' ? <Alert variant="warning" title="El período supera el límite de lectura">
       Selecciona un período menor. No se calcularon totales parciales.
     </Alert> : <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />}
-    <ReportAudits user={user} />
   </div>;
   return <div className="workspace-page max-w-7xl gap-3 animate-enter motion-reduce:animate-none">
     {header}
@@ -72,7 +66,7 @@ export default function Reports({
     {error && <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />}
     {warning && <Alert variant="warning" title="Conciliación histórica pendiente">{warning}</Alert>}
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-      <p>{verifiedSummary ? 'Fuente resumida verificada' : 'Informe histórico · no es saldo de caja.'}</p>
+      <p>Informe histórico · no es saldo de caja.</p>
       <p role="status">{isRefreshing ? 'Actualizando el período… Los resultados anteriores siguen visibles.'
         : updatedAt ? `Actualizado hasta ${new Date(updatedAt).toLocaleString('es-PE', { timeZone: 'America/Lima' })} (Lima)` : 'Lectura pendiente.'}</p>
     </div>
@@ -86,12 +80,6 @@ export default function Reports({
 
     <ChannelBreakdown channels={summary.channels} formatMoney={formatMoney} />
     <OrderStatusChart counts={contractCounts} />
-    {cashSummary && <ReportPanel title="Caja del período" icon={Banknote}>
-      <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4">
-        {[['openings', 'Aperturas'], ['closings', 'Cierres'], ['expired', 'Vencidas sin conteo'], ['review', 'Por revisar']]
-          .map(([key, label]) => <p key={key} className="rounded-lg bg-panel p-2 text-sm">{label}<strong className="block text-lg">{get(cashSummary, key)}</strong></p>)}
-      </div>
-    </ReportPanel>}
 
     <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
       <ReportPanel title="Evolución de ventas" icon={ChartNoAxesCombined}>
@@ -109,10 +97,9 @@ export default function Reports({
       </ReportPanel>
     </div>
 
-    <ReportAudits user={user} />
     <HelpDisclosure title="Alcance de este informe">
       <p>Incluye movimientos contables confirmados y excluye pendientes locales. Las compensaciones POS se descuentan una vez por el método original. No certifican saldo físico, desembolsos ni devoluciones digitales. Los cierres operativos conservan conciliación pendiente.</p>
-      <p>Una caja vencida conserva el fondo inicial y los cobros de su turno. Consulta la campana o la auditoría de caja para distinguir el vencimiento efectivo de la finalización confirmada. Sin conteo no hay diferencia calculable.</p>
+      <p>Una caja vencida conserva el fondo inicial y los cobros de su turno. Consulta la campana o el Excel detallado para distinguir el vencimiento efectivo de la finalización confirmada. Sin conteo no hay diferencia calculable.</p>
       <p>La lectura se limita a 10 000 movimientos y 500 contratos por negocio.</p>
     </HelpDisclosure>
   </div>;

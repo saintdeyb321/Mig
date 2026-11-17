@@ -6,7 +6,7 @@ import { useExportSales } from '../features/reports/hooks/useExportSales';
 
 const statusMessages = {
   'module-load': 'Cargando módulo Excel…',
-  'data-read': 'Consultando movimientos…',
+  'data-read': 'Verificando datos del informe…',
   'contract-audit': 'Comprobando referencias de pedidos…',
   integrity: 'Verificando importes del período…',
   document: 'Preparando el documento…',
@@ -15,7 +15,7 @@ const statusMessages = {
 };
 
 function errorCopy({ kind, error, offline }, diagnostic) {
-  if (error.code === 'report-summary-pending') return ['Resumen no disponible', 'Falta consolidar el período. Consulta el historial en Auditorías.'];
+  if (error.code === 'report-summary-pending') return ['Resumen no disponible', 'Falta habilitar o verificar el resumen del período. La exportación histórica requiere una autorización adicional.'];
   if (error.code === 'report-timeout') return [kind === 'module-load' ? 'No se pudo preparar Excel' : 'No se pudo completar la consulta',
     'La respuesta tardó más de lo esperado. Comprueba la conexión y vuelve a intentar.'];
   if (error.code === 'report-stale') return ['Los datos del informe caducaron', 'Vuelve a preparar el informe para verificar los movimientos.'];
@@ -84,7 +84,7 @@ function ExportSales({ user }) {
   const [format, setFormat] = useState('pdf');
   const headingId = useId(), periodId = useId(), formatId = useId(), noticeId = useId();
   const actionRef = useRef(null);
-  const { isExporting, failure, phase, html, expiresAt, expired, exportData, closePreview, fetchedAt, reused, provisional, historical } = useExportSales(user, timeFilter, format);
+  const { isExporting, failure, phase, html, expiresAt, expired, exportData, closePreview, fetchedAt, reused, provisional, historical, summaryPeriod } = useExportSales(user, timeFilter, format);
   const diagnostic = ['data-read', 'contract-audit'].includes(failure?.kind) ? queryErrorDiagnostic(failure.error, 'reports') : null;
   const code = diagnostic?.code || failure?.error?.code
     || (failure?.kind === 'integrity' ? 'report-integrity' : failure?.kind === 'document' ? 'report-document' : '');
@@ -96,7 +96,7 @@ function ExportSales({ user }) {
 
   const request = event => {
     event.preventDefault();
-    if (!isExporting) void exportData({ acceptHistorical: historical });
+    if (!isExporting) void exportData();
   };
 
   return <section aria-labelledby={headingId} className="export-toolbar min-w-0 rounded-card border border-line border-l-4 border-l-success bg-linear-to-br from-panel via-panel to-success-soft/55 p-3 shadow-card sm:px-6">
@@ -120,22 +120,19 @@ function ExportSales({ user }) {
         <div className="min-w-0">
           <label className="mb-1 block text-sm font-semibold text-ink" htmlFor={formatId}>Formato</label>
           <Select id={formatId} value={format} onChange={event => setFormat(event.target.value)} className="min-h-12 border-line bg-stellar-soft/35">
-            <option value="pdf">Informe visual (PDF)</option><option value="excel">Detalle Excel</option>
+            <option value="pdf">Informe visual (PDF)</option><option value="excel">{summaryPeriod ? 'Resumen Excel' : 'Detalle Excel'}</option>
           </Select>
         </div>
       </div>
       <p id={noticeId} className="text-center text-xs text-muted">Todas las sucursales · Un archivo incluye todas las sedes</p>
-      {historical && <p id={noticeId + '-historical'} className="text-center text-sm text-warning">
-        Resumen consolidado deshabilitado. Al continuar autorizas una consulta histórica que puede leer miles de movimientos.
-      </p>}
-      <Button ref={actionRef} aria-describedby={historical ? noticeId + ' ' + noticeId + '-historical' : noticeId} type="submit" variant="success" size="lg" loading={isExporting}
+      <Button ref={actionRef} aria-describedby={noticeId} type="submit" variant="success" size="lg" loading={isExporting}
         className="w-full sm:w-auto sm:min-w-56 sm:justify-self-center">
         {format === 'pdf' ? <><Printer aria-hidden="true" />Ver resumen PDF</> : <><Download aria-hidden="true" />Descargar Excel</>}
       </Button>
     </form>
     <p role="status" aria-atomic="true" className={statusMessages[phase] || fetchedAt ? 'mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-muted' : 'sr-only'}>
       {phase === 'started' && <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-success" />}{statusMessages[phase]}
-      {fetchedAt && <span>{provisional ? 'Conciliación histórica pendiente' : reused ? 'Datos reutilizados' : 'Datos consultados'}
+      {fetchedAt && <span>{provisional ? 'Conciliación histórica pendiente' : historical ? 'Consulta histórica autorizada' : reused ? 'Datos reutilizados' : 'Datos consultados'}
         {' · '}{new Date(fetchedAt).toLocaleString('es-PE', { timeZone: 'America/Lima', dateStyle: 'short', timeStyle: 'short' })} (Lima)</span>}
     </p>
     {error && <Alert variant="danger" title={error[0]} className="mt-2">
@@ -150,9 +147,13 @@ function ExportSales({ user }) {
     <details className="group mt-1 text-xs text-muted">
       <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 font-semibold">Detalles de exportación<ChevronDown aria-hidden="true" className="size-3.5 shrink-0 group-open:rotate-180" /></summary>
       <div className="space-y-2 border-t border-line py-2">
-        <p>La descarga consulta los movimientos del período seleccionado.</p>
+        <p>Hoy y semana consultan los movimientos del período. Mes y año requieren resúmenes verificados del servidor.</p>
         <p>Incluye ventas, compensaciones POS y pagos del período. Una compensación contable no acredita entrega física de efectivo ni devolución digital.</p>
-        <p>Hoy y semana separan los movimientos de los artículos por ticket. Mes y año resumen por día. Máximo 10 000 movimientos y 500 contratos históricos.</p>
+        <p>Hoy y semana separan los movimientos de los artículos por ticket. El resumen mensual agrupa por día y el anual por mes.</p>
+        {summaryPeriod && <div className="space-y-2">
+          <p>La exportación histórica adicional puede consultar hasta 10 000 movimientos, 500 referencias de pedidos y las cajas del período. Puede consumir miles de lecturas de Firestore.</p>
+          <Button variant="secondary" disabled={isExporting} onClick={() => exportData({ acceptHistorical: true })}>Exportar historial del período</Button>
+        </div>}
       </div>
     </details>
     {html && <ReportPreview html={html} expiresAt={expiresAt} expired={expired} onClose={closePreview} />}

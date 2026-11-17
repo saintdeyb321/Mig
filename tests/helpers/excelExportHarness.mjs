@@ -12,13 +12,14 @@ const entry = normalizePath(relative(dirname(main), fileURLToPath(new URL('../ex
 const matches = (name, path) => path === normalizePath(resolve(root, 'src/features', name));
 const isExcel = pathname => /(?:\/deps\/xlsx-js-style|\/assets\/xlsx[^/]*)\.js$/.test(pathname);
 
-export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', force = false, summary = false }) {
+export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', force = false, summary = false, oldSummary = false }) {
   assert.ok(!process.env.GOOGLE_APPLICATION_CREDENTIALS);
   process.env.NODE_ENV = mode === 'preview' ? 'production' : 'development';
   Object.assign(process.env, { VITE_APP_ENV: 'emulator', VITE_USE_EMULATORS: 'true', VITE_APP_CHECK_MODE: 'off',
     VITE_FIREBASE_PROJECT_ID: 'demo-migapos', VITE_FIREBASE_AUTH_DOMAIN: 'demo-migapos.firebaseapp.com',
     VITE_FIREBASE_API_KEY: 'demo-key', VITE_FIREBASE_MESSAGING_SENDER_ID: '123456789', VITE_FIREBASE_APP_ID: '1:123456789:web:emulator-only',
-    VITE_FIREBASE_STORAGE_BUCKET: 'demo-migapos.appspot.com', VITE_REPORT_SUMMARIES_ENABLED: String(summary) });
+    VITE_FIREBASE_STORAGE_BUCKET: 'demo-migapos.appspot.com', VITE_REPORT_SUMMARIES_ENABLED: String(oldSummary),
+    VITE_REPORT_EXPORT_SUMMARIES_ENABLED: String(summary) });
   process.chdir(root);
   const artifacts = resolve(workspace, '.release/qa-excel-ux');
   const outDir = resolve(artifacts, 'preview');
@@ -42,37 +43,47 @@ export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', f
     name: 'isolated-excel-interface', enforce: 'pre',
     load(id) {
       if (id === main) return `import ${JSON.stringify(entry)};`;
-      if (summary && matches('reports/infrastructure/summaryRepository.js', id)) return `
-        export async function readVerifiedSummary({ businessId, branchId, period }) {
+      if (matches('reports/infrastructure/summaryRepository.js', id)) return `
+        import { createVerifiedSummaryReader } from './summaryReader.js';
+        export async function readVerifiedSummary(args) {
+          const { businessId, branchId, period } = args;
           const fixture = window.__excelFixture;
           (fixture.summaries ??= []).push({ businessId, branchId, filter: period.filter });
-          const summary = fixture.summary;
-          return branchId === 'global' ? summary : { ...summary, rows: summary.rows.filter(row => row.branchId === branchId), branchIds: [branchId] };
-        }`;
-      if (summary && matches('reports/infrastructure/reportAuditRepository.js', id)) return `
-        export async function readAuditPage({ businessId, branchId, cursor }) {
-          const fixture = window.__excelFixture;
-          (fixture.auditCalls ??= []).push({ businessId, branchId, next: !!cursor });
-          return { rows: [{ id: cursor ? 'next' : 'first', branchId, date: '2026-11-01', time: '14:30',
-            type: 'Sobrante por revisar', amount: 2.05, estimated: true }], next: cursor ? null : ['after'] };
+          const sdk = { doc: (_db, name, id) => name + '/' + id, getDocFromServer: async path => {
+            (fixture.summaryPoints ??= []).push(path);
+            if (fixture.summaryFault) throw Object.assign(new Error('Snapshot unavailable'), { code: fixture.summaryFault });
+            const data = fixture.summaryDocuments?.[path];
+            return { metadata: { fromCache: false, hasPendingWrites: false }, exists: () => !!data, data: () => data };
+          } };
+          const read = createVerifiedSummaryReader({}, { sdk, currentUid: () => args.uid });
+          return read(args);
         }`;
       if (matches('reports/infrastructure/sessionReportReads.js', id)) return `
         import { createSessionReportReads } from '../application/sessionReportReads.js';
         const day = date => new Date(+date - 18000000).toISOString().slice(0, 10);
-        export const sessionReportReads = createSessionReportReads({
-          getSalesInPeriod: (business, start, _end, { branchId }) => window.__excelFixture.read('sales', day(start), branchId, business),
-          getPaymentsInPeriod: async (business, start, _end, branchId) => (await window.__excelFixture.read('contracts', day(start), branchId, business)).payments,
-          getContractsInPeriod: (business, start, _end, branchId) => ['secondary', 'v3'].includes(window.__excelFixture.reference)
-            ? window.__excelFixture.read('orders', day(start), branchId, business) : [],
-          getCancelledContractCount: async business => {
+        const record = (name, load) => (...args) => {
+          const calls = window.__excelFixture.readerCalls ??= {};
+          calls[name] = (calls[name] ?? 0) + 1;
+          return load(...args);
+        };
+        const documentReaders = createSessionReportReads({
+          getSalesInPeriod: record('getSalesInPeriod', (business, start, _end, { branchId }) => window.__excelFixture.read('sales', day(start), branchId, business)),
+          getPaymentsInPeriod: record('getPaymentsInPeriod', async (business, start, _end, branchId) => (await window.__excelFixture.read('contracts', day(start), branchId, business)).payments),
+          getContractsInPeriod: record('getContractsInPeriod', (business, start, _end, branchId) => ['secondary', 'v3'].includes(window.__excelFixture.reference)
+            ? window.__excelFixture.read('orders', day(start), branchId, business) : []),
+          getCancelledContractCount: record('getCancelledContractCount', async business => {
             const fixture = window.__excelFixture;
             (fixture.countBusinesses ??= []).push(business);
             return fixture.cancelledContractCount ?? 0;
-          },
-          getContractAuditDocuments: business => window.__excelFixture.read('audit', '', 'global', business),
-          readVoidsInPeriod: (business, start, _end, branchId) => window.__excelFixture.read('voids', day(start), branchId, business),
-          getSessionsInPeriod: (business, start, _end, branchId) => window.__excelFixture.read('cash', day(start), branchId, business),
-        });`;
+          }),
+          getContractAuditDocuments: record('getContractAuditDocuments', business => window.__excelFixture.read('audit', '', 'global', business)),
+          readVoidsInPeriod: record('readVoidsInPeriod', (business, start, _end, branchId) => window.__excelFixture.read('voids', day(start), branchId, business)),
+          getSessionsInPeriod: record('getSessionsInPeriod', (business, start, _end, branchId) => window.__excelFixture.read('cash', day(start), branchId, business)),
+        });
+        export function sessionReportReads(...args) {
+          window.__excelFixture.documentSources = (window.__excelFixture.documentSources ?? 0) + 1;
+          return documentReaders(...args);
+        }`;
     },
   };
   const config = { root, configFile: resolve(root, 'vite.config.js'), envFile: false, logLevel: 'error', plugins: [plugin],
