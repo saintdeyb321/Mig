@@ -8,13 +8,14 @@ import { createReportCache, reportCacheKey, createReportResource, invalidateRepo
 import { processDailyStats, processSales, DETAIL_HEADERS } from '../frontend/src/utils/salesDataProcessor.js';
 import { buildContractLedgerReport } from '../frontend/src/features/reports/application/contractLedgerReport.js';
 import { buildSalesWorkbook, MAX_EXPORT_ROWS, writeSalesWorkbook } from '../frontend/src/features/reports/application/salesWorkbook.js';
+import { cashReviewPresentation, managementReportHtml } from '../frontend/src/features/reports/application/managementReportHtml.js';
 import { createCashPeriodReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
 import { createSalesPeriodReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
 import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
 import { createSheet } from '../frontend/src/utils/excelHelpers.js';
 import { createSessionReportReads } from '../frontend/src/features/reports/application/sessionReportReads.js';
 import { createSessionResources } from '../frontend/src/core/session/sessionResources.js';
-import { assertWorkbookBorders, readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
+import { assertWorkbookBorders, readOverview, readPosFooter, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
 
 const require = createRequire(new URL('../frontend/package.json', import.meta.url));
 const XLSX = require('xlsx-js-style');
@@ -55,16 +56,15 @@ it('reimports S/163.30 in registered collections without counting products or or
   const detail = rows(copy, 'Detalle_Centro');
   assert.ok(detail.every(row => !('Sucursal' in row)));
   const amounts = detail.map(row => row['Importe neto movimiento (S/)']).filter(value => typeof value === 'number');
-  assert.deepEqual(amounts.sort((a, b) => a - b), [6, 20, 20, 37.30, 80]);
-  assert.equal(amounts.reduce((sum, value) => sum + Math.round(value * 100), 0), 16330);
+  assert.deepEqual(amounts.sort((a, b) => a - b), [6, 20, 37.30]);
+  assert.equal(amounts.reduce((sum, value) => sum + Math.round(value * 100), 0), 6330);
+  assert.deepEqual(readPosFooter(XLSX, sheet), [16, 47.30, 63.30]);
   assert.equal(model.summary.netRevenue, 163.30);
   const summary = new Map(Object.entries(readOverview(XLSX, copy)));
   assert.equal(summary.get('Cobros registrados'), 163.30);
-  assert.equal(detail.filter(row => typeof row['Importe neto movimiento (S/)'] === 'number').length, 5);
+  assert.equal(detail.filter(row => typeof row['Importe neto movimiento (S/)'] === 'number').length, 3);
   assert.equal(detail.filter(row => row['Precio unitario'] === 'TOTAL TICKET').length, 3);
-  assert.deepEqual(detail.filter(row => ['ADELANTO PEDIDO', 'ABONO PEDIDO'].includes(row.Movimiento)).map(row => [
-    row.Referencia, row.Observaciones, row.Cantidad, row['Subtotal (S/)'],
-  ]), Array.from({ length: 2 }, () => ['PED-2A010C09', 'Edith', '', '']));
+  assert.ok(detail.every(row => !/PEDIDO/.test(row.Movimiento)));
   const products = detail.filter(row => row.Producto);
   assert.equal(products.length, 4);
   assert.ok(products.some(row => row.Producto === '10'));
@@ -73,14 +73,18 @@ it('reimports S/163.30 in registered collections without counting products or or
   const header = XLSX.utils.sheet_to_json(sheet, { header: 1, range: headerRow })[0];
   const cell = (name, offset = 1) => sheet[XLSX.utils.encode_cell({ r: headerRow + offset, c: header.indexOf(name) })];
   assert.equal(cell('Fecha').w, '22/10/2026');
-  assert.equal(cell('Hora').w, '09:00');
+  assert.equal(cell('Hora').w, '10:00');
   assert.equal(cell('Importe neto movimiento (S/)').t, 'n');
   assert.match(cell('Importe neto movimiento (S/)').z, /S\//);
-  assert.equal(cell('Cantidad', 3).z, '0');
-  assert.match(cell('Precio unitario', 3).z, /S\//);
+  assert.equal(cell('Cantidad').z, '0');
+  assert.match(cell('Precio unitario').z, /S\//);
   assert.equal(copy.SheetNames.includes('Comparativa_Sedes'), false);
   assert.equal(copy.SheetNames.includes('Productos_Sedes'), false);
-  const [order] = rows(copy, 'Auditoría_Pedidos');
+  const orderRows = rows(copy, 'Auditoría_Pedidos');
+  assert.deepEqual(orderRows.map(row => [row.Movimiento, row['N.º de pedido'], row.Cliente, row['Neto Movimiento (S/)']]), [
+    ['ADELANTO PEDIDO', 'PED-2A010C09', 'Edith', 20], ['ABONO PEDIDO', 'PED-2A010C09', 'Edith', 80],
+  ]);
+  const [order] = orderRows;
   assert.deepEqual([order['Sede Origen'], order['Sede Recojo'], order['Sede Movimiento']], ['Taller', 'Taller', undefined]);
   const [otherOrder] = rows(copy, 'Estado_Pedidos');
   assert.deepEqual([otherOrder.Pedido, otherOrder.Cliente, otherOrder.Sede], ['Sin número comercial', 'Cliente sin nombre', undefined]);
@@ -161,7 +165,7 @@ describe('Phase 7 canonical financial reports', () => {
     const { workbook, model } = build({ sales: [], payments: overlapping });
     assert.equal(model.summary.contractRevenue, 30);
     const detail = workbook.SheetNames.filter(name => name.startsWith('Detalle_')).flatMap(name => rows(workbook, name));
-    assert.equal(detail.reduce((sum, row) => sum + (row['Importe neto movimiento (S/)'] || 0), 0), 30);
+    assert.equal(detail.reduce((sum, row) => sum + (row['Importe neto movimiento (S/)'] || 0), 0), 0);
     assert.equal(rows(workbook, 'Auditoría_Pedidos').reduce((sum, row) => sum + row['Neto Movimiento (S/)'], 0), 30);
   });
   it('payments use their real branch rather than contract origin', () => {
@@ -186,9 +190,9 @@ describe('Phase 7 canonical financial reports', () => {
   it('details are ordered by real timestamps within a day', () => {
     const result = processSales(sales, [...payments].reverse(), scope).groupsByBranch.b1;
     const firstRows = result.map(group => group.movement);
-    assert.deepEqual(firstRows.map(row => row.Hora), ['09:00', '10:00', '11:00', '13:00', '14:00']);
+    assert.deepEqual(firstRows.map(row => row.Hora), ['10:00', '11:00', '14:00']);
   });
-  it('every POS and payment detail row uses the same columns', () => {
+  it('every POS detail row uses the same columns', () => {
     const result = processSales(sales, payments, scope).groupsByBranch;
     for (const { movement } of Object.values(result).flat()) assert.deepEqual(Object.keys(movement), DETAIL_HEADERS);
   });
@@ -233,7 +237,8 @@ describe('Phase 7 workbooks in memory', () => {
     const detailed = build({ detailed: true });
     const detail = detailed.workbook.SheetNames.filter(name => name.startsWith('Detalle_')).flatMap(name => rows(detailed.workbook, name));
     assert.equal(detail.filter(row => row.Producto).reduce((sum, row) => sum + row['Subtotal (S/)'], 0), 60);
-    assert.equal(detail.reduce((sum, row) => sum + Number(row['Importe neto movimiento (S/)'] || 0), 0), 90);
+    assert.equal(detail.reduce((sum, row) => sum + Number(row['Importe neto movimiento (S/)'] || 0), 0), 60);
+    assert.equal(rows(detailed.workbook, 'Auditoría_Pedidos').reduce((sum, row) => sum + row['Neto Movimiento (S/)'], 0), 30);
     assert.equal(rows(detailed.workbook, 'Comparativa_Sedes').reduce((sum, row) => sum + row['Ingreso neto (S/)'], 0), 90);
     const monthly = build({ period: reportPeriod('mes', date('12')), detailed: false });
     const daily = monthly.workbook.SheetNames.filter(name => name.startsWith('Resum_')).flatMap(name => rows(monthly.workbook, name));
@@ -288,20 +293,21 @@ describe('Phase 7 workbooks in memory', () => {
       { ...sales[1], id: 'taller', branchId: 'b2', total: 65, items: [{ ...item, qty: 3 }, biscuit] },
     ] });
     const sheet = workbook.Sheets.Productos_Sedes;
-    assert.deepEqual(sheet['!cols'].slice(0, 2).map(column => column.wch), [33, 20]);
-    assert.deepEqual(sheet['!rows'].map(row => row.hpt), [25, 21, 21, 9, 21, 21]);
+    assert.deepEqual([sheet.A1.v, sheet.B1.v], ['Sucursal', 'Producto']);
+    assert.deepEqual(sheet['!cols'].slice(0, 2).map(column => column.wch), [20, 33]);
+    assert.deepEqual(sheet['!rows'].map(row => row.hpt), [25, 21, 21, 13, 21, 21]);
     for (const start of [2, 5]) {
       for (const col of 'ABCD') {
         const group = sheet[col + start].s;
         assert.equal(group.border.top.style, 'thin');
         assert.equal(group.border.top.color.rgb.slice(-6), '000000');
-        assert.equal(Boolean(group.font.bold), col === 'B');
+        assert.equal(Boolean(group.font.bold), col === 'A');
       }
-      assert.deepEqual(['A', 'B', 'D'].map(col => sheet[col + start].s.fill.fgColor.rgb.slice(-6)), ['FFFFA6', '9DE0F6', 'B4C6E7']);
+      assert.deepEqual(['A', 'B', 'D'].map(col => sheet[col + start].s.fill.fgColor.rgb.slice(-6)), ['9DE0F6', 'FFFFA6', 'B4C6E7']);
     }
     for (const col of 'ABCD') assert.equal(sheet[col + '4'], undefined);
-    assert.equal(sheet.B3, undefined);
-    assert.equal(sheet.B6, undefined);
+    assert.equal(sheet.A3, undefined);
+    assert.equal(sheet.A6, undefined);
     const bytes = writeSalesWorkbook(XLSX, workbook), copy = XLSX.read(bytes, { type: 'array', cellStyles: true });
     assertWorkbookBorders(XLSX, copy, bytes);
     assert.deepEqual(rows(copy, 'Productos_Sedes'), [
@@ -334,9 +340,9 @@ describe('Phase 7 workbooks in memory', () => {
     const sales = Array.from({ length: 999 }, (_, index) => ({ ...base,
       id: `ticket-${index}`, total: 8, payment: 'efectivo', items }));
     const last = { ...sales[0], id: 'ticket-end' };
-    assert.throws(() => build({ payments: [], sales: [...sales, { ...last, items: items.slice(0, 4), total: 4 }] }),
+    assert.throws(() => build({ payments: [], sales: [...sales, { ...last, items: items.slice(0, 7), total: 7 }] }),
       /Demasiadas filas de detalle al incluir totales y separadores\. Selecciona un período menor\./);
-    sales.push({ ...last, items: items.slice(0, 3), total: 3 });
+    sales.push({ ...last, items: items.slice(0, 6), total: 6 });
     const productLines = sales.reduce((sum, sale) => sum + sale.items.length, 0);
     const start = performance.now();
     const { workbook } = build({ sales, payments: [] });
@@ -357,16 +363,19 @@ describe('Phase 7 workbooks in memory', () => {
   });
 });
 
-it('P27 reimports twelve tickets and an order payment with S/258.90 net and keeps cash differences separate', () => {
+it('P28 reconciles S/258.90 and shares five incidents between the Excel KPI and PDF', () => {
   const fixtures = { b1: [6, 20, 15.10, 20.25, 15.25, 25], b2: [22, 29, 17.50, 18.20, 40.60, 20] };
   const sales = Object.entries(fixtures).flatMap(([branchId, amounts]) => amounts.map((total, index) => ({ ...base, branchId,
     id: `${branchId}-${index}`, total, payment: 'efectivo', items: index ? [{ ...item, price: total }]
       : [{ ...item, id: 'first', price: 1 }, { ...item, price: total - 1 }] })));
-  const sessions = [3, -43.30, 0, -25.30, 32, null].map((difference, index) => ({ ...base, branchId: index < 3 ? 'b2' : 'b1',
-    id: `box-${index}`, openedAt: date('08'), openingAmount: 100, ...(difference == null
-      ? { status: 'expired_unreconciled', expiredAt: date('18') }
-      : { status: 'closed', closedAt: date('19'), expectedCash: 100, declaredAmount: 100 + difference, difference }) }));
-  const { workbook } = build({ sales, sessions, payments: [{ ...payments[1], amount: 10 }] });
+  const closeTimes = ['19:00:05', '19:00:05', '19:00:37', '19:01:00', '19:02:00', '19:03:00', '19:04:00'];
+  const sessions = [3, 32, -43.30, -25.30, 0, 0, 0, null].map((difference, index) => ({ ...base, branchId: index < 3 ? 'b2' : 'b1',
+    id: `box-session-${index}`, openedAt: date('08'), openingAmount: 100 + index, ...(difference == null
+      ? { status: 'expired_unreconciled', expiredAt: date('18'), recoveredAt: `${day}T18:45:00-05:00` }
+      : { status: 'closed', closedAt: `${day}T${closeTimes[index]}-05:00`, expectedCash: 100,
+        declaredAmount: 100 + difference, difference, reconciliationPending: [1, 3, 5].includes(index),
+        closingNote: index === 3 ? '<b>Revisar monedas</b>' : undefined }) }));
+  const { workbook, view } = build({ sales, sessions, payments: [{ ...payments[1], amount: 10 }] });
   const bytes = writeSalesWorkbook(XLSX, workbook), copy = XLSX.read(bytes, { type: 'array', cellStyles: true, cellNF: true });
   assertWorkbookBorders(XLSX, copy, bytes);
   const summary = readOverview(XLSX, copy);
@@ -375,10 +384,63 @@ it('P27 reimports twelve tickets and an order payment with S/258.90 net and keep
     [['Taller', 6, 157.30], ['Centro', 6, 101.60]]);
   const detail = ['Centro', 'Taller'].flatMap(name => rows(copy, `Detalle_${name}`));
   assert.equal(detail.filter(row => row['Precio unitario'] === 'TOTAL TICKET').length, 12);
-  assert.equal(detail.filter(row => row.Movimiento === 'ABONO PEDIDO' && !row.Producto && !row.Cantidad).length, 1);
-  assert.equal(detail.reduce((sum, row) => sum + Math.round((row['Importe neto movimiento (S/)'] || 0) * 100), 0), 25890);
-  const audit = rows(copy, 'Auditoría_Cajas').map(row => row['Diferencia (S/)']);
-  for (const value of [3, -43.30, 0, -25.30, 32, 'No calculable']) assert.ok(audit.includes(value));
+  assert.ok(detail.every(row => !/PEDIDO/.test(row.Movimiento)));
+  assert.equal(detail.reduce((sum, row) => sum + Math.round((row['Importe neto movimiento (S/)'] || 0) * 100), 0), 24890);
+  assert.deepEqual(rows(copy, 'Auditoría_Pedidos').map(row => row['Neto Movimiento (S/)']), [10]);
+  const audit = rows(copy, 'Auditoría_Cajas'), cashSheet = copy.Sheets.Auditoría_Cajas;
+  assert.equal(cashSheet['!autofilter'], undefined);
+  assert.deepEqual(cashSheet['!rows'].map(row => row.hpt), [25, ...Array.from({ length: 8 }, (_, i) => i ? [13, 21, 21] : [21, 21]).flat()]);
+  for (let i = 0; i < audit.length; i += 2) {
+    assert.deepEqual(audit.slice(i, i + 2).map(row => row.Turno), ['APERTURA', audit[i + 1].Estado === 'Vencido sin conteo' ? 'VENCIMIENTO' : 'CIERRE MANUAL']);
+    assert.equal(audit[i]['Fondo inicial (S/)'], audit[i + 1]['Fondo inicial (S/)']);
+  }
+  const closes = audit.filter(row => row.Turno === 'CIERRE MANUAL');
+  assert.deepEqual(closes.filter(row => row['Diferencia (S/)'] === 0).map(row => row.Estado),
+    ['Cuadrado', 'Sin diferencia registrada · por verificar', 'Cuadrado']);
+  const provisional = closes.find(row => row.Estado === 'Faltante por revisar');
+  assert.equal(provisional['Diferencia (S/)'], -25.30);
+  assert.equal(provisional.Observación, 'Mensaje adjunto: <b>Revisar monedas</b>');
+  assert.equal(audit.filter(row => row.Observación).length, 1);
+  assert.equal(audit.find(row => row.Turno === 'VENCIMIENTO')['Diferencia (S/)'], 'No calculable');
+  for (const time of closeTimes.slice(0, 3)) assert.ok(Object.values(cashSheet).some(cell => cell?.z === 'hh:mm:ss' && cell?.w === time));
+  const kpi = XLSX.utils.sheet_to_json(copy.Sheets.Resumen_Financiero, { header: 1 }).find(row => row[0] === 'CAJAS QUE REQUIEREN REVISIÓN');
+  assert.deepEqual(kpi, ['CAJAS QUE REQUIEREN REVISIÓN', 5]);
+  const review = cashReviewPresentation(view.cashEvents);
+  assert.equal(review.totalCount, 5);
+  assert.deepEqual(review.visible.map(row => row.difference).filter(Number.isFinite).sort((a, b) => a - b), [-43.30, -25.30, 3, 32]);
+  const html = managementReportHtml(view, { period, business: 'Pastelería', branch: 'Todas las sucursales', generatedAt: date('20') });
+  assert.match(html, /Faltaron S\/ 25\.30 · importe por verificar/);
+  assert.match(html, /Sobraron S\/ 32\.00 · importe por verificar/);
+  assert.match(html, /Mensaje adjunto: &lt;b&gt;Revisar monedas&lt;\/b&gt;/);
+  assert.match(html, /19:00:05 \(Lima\).*Ref\. ession-[01]/);
+  assert.match(html, /Venció 22\/10\/2026 18:00 \(Lima\).*Confirmado 22\/10\/2026 18:45/);
+  assert.equal(cashReviewPresentation([{ kind: 'closing', date: new Date(date('19')), counted: 100, reference: 100, difference: null }]).totalCount, 1);
+  assert.equal(cashReviewPresentation([{ kind: 'closing', date: new Date(date('19')), counted: 100, reference: null, difference: 0 }]).totalCount, 1);
+});
+
+it('P28 groups order movements by real identity and timestamp with a single sparse separator', () => {
+  const comercial = 'PED-IGUAL';
+  const orders = [
+    { ...payments[0], id: 'other-order', sourceId: 'order-b', amount: 8, contractNumber: comercial, occurredAt: date('09') },
+    { ...payments[2], id: 'refund', sourceId: 'order-a', contractNumber: comercial, occurredAt: date('10') },
+    { ...payments[1], id: 'later-id', sourceId: 'order-a', amount: 12, contractNumber: comercial, occurredAt: '2026-10-22T04:55:00Z' },
+    { ...payments[0], id: 'earlier-id', sourceId: 'order-a', contractNumber: comercial, occurredAt: '2026-10-22T04:55:00Z' },
+  ];
+  const opts = { payments: orders, sales: [sales[1]], period: reportPeriod('mes', date('12')) };
+  const { workbook } = build(opts);
+  const bytes = writeSalesWorkbook(XLSX, workbook), copy = XLSX.read(bytes, { type: 'array', cellStyles: true, cellNF: true });
+  assertWorkbookBorders(XLSX, copy, bytes);
+  const sheet = copy.Sheets.Auditoría_Pedidos, ledger = rows(copy, 'Auditoría_Pedidos');
+  assert.equal(sheet['!autofilter'], undefined);
+  assert.deepEqual(sheet['!rows'].map(row => row.hpt), [25, 21, 21, 21, 13, 21]);
+  assert.equal(sheet.A5, undefined);
+  assert.deepEqual(ledger.map(row => row['Neto Movimiento (S/)']), [20, 12, -5, 8]);
+  assert.ok(ledger.every(row => row['N.º de pedido'] === comercial && !Object.keys(row).some(key => key.startsWith('_'))));
+  assert.deepEqual([sheet.A2.w, sheet.A4.w, sheet.A6.w], ['21/10/2026 23:55', '22/10/2026 10:00', '22/10/2026 09:00']);
+  assert.equal(readOverview(XLSX, copy)['Total neto registrado (S/)'], 55);
+  assert.equal(copy.Sheets.Resum_Centro['!autofilter'].ref[0], 'A');
+  assert.throws(() => build({ payments: Array.from({ length: 5001 }, (_, i) => ({ ...payments[0], id: `payment-${i}`, sourceId: `order-${i}` })), sales: [] }),
+    /Demasiadas filas de auditoría de pedidos al incluir separadores/);
 });
 
 it('P27 starts all weekly sources together and retains them across a canceled wait and retry', async () => {

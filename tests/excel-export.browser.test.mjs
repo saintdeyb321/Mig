@@ -9,7 +9,7 @@ import { runExcelFixture } from './helpers/excelExportHarness.mjs';
 import { assertWorkbookBorders, readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
 
 const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
-const artifacts = fileURLToPath(new URL('../.release/qa-p27/', import.meta.url));
+const artifacts = fileURLToPath(new URL('../.release/qa-p28/', import.meta.url));
 const card = '.export-toolbar';
 const primary = card + ' button[type="submit"]';
 const retry = card + ' [role="alert"] button';
@@ -92,11 +92,17 @@ async function workbook(downloads, previous, { net, cash, digital, label, artifa
     const headerOf = sheet => reportHeader(XLSX, sheet);
     const movements = name => tableRows(XLSX, book, name);
     const totalCents = rows => rows.reduce((sum, row) => sum + Math.round((row[column] || 0) * 100), 0);
-    assert.equal(totalCents(sheetNames.flatMap(movements)), Math.round(net * 100));
+    const orderRows = detailed && book.Sheets.Auditoría_Pedidos ? movements('Auditoría_Pedidos') : [];
+    const orderCents = orderRows.reduce((sum, row) => sum + Math.round(row['Neto Movimiento (S/)'] * 100), 0);
+    assert.equal(totalCents(sheetNames.flatMap(movements)) + orderCents, Math.round(net * 100));
+    if (detailed) assert.ok(sheetNames.flatMap(movements).every(row => !row.Movimiento.includes('PEDIDO')));
     if (branches.length > 1) {
       const compared = tableRows(XLSX, book, 'Comparativa_Sedes');
       for (const [index, branch] of branches.entries()) {
-        assert.equal(totalCents(movements(sheetNames[index])), Math.round(compared.find(row => row.Sede === branch)['Ingreso neto (S/)'] * 100));
+        const row = compared.find(row => row.Sede === branch);
+        assert.equal(totalCents(movements(sheetNames[index])), Math.round(row[detailed ? 'Ventas mostrador (S/)' : 'Ingreso neto (S/)'] * 100));
+        if (detailed) assert.equal(orderRows.filter(entry => entry['Sede Movimiento'] === branch)
+          .reduce((sum, entry) => sum + Math.round(entry['Neto Movimiento (S/)'] * 100), 0), Math.round(row['Pagos de pedidos (S/)'] * 100));
       }
     }
     if (detailed) for (const sheet of movementSheets) {
@@ -526,7 +532,7 @@ it('Plan14 previews the authorized scope, prints sanitized A4 and reuses its sna
       if (scenario === 'dos-sedes') {
         assert.match(preview.html, /<td class="bounded">Taller<\/td>/);
         assert.match(preview.html, /Efectivo contado<\/dt> <dd>No declarado/);
-        assert.match(preview.html, /Turno vencido sin arqueo/);
+        assert.match(preview.html, /Turno vencido sin conteo/);
         assert.match(preview.html, /Luis Quispe/);
       }
       const reads = await ev(() => window.__excelFixture.reads);
@@ -616,7 +622,7 @@ it('P27 downloads a compact XLSX with borders only on data, nine tickets, two br
     assert.equal(product.A1.s.fgColor.rgb, 'FCE4D6');
     assert.match(product['!autofilter'].ref, /^A1:C\d+$/);
     assert.deepEqual(['Productos_Sedes', 'Comparativa_Sedes', 'Auditoría_Cajas', 'Estado_Pedidos', 'Auditoría_Pedidos']
-      .map(sheet => book.Sheets[sheet].A1.v), ['Producto', 'Sede', 'Fecha', 'Pedido', 'Fecha Pago']);
+      .map(sheet => book.Sheets[sheet].A1.v), ['Sucursal', 'Sede', 'Fecha', 'Pedido', 'Fecha Pago']);
     assert.deepEqual(tableRows(XLSX, book, 'Auditoría_Pedidos').map(row => row['Neto Movimiento (S/)']), [11, -11]);
     const detail = book.Sheets.Detalle_Taller;
     assert.equal(detail.C2.v, 'T-2101');
@@ -642,13 +648,15 @@ it('P27 downloads a compact XLSX with borders only on data, nine tickets, two br
     assert.equal(book.Sheets.Comparativa_Sedes.E5.v, 225);
     const bySite = book.Sheets.Productos_Sedes;
     assert.equal(bySite['!autofilter'], undefined);
+    assert.equal(bySite.B1.v, 'Producto');
+    assert.equal(bySite['!rows'][4].hpt, 13);
     assert.deepEqual(tableRows(XLSX, book, 'Productos_Sedes').map(row => row.Sucursal).filter(Boolean), ['Centro', 'Taller']);
     assert.deepEqual([bySite.A5, bySite.B5], [undefined, undefined], 'One blank separator between branch groups');
     const audit = tableRows(XLSX, book, 'Auditoría_Cajas');
-    for (const [state, expected] of [['Cuadrado', 0], ['Sobrante', 7], ['Faltante', -4], ['Conciliación pendiente', -2]]) {
+    for (const [state, expected] of [['Cuadrado', 0], ['Sobrante', 7], ['Faltante', -4], ['Faltante por revisar', -2]]) {
       assert.equal(audit.find(row => row.Estado === state)['Diferencia (S/)'], expected);
     }
-    for (const state of ['Vencido sin arqueo', 'En curso']) {
+    for (const state of ['Vencido sin conteo', 'Fondo registrado']) {
       const row = audit.find(row => row.Estado === state);
       assert.deepEqual([row['Efectivo contado (S/)'], row['Diferencia (S/)']], ['No declarado', 'No calculable']);
     }
@@ -656,23 +664,30 @@ it('P27 downloads a compact XLSX with borders only on data, nine tickets, two br
   } });
 });
 
-it('P14-RC prints A4 with 0, 1, 6 and 8 cash incidents and keeps the complete Excel audit', { timeout: 180000 }, async () => {
+it('P28 prints classified cash incidents in A4 and keeps the complete Excel audit', { timeout: 180000 }, async () => {
   const output = resolve(artifacts, 'pdf-incidencias');
   await mkdir(output, { recursive: true });
   await runExcelFixture({ async inspectPage(page, { downloads }) {
     const ev = evaluate(page), press = click(page);
     const printA4 = async () => Buffer.from((await page.send('Page.printToPDF', { preferCSSPageSize: true, printBackground: false }, 15000)).data, 'base64');
     const pageCount = pdf => [...pdf.toString('latin1').matchAll(/\/Type\s*\/Page\b/g)].length;
-    for (const count of [0, 1, 6, 8]) {
+    for (const count of [0, 1, 6, 8, 'sample']) {
       if (count) await reload(page, ev, { ignoreCache: true });
-      await ev(count => { window.__excelFixture.reviewCount = count; }, count);
+      await ev(count => { Object.assign(window.__excelFixture, { reviewCount: count, reviewSample: count === 'sample' }); }, count);
+      const incidents = count === 'sample' ? 5 : count;
       assert.equal(await ev(() => window.__excelFixture.reads), 0);
       await press(primary);
       const preview = await previewReady(ev);
-      assert.equal([...preview.html.matchAll(/<article class="review-row /g)].length, Math.min(count, 6));
-      assert.equal(preview.html.includes('Cajas que requieren revisión'), count > 0);
+      assert.equal([...preview.html.matchAll(/<article class="review-row /g)].length, Math.min(incidents, 6));
+      assert.equal(preview.html.includes('Cajas que necesitan revisión'), incidents > 0);
       assert.doesNotMatch(preview.html, /Alertas operativas|Notificaciones/);
       if (count === 8) assert.match(preview.html, /6 incidencias más recientes de 8/);
+      if (count === 'sample') {
+        assert.match(preview.html, /Faltaron S\/ 43\.30/);
+        assert.match(preview.html, /Sobraron S\/ 32\.00 · importe por verificar/);
+        assert.match(preview.html, /Mensaje adjunto: Contar monedas/);
+        assert.match(preview.html, /Confirmado \d{2}\/\d{2}\/\d{4} 19:00/);
+      }
       assert.equal(await ev(() => window.__excelFixture.reads), 4);
       await closePreview(ev);
       await press(primary);
@@ -694,7 +709,7 @@ it('P14-RC prints A4 with 0, 1, 6 and 8 cash incidents and keeps the complete Ex
       assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
       await writeFile(resolve(output, `informe-caja-${count}.pdf`), pdf);
       assert.equal(pageCount(pdf), 1, `PDF con ${count} incidencias`);
-      if (count >= 6) {
+      if (incidents >= 6) {
         // Reserve vertical space for wrapping differences across system fonts.
         await ev(() => {
           const margin = document.createElement('style');

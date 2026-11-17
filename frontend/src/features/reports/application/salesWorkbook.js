@@ -22,7 +22,7 @@ const movementTones = { 'VENTA POS': 'success', 'VENTA POS ANULADA': 'muted',
   'COMPENSACIÓN POS': 'muted', 'REEMBOLSO CONTABLE PEDIDO': 'danger',
   'ADELANTO PEDIDO': 'info', 'ABONO PEDIDO': 'info' };
 const columnOptions = {
-  Fecha: { width: 12, format: 'date', tone: 'info' }, Hora: { width: 10, format: 'time', tone: 'info' },
+  Fecha: { width: 12, format: 'date', tone: 'info' }, Hora: { width: 10, format: row => row?._timeWithSeconds ? 'timeSeconds' : 'time', tone: 'info' },
   Movimiento: { width: 21, tone: (value, row) => row.Estado === 'Anulada' ? 'muted' : movementTones[value] },
   Referencia: { width: 18, tone: 'info' },
   Producto: { width: 33, tone: 'product' }, Cantidad: { width: 10, tone: 'value' }, [productQuantity]: { width: 16, tone: 'value' },
@@ -45,7 +45,7 @@ const columnOptions = {
   'Yape/Plin registrado (S/)': { width: 17, tone: 'digital' }, 'Efectivo contado (S/)': { width: 16, tone: value => typeof value === 'number' ? 'cash' : undefined },
   'Diferencia (S/)': { width: 16, colorNegative: false, format: row => row._verifiedDifference ? 'money' : 'provisionalMoney',
     tone: (value, row) => row._verifiedDifference ? cashStateTone(row.Estado)
-    : typeof value === 'number' ? 'warning' : undefined },
+    : typeof value === 'number' ? value < 0 ? 'danger' : 'warning' : undefined },
   'Diferencia de caja confirmada (S/)': { width: 22, tone: value => value > 0 ? 'warning' : value === 0 ? 'success' : undefined },
   Estado: { width: 22, tone: value => cashStateTone(value) ?? ({ COMPLETADA: 'success', ANULADA: 'muted', 'ANULACIÓN REGISTRADA': 'muted',
     'ANULADA · POR REVISAR': 'muted', REGISTRADO: 'success', ENTREGADO: 'success', CANCELADO: 'danger', PENDIENTE: 'warning', 'ENTREGADO CON SALDO': 'warning' })[String(value).toUpperCase()] },
@@ -127,6 +127,37 @@ function channelFooter(metrics, [title, cashColumn, digitalColumn]) {
     ...CHANNEL_BREAKDOWN_ROWS.map(({ key, label }) => ({ [title]: label, [cashColumn]: metrics.channels.cash[key], [digitalColumn]: metrics.channels.digital[key] }))];
 }
 
+function posFooter(metrics) {
+  return [{ _kind: 'spacer' },
+    { Producto: 'Resumen POS de la sede', 'Precio unitario': 'Efectivo', [ITEM_SUBTOTAL]: 'Yape / Plin', [MOVEMENT_AMOUNT]: 'Total POS', _kind: 'channel-heading' },
+    { Producto: 'Neto POS', 'Precio unitario': metrics.posCash, [ITEM_SUBTOTAL]: metrics.posDigital, [MOVEMENT_AMOUNT]: metrics.posRevenue, _kind: 'business-total' }];
+}
+
+function orderAuditRows(payments) {
+  const groups = new Map();
+  // The ledger is already ordered by the original payment timestamp and ID.
+  for (const row of payments) {
+    const key = row._orderKey[1] ? JSON.stringify(row._orderKey) : Symbol();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  if (payments.length + groups.size - 1 > MAX_EXPORT_ROWS) {
+    throw new Error('Demasiadas filas de auditoría de pedidos al incluir separadores. Selecciona un período menor.');
+  }
+  return [...groups.values()].flatMap((group, index) => [
+    ...(index ? [{ _kind: 'group-spacer' }] : []),
+    ...group.map(row => {
+      const advance = row['Adelanto (S/)'] > 0, refund = row['Reembolso contable (S/)'] < 0;
+      return { 'Fecha Pago': row['Fecha Pago'], 'N.º de pedido': row['N.º de pedido'], Cliente: row.Cliente,
+        Movimiento: refund ? 'REEMBOLSO CONTABLE PEDIDO' : advance ? 'ADELANTO PEDIDO' : 'ABONO PEDIDO',
+        'Medio de pago': refund ? row['Mét. del reembolso contable'] : advance ? row['Mét. Adelanto'] : row['Mét. Abono'],
+        'Neto Movimiento (S/)': row['Neto Movimiento (S/)'], 'Registrado por': row['Registrado por'], Estado: row.Estado,
+        'Total Pedido (referencia)': row['Total Pedido (referencia)'], 'Sede Movimiento': row['Sede Movimiento'],
+        'Sede Origen': row['Sede Origen'], 'Sede Recojo': row['Sede Recojo'] };
+    }),
+  ]);
+}
+
 export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = [], voids = [], contracts = [], sessions = [], branchesMap = {}, people, model: prepared, period,
   businessId, business, branchId = 'global', loadedAt, cashReferenceAsOf, detailed = ['hoy', 'semana'].includes(period.filter), now = new Date() }) {
   const scope = { businessId, branchId, period };
@@ -138,7 +169,7 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
   if (countRows(scopedSales) + countRows(scopedVoids) + scopedPayments.length + scopedContracts.length > MAX_EXPORT_ROWS) {
     throw new Error(`${detailed ? 'Demasiadas filas de detalle' : 'Demasiados movimientos'}. Selecciona un período menor.`);
   }
-  const processed = detailed ? processSales(sales ?? [], scopedPayments, { ...scope, voids }, prepared, people, contracts)
+  const processed = detailed ? processSales(sales ?? [], scopedPayments, { ...scope, voids }, prepared, people)
     : processDailyStats(stats, scopedPayments, { ...scope, voids, sales }, prepared);
   const { model } = processed, view = reportViewModel(model, scopedContracts, { ...scope, sales, payments, voids, loadedAt, cashReferenceAsOf }, sessions, { branchesMap, people });
   const wb = XLSX.utils.book_new();
@@ -158,7 +189,7 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
     hasNegativeChannel: [...model.branches.values()].some(({ channels }) => channels.cash.net < 0 || channels.digital.net < 0),
   }), 'Resumen_Financiero');
   const cashRows = cashAuditRows(view.cashEvents);
-  if (cashRows.length) append('Auditoría_Cajas', cashRows);
+  if (cashRows.length) append('Auditoría_Cajas', cashRows, { filter: false });
   const branchName = id => branchReportName(branchesMap, id);
   const compareBranchNames = (a, b) => branchName(a).localeCompare(branchName(b), 'es') || a.localeCompare(b);
   const ids = [...new Set([...Object.keys(branchesMap), ...model.branches.keys()])].sort(compareBranchNames);
@@ -197,22 +228,22 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
       for (const id of ids) {
         const products = byBranch.get(id);
         if (!products?.length) continue;
-        if (rows.length) rows.push({ _kind: 'spacer' });
+        if (rows.length) rows.push({ _kind: 'group-spacer' });
         products.sort(rank).forEach((row, index) => rows.push({ Producto: row.Producto, Sucursal: index ? '' : branchName(id),
           [productQuantity]: row[productQuantity], [productSales]: row[productSales], ...(index === 0 && { _groupStart: true }) }));
       }
-      append('Productos_Sedes', rows, { filter: false });
+      append('Productos_Sedes', rows, { columns: ['Sucursal', 'Producto', productQuantity, productSales], filter: false });
     }
   }
   const byBranch = detailed ? processed.groupsByBranch : processed.dailyRowsByBranch;
   const branchColumns = detailed ? DETAIL_HEADERS : ['Fecha', ...Object.keys(netReportRow(model.summary))];
-  for (const id of ids.filter(id => branchId === 'global' || Object.hasOwn(byBranch, id))) {
+  for (const id of ids.filter(id => branchId === 'global' || Object.hasOwn(byBranch, id) || (id === branchId && model.branches.has(id)))) {
     const name = branchName(id);
     // Include every separator when measuring the rendered detail instead of omitting rows to fit.
     const records = byBranch[id] ?? [];
     const rows = detailed ? groupedTicketRows(records, Infinity) : records;
     const metrics = model.branches.get(id);
-    const footer = metrics ? channelFooter(metrics, detailed ? ['Producto', 'Precio unitario', ITEM_SUBTOTAL] : [labels.pos, labels.cash, labels.digital]) : [];
+    const footer = metrics ? (detailed ? posFooter(metrics) : channelFooter(metrics, [labels.pos, labels.cash, labels.digital])) : [];
     if (detailed && rows.length + footer.length > MAX_EXPORT_ROWS) {
       throw new Error('Demasiadas filas de detalle al incluir totales y separadores. Selecciona un período menor.');
     }
@@ -229,14 +260,7 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
     'Total del pedido': contract.total, Pagado: contract.paidTotal ?? '', Saldo: contract.balance,
   })), { omit: branchId === 'global' ? [] : ['Sede'] });
   const audit = buildContractLedgerReport(scopedPayments, contracts.filter(row => !businessId || row.businessId === businessId), branchesMap, people);
-  if (audit.contractPaymentRows.length) append('Auditoría_Pedidos', audit.contractPaymentRows.map(row => {
-    const advance = row['Adelanto (S/)'] > 0, refund = row['Reembolso contable (S/)'] < 0;
-    return { 'Fecha Pago': row['Fecha Pago'], 'N.º de pedido': row['N.º de pedido'], Cliente: row.Cliente,
-      Movimiento: refund ? 'REEMBOLSO CONTABLE PEDIDO' : advance ? 'ADELANTO PEDIDO' : 'ABONO PEDIDO',
-      'Medio de pago': refund ? row['Mét. del reembolso contable'] : advance ? row['Mét. Adelanto'] : row['Mét. Abono'],
-      'Neto Movimiento (S/)': row['Neto Movimiento (S/)'], 'Registrado por': row['Registrado por'], Estado: row.Estado,
-      'Total Pedido (referencia)': row['Total Pedido (referencia)'], 'Sede Movimiento': row['Sede Movimiento'],
-      'Sede Origen': row['Sede Origen'], 'Sede Recojo': row['Sede Recojo'] };
-  }), { omit: branchId === 'global' ? [] : ['Sede Movimiento'] });
+  if (audit.contractPaymentRows.length) append('Auditoría_Pedidos', orderAuditRows(audit.contractPaymentRows),
+    { omit: branchId === 'global' ? [] : ['Sede Movimiento'], filter: false });
   return { workbook: wb, model, view };
 }

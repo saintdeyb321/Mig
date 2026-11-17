@@ -51,7 +51,7 @@ function DialogSurface({ open = true, onOpenChange, onClose, title, description,
 }
 export function Dialog(props) { return <DialogSurface {...props} />; }
 export function Drawer(props) { return <DialogSurface {...props} drawer />; }
-export function ConfirmDialog({ onConfirm, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', children, busy, ...props }) {
+export function ConfirmDialog({ onConfirm, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', confirmVariant = 'danger', footerClassName, children, busy, ...props }) {
   const inFlight = useRef(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -68,8 +68,8 @@ export function ConfirmDialog({ onConfirm, confirmLabel = 'Confirmar', cancelLab
   };
   return <DialogSurface {...props} busy={occupied} alert>{children}
     {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-    {onConfirm && <DialogFooter>
+    {onConfirm && <DialogFooter className={footerClassName}>
     <AlertPrimitive.Cancel asChild><Button variant="secondary" disabled={occupied}>{cancelLabel}</Button></AlertPrimitive.Cancel>
-    <AlertPrimitive.Action asChild><Button variant="danger" loading={occupied} onClick={confirm}>{confirmLabel}</Button></AlertPrimitive.Action>
+    <AlertPrimitive.Action asChild><Button variant={confirmVariant} loading={occupied} onClick={confirm}>{confirmLabel}</Button></AlertPrimitive.Action>
   </DialogFooter>}</DialogSurface>;
 }

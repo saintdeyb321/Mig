@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { getPaymentsByContract } from '../../../features/payments/infrastructure/paymentRepository';
 import { contractImageList, contractImageScope } from '../../../features/contracts/infrastructure/contractImages';
 import { useContractImageUrls } from '../../../features/contracts/hooks/useContractImageUrls';
+import { orderReportNumber } from '../../../features/reports/application/reportNames.js';
 const formatFirebaseDate = (timestamp, includeTime = false) => {
   if (!timestamp) return 'Sin fecha';
   const date = toDateSafe(timestamp);
@@ -324,7 +325,15 @@ const ContractDetailsModal = ({
 
           </div>
         </Dialog>
-    {confirmDelivery && <ConfirmDialog title="Confirmar entrega del pedido" description="Confirma que el pedido fue entregado. Los saldos y cobros se conservan según el flujo actual." busy={isProcessing} onClose={() => setConfirmDelivery(false)} onConfirm={markAsDelivered} confirmLabel="Marcar entregado" />}
+    {confirmDelivery && <ConfirmDialog title="¿Confirmar entrega?" description="Confirma solo cuando ya entregaste el pedido."
+      className="max-w-sm" footerClassName="mt-0 grid grid-cols-1 xs:grid-cols-2 sm:mx-0 sm:flex sm:justify-center sm:px-0"
+      busy={isProcessing} onClose={() => setConfirmDelivery(false)} onConfirm={markAsDelivered} confirmLabel="Confirmar entrega" confirmVariant="success">
+      <div className="grid gap-2 text-center text-sm">
+        <p className="font-semibold">{orderReportNumber(contract)}</p>
+        {contract.balance > 0 ? <p className="rounded-lg bg-warning-soft p-2 text-warning">Saldo pendiente S/ {contract.balance.toFixed(2)}. Esta acción no registra un cobro.</p>
+          : <p className="text-muted">Quedará marcado como entregado.</p>}
+      </div>
+    </ConfirmDialog>}
     {selectedImageIndex !== null && <ContractPhotoViewer images={allImages} index={selectedImageIndex} onClose={closeLightbox} onPrevious={prevImage} onNext={nextImage} busy={isProcessing} />}</>;
 };
 export default ContractDetailsModal;

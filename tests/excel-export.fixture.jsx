@@ -106,12 +106,20 @@ const readData = async (kind, day, branchId, businessId = user.businessId) => {
     ? [{ ...base, id: yape.id, saleId: yape.id, userId: user.uid, authority: 'pos-compensation', amount: -30,
       cashAmount: 0, digitalAmount: fixture.fault === 'integrity' ? -29 : -30, items: yape.items, occurredAt: at(day, '12'), reason: 'Motivo de ensayo' }] : [];
   if (fixture.negative) return [];
+  if (fixture.reviewSample) return [3, 32, -43.30, -25.30, 0, 0, 0, null].map((difference, index) => {
+    const session = { ...base, id: `sample-review-${index}`, openedAt: at(day, '08'), openingAmount: 100 };
+    if (difference === null) return { ...session, status: 'expired_unreconciled', expiredAt: at(day, '18'), recoveredAt: at(day, '19'), recoveredBy };
+    return { ...session, status: 'closed', closedAt: at(day, String(10 + index)), closedBy: unknown,
+      expectedCash: 100, declaredAmount: 100 + difference, difference, reconciliationPending: [1, 3, 5].includes(index),
+      closingNote: index === 3 ? 'Contar monedas' : undefined };
+  });
   if (Number.isInteger(fixture.reviewCount)) return Array.from({ length: fixture.reviewCount }, (_, index) => {
     const openedAt = at(day, '08'), endedAt = at(day, String(12 + index).padStart(2, '0'));
     const session = { ...base, id: 'review-' + index, openedAt, openingAmount: 100 };
     if (index === 3) return { ...session, status: 'expired_unreconciled', expiredAt: endedAt, recoveredBy };
-    return { ...session, status: 'closed', closedAt: endedAt, closedBy: unknown, declaredAmount: index === 2 ? null : index ? 100 : 196,
-      reconciliationPending: index < 2, difference: index === 4 ? 2 : index === 5 ? -2 : null };
+    const difference = index % 2 ? index + 1 : -(index + 1);
+    return { ...session, status: 'closed', closedAt: endedAt, closedBy: unknown, expectedCash: 100,
+      declaredAmount: index === 2 ? null : 100 + difference, reconciliationPending: index === 1, difference: index === 2 ? null : difference };
   });
   const cash = [{ ...base, id: 'cash-session', openingAmount: 100, declaredAmount: 128, status: 'closed', reconciliationPending: true, closedBy: unknown,
     openedAt: at(day, '08'), closedAt: at(day, '13') }];

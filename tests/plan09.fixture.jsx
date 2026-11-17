@@ -123,8 +123,8 @@ function SpecializedModal({ kind, user }) {
   const [open, setOpen] = useState(true), [busy, setBusy] = useState(false);
   const [cashOpen, setCashOpen] = useState(kind === 'cash-open'), [cashClose, setCashClose] = useState(kind === 'cash-close');
   model.specialized = { setBusy };
-  const close = () => setOpen(false), current = { ...contract, sparkContractVersion: 1, contractId: 'P09-' + 'IDENTIFICADOR'.repeat(9) };
-  const props = { contract: current, user, onClose: close, isProcessing: busy, onConfirm: forbidden, onAddPayment: forbidden, onEditRequest: forbidden, onCancelRequest: forbidden, onMarkDelivered: forbidden };
+  const close = () => setOpen(false), current = { ...contract, sparkContractVersion: 1, contractId: 'P09-' + 'IDENTIFICADOR'.repeat(9), ...model.deliveryContract };
+  const props = { contract: current, user, onClose: close, isProcessing: busy, onConfirm: forbidden, onAddPayment: model.detailPayment ?? forbidden, onEditRequest: forbidden, onCancelRequest: forbidden, onMarkDelivered: model.deliver ?? forbidden };
   return <><Button onClick={() => setOpen(true)}>Abrir modal especializado</Button>{open && (kind === 'details' ? <ContractDetailsModal {...props} />
     : kind === 'cancel' ? <ContractCancelModal {...props} />
     : kind === 'photo' ? <ContractPhotoViewer images={['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6F8kAAAAASUVORK5CYII=']} index={0} busy={busy} onClose={close} />

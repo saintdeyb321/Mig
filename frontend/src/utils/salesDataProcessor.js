@@ -1,8 +1,8 @@
-import { aggregateReport, amount, assertPosReportDetail, reportRows } from '../features/reports/domain/reportTotals.js';
-import { reportDay, visibleDay, reportTime } from '../features/reports/domain/reportPeriod.js';
-import { ledgerPaymentLabel, paymentLabel, uniqueReportPayments } from '../features/reports/application/contractLedgerReport.js';
+import { aggregateReport, amount, assertPosReportDetail } from '../features/reports/domain/reportTotals.js';
+import { visibleDay, reportTime } from '../features/reports/domain/reportPeriod.js';
+import { paymentLabel } from '../features/reports/application/contractLedgerReport.js';
 import { toMillisSafe } from '../core/dates/dateValues.js';
-import { employeeReportName, orderReportNumber, reportLabel, reportNote } from '../features/reports/application/reportNames.js';
+import { employeeReportName, reportLabel, reportNote } from '../features/reports/application/reportNames.js';
 import { excelDay } from './excelHelpers.js';
 
 export const MOVEMENT_AMOUNT = 'Importe neto movimiento (S/)';
@@ -10,7 +10,6 @@ export const ITEM_SUBTOTAL = 'Subtotal (S/)';
 export const DETAIL_HEADERS = ['Fecha', 'Hora', 'Referencia', 'Estado', 'Medio de pago', 'Producto', 'Cantidad', 'Precio unitario',
   ITEM_SUBTOTAL, MOVEMENT_AMOUNT, 'Responsable', 'Movimiento', 'Observaciones'];
 const detail = values => Object.fromEntries(DETAIL_HEADERS.map(key => [key, values[key] ?? '']));
-const orderMovements = { advance: 'ADELANTO PEDIDO', payment: 'ABONO PEDIDO', refund: 'REEMBOLSO CONTABLE PEDIDO' };
 export const NET_REPORT_COLUMNS = {
   tickets: 'Tickets', voids: 'Anulados', payments: 'Pagos de pedidos (cantidad)',
   total: 'Ingreso neto (S/)', cash: 'Efectivo (S/)', digital: 'Yape / Plin (S/)',
@@ -31,9 +30,8 @@ export function processDailyStats(stats, payments = [], scope = {}, prepared) {
   const model = prepared ?? aggregateReport({ stats, payments, ...scope });
   return { model, dailyRowsByBranch: dailyReportRows(model) };
 }
-export function processSales(sales, payments = [], scope = {}, prepared, people, contracts = []) {
+export function processSales(sales, payments = [], scope = {}, prepared, people) {
   const model = prepared ?? aggregateReport({ sales, payments, ...scope });
-  const orders = new Map(contracts.filter(order => !scope.businessId || order.businessId === scope.businessId).map(order => [order.id, order]));
   const groups = [];
   const adjusted = new Set(model.pos.voids.map(({ row }) => row.saleId));
   for (const { row: sale, day } of model.pos.sales) {
@@ -61,19 +59,6 @@ export function processSales(sales, payments = [], scope = {}, prepared, people,
       Observaciones: [reportNote(row.reason, row.userId, row.saleId, row.id), 'Compensación contable sin evidencia de desembolso.'].filter(Boolean).join(' · '),
       Responsable: employeeReportName(people, row.userId, row.actorName, row.cashierName) });
     groups.push({ branchId: row.branchId, timestamp: toMillisSafe(row.occurredAt), id: `void:${row.id}`, movement, items: row.items, sign: -1 });
-  }
-  for (const payment of uniqueReportPayments(reportRows(payments, scope))) {
-    const order = orders.get(payment.sourceId);
-    const refund = payment.type === 'refund';
-    const client = reportLabel(order?.clientName ?? payment.clientName, 'Cliente sin nombre', payment.sourceId);
-    const movement = detail({ Fecha: excelDay(reportDay(payment.occurredAt)), Hora: reportTime(payment.occurredAt),
-      Referencia: orderReportNumber(order, payment), Movimiento: orderMovements[payment.type],
-      'Medio de pago': ledgerPaymentLabel(payment),
-      [MOVEMENT_AMOUNT]: amount(payment.amount),
-      Estado: refund ? 'Ajuste contable' : 'Registrado',
-      Observaciones: refund ? `${client} · Registro contable sin evidencia de desembolso.` : client,
-      Responsable: employeeReportName(people, payment.userId, payment.cashierName, payment.actorName) });
-    groups.push({ branchId: payment.branchId, timestamp: toMillisSafe(payment.occurredAt), id: payment.id, movement });
   }
   groups.sort((a, b) => a.timestamp - b.timestamp || String(a.id).localeCompare(String(b.id)));
   const groupsByBranch = Object.create(null);

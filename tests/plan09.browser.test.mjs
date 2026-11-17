@@ -21,10 +21,155 @@ const moduleMocks = { ...mockHooks,
   [path('features/contracts/hooks/useContractImageUrls.js')]: 'export function useContractImageUrls(){return {urls:[],isLoading:false,error:null};}',
   [path('features/payments/infrastructure/paymentRepository.js')]: 'export const getPaymentsByContract=async()=>window.__p09.ledger;',
   [path('features/licenses/infrastructure/platformBusinessRepository.js')]: 'export const readPlatformBusiness=async()=>window.__p09.platformDetail;',
-  [path('features/sales/infrastructure/saleTransactions.js')]: `export const saveSaleTransaction=()=>window.__p09.forbidden();
+  [path('features/sales/infrastructure/saleTransactions.js')]: `export const saveSaleTransaction=(sale)=>(window.__p09.measureSale ?? window.__p09.forbidden)(sale);
     export const saveSaleDraftTransaction=()=>window.__p09.forbidden();export const verifyPendingSaleTransaction=async()=>{};
     export const subscribeSaleAcknowledgement=()=>()=>{};export const reviewDraftSaleTransaction=()=>window.__p09.forbidden();export const confirmDraftSaleTransaction=()=>window.__p09.forbidden();`,
 };
+
+it('P28 confirms delivery with both balance states, preserves focus and prevents duplicate submissions', { timeout: 60000 }, async context => {
+  await runBrowserFixture({ htmlFile: new URL('./plan09.browser.html', import.meta.url), route: '/p28-delivery',
+    fixture: { css: await readBrowserBuildCss() }, moduleMocks,
+    setupPage: page => page.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*', requestStage: 'Request' }] }),
+    async inspectPage(page) {
+      const evaluate = async (fn, ...args) => {
+        const result = await page.send('Runtime.evaluate', { expression: `(${fn})(...${JSON.stringify(args)})`, awaitPromise: true, returnByValue: true });
+        assert.ok(!result.exceptionDetails, result.exceptionDetails?.exception?.description);
+        return result.result.value;
+      };
+      for (const [balance, width, height] of [[18.75, 375, 667], [0, 1440, 900]]) {
+        await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 768 });
+        const opened = await evaluate(async (balance) => {
+          const model = window.__p09;
+          model.deliveryContract = { contractNumber: 'PED-QA-28', balance };
+          model.deliveryCalls = [];
+          model.deliver = order => { model.deliveryCalls.push(order.contractNumber); return new Promise(resolve => { model.resolveDelivery = resolve; }); };
+          await model.show('details');
+          const trigger = [...document.querySelectorAll('[role="dialog"] button')].find(button => button.textContent.includes('Marcar Entregado'));
+          trigger.focus();
+          trigger.click();
+          await model.frames();
+          const panel = document.querySelector('[role="alertdialog"]');
+          const bounds = panel.getBoundingClientRect();
+          const buttons = [...panel.querySelectorAll('button')].filter(button => ['Cancelar', 'Confirmar entrega'].includes(button.textContent.trim()));
+          const footer = buttons[0].parentElement.getBoundingClientRect();
+          return { text: panel.innerText, focus: panel.contains(document.activeElement), success: buttons[1].classList.contains('bg-success'), red: buttons[1].classList.contains('bg-danger'),
+            buttons: buttons.length, height: bounds.height, fits: bounds.top >= 0 && bounds.bottom <= innerHeight && footer.bottom <= bounds.bottom };
+        }, balance);
+        assert.match(opened.text, /¿Confirmar entrega\?/);
+        assert.match(opened.text, /PED-QA-28/);
+        assert.match(opened.text, /Confirma solo cuando ya entregaste el pedido/);
+        assert.match(opened.text, balance > 0 ? /Saldo pendiente S\/ 18\.75\. Esta acción no registra un cobro/ : /Quedará marcado como entregado/);
+        assert.ok(opened.fits && opened.focus && opened.height < 400 && opened.success && !opened.red && opened.buttons === 2, JSON.stringify(opened));
+        const timing = await evaluate(async () => {
+          const model = window.__p09, panel = document.querySelector('[role="alertdialog"]');
+          const action = [...panel.querySelectorAll('button')].find(button => button.textContent === 'Confirmar entrega');
+          const cancel = [...panel.querySelectorAll('button')].find(button => button.textContent === 'Cancelar');
+          const start = performance.now();
+          const busy = new Promise(resolve => {
+            const observer = new MutationObserver(() => {
+              if (action.getAttribute('aria-busy') === 'true') { observer.disconnect(); resolve(performance.now() - start); }
+            });
+            observer.observe(action, { attributes: true, attributeFilter: ['aria-busy'] });
+          });
+          action.click();
+          action.click();
+          return { busyMs: await busy, cancelLocked: cancel.disabled, calls: model.deliveryCalls };
+        });
+        assert.deepEqual(timing.calls, ['PED-QA-28']);
+        assert.ok(timing.cancelLocked);
+        await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+        assert.ok(await evaluate(() => Boolean(document.querySelector('[role="alertdialog"]'))));
+        const acknowledgeMs = await evaluate(async () => {
+          const start = performance.now();
+          const closed = new Promise(resolve => {
+            const observer = new MutationObserver(() => {
+              if (!document.querySelector('[role="alertdialog"]')) { observer.disconnect(); resolve(performance.now() - start); }
+            });
+            observer.observe(document.body, { subtree: true, childList: true });
+          });
+          window.__p09.resolveDelivery(true);
+          return closed;
+        });
+        context.diagnostic(`P28 delivery fixture ${width}×${height}: click→busy ${timing.busyMs.toFixed(1)} ms, ack→dialog closed ${acknowledgeMs.toFixed(1)} ms`);
+      }
+      const actions = await evaluate(async () => {
+        const model = window.__p09;
+        const click = label => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.textContent.trim() === label).click();
+        const enterAmount = async value => {
+          const input = document.querySelector('[role="dialog"] input[type="number"]');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          await model.frames();
+          return input;
+        };
+        let started, paymentMs, closingMs, amounts = [];
+        model.deliveryContract = { balance: 18.75 };
+        model.detailPayment = async (_id, amount) => { paymentMs = performance.now() - started; amounts.push(amount); return true; };
+        await model.show('details');
+        const paymentInput = await enterAmount('10.00');
+        started = performance.now();
+        click('Confirmar Abono');
+        await model.frames();
+        const paymentCleared = paymentInput.value === '';
+        model.calculateClose = async declaredAmount => ({ openingAmount: 100, posCash: 0, contractCash: 0,
+          expectedAmount: 100, declaredAmount, difference: 0 });
+        model.confirmClose = async summary => { closingMs = performance.now() - started; amounts.push(summary.declaredAmount); return true; };
+        await model.show('cash-close');
+        await enterAmount('100.00');
+        click('Siguiente');
+        await model.frames();
+        started = performance.now();
+        click('Cerrar turno');
+        await model.frames();
+        return { paymentMs, closingMs, amounts, paymentCleared, closed: !document.querySelector('[role="dialog"]') };
+      });
+      assert.deepEqual(actions.amounts, [10, 100]);
+      assert.ok(actions.paymentCleared && actions.closed);
+      context.diagnostic(`P28 mock callback after click: payment ${actions.paymentMs.toFixed(1)} ms, cash close ${actions.closingMs.toFixed(1)} ms`);
+      const pos = await evaluate(async () => {
+        const model = window.__p09;
+        model.measureSale = sale => new Promise(resolve => {
+          model.ackSale = () => resolve({ success: true, isOffline: false, financialState: 'confirmed', receiptState: 'verified',
+            sale: { ...sale, id: sale.localId, saleId: sale.localId } });
+        });
+        await model.show('pos');
+        document.querySelector('button[title="Producto de prueba 0"]').click();
+        await model.frames();
+        const input = document.querySelector('aside[aria-label="Ticket"] input[inputmode="decimal"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '5');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await model.frames();
+        const action = document.querySelector('[data-pos-charge]');
+        if (action.disabled) throw Error('The local POS fixture needs a valid payment');
+        const started = performance.now();
+        const until = predicate => new Promise(resolve => {
+          const observer = new MutationObserver(() => {
+            if (predicate()) { observer.disconnect(); resolve(performance.now()); }
+          });
+          observer.observe(document.body, { subtree: true, childList: true, attributes: true });
+        });
+        const spinner = until(() => action.getAttribute('aria-busy') === 'true');
+        action.click();
+        const busyMs = await spinner - started;
+        const hasTicket = () => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === 'Imprimir ticket');
+        const premature = hasTicket();
+        const ready = until(hasTicket), acknowledged = performance.now();
+        model.ackSale();
+        return { busyMs, acknowledgeMs: await ready - acknowledged, premature };
+      });
+      assert.equal(pos.premature, false);
+      context.diagnostic(`P28 POS fixture: click→busy ${pos.busyMs.toFixed(1)} ms, simulated receipt→print action ${pos.acknowledgeMs.toFixed(1)} ms`);
+      assert.ok(await evaluate(async () => {
+        const model = window.__p09;
+        await model.show('dialogs');
+        model.dialog.setNested(true);
+        await model.frames();
+        return [...document.querySelectorAll('[role="alertdialog"] button')]
+          .find(button => button.textContent === 'Confirmar').classList.contains('bg-danger');
+      }));
+    },
+  });
+});
 
 it('P14-RC compares the shared palette in actual modules and keeps checkout and keyboard focus visible', { timeout: 180000 }, async () => {
   const css = await readBrowserBuildCss();

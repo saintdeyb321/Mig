@@ -1,7 +1,8 @@
-import { CASH_EXPIRY_LABEL } from '../../cash-register/domain/cashExpiry.js';
 import { escapeHtml as text } from '../../../shared/security/html.js';
 import { reportDay, reportTime, visibleDay } from '../domain/reportPeriod.js';
 import { CHANNEL_BREAKDOWN_ROWS } from '../domain/reportTotals.js';
+import { cashClosingTimes, classifyCashEvent } from './cashAuditRows.js';
+import { UNKNOWN_EMPLOYEE } from './reportNames.js';
 
 const money = value => `S/ ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const dateTime = date => `${visibleDay(reportDay(date))} ${reportTime(date)}`;
@@ -13,30 +14,26 @@ const table = (headers, rows) => `<div class="table-wrap"><table><thead><tr>${he
 export function cashReviewPresentation(events) {
   const incidents = [];
   for (const event of events) {
-    if (!['expiry', 'closing'].includes(event.kind)) continue;
-    const declared = event.kind === 'closing' && Number.isFinite(event.counted);
-    const difference = declared && !event.estimated && Number.isFinite(event.difference) ? event.difference : null;
-    let title, explanation, severity = 'warning';
-    if (event.kind === 'expiry') {
-      title = event.duration ? CASH_EXPIRY_LABEL : 'Turno vencido sin arqueo';
-      explanation = `Diferencia no calculable.${event.finalizedAt ? ` Finalización confirmada ${dateTime(event.finalizedAt)}.` : event.materialized ? ' Hora de confirmación no verificada.' : ' Finalización pendiente en Firestore.'}`;
-    } else if (event.estimated) {
-      title = 'Cierre pendiente de conciliación';
-      explanation = 'La referencia de caja es provisional. Coteja el cierre con los comprobantes.';
-    } else if (difference === null) {
-      title = 'Cierre sin diferencia calculable';
-      explanation = 'Revisa los importes pendientes del cierre.';
-    } else if (difference !== 0) {
-      severity = difference < 0 ? 'danger' : 'warning';
-      title = difference < 0 ? 'Faltante registrado' : 'Sobrante registrado';
-      explanation = 'Coteja la diferencia registrada con el conteo y los comprobantes.';
-    } else continue;
-    incidents.push({ title, explanation, severity, branch: event.branch, occurredAt: event.date,
-      responsible: event.cashier, recordedBy: (event.kind !== 'expiry' || event.finalizedAt) && event.actor !== event.cashier ? event.actor : null, opening: event.kind === 'expiry' ? event.opening : null, expiry: event.kind === 'expiry', reference: event.reference, digital: event.digital,
-      moneyLabel: declared ? 'Efectivo declarado' : 'Efectivo contado', moneyValueText: declared ? money(event.counted) : 'No declarado', difference });
+    const { state, incident } = classifyCashEvent(event);
+    if (incident) incidents.push({ event, state, incident });
   }
-  incidents.sort((a, b) => b.occurredAt - a.occurredAt);
-  return { totalCount: incidents.length, visible: incidents.slice(0, 6) };
+  incidents.sort((a, b) => b.event.date - a.event.date);
+  const recent = incidents.slice(0, 6);
+  const clock = cashClosingTimes(recent.map(row => row.event));
+  const visible = recent.map(({ event, state, incident }) => {
+    const { time, reference } = clock(event);
+    const hasDifference = incident === 'short' || incident === 'extra';
+    const expiry = incident === 'expiry';
+    const title = hasDifference ? `${incident === 'short' ? 'Faltaron' : 'Sobraron'} ${money(Math.abs(event.difference))}`
+      : expiry ? 'Turno vencido sin conteo' : state;
+    return { title, severity: incident === 'short' ? 'danger' : 'warning', branch: event.branch, occurredAt: event.date,
+      day: visibleDay(reportDay(event.date)), time, sessionReference: reference, expiry, finalizedAt: event.finalizedAt,
+      recordedBy: expiry && event.finalizedAt && event.actor !== event.cashier && event.actor !== UNKNOWN_EMPLOYEE ? event.actor : null,
+      responsible: event.cashier, opening: expiry ? event.opening : null, reference: event.reference, digital: event.digital,
+      moneyValueText: Number.isFinite(event.counted) ? money(event.counted) : 'No declarado', note: event.note,
+      estimated: hasDifference && event.estimated, difference: hasDifference ? event.difference : null };
+  });
+  return { totalCount: incidents.length, visible };
 }
 
 function signedBars(rows) {
@@ -148,16 +145,15 @@ export function managementReportHtml(view, { period, business, branch, operator,
     ${view.orderCount ? `<section class="section"><h2>Pedidos del período</h2><div class="cards">${counts.map(([label, value]) =>
       `<div class="pill">${text(label)}<strong>${value}</strong></div>`).join('')}</div></section>` : ''}
     ${cashReview.visible.length ? `<section class="section cash-review" aria-labelledby="cash-review-title">
-      <div class="cash-review-intro"><h2 id="cash-review-title"><span class="cash-review-mark" aria-hidden="true">!</span>Cajas que requieren revisión</h2>
-      <p class="muted">Incidencias de turnos de caja. Compara el efectivo declarado con tus comprobantes.</p></div>
-      ${cashReview.visible.map(row => `<article class="review-row ${row.severity}"><div class="review-heading"><h3>${text(row.title)}</h3>
-        <p class="review-context">${text(row.branch)} · ${text(dateTime(row.occurredAt))} · Responsable: ${text(row.responsible)}${row.recordedBy ? ` · Registró: ${text(row.recordedBy)}` : ''}</p></div>
-        <dl class="review-amounts"><div><dt>${text(row.moneyLabel)}</dt> <dd>${text(row.moneyValueText)}</dd></div>
+      <div class="cash-review-intro"><h2 id="cash-review-title"><span class="cash-review-mark" aria-hidden="true">!</span>Cajas que necesitan revisión</h2>
+      ${cashReview.visible.some(row => row.estimated) ? '<p class="muted">Los importes provisionales necesitan comprobación.</p>' : ''}</div>
+      ${cashReview.visible.map(row => `<article class="review-row ${row.severity}"><div class="review-heading"><h3>${text(row.title)}${row.estimated ? ' · importe por verificar' : ''}</h3>
+        <p class="review-context">${text(row.branch)} · ${row.expiry ? 'Venció ' : ''}${text(row.day)} ${text(row.time)} (Lima) · Cajero: ${text(row.responsible)}${row.sessionReference ? ` · Ref. ${text(row.sessionReference)}` : ''}${row.finalizedAt ? ` · Confirmado ${text(dateTime(row.finalizedAt))}${row.recordedBy ? ` por ${text(row.recordedBy)}` : ''}` : ''}</p></div>
+        <dl class="review-amounts"><div><dt>Efectivo contado</dt> <dd>${text(row.moneyValueText)}</dd></div>
         ${Number.isFinite(row.opening) ? `<div><dt>Fondo inicial</dt> <dd>${text(money(row.opening))}</dd></div>` : ''}
-        ${row.expiry ? (Number.isFinite(row.reference) ? `<div><dt>Efectivo esperado · referencia</dt> <dd>${text(money(row.reference))}</dd></div>
-          <div><dt>Yape/Plin registrado</dt> <dd>${text(money(row.digital))}</dd></div>` : '<div>Referencia pendiente de verificar</div>') : ''}
-        ${row.difference === null ? '' : `<div><dt>Diferencia registrada</dt> <dd>${text(money(row.difference))}</dd></div>`}</dl>
-        <p class="review-action">${text(row.explanation)}</p></article>`).join('')}
+        ${Number.isFinite(row.reference) ? `<div><dt>Efectivo esperado</dt> <dd>${text(money(row.reference))}</dd></div>` : ''}
+        ${Number.isFinite(row.digital) ? `<div><dt>Yape/Plin registrado</dt> <dd>${text(money(row.digital))}</dd></div>` : ''}</dl>
+        ${row.note ? `<p class="review-action">Mensaje adjunto: ${text(row.note)}</p>` : ''}</article>`).join('')}
       ${cashReview.totalCount > cashReview.visible.length ? `<p class="muted">Se muestran las 6 incidencias más recientes de ${cashReview.totalCount} detectadas en el período.</p>` : ''}
     </section>` : ''}
     ${summary.refundCount ? '<p class="muted section">Los ajustes contables no acreditan una devolución de dinero.</p>' : ''}

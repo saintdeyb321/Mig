@@ -38,17 +38,20 @@ export const cashStateTone = state => ({
   'Pendiente de arqueo': 'warning', 'Conciliación pendiente': 'warning', 'Pendiente de revisión': 'warning',
   Sobrante: 'warning', Faltante: 'danger', Cuadrado: 'success',
   'Vencido sin arqueo': 'warning', 'Fondo registrado': 'info', 'En curso': 'info',
+  'Vencido sin conteo': 'warning', 'Faltan datos para revisar el cierre': 'warning',
+  'Sin diferencia registrada · por verificar': 'warning', 'Faltante por revisar': 'danger', 'Sobrante por revisar': 'warning',
 })[state];
 export const paymentTone = value => String(value).startsWith('MIXTO') ? 'mixed'
   : String(value).startsWith('EFECTIVO') ? 'cash' : ['YAPE', 'PLIN'].includes(value) ? 'digital' : undefined;
 const formats = { money: '"S/" #,##0.00;[Red]-"S/" #,##0.00', provisionalMoney: '"S/" #,##0.00;-"S/" #,##0.00',
-  count: '0', date: 'dd/mm/yyyy', time: 'hh:mm', datetime: 'dd/mm/yyyy hh:mm' };
+  count: '0', date: 'dd/mm/yyyy', time: 'hh:mm', timeSeconds: 'hh:mm:ss', datetime: 'dd/mm/yyyy hh:mm' };
 const excelValue = (value, format) => {
-  if (typeof value !== 'string' || !value || !['date', 'time', 'datetime'].includes(format)) return value;
-  const [date, time = '00:00'] = format === 'time' ? ['', value] : value.split(' ');
+  if (typeof value !== 'string' || !value || !['date', 'time', 'timeSeconds', 'datetime'].includes(format)) return value;
+  const timeOnly = format === 'time' || format === 'timeSeconds';
+  const [date, time = '00:00'] = timeOnly ? ['', value] : value.split(' ');
   const [day, month, year] = date.split('/');
-  const [hour, minute] = time.split(':').map(Number);
-  const serial = (format === 'time' ? 0 : excelDay(`${year}-${month}-${day}`)) + (hour * 60 + minute) / 1440;
+  const [hour, minute, second = 0] = time.split(':').map(Number);
+  const serial = (timeOnly ? 0 : excelDay(`${year}-${month}-${day}`)) + (hour * 3600 + minute * 60 + second) / 86400;
   if (!Number.isFinite(serial)) throw new Error('Fecha u hora de exportación inválida.');
   return serial;
 };
@@ -96,7 +99,7 @@ export function createSheet(XLSX, rows, columns = {}, { filter = true, footer = 
   sheet['!cols'] = entries.map(([, column]) => ({ wch: column.width ?? 24 }));
   const range = r => XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r, c: entries.length - 1 } });
   sheet['!ref'] = range(data.length);
-  sheet['!rows'] = [{ hpt: 25 }, ...sourceRows.map(({ _kind }) => ({ hpt: _kind === 'spacer' ? 9 : _kind?.endsWith('-total') ? 22 : 21 }))];
+  sheet['!rows'] = [{ hpt: 25 }, ...sourceRows.map(({ _kind }) => ({ hpt: _kind === 'group-spacer' ? 13 : _kind === 'spacer' ? 9 : _kind?.endsWith('-total') ? 22 : 21 }))];
   if (filter && rows.length) sheet['!autofilter'] = { ref: range(rows.length) };
   sheet['!freeze'] = { ySplit: 1, topLeftCell: 'A2' };
   entries.forEach(([name, column], col) => {
@@ -109,7 +112,7 @@ export function createSheet(XLSX, rows, columns = {}, { filter = true, footer = 
       const negative = cell.t === 'n' && cell.v < 0 && ['money', 'count'].includes(format) && column.colorNegative !== false;
       cell.s = { ...style(negative ? 'danger' : rowTones[source._kind] ?? tone, { bold: source._groupStart && name === 'Sucursal' }),
         alignment: { vertical: 'center', horizontal: cell.t === 'n' && ['money', 'provisionalMoney', 'count'].includes(format) ? 'right'
-          : ['date', 'time', 'datetime'].includes(format) ? 'center' : 'left', wrapText: true } };
+          : ['date', 'time', 'timeSeconds', 'datetime'].includes(format) ? 'center' : 'left', wrapText: true } };
       if (cell.t === 'n' && formats[format]) cell.z = formats[format];
       if (cell.t === 's') {
         // User text stays literal even when it begins with =, +, - or @.

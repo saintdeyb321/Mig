@@ -37,7 +37,8 @@ export function buildContractLedgerReport(payments, contracts = [], branchesMap 
       'Sede Movimiento': branchReportName(branchesMap, payment.branchId),
       'Registrado por': employeeReportName(people, payment.userId, payment.cashierName, payment.actorName),
       'Neto Movimiento (S/)': amount(payment.amount),
-      'Mét. del reembolso contable': payment.type === 'refund' ? ledgerPaymentLabel(payment) : '-' };
+      'Mét. del reembolso contable': payment.type === 'refund' ? ledgerPaymentLabel(payment) : '-',
+      _orderKey: [payment.businessId, payment.sourceId], _occurredAt: toMillisSafe(payment.occurredAt), _paymentId: payment.id };
   });
   return { contractPaymentRows, paymentsByBranch, totals: model.summary };
 }

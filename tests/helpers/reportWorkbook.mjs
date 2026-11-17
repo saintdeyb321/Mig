@@ -27,7 +27,7 @@ export function assertWorkbookBorders(XLSX, workbook, bytes) {
       assert.match(sheetXml, /<pane ySplit="1" topLeftCell="A2"[^>]*state="frozen"/);
       assert.doesNotMatch(sheetXml, /<mergeCells\b/);
       assert.equal(sheet['!rows'][0].hpt, 25);
-      for (const row of sheet['!rows'].slice(1)) assert.ok([9, 21, 22].includes(row?.hpt), `${name}: ${row?.hpt}pt`);
+      for (const row of sheet['!rows'].slice(1)) assert.ok([9, 13, 21, 22].includes(row?.hpt), `${name}: ${row?.hpt}pt`);
     }
   }
 }
@@ -36,10 +36,23 @@ export function tableRows(XLSX, workbook, name) {
   const sheet = workbook.Sheets[name];
   const [head, ...rows] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', range: reportHeader(XLSX, sheet), blankrows: false });
   const size = sheet['!autofilter'] ? XLSX.utils.decode_range(sheet['!autofilter'].ref).e.r - reportHeader(XLSX, sheet) : undefined;
-  const footerStart = rows.findIndex(row => row.includes('Detalle por canal'));
+  const footerStart = rows.findIndex(row => row.includes('Detalle por canal') || row.includes('Resumen POS de la sede'));
   return rows.slice(0, size ?? (footerStart < 0 ? rows.length : footerStart))
     .filter(row => row.some(value => value !== ''))
     .map(row => Object.fromEntries(head.map((label, index) => [label, row[index]])));
+}
+
+export function readPosFooter(XLSX, sheet) {
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: false });
+  if (rows.length === 1) return null;
+  const index = rows.findIndex(row => row.includes('Resumen POS de la sede'));
+  assert.ok(index > 0, 'Missing POS-only footer');
+  const headings = rows[index], net = rows[index + 1];
+  assert.equal(net[headings.indexOf('Resumen POS de la sede')], 'Neto POS');
+  const amounts = ['Efectivo', 'Yape / Plin', 'Total POS'].map(label => net[headings.indexOf(label)]);
+  assert.ok(amounts.every(Number.isFinite));
+  assert.equal(rows.length, index + 2);
+  return amounts;
 }
 
 export function readOverview(XLSX, workbook) {
@@ -62,7 +75,30 @@ export function readOverview(XLSX, workbook) {
   };
   const labels = ['Cobros registrados', 'Compensaciones POS', 'Reembolsos contables de pedidos', 'Neto contable'];
   for (const label of labels) for (const channel of ['Efectivo', 'Yape / Plin']) values[`${label} · ${channel}`] = 0;
-  for (const name of workbook.SheetNames.filter(name => /^(Detalle|Resum)_/.test(name))) {
+  const add = (label, cash, digital) => {
+    values[`${label} · Efectivo`] = money(values[`${label} · Efectivo`] + cash);
+    values[`${label} · Yape / Plin`] = money(values[`${label} · Yape / Plin`] + digital);
+  };
+  const movements = (name, column, adjustment, label) => {
+    const net = [0, 0];
+    for (const row of tableRows(XLSX, workbook, name)) {
+      const total = row[column];
+      if (total === '' || total === 0) continue;
+      assert.ok(Number.isFinite(total));
+      const method = row['Medio de pago'];
+      const split = method.match(/Efectivo (?:S\/ )?(-?[\d.]+) · Yape\/Plin (?:S\/ )?(-?[\d.]+)/);
+      assert.ok(split || ['EFECTIVO', 'YAPE', 'PLIN'].includes(method), `Invalid exported payment: ${method}`);
+      const [cash, digital] = split ? split.slice(1).map(Number) : method === 'EFECTIVO' ? [total, 0] : [0, total];
+      assert.equal(money(cash + digital), total);
+      net[0] = money(net[0] + cash);
+      net[1] = money(net[1] + digital);
+      add(row.Movimiento === adjustment ? label : labels[0], cash, digital);
+    }
+    add(labels[3], ...net);
+    return [...net, money(net[0] + net[1])];
+  };
+  const summaries = workbook.SheetNames.filter(name => name.startsWith('Resum_'));
+  for (const name of summaries) {
     const cells = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '', blankrows: false });
     const header = cells.findIndex(row => row.includes('Detalle por canal'));
     if (cells.length === 1) continue; // Branch without movements: only the table header.
@@ -71,9 +107,16 @@ export function readOverview(XLSX, workbook) {
     for (const [index, label] of labels.entries()) {
       const row = cells[header + 1 + index];
       if (row[title] !== label || typeof row[cashColumn] !== 'number' || typeof row[digitalColumn] !== 'number') throw new Error('Desglose de auditoría incompleto');
-      values[`${label} · Efectivo`] = money(values[`${label} · Efectivo`] + row[cashColumn]);
-      values[`${label} · Yape / Plin`] = money(values[`${label} · Yape / Plin`] + row[digitalColumn]);
+      add(label, row[cashColumn], row[digitalColumn]);
     }
+  }
+  if (!summaries.length) {
+    for (const name of workbook.SheetNames.filter(name => name.startsWith('Detalle_'))) {
+      const net = movements(name, 'Importe neto movimiento (S/)', 'COMPENSACIÓN POS', labels[1]);
+      const footer = readPosFooter(XLSX, workbook.Sheets[name]);
+      assert.deepEqual(net, footer ?? [0, 0, 0]);
+    }
+    if (workbook.Sheets.Auditoría_Pedidos) movements('Auditoría_Pedidos', 'Neto Movimiento (S/)', 'REEMBOLSO CONTABLE PEDIDO', labels[2]);
   }
   values['Cobros registrados'] = money(values['Cobros registrados · Efectivo'] + values['Cobros registrados · Yape / Plin']);
   return values;
