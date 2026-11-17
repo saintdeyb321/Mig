@@ -11,6 +11,7 @@ import { createReportCache, createReportResource } from '../frontend/src/feature
 import { reportSourceForPeriod } from '../frontend/src/features/reports/application/reportSources.js';
 import { createSessionReportReads } from '../frontend/src/features/reports/application/sessionReportReads.js';
 import { buildSalesWorkbook } from '../frontend/src/features/reports/application/salesWorkbook.js';
+import { buildMonthlySnapshotV1, snapshotFingerprint } from '../frontend/src/features/reports/domain/monthlySnapshot.js';
 import { reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
 import { createPosVoidReader } from '../frontend/src/features/sales/infrastructure/posVoidQueryRepository.js';
 import { createSalesPeriodReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
@@ -87,7 +88,7 @@ function scenario(period, records, scope = branchId) {
     getContractAuditDocuments: createPaymentRepository(database, { sdk: sdk('contractAudit') }).getContractAuditDocuments,
   });
   const source = reportSourceForPeriod(period, read(resources, businessId, scope, period));
-  return { source, calls, resources,
+  return { source, calls, resources, sdk,
     async dashboard() {
       let state;
       const dashboard = createReportResource({ businessId, branchId: scope, period, key: 'p31',
@@ -224,4 +225,40 @@ it('P31-A measures the extra point reads from an embedded legacy payment per ver
     assert.deepEqual(after.contractAudit, [1, 2, 0]);
     t.diagnostic('P31_LEGACY_POINTS ' + JSON.stringify(after));
   });
+});
+
+it('P31-B separates simulated construction from estimated snapshot reads and potential checkpoint writes', async t => {
+  const period = reportPeriod('mes', '2026-11-04T12:00:00-05:00');
+  for (const movements of [100, 1000, 5000]) {
+    const records = volumeRecords(period, movements);
+    const old = records.contracts.find(row => row.id.startsWith('older'));
+    Object.assign(old, { status: 'cancelado', voidedAt: timestamp(+period.endDate - 3600000) });
+    await observe(period, records, async reader => {
+      const { snapshot } = await reader.exportData('pdf');
+      const sdk = reader.sdk('shadowCancellations');
+      // Test-only read. The monthly projection needs dates and branches, beyond P30's scalar count.
+      const cancelled = await sdk.getDocsFromServer(sdk.query('contracts', sdk.where('businessId', '==', businessId),
+        sdk.where('status', '==', 'cancelado'), sdk.where('voidedAt', '>=', timestamp(+period.startDate)),
+        sdk.where('voidedAt', '<=', timestamp(+period.endDate)), sdk.orderBy('voidedAt', 'desc'), sdk.limit(200)));
+      assert.ok(cancelled.size < 200, 'La fixture cabe en una sola página de cancelaciones');
+      const args = { businessId, periodKey: '2026-11', coveredThrough: period.endDate, sourceRevision: 'simulation-1',
+        coverage: { sparkSales: true, legacySales: true, migratedLedger: true, legacyLedger: true, posVoids: true,
+          createdContracts: true, contractCancellations: true, cashSessions: true },
+        sales: snapshot.sales, payments: snapshot.payments, voids: snapshot.voids,
+        contracts: [...snapshot.contracts, ...cancelled.docs.map(doc => doc.data())], sessions: snapshot.sessions };
+      const projected = buildMonthlySnapshotV1(args);
+      assert.equal(projected.status, 'shadow');
+      assert.equal(projected.counts.contractsCancelledInPeriod, snapshot.cancelledContractCount);
+      assert.equal(projected.counts.tickets, records.sales.length);
+      const construction = { operations: reader.calls.length, aggregates: reader.calls.filter(call => call.kind === 'aggregate').length,
+        sourceDocuments: reader.calls.reduce((total, call) => total + call.documents, 0), cancellationDocuments: cancelled.size };
+      assert.equal(await snapshotFingerprint(buildMonthlySnapshotV1({ ...args, sourceRevision: 'simulation-replay' })),
+        await snapshotFingerprint(projected));
+      const snapshotBytes = Buffer.byteLength(JSON.stringify(projected));
+      assert.ok(snapshotBytes < 512 * 1024);
+      t.diagnostic('P31B_COST ' + JSON.stringify({ movements, construction, snapshotDocs: 1, snapshotBytes,
+        estimatedViewDocuments: { month: 1, closedYear: 12 },
+        potentialWrites: { snapshot: 1, checkpoint: 1, unchangedReplay: 0 }, actualWrites: 0 }));
+    });
+  }
 });

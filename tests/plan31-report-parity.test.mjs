@@ -127,7 +127,24 @@ it('P31-A finds the legacy coverage gaps and retains parity for verified ledger/
   assert.equal(migrated.digitalPayments.amount, cents(detailed.summary.contractDigital));
   assert.equal(aggregateReport({ ...scope, sales: records.sales, payments: deduplicated }).summary.netRevenue, detailed.summary.netRevenue);
   records.sales[0] = { ...legacy, status: 'confirmed', confirmedAt: november };
-  assert.equal((await readAggregateCandidates({}, route, scope)).pos.count, 0, 'La suma combinada excluye el mixto Plin sin campo Yape');
+  const mixedCandidate = (await readAggregateCandidates({}, route, scope)).pos;
+  assert.deepEqual(mixedCandidate, { count: 1, gross: 1005, cash: 105, digital: 0 });
+  assert.notEqual(mixedCandidate.gross, mixedCandidate.cash + mixedCandidate.digital, 'Contar el ticket no demuestra cobertura de ambos canales');
+});
+
+it('P31-B fixture counts the query and sums each numeric field independently', async () => {
+  const { sdk } = reportQueryFixture({ rows: [
+    { id: 'a', group: 'included', a: 3, b: '7' }, { id: 'b', group: 'included', b: 5 },
+    { id: 'c', group: 'included', a: '12' }, { id: 'd', group: 'included', a: 2, b: -1 },
+    { id: 'outside', group: 'other', a: 50, b: 60 },
+  ] });
+  const read = sdk('fixture');
+  const query = read.query('rows', read.where('group', '==', 'included'));
+  const spec = { count: read.count(), a: read.sum('a'), b: read.sum('b') };
+  const result = (await read.getAggregateFromServer(query, spec)).data();
+  assert.deepEqual(result, { count: 4, a: 5, b: 4 });
+  const limited = (await read.getAggregateFromServer(read.query('rows', read.where('group', '==', 'included'), read.limit(2)), spec)).data();
+  assert.deepEqual(limited, { count: 2, a: 3, b: 5 });
 });
 
 it('P31-A leaves cash evidence and Top 5 outside the prototype where field sums or monthly rankings lose information', () => {

@@ -27,6 +27,14 @@ export function reportQueryFixture(records) {
         return op === '>=' ? scalar(actual) >= scalar(value) : scalar(actual) <= scalar(value);
       })).sort(compareRows);
   };
+  const queryRows = query => {
+    const rows = select(query);
+    const after = query.constraints.find(clause => clause.after)?.after;
+    const start = after ? rows.findIndex(row => row.id === after.id) + 1 : 0;
+    if (after && !start) throw new Error('El cursor quedó fuera de la consulta de prueba.');
+    const limit = query.constraints.find(clause => clause.limit)?.limit ?? rows.length;
+    return rows.slice(start, start + limit);
+  };
   const sdk = module => ({
     Timestamp,
     collection: (_db, name) => name,
@@ -40,12 +48,7 @@ export function reportQueryFixture(records) {
     count: () => ({ op: 'count' }),
     sum: field => ({ op: 'sum', field }),
     async getDocsFromServer(query) {
-      const rows = select(query);
-      const after = query.constraints.find(clause => clause.after)?.after;
-      const start = after ? rows.findIndex(row => row.id === after.id) + 1 : 0;
-      if (after && !start) throw new Error('El cursor quedó fuera de la consulta de prueba.');
-      const limit = query.constraints.find(clause => clause.limit)?.limit ?? rows.length;
-      const docs = rows.slice(start, start + limit).map(row => docSnapshot(row));
+      const docs = queryRows(query).map(row => docSnapshot(row));
       calls.push({ module, kind: 'query', documents: docs.length });
       return { size: docs.length, docs };
     },
@@ -56,13 +59,15 @@ export function reportQueryFixture(records) {
     },
     async getCountFromServer(query) {
       calls.push({ module, kind: 'aggregate', documents: 0 });
-      return { data: () => ({ count: select(query).length }) };
+      const count = queryRows(query).length;
+      return { data: () => ({ count }) };
     },
     async getAggregateFromServer(query, spec) {
       calls.push({ module, kind: 'aggregate', documents: 0 });
       const aggregations = Object.entries(spec);
-      const fields = aggregations.filter(([, value]) => value.op === 'sum').map(([, value]) => value.field);
-      const rows = select(query).filter(row => fields.every(field => fieldValue(row, field) !== undefined));
+      // Measure each field's coverage independently in SHADOW. This fixture does not model
+      // the shared field-presence restriction of a combined Firestore index scan.
+      const rows = queryRows(query);
       return { data: () => Object.fromEntries(aggregations.map(([alias, { op, field }]) => [alias, op === 'count' ? rows.length
         : rows.reduce((total, row) => {
           const value = fieldValue(row, field);

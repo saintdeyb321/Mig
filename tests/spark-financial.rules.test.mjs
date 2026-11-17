@@ -18,6 +18,7 @@ import { createSparkSalesRepository } from '../frontend/src/features/sales/infra
 import { createSparkContractsRepository } from '../frontend/src/features/contracts/infrastructure/sparkContractsRepository.js';
 import { createSparkCashClosingRepository } from '../frontend/src/features/cash-register/infrastructure/sparkCashClosingRepository.js';
 import { createRequire } from 'node:module';
+import { tableRows } from './helpers/reportWorkbook.mjs';
 import { buildSalesWorkbook } from '../frontend/src/features/reports/application/salesWorkbook.js';
 import { cashAuditEvents } from '../frontend/src/features/reports/application/cashAuditRows.js';
 import { reportDay, reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
@@ -448,12 +449,12 @@ describe('SPARK-4 integrated financial Rules', () => {
     const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
     const workbook = buildSalesWorkbook(XLSX, { period, sales: receipts, voids: refunds, businessId, branchId }).workbook;
     const copy = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
-    assert.ok(copy.SheetNames.filter(name => name.startsWith('Detalle_'))
-      .some(name => {
-        const sheet = copy.Sheets[name];
-        return XLSX.utils.sheet_to_json(sheet, { range: 4 }).some(row => row.Movimiento === 'COMPENSACIÓN POS' && row['Importe neto movimiento (S/)'] === -10)
-          && Object.values(sheet).some(cell => typeof cell?.v === 'string' && cell.v.includes('sin evidencia de desembolso físico'));
-      }));
+    const adjustments = copy.SheetNames.filter(name => name.startsWith('Detalle_'))
+      .flatMap(name => tableRows(XLSX, copy, name)).filter(row => row.Movimiento === 'COMPENSACIÓN POS');
+    assert.equal(adjustments.length, 1);
+    assert.equal(adjustments[0]['Importe neto movimiento (S/)'], -10);
+    assert.equal(adjustments[0].Estado, 'ANULADO');
+    assert.match(adjustments[0].Observaciones, /Compensación contable sin evidencia de desembolso\./);
     await assertFails(reader.inPeriod('foreign', from, to, branchId));
     const adjustedStock = { [branchId]: 11, other: 7 };
     await env.withSecurityRulesDisabled(async ctx => {

@@ -78,6 +78,8 @@ function assertReconciled({ dashboard, model, wb, summary }) {
     .some(([label, value]) => label === 'Sedes:' && value === 'Todas las sedes');
   assert.equal(wb.SheetNames.includes('Comparativa_Sedes'), compareBranches);
   const branchRows = compareBranches ? rows(wb, 'Comparativa_Sedes') : [];
+  const orderRows = wb.Sheets.Auditoría_Pedidos ? rows(wb, 'Auditoría_Pedidos') : [];
+  assert.equal(sumMoney(orderRows.map(row => row['Neto Movimiento (S/)'])), metrics.contractRevenue);
   if (compareBranches) assert.equal(sumMoney(branchRows.map(row => row['Ingreso neto (S/)'])), metrics.netRevenue);
   for (const branch of dashboard.branches.values()) {
     const name = branchesMap[branch.branchId] ?? branch.branchId;
@@ -87,7 +89,10 @@ function assertReconciled({ dashboard, model, wb, summary }) {
         [branch.netRevenue, branch.posRevenue, branch.contractRevenue, branch.posTicketCount]);
     }
     if (wb.Sheets['Detalle_' + name]) {
-      assert.equal(sumMoney(rows(wb, 'Detalle_' + name).map(row => row['Importe neto movimiento (S/)'])), branch.netRevenue);
+      const posNet = sumMoney(rows(wb, 'Detalle_' + name).map(row => row['Importe neto movimiento (S/)']));
+      assert.equal(posNet, branch.posRevenue);
+      if (compareBranches) assert.equal(sumMoney([posNet, ...orderRows.filter(row => row['Sede Movimiento'] === name)
+        .map(row => row['Neto Movimiento (S/)'])]), branch.netRevenue);
     }
     if (wb.Sheets['Resum_' + name]) {
       assert.deepEqual(rows(wb, 'Resum_' + name).map(row => [XLSX.SSF.format('dd/mm/yyyy', row.Fecha), row['Ingreso neto (S/)'], row['Efectivo (S/)'], row['Yape / Plin (S/)'], row.Anulados]),
@@ -112,7 +117,9 @@ function assertReconciled({ dashboard, model, wb, summary }) {
   const periodRows = detailSheets.length ? detailSheets.flatMap(name => rows(wb, name))
     : wb.SheetNames.filter(name => name.startsWith('Resum_')).flatMap(name => rows(wb, name));
   const totalColumn = detailSheets.length ? 'Importe neto movimiento (S/)' : 'Ingreso neto (S/)';
-  assert.equal(sumMoney(periodRows.map(row => row[totalColumn])), metrics.netRevenue);
+  const totals = periodRows.map(row => row[totalColumn]);
+  if (detailSheets.length) totals.push(...orderRows.map(row => row['Neto Movimiento (S/)']));
+  assert.equal(sumMoney(totals), metrics.netRevenue);
   if (detailSheets.length) assert.equal(sumMoney(periodRows.filter(row => row.Producto).map(row => row['Subtotal (S/)'])), metrics.posRevenue);
   if (periodRows.length) assert.match(summary['Alcance de las compensaciones POS'], /sin evidencia de desembolso físico ni de devolución digital/);
 }
@@ -242,12 +249,13 @@ it('P18 keeps the confirmed order result when the photo stage throws after the a
     { ...order, remaining:3, photosNeedReview:false });
 });
 
-it('P18 supports twenty contract photos and keeps unchanged historical references', () => {
-  const refs = Array.from({ length: 21 }, (_, index) => `local-image-${index}`);
-  assert.equal(MAX_CONTRACT_IMAGES, 20);
-  assert.equal(fitsContractImageLimit(refs.slice(0, 20)), true);
-  assert.equal(fitsContractImageLimit(refs), false);
+it('P30 limits new photos to six and preserves twenty historical references', () => {
+  const refs = Array.from({ length: 20 }, (_, index) => `local-image-${index}`);
+  assert.equal(MAX_CONTRACT_IMAGES, 6);
+  assert.equal(fitsContractImageLimit(refs.slice(0, 6)), true);
+  assert.equal(fitsContractImageLimit(refs.slice(0, 7)), false);
   assert.equal(fitsContractImageLimit(refs, [...refs]), true);
+  assert.equal(fitsContractImageLimit(refs.slice(1), refs), true);
   assert.equal(fitsContractImageLimit(refs, [...refs].reverse()), false);
 });
 
@@ -284,9 +292,10 @@ it('P13 preserves one cash lock and immutable declarations across double open, c
     const period = reportPeriod('hoy', plan08Timestamp().toDate());
     const { workbook } = buildSalesWorkbook(XLSX, { businessId, branchId, period, sessions: [saved], now: plan08Timestamp().toDate() });
     const audit = rows(roundTrip(workbook), 'Auditoría_Cajas').find(row => row.Turno.startsWith('CIERRE'));
+    const expectedState = difference < 0 ? 'Faltante por revisar' : difference > 0 ? 'Sobrante por revisar' : 'Sin diferencia registrada · por verificar';
     assert.deepEqual([audit['Efectivo contado (S/)'], audit['Efectivo esperado (S/)'], audit['Diferencia (S/)'], audit.Estado],
-      [declared, 128, difference, 'Conciliación pendiente']);
-    assert.match(audit.Observación, /provisionales/);
+      [declared, 128, difference, expectedState]);
+    assert.equal(audit.Observación, notes ? `Mensaje adjunto: ${notes}` : '');
     assert.equal(h.writes.length, 4);
     assert.equal(h.documents.has(lockPath), false);
     await assert.rejects(close.close(opening.sessionId, declared + 1, notes), /cerrada con otra declaración/);
@@ -349,7 +358,7 @@ it('P13 counts a historical void and its matching immutable compensation as one 
   }, { voids: 1, net: 0, qty: 0, productRevenue: 0, excelVoids: 1, excelNet: 0 });
   assert.equal(historical.voided, true);
   const detail = rows(result.wb, 'Detalle_Centro');
-  const original = detail.find(row => row.Estado === 'Anulada');
+  const original = detail.find(row => row.Estado === 'ANULADO' && row.Movimiento === 'VENTA POS');
   assert.equal(original['Importe neto movimiento (S/)'], 30);
   assert.match(original.Observaciones, /Cobro original/);
   assert.equal(detail.find(row => row['Precio unitario'] === 'TOTAL TICKET')['Subtotal (S/)'], 0);
@@ -369,7 +378,7 @@ it('P13-03 retains unpaired legacy voids without generating money, stock or an E
   assert.deepEqual(products.map(row => [row.id, row.qty, row.revenue]), [[cashSale.items[0].id, 1, 20]]);
   const detail = rows(result.wb, 'Detalle_Centro');
   const legacy = detail.find(row => row['Medio de pago'] === 'YAPE' && row.Observaciones.includes('Anulación anterior'));
-  assert.deepEqual([legacy.Movimiento, legacy.Estado, legacy['Importe neto movimiento (S/)']], ['VENTA POS ANULADA', 'Anulada · por revisar', 0]);
+  assert.deepEqual([legacy.Movimiento, legacy.Estado, legacy['Importe neto movimiento (S/)']], ['VENTA POS ANULADA', 'ANULADO · POR REVISAR', 0]);
   const item = detail.find(row => row.Producto && row.Movimiento === 'VENTA POS ANULADA');
   assert.deepEqual([item.Cantidad, item['Subtotal (S/)']], [0, 0]);
   assert.equal(detail.some(row => row.Movimiento === 'COMPENSACIÓN POS'), false);
