@@ -307,7 +307,22 @@
     {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"closedAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}],"density":"SPARSE_ALL"},
     {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"recoveredAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}],"density":"SPARSE_ALL"},
     {"collectionGroup":"contract_pickups","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"pickupBranchId","order":"ASCENDING"},{"fieldPath":"deliveryDate","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
-    {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"openedAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}],"density":"SPARSE_ALL"}
+    {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"status","order":"ASCENDING"},{"fieldPath":"openedAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"expiredAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"cash_sessions","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"expiredAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"payments","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"type","order":"ASCENDING"},{"fieldPath":"occurredAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"payments","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"branchId","order":"ASCENDING"},{"fieldPath":"type","order":"ASCENDING"},{"fieldPath":"occurredAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"report_source_contributions_v1","queryScope":"COLLECTION","fields":[{"fieldPath":"businessId","order":"ASCENDING"},{"fieldPath":"months","arrayConfig":"CONTAINS"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"},
+    {"collectionGroup":"report_projection_state_v1","queryScope":"COLLECTION","fields":[{"fieldPath":"kind","order":"ASCENDING"},{"fieldPath":"mode","order":"ASCENDING"},{"fieldPath":"nextCheckAt","order":"ASCENDING"},{"fieldPath":"__name__","order":"ASCENDING"}],"density":"SPARSE_ALL"}
   ],
-  "fieldOverrides": [{ "collectionGroup": "media", "fieldPath": "data", "indexes": [] }]
+  "fieldOverrides": [
+    { "collectionGroup": "media", "fieldPath": "data", "indexes": [] },
+    { "collectionGroup": "report_month_snapshots_v1", "fieldPath": "rows", "indexes": [] },
+    { "collectionGroup": "report_month_snapshots_v1", "fieldPath": "values", "indexes": [] },
+    { "collectionGroup": "report_month_snapshots_v1", "fieldPath": "top", "indexes": [] },
+    { "collectionGroup": "report_product_totals_v1", "fieldPath": "products", "indexes": [] },
+    { "collectionGroup": "report_day_buckets_v1", "fieldPath": "values", "indexes": [] },
+    { "collectionGroup": "report_day_buckets_v1", "fieldPath": "products", "indexes": [] },
+    { "collectionGroup": "report_source_contributions_v1", "fieldPath": "atoms", "indexes": [] }
+  ]
 }

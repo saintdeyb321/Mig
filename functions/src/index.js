@@ -14,9 +14,17 @@ import { createLegacyPaymentReader } from './contracts/legacyReader.js';
 import { createAdministrationHandlers } from './platform/administration.js';
 import { createPlatformJobs } from './platform/jobs.js';
 import { observeOperation, logJobState } from './core/observability.js';
+import { reportingFunctions } from './reports/entry.js';
 
 initializeApp();
 const database = getFirestore();
+const reports = reportingFunctions(database);
+export const reportSalesProjection = reports.sales;
+export const reportPaymentProjection = reports.payments;
+export const reportVoidProjection = reports.pos_voids;
+export const reportContractProjection = reports.contracts;
+export const reportCashProjection = reports.cash_sessions;
+export const reconcileReportProjection = reports.reconcile;
 const sales = createSalesHandlers(database);
 export const submitSale = callable(sales.submitSale, 'submitSale');
 export const voidSale = callable(sales.voidSale, 'voidSale');

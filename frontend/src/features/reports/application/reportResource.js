@@ -2,11 +2,36 @@ import { reportViewModel } from './reportViewModel.js';
 import { aggregateReport } from '../domain/reportTotals.js';
 import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 import { getFirebaseErrorCode } from '../../../core/errors/firebaseErrors.js';
+import { buildSummaryView } from './summaryView.js';
 
 export const REPORT_TTL = 30000;
 export const reportTTL = period => ['mes', 'todo'].includes(period.filter ?? period.key?.split(':')[0]) ? 15 * 60 * 1000 : 2 * 60 * 1000;
 export const reportCacheKey = ({ identityKey, businessId, branchId, period }) => JSON.stringify([identityKey, businessId, branchId, period.key]);
 export const reportRevision = (resources, businessId) => resources.cell(`report-revision:${businessId}`, 0);
+export function createSummaryReportResource({ key, period, readSummary, onState }) {
+  let active = true, pending, expiry;
+  async function refresh() {
+    if (!active || pending) return pending;
+    clearTimeout(expiry);
+    onState({ key, model: null, isLoading: true, error: null });
+    pending = (async () => {
+      try {
+        const result = await readSummary();
+        if (active) {
+          onState({ key, model: buildSummaryView(result, period), isLoading: false, updatedAt: result.calculatedThrough });
+          expiry = setTimeout(() => {
+            if (active) onState({ key, model: null, isLoading: false, queryError: { code: 'report-summary-pending' }, updatedAt: result.calculatedThrough });
+          }, Math.max(0, result.expiresAt - Date.now()));
+        }
+      } catch (error) {
+        if (active) onState({ key, model: null, isLoading: false, error: error.message, queryError: error });
+      } finally { pending = null; }
+    })();
+    return pending;
+  }
+  const ready = refresh();
+  return { ready, refresh, close() { active = false; clearTimeout(expiry); } };
+}
 export function createReportCache({ ttl = REPORT_TTL, max = 12, now = Date.now } = {}) {
   const entries = new Map();
   return {

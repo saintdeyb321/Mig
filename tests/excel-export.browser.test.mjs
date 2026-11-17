@@ -7,6 +7,7 @@ import { it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { runExcelFixture } from './helpers/excelExportHarness.mjs';
 import { assertWorkbookBorders, readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
+import { vector } from '../functions/src/reports/summaryModel.js';
 
 const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
 const artifacts = fileURLToPath(new URL('../.release/qa-p29/', import.meta.url));
@@ -377,6 +378,62 @@ const previewReady = ev => until(() => ev(frameSelector => {
   return frame && button && !button.disabled && { sandbox: frame.getAttribute('sandbox'), html: frame.srcdoc };
 }, frameSelector), 'PDF preview is shown and print is ready');
 const closePreview = ev => ev(() => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.textContent === 'Cerrar vista previa').click());
+
+it('P31 verified summaries draw the assigned dashboard and export global PDF/XLSX without historical reads', { timeout: 90000 }, async () => {
+  await mkdir(artifacts, { recursive: true });
+  await runExcelFixture({ summary: true, async inspectPage(page, { downloads }) {
+    const ev = evaluate(page);
+    await ev((center, workshop) => {
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+      const fixture = window.__excelFixture;
+      fixture.summary = { verified: true, mode: 'manual', closed: false, loadedAt: Date.now(), calculatedThrough: Date.now(),
+        expiresAt: Date.now() + 120000, rows: [{ day: today, branchId: 'centro', values: center }, { day: today, branchId: 'taller', values: workshop }],
+        branchIds: ['centro', 'taller'], products: [], top: [] };
+      sessionStorage.setItem('migapos:report-filter:original:centro', 'mes');
+      fixture.setScope({ dashboard: true });
+    }, vector({ saleCash: 2105, tickets: 1, openings: 1 }), vector({ saleDigital: 3500, tickets: 1, created: 1, pending: 1 }));
+    await until(() => ev(() => document.body.innerText.includes('Fuente resumida verificada') && document.body.innerText.includes('21.05')), 'Branch dashboard is ready');
+    assert.equal(await ev(() => window.__excelFixture.reads), 0);
+    assert.equal(await ev(() => window.__excelFixture.auditCalls?.length ?? 0), 0);
+    await ev(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Auditorías').click());
+    assert.equal(await ev(() => window.__excelFixture.auditCalls?.length ?? 0), 0);
+    await ev(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Consultar').click());
+    await until(() => ev(() => document.body.innerText.includes('Sobrante por revisar')), 'Audit opens on demand');
+    await ev(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Siguiente página').click());
+    await until(() => ev(() => window.__excelFixture.auditCalls.length === 2), 'Only explicit pagination starts the second audit request');
+
+    await select(ev)('mes');
+    await click(page)(primary);
+    const print = await previewReady(ev);
+    assert.match(print.html, /Cajas — resumen/);
+    assert.match(print.html, /Pedidos — resumen/);
+    assert.match(print.html, /S\/ 56\.05/);
+    for (const [width, height] of [[320, 650], [1280, 800]]) {
+      await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 320 });
+      await until(() => ev(() => !document.querySelector('iframe') || document.documentElement.scrollWidth <= innerWidth + 1), 'Preview fits viewport');
+    }
+    await closePreview(ev);
+    await select(ev, 1)('excel');
+    await click(page)(primary);
+    const monthly = await until(async () => (await downloadNames(downloads)).find(name => name.startsWith('Reporte_Mensual')), 'Summary workbook downloaded');
+    const book = XLSX.read(await readFile(join(downloads, monthly)), { type: 'buffer', cellStyles: true });
+    assert.deepEqual(book.SheetNames, ['Resumen_Financiero', 'Comparativa_Sedes', 'Evolucion_Diaria', 'Resumen_Cajas', 'Resumen_Pedidos']);
+    assert.equal(readOverview(XLSX, book)['Total neto registrado (S/)'], 56.05);
+    await select(ev)('todo');
+    await click(page)(primary);
+    const annual = await until(async () => (await downloadNames(downloads)).find(name => name.startsWith('Reporte_Anual')), 'Annual workbook downloaded');
+    const year = XLSX.read(await readFile(join(downloads, annual)), { type: 'buffer' });
+    assert.ok(year.SheetNames.includes('Evolucion_Mensual'));
+    assert.ok(!year.SheetNames.some(name => /^(Auditoría|Detalle|Estado_Pedidos)/.test(name)));
+    assert.deepEqual(await ev(() => window.__excelFixture.summaries.map(({ branchId, filter }) => [branchId, filter])),
+      [['centro', 'mes'], ['global', 'mes'], ['global', 'todo']]);
+    assert.equal(await ev(() => window.__excelFixture.reads), 0);
+    await ev(html => { document.open(); document.write(html); document.close(); }, print.html);
+    const pdf = Buffer.from((await page.send('Page.printToPDF', { preferCSSPageSize: true, printBackground: true })).data, 'base64');
+    assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
+    await writeFile(resolve(artifacts, 'p31-informe-mensual.pdf'), pdf);
+  } });
+});
 
 it('P27 prepares a global weekly PDF in a background tab and reuses it after changing operational branch', { timeout: 90000 }, async () => {
   await mkdir(artifacts, { recursive: true });

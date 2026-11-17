@@ -12,7 +12,10 @@ import { reportViewModel } from '../application/reportViewModel.js';
 import { aggregateReport, assertPosReportDetail } from '../domain/reportTotals.js';
 import { reportRevision, reportTTL } from '../application/reportResource.js';
 import { createReportExportCache } from '../application/reportExportCache.js';
-import { reportSourceForPeriod } from '../application/reportSources.js';
+import { isSummaryPeriod, reportSourceForPeriod, reportSummariesEnabled } from '../application/reportSources.js';
+import { readVerifiedSummary } from '../infrastructure/summaryRepository.js';
+import { buildSummaryView } from '../application/summaryView.js';
+import { buildSummaryWorkbook, managementSummaryReportHtml } from '../application/summaryDocuments.js';
 import { employeeReportName, profileReportName, reportLabel } from '../application/reportNames.js';
 import { prepareReportPrint } from '../../../shared/printing/printDocument.js';
 
@@ -97,14 +100,20 @@ export function useExportSales(user, filter, format) {
     return () => clearTimeout(timer);
   }, [current]);
 
-  const exportData = async () => {
+  const historical = !reportSummariesEnabled && ['mes', 'todo'].includes(filter);
+  const exportData = async ({ acceptHistorical = false } = {}) => {
     if (!user?.uid || !identityKey || !businessId || !scope.active || !Object.hasOwn(labels, filter) || processing.current?.scope === scope) return;
     const isAuthorized = () => resources.active && revisionCell.get() === revision;
     const validScope = () => scope.active && isAuthorized();
     if (!validScope()) return;
     const period = reportPeriod(filter), key = period.key;
-    const source = reportSourceForPeriod(period, sessionReportReads(resources, businessId, branchId, period, { identityKey, revision }));
+    if (historical && !acceptHistorical) return;
+    const source = reportSourceForPeriod(period, () => sessionReportReads(resources, businessId, branchId, period, { identityKey, revision }),
+      { readSummary: reportSummariesEnabled ? () => readVerifiedSummary({
+        resources, uid: user.uid, identityKey, businessId, branchId, period, revision, includeProducts: true,
+      }) : null });
     const reads = source.exportReads;
+    const consolidated = isSummaryPeriod(period) && source.representation === 'snapshots';
     const controller = new AbortController(), run = { scope, controller };
     processing.current = run;
     let phase = 'data-read', timedOut = false;
@@ -140,18 +149,18 @@ export function useExportSales(user, filter, format) {
           const data = await remote('data-read', () => {
             if (!navigator.onLine) throw new Error('Conéctate para verificar el período.');
             // The timeout ends the wait; a retry may still reuse the original reads.
-            return reads.exportSnapshot(() => validScope() && !controller.signal.aborted);
+            return consolidated ? source.readSummary() : reads.exportSnapshot(() => validScope() && !controller.signal.aborted);
           });
           assertCurrent();
           update('integrity');
-          const model = local('aggregate', () => aggregateReport({ ...data, period, businessId, branchId }));
+          const model = local('aggregate', () => consolidated ? buildSummaryView(data, period) : aggregateReport({ ...data, period, businessId, branchId }));
           if (detailed) local('pos-validation', () => { for (const { row } of model.pos.sales) assertPosReportDetail(row); });
-          const expiresAt = data.loadedAt + reportTTL(period);
+          const expiresAt = consolidated ? data.expiresAt : data.loadedAt + reportTTL(period);
           assertFresh(expiresAt);
           entry = cache.put(key, { data, model }, expiresAt);
         }
         const { data, model } = entry.snapshot;
-        const contracts = printable ? data.contracts : (await remote('contract-audit', () => reads.withContractAudit(data, isCurrent))).contracts;
+        const contracts = consolidated || printable ? data.contracts : (await remote('contract-audit', () => reads.withContractAudit(data, isCurrent))).contracts;
         assertCurrent();
         assertFresh(entry.expiresAt);
         update('document');
@@ -159,7 +168,14 @@ export function useExportSales(user, filter, format) {
         const people = reportPeople(resources, user);
         const business = reportLabel(settings?.companyData?.razonSocial || user?.businessName, 'Mi negocio', businessId);
         const input = { ...data, contracts, period, businessId, business, branchId, branchesMap, people, model };
-        if (printable) {
+        if (consolidated) {
+          if (printable) artifact = local('pdf-html', () => prepareReportPrint(managementSummaryReportHtml(model, input), document));
+          else {
+            const workbook = local('xlsx-workbook', () => buildSummaryWorkbook(XLSX, model, input));
+            const bytes = local('xlsx-serialize', () => writeSalesWorkbook(XLSX, workbook));
+            artifact = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          }
+        } else if (printable) {
           const view = local('view-model', () => reportViewModel(model, data.contracts, input, data.sessions, { branchesMap, people,
             branchIds: [...model.branches.keys()] }));
           const html = local('pdf-html', () => managementReportHtml(view, { period, operator: employeeReportName(people, user.uid),
@@ -177,7 +193,7 @@ export function useExportSales(user, filter, format) {
       }
       assertCurrent();
       const ready = { scope, fetchedAt: entry.snapshot.data.loadedAt, expiresAt: entry.expiresAt, reused: cached,
-        provisional: entry.snapshot.model.pos.sales.some(({ row }) => row.voided) };
+        provisional: !consolidated && entry.snapshot.model.pos.sales.some(({ row }) => row.voided) };
       if (printable) setState({ ...ready, phase: 'preview', html: artifact });
       else {
         update('download');
@@ -188,7 +204,7 @@ export function useExportSales(user, filter, format) {
       if (!validScope()) return;
       if ((phase === 'integrity' && !entry) || error.code === 'report-stale') {
         cache.drop(key);
-        reads.discardSnapshot();
+        reads?.discardSnapshot();
       }
       reportDiagnostic('report', error);
       setState({ scope, phase: 'error', failure: { kind: phase, error, offline: !navigator.onLine } });
@@ -198,7 +214,7 @@ export function useExportSales(user, filter, format) {
   };
   return { phase: current?.phase ?? 'idle', html: current?.html, expiresAt: current?.expiresAt, expired: current?.expired,
     failure: current?.failure, isExporting: activePhases.includes(current?.phase),
-    fetchedAt: current?.fetchedAt, reused: current?.reused, provisional: current?.provisional,
+    fetchedAt: current?.fetchedAt, reused: current?.reused, provisional: current?.provisional, historical,
     exportData, closePreview: () => setState(previous => previous?.scope === scope && previous.phase === 'preview'
       ? (previous.expired ? null : { ...previous, phase: 'ready', html: undefined }) : previous) };
 }

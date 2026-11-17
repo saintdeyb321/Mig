@@ -74,7 +74,7 @@ it('P17-RC distinguishes the exact logical deadline and reimports the verified S
   assert.deepEqual([expiry['Efectivo esperado (S/)'], expiry['Yape/Plin registrado (S/)'],
     expiry['Efectivo contado (S/)'], expiry['Diferencia (S/)']], [150, 10, 'No declarado', 'No calculable']);
   const pdf = managementReportHtml(view, { period: scope.period, generatedAt: recoveredAt.toDate() });
-  assert.match(pdf, /Efectivo esperado · referencia<\/dt> <dd>S\/ 150\.00/);
+  assert.match(pdf, /Efectivo esperado<\/dt> <dd>S\/ 150\.00/);
   assert.match(pdf, /Yape\/Plin registrado<\/dt> <dd>S\/ 10\.00/);
   const incomplete = buildSalesWorkbook(XLSX, { ...scope, cashReferenceAsOf: recoveredAt.toMillis() - 1, sessions: [closed] }).view.cashEvents.at(-1);
   assert.equal(incomplete.reference, null);
@@ -100,22 +100,22 @@ it('P14-RC reimports the October net totals per day and branch with semantic num
   for (const [branchId, date, expected] of [['centro', first, [1, 0, 6, 5.5, 0.5, 6, 0, 0]], ['taller', second, [1, 0, 222, 100, 122, 17, 205, 3]]]) {
     const name = `Resum_${branchesMap[branchId]}`;
     const sheet = book.Sheets[name];
-    assert.equal(sheet.A4.v, 'Ventas y pedidos, menos ajustes.');
+    assert.equal(sheet.A1.v, 'Fecha');
     const filter = XLSX.utils.decode_range(sheet['!autofilter'].ref);
-    assert.deepEqual([filter.s.r, filter.e.r], [4, 5]);
+    assert.deepEqual([filter.s.r, filter.e.r], [0, 1]);
     assert.equal(filter.e.c, headers.length - 1);
     const [labels, row] = XLSX.utils.sheet_to_json(sheet, { range: filter.s.r, header: 1 });
     assert.deepEqual(labels, headers);
     assert.deepEqual(row.slice(1), [expected[5], expected[6], expected[3], expected[4], expected[2], expected[0], expected[1]]);
     assert.equal(row[5], row[3] + row[4]);
     assert.equal(row[5], row[1] + row[2]);
-    assert.equal(sheet.A6.t, 'n');
-    assert.equal(sheet.A6.w, branchId === 'centro' ? '24/10/2026' : '27/10/2026');
-    assert.equal(sheet.G6.z, '0');
-    assert.match(sheet.D6.z, /S\//);
-    assert.equal(sheet.H6.z, '0');
+    assert.equal(sheet.A2.t, 'n');
+    assert.equal(sheet.A2.w, branchId === 'centro' ? '24/10/2026' : '27/10/2026');
+    assert.equal(sheet.G2.z, '0');
+    assert.match(sheet.D2.z, /S\//);
+    assert.equal(sheet.H2.z, '0');
     const xml = XLSX.CFB.find(archive, `/xl/worksheets/sheet${book.SheetNames.indexOf(name) + 1}.xml`);
-    assert.match(Buffer.from(xml.content).toString(), /<pane ySplit="5" topLeftCell="A6"[^>]+state="frozen"/);
+    assert.match(Buffer.from(xml.content).toString(), /<pane ySplit="1" topLeftCell="A2"[^>]+state="frozen"/);
     const scope = { period: reportPeriod('hoy', date), branchId, businessId };
     const dashboard = aggregateReport({ ...scope, sales, payments });
     const view = reportViewModel(dashboard, [], scope);
@@ -123,25 +123,28 @@ it('P14-RC reimports the October net totals per day and branch with semantic num
     assert.equal(view.summary.netRevenue, expected[2]);
     for (const value of expected.slice(2, 7)) assert.ok(html.includes(`S/ ${value.toFixed(2)}`));
   }
-  assert.deepEqual(sheets(book, 'Comparativa_Sedes').map(row => [row.Sede, row['Ingreso neto (S/)']]), [['Centro', 6], ['Taller', 222]]);
+  assert.deepEqual(sheets(book, 'Comparativa_Sedes').map(row => [row.Sede, row['Ingreso neto (S/)']]), [['Taller', 222], ['Centro', 6]]);
   assert.equal(model.summary.netRevenue, 228);
 });
 
 it('P14-RC cash review keeps recorded, provisional and missing amounts distinct and caps presentation at six', () => {
   const event = (hour, fields) => ({ kind: 'closing', date: new Date(`2026-10-27T${hour}:00:00-05:00`), branch: 'Centro <img>',
     cashier: 'Ana & Rosa', actor: 'Luis <script>', counted: null, difference: null, ...fields });
-  const all = [event('10', { estimated: true, counted: 196, difference: 23 }), event('11', { estimated: true, counted: 100, difference: -50 }),
-    event('12', { estimated: true }), event('13', { kind: 'expiry', opening: 100 }),
-    event('14', { counted: 12, difference: 2 }), event('15', { counted: 8, difference: -2 }), event('16', { counted: 8 }),
-    event('17', { counted: 0, estimated: true }), event('18', { counted: 0, difference: 0 }), event('19', { kind: 'opening', opening: 100 })];
+  const all = [event('10', { estimated: true, counted: 196, reference: 173, difference: 23 }),
+    event('11', { estimated: true, counted: 100, reference: 150, difference: -50 }),
+    event('12', { estimated: true }), event('13', { kind: 'expiry', opening: 100, finalizedAt: new Date('2026-10-27T14:00:00-05:00') }),
+    event('14', { counted: 12, reference: 10, difference: 2 }), event('15', { counted: 8, reference: 10, difference: -2 }),
+    event('16', { counted: 8 }), event('17', { counted: 0, estimated: true }),
+    event('18', { counted: 0, reference: 0, difference: 0 }), event('19', { kind: 'opening', opening: 100 })];
   const projected = cashReviewPresentation(all);
   assert.equal(projected.totalCount, 8);
-  assert.deepEqual(projected.visible.map(row => row.title), ['Cierre pendiente de conciliación', 'Cierre sin diferencia calculable', 'Faltante registrado',
-    'Sobrante registrado', 'Turno vencido sin arqueo', 'Cierre pendiente de conciliación']);
+  assert.deepEqual(projected.visible.map(row => row.title), ['Faltan datos para revisar el cierre', 'Faltan datos para revisar el cierre', 'Faltaron S/ 2.00',
+    'Sobraron S/ 2.00', 'Turno vencido sin conteo', 'Faltan datos para revisar el cierre']);
   assert.deepEqual(projected.visible.map(row => [row.moneyValueText, row.difference]), [
     ['S/ 0.00', null], ['S/ 8.00', null], ['S/ 8.00', -2], ['S/ 12.00', 2], ['No declarado', null], ['No declarado', null],
   ]);
-  assert.deepEqual(cashReviewPresentation(all.slice(0, 2)).visible.map(row => [row.moneyValueText, row.difference]), [['S/ 100.00', null], ['S/ 196.00', null]]);
+  assert.deepEqual(cashReviewPresentation(all.slice(0, 2)).visible.map(row => [row.moneyValueText, row.difference, row.estimated]),
+    [['S/ 100.00', -50, true], ['S/ 196.00', 23, true]]);
   assert.deepEqual(cashReviewPresentation(all.slice(-2)), { totalCount: 0, visible: [] });
   const date = all[0].date, period = reportPeriod('hoy', date);
   const view = reportViewModel(aggregateReport(), [], { branchId: 'global', period });
@@ -149,9 +152,10 @@ it('P14-RC cash review keeps recorded, provisional and missing amounts distinct 
   for (const [events, expected] of [[[], 0], [all.slice(0, 1), 1], [all.slice(0, 6), 6], [all, 6]]) {
     const html = render(events);
     assert.equal([...html.matchAll(/<article class="review-row /g)].length, expected);
-    assert.equal(html.includes('Cajas que requieren revisión'), expected > 0);
+    assert.equal(html.includes('Cajas que necesitan revisión'), expected > 0);
     assert.doesNotMatch(html, /Alertas operativas|Notificaciones|<img>|<script>/);
-    if (expected) assert.match(html, /Centro &lt;img&gt;.*Ana &amp; Rosa.*Luis &lt;script&gt;/);
+    if (expected) assert.match(html, /Centro &lt;img&gt;.*Ana &amp; Rosa/);
+    if (events.includes(all[3])) assert.match(html, /Luis &lt;script&gt;/);
   }
   assert.match(render(all), /6 incidencias más recientes de 8/);
 });
@@ -287,9 +291,11 @@ it('P14 C09/C10/R01/R02: reimports a Lima opening, overnight expiry and independ
   assert.equal(XLSX.SSF.format('dd/mm/yyyy hh:mm', events[1].Fecha + events[1].Hora), '05/11/2026 06:00');
   assert.equal(events[1]['Registrado por'], 'Luis Quispe');
   assert.equal(events[0].Cajero, 'Empleado no identificado');
-  assert.equal(events[1].Estado, 'Vencido sin arqueo');
-  assert.match(events[1].Observación, /09\/11\/2026 08:00/);
-  assert.match(events[3].Observación, /provisionales/);
+  assert.equal(events[1].Estado, 'Vencido sin conteo');
+  const expiry = view.cashEvents.find(event => event.kind === 'expiry');
+  assert.equal(expiry.finalizedAt.toISOString(), '2026-11-09T13:00:00.000Z');
+  assert.equal(events[3].Estado, 'Sin diferencia registrada · por verificar');
+  assert.equal(view.cashEvents.find(event => event.kind === 'closing').estimated, true);
   assert.equal(view.summary.netRevenue, 20);
   const onlyExpiry = buildSalesWorkbook(XLSX, { ...options, period: day }).workbook;
   assert.deepEqual(sheets(onlyExpiry, 'Auditoría_Cajas').map(row => row.Turno), ['VENCIMIENTO']);

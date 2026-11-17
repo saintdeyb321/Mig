@@ -305,6 +305,22 @@ service cloud.firestore {
       return superadmin() ? platformDataReader() : (sameTenantResource() && branchAccess(resource.data.get('branchId', null)));
     }
 
+    function verifiedReportState(data) {
+      let state = get(/databases/$(database)/documents/report_projection_state_v1/$(data.stateId)).data;
+      let hold = 'hold:' + data.businessId;
+      return data.stateId == data.businessId + ':' + data.periodKey
+        && state.businessId == data.businessId && state.periodKey == data.periodKey
+        && state.status == 'verified' && state.revision == data.revision
+        && state.validUntil is int && request.time.toMillis() < state.validUntil
+        && !exists(/databases/$(database)/documents/report_projection_state_v1/$(hold));
+    }
+
+    function verifiedReportReader(data) {
+      return tenantReader() && data.schemaVersion == 2
+        && (currentRole() == 'dueño' || (data.branchId != 'global' && assignedContractBranch(data.branchId)))
+        && verifiedReportState(data);
+    }
+
     function protectedFinancialAlert(data, alertId) {
       return data.get('type', '') in ['VOIDED_SALE', 'VOIDED_CONTRACT']
         || alertId.matches('^VOIDED_(SALE|CONTRACT)_.*')
@@ -1228,6 +1244,24 @@ service cloud.firestore {
         && request.resource.data.businessId == businessId && validCompany()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['businessId', 'companyData']);
       allow delete: if owner() && businessId == currentBusiness() && tenantEnabled(businessId);
+    }
+
+    match /report_month_snapshots_v1/{snapshotId} {
+      allow get: if verifiedReportReader(resource.data) && resource.data.status == 'verified';
+      allow list, create, update, delete: if false;
+    }
+    match /report_product_totals_v1/{pageId} {
+      allow get: if verifiedReportReader(resource.data);
+      allow list, create, update, delete: if false;
+    }
+    match /report_day_buckets_v1/{bucketId} {
+      allow read, write: if false;
+    }
+    match /report_source_contributions_v1/{markerId} {
+      allow read, write: if false;
+    }
+    match /report_projection_state_v1/{checkpointId} {
+      allow read, write: if false;
     }
 
     match /daily_stats/{statId} {

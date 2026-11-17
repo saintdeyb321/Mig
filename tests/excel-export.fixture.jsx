@@ -4,6 +4,7 @@ import { createSessionResources } from '../frontend/src/core/session/sessionReso
 import { SessionResourcesContext } from '../frontend/src/core/session/sessionResourceHooks.js';
 import { TenantContext } from '../frontend/src/features/branches/context/TenantContext.js';
 import ExportSales from '../frontend/src/modules/ExportSales.jsx';
+import Reports from '../frontend/src/modules/Reports.jsx';
 import { invalidateReportScope } from '../frontend/src/features/reports/application/reportResource.js';
 import { getIdentityKey } from '../frontend/src/core/session/identity.js';
 import { registerPwa } from '../frontend/src/features/pwa/registerPwa.js';
@@ -158,6 +159,7 @@ function Fixture() {
       settings: { companyData: { razonSocial: fixture.reference ? 'Pastelería Nube de ensayo' : 'Pan de ensayo <img src="https://no-network.invalid/">' } } }}>
       <main className="mx-auto max-w-5xl px-3 py-6 sm:px-6"><h1 className="sr-only">Historial de ventas</h1>
         {scope.mounted && <ExportSales user={{ ...user, businessId: scope.businessId }} />}
+        {scope.dashboard && <Reports user={{ ...user, businessId: scope.businessId }} />}
       </main>
     </TenantContext.Provider>
   </SessionResourcesContext.Provider>;

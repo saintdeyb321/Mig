@@ -34,6 +34,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             frontend/package-lock.json
+            functions/package-lock.json
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -42,6 +43,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm ci --prefix frontend --no-audit --no-fund
+          npm ci --prefix functions --no-audit --no-fund
       - name: Release configuration and security audit
         run: |
           npm run check:release
@@ -77,6 +79,11 @@ jobs:
       - name: PLAN 13 financial and Excel regressions
         timeout-minutes: 2
         run: node --test --test-concurrency=1 tests/reports.test.mjs tests/plan13.test.mjs
+      - name: P31 report projection and index inventory
+        timeout-minutes: 3
+        run: |
+          npm run indexes:check
+          node --test tests/plan31-final.test.mjs tests/plan31-monthly-snapshot.test.mjs tests/plan31-report-cost.test.mjs tests/plan31-report-parity.test.mjs
       - name: PLAN 09 Node and Chromium UX regressions
         timeout-minutes: 3
         run: |

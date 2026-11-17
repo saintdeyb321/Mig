@@ -12,13 +12,13 @@ const entry = normalizePath(relative(dirname(main), fileURLToPath(new URL('../ex
 const matches = (name, path) => path === normalizePath(resolve(root, 'src/features', name));
 const isExcel = pathname => /(?:\/deps\/xlsx-js-style|\/assets\/xlsx[^/]*)\.js$/.test(pathname);
 
-export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', force = false }) {
+export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', force = false, summary = false }) {
   assert.ok(!process.env.GOOGLE_APPLICATION_CREDENTIALS);
   process.env.NODE_ENV = mode === 'preview' ? 'production' : 'development';
   Object.assign(process.env, { VITE_APP_ENV: 'emulator', VITE_USE_EMULATORS: 'true', VITE_APP_CHECK_MODE: 'off',
     VITE_FIREBASE_PROJECT_ID: 'demo-migapos', VITE_FIREBASE_AUTH_DOMAIN: 'demo-migapos.firebaseapp.com',
     VITE_FIREBASE_API_KEY: 'demo-key', VITE_FIREBASE_MESSAGING_SENDER_ID: '123456789', VITE_FIREBASE_APP_ID: '1:123456789:web:emulator-only',
-    VITE_FIREBASE_STORAGE_BUCKET: 'demo-migapos.appspot.com' });
+    VITE_FIREBASE_STORAGE_BUCKET: 'demo-migapos.appspot.com', VITE_REPORT_SUMMARIES_ENABLED: String(summary) });
   process.chdir(root);
   const artifacts = resolve(workspace, '.release/qa-excel-ux');
   const outDir = resolve(artifacts, 'preview');
@@ -42,6 +42,20 @@ export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', f
     name: 'isolated-excel-interface', enforce: 'pre',
     load(id) {
       if (id === main) return `import ${JSON.stringify(entry)};`;
+      if (summary && matches('reports/infrastructure/summaryRepository.js', id)) return `
+        export async function readVerifiedSummary({ businessId, branchId, period }) {
+          const fixture = window.__excelFixture;
+          (fixture.summaries ??= []).push({ businessId, branchId, filter: period.filter });
+          const summary = fixture.summary;
+          return branchId === 'global' ? summary : { ...summary, rows: summary.rows.filter(row => row.branchId === branchId), branchIds: [branchId] };
+        }`;
+      if (summary && matches('reports/infrastructure/reportAuditRepository.js', id)) return `
+        export async function readAuditPage({ businessId, branchId, cursor }) {
+          const fixture = window.__excelFixture;
+          (fixture.auditCalls ??= []).push({ businessId, branchId, next: !!cursor });
+          return { rows: [{ id: cursor ? 'next' : 'first', branchId, date: '2026-11-01', time: '14:30',
+            type: 'Sobrante por revisar', amount: 2.05, estimated: true }], next: cursor ? null : ['after'] };
+        }`;
       if (matches('reports/infrastructure/sessionReportReads.js', id)) return `
         import { createSessionReportReads } from '../application/sessionReportReads.js';
         const day = date => new Date(+date - 18000000).toISOString().slice(0, 10);
