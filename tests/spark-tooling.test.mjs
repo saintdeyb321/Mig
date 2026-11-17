@@ -11,7 +11,8 @@ import { environmentFor, hostingHeaders } from '../frontend/src/config/environme
 
 const require = createRequire(import.meta.url);
 it('resolves the locked glob version through each overridden CLI and PWA consumer', async () => {
-  for (const [folder, consumers] of [['../', ['firebase-tools', 'archiver-utils', 'exegesis', 'rimraf']], ['../frontend/', ['workbox-build']]]) {
+  for (const [folder, consumers] of [['../', ['firebase-tools', 'archiver-utils', 'exegesis', 'rimraf']],
+    ['../frontend/', ['workbox-build']], ['../functions/', ['rimraf']]]) {
     const project = createRequire(new URL(folder + 'package.json', import.meta.url));
     for (const name of consumers) {
       const consumer = createRequire(project.resolve(name + '/package.json'));

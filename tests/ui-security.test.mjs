@@ -356,6 +356,7 @@ describe('Hosting policy and conservative cleanup', () => {
       'docs/MIGAPOS_P31_AUDITORIA_ARQUITECTURA_REPORTES_BAJO_COSTO.md',
       'docs/MIGAPOS_P31_B_PLAN_PROYECCION_SHADOW.md',
       'docs/MIGAPOS_P31_PLAN_UNICO_REPORTES_MES_ANO.md',
+      'docs/MIGAPOS_P31_CORRECCION_ACTIVACION_Y_COSTOS.md',
       'docs/MIGAPOS_P31_ACTIVACION_REPORTES.md'];
     assert.deepEqual(markdown.filter(path => !allowedMarkdown.includes(path)), [], 'Documentos Markdown inesperados en el inventario local');
   });

@@ -22,7 +22,7 @@ export function reportingFunctions(database, env = process.env) {
   })]));
   return { ...triggers, reconcile: onSchedule({ schedule: 'every 5 minutes', timeZone: 'America/Lima', region: 'us-central1',
     maxInstances: 1, timeoutSeconds: 240, memory: '512MiB' }, async () => {
-    const states = await backfill.sweep({ maxDocuments, limit: 4 });
-    console.info('report_projection', states);
+    const { outcome, metrics } = await backfill.sweep({ maxDocuments, limit: 4 });
+    console.info('report_projection', outcome, metrics);
   }) };
 }

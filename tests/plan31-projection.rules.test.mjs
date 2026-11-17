@@ -4,10 +4,10 @@ import { readFileSync } from 'node:fs';
 import { after, before, it } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { collection, doc, getDocFromServer, getDocsFromServer, setDoc } from 'firebase/firestore';
-import { createProjectionStore } from '../functions/src/reports/projectionStore.js';
+import { createProjectionStore, markerRef, monthState } from '../functions/src/reports/projectionStore.js';
 import { createConsolidation } from '../functions/src/reports/consolidation.js';
 import { createReportBackfill } from '../functions/src/reports/backfill.js';
-import { collections, financial, keyOf } from '../functions/src/reports/summaryModel.js';
+import { collections, financial, integrityDay, keyOf, monthInLima } from '../functions/src/reports/summaryModel.js';
 
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080');
 assert.equal(process.env.GCLOUD_PROJECT, 'demo-migapos');
@@ -103,7 +103,114 @@ it('P31 Rules protects direct summary and product IDs, and measures 100 authorit
   t.diagnostic('P31_WRITER ' + JSON.stringify({ sales: 100, contributionWrites: writes, publicationWrites: published.writes,
     writerPointReads, writerAttempts,
     sourceOperations: published.budget.operations, sourceDocuments: published.budget.documents, sourcePointReads: published.budget.pointReads,
+    readsByCollection: published.budget.byCollection,
     elapsedMs: Date.now() - started }));
+});
+
+it('P31 idles for 24 hours with 500 contracts and rotates due audits within a single tenant budget', async t => {
+  await env.clearFirestore();
+  const businessId = 'p31-idle', branchId = 'idle-site';
+  let now = Date.now() - integrityDay - 60000;
+  const options = { clock: () => now };
+  const input = { businessId, periodKey: monthInLima(Date.now()), maxDocuments: 900 };
+  const checkpoint = monthState(admin, businessId, input.periodKey);
+  const historical = { businessId, branchId, createdAt: new Date('2020-01-01T12:00:00-05:00'), status: 'pendiente', total: 12, balance: 12, paidTotal: 0 };
+  await admin.collection('branches').doc(branchId).set({ businessId, status: 'activo' });
+  await admin.collection('users').doc('idle-owner').set({ businessId, role: 'dueño', status: 'activo' });
+  await admin.collection('licenses').doc(businessId).set({ businessId, status: 'activa', expiry: new Date('2099-01-01') });
+  await admin.collection('tenants').doc(businessId).set({ businessId, status: 'active' });
+  for (const start of [0, 250]) {
+    const batch = admin.batch();
+    for (let i = start; i < start + 250; i++) batch.set(admin.collection('contracts').doc('idle-' + i), historical);
+    await batch.commit();
+  }
+  const publisher = createConsolidation(admin, options), job = createReportBackfill(admin, options);
+  const first = await publisher.consolidate(input);
+  assert.deepEqual(first.budget.byCollection.contracts, { documents: 500, pointReads: 0 });
+  const initial = (await checkpoint.get()).data();
+  const summaryId = keyOf(businessId, 'global', input.periodKey);
+  assert.equal(financial((await admin.collection(collections.months).doc(summaryId).get()).data().values).net, 0);
+  await assertFails(getDocFromServer(point('idle-owner', collections.months, summaryId)));
+  const totals = { queueQueries: 0, checkpointsReturned: 0, checkpointPointReads: 0, checkpointWrites: 0, audits: 0, publicationWrites: 0, repairWrites: 0 };
+  for (let tick = 0; tick < 288; tick++) {
+    now = initial.validUntil - integrityDay + tick * 300000;
+    const { outcome, metrics } = await job.sweep({ maxDocuments: input.maxDocuments });
+    assert.deepEqual(outcome, []);
+    for (const key of Object.keys(totals)) totals[key] += metrics[key];
+  }
+  assert.equal(totals.queueQueries, 288);
+  assert.ok(Object.entries(totals).every(([key, count]) => key === 'queueQueries' || count === 0));
+  now = initial.validUntil;
+  const due = await job.sweep({ maxDocuments: input.maxDocuments });
+  assert.deepEqual(due.outcome, ['verified']);
+  assert.equal(due.metrics.audits, 1);
+  const refreshed = (await checkpoint.get()).data();
+  assert.equal(refreshed.revision, initial.revision);
+  assert.ok(refreshed.validUntil > initial.validUntil);
+  await assertSucceeds(getDocFromServer(point('idle-owner', collections.months, summaryId)));
+  const older = monthState(admin, businessId, '2025-10');
+  await older.set({ kind: 'month', businessId, periodKey: '2025-10', mode: 'automatic', status: 'dirty', nextCheckAt: initial.validUntil });
+  const deferred = await job.sweep({ maxDocuments: input.maxDocuments });
+  assert.deepEqual(deferred.outcome, ['deferred']);
+  assert.equal(deferred.metrics.audits, 0);
+  assert.ok((await older.get()).data().nextCheckAt > now);
+  assert.deepEqual(due.metrics.auditBudgets[0].byCollection.contracts, { documents: 500, pointReads: 0 });
+  const writer = createProjectionStore(admin, options);
+  now = Date.now();
+  await admin.collection('sales').doc('first-active').set({ ...baseSale(businessId, branchId), confirmedAt: new Date(now) });
+  await writer.sync('sales', 'first-active');
+  const dirty = (await checkpoint.get()).data();
+  assert.equal(dirty.status, 'dirty');
+  assert.equal(dirty.epoch, refreshed.epoch + 1);
+  assert.equal(dirty.nextCheckAt, refreshed.nextCheckAt);
+  await assertFails(getDocFromServer(point('idle-owner', collections.months, summaryId)));
+  assert.equal((await job.sweep({ maxDocuments: input.maxDocuments })).metrics.audits, 0);
+  t.diagnostic('P31_IDLE ' + JSON.stringify({ contracts: 500, ...totals, scheduledAudit: due.metrics }));
+});
+
+it('P31 recovers a missed intermonth refund, keeps legacy payments, and fences expired backfills and quarantined tenants', async () => {
+  await env.clearFirestore();
+  const businessId = 'p31-integrity', branchId = 'integrity-site', id = 'legacy-order';
+  let now = Date.now();
+  const options = { clock: () => now };
+  const writer = createProjectionStore(admin, options), publisher = createConsolidation(admin, options), job = createReportBackfill(admin, options);
+  const order = { businessId, branchId, createdAt: new Date('2025-09-05T12:00:00-05:00'), status: 'pendiente', total: 10.25, balance: 0, paidTotal: 10.25,
+    payments: [{ amount: '10.25', date: '2025-10-05T12:00:00-05:00', method: 'yape/plin', branchId }] };
+  await admin.collection('branches').doc(branchId).set({ businessId, status: 'activo' });
+  await admin.collection('contracts').doc(id).set(order);
+  await writer.sync('contracts', id);
+  const period = periodKey => ({ businessId, periodKey, maxDocuments: 500 });
+  await publisher.consolidate(period('2025-09'), { manual: true });
+  await publisher.consolidate(period('2025-10'), { manual: true });
+  await publisher.consolidate(period('2025-11'));
+  const snapshot = periodKey => admin.collection(collections.months).doc(keyOf(businessId, 'global', periodKey)).get();
+  assert.equal(financial((await snapshot('2025-10')).data().values).digital.net, 1025);
+  const checkpoint = monthState(admin, businessId, '2025-11');
+  const dueAt = (await checkpoint.get()).data().validUntil;
+  const receipt = { businessId, branchId, sourceId: id, sourceType: 'contract', occurredAt: new Date('2025-11-07T12:00:00-05:00'),
+    method: 'yape', type: 'refund', amount: -5 };
+  await admin.collection('payments').doc('lost-refund').set(receipt);
+  const lease = { ref: admin.collection(collections.state).doc(keyOf('backfill', businessId, '2025-11')), token: 'expired' };
+  await lease.ref.set({ token: lease.token, leaseUntil: now });
+  await assert.rejects(writer.sync('payments', 'lost-refund', { lease }), { code: 'report-backfill-lease' });
+  await assert.rejects(publisher.consolidate(period('2025-11'), { lease }), { code: 'report-backfill-lease' });
+  assert.equal((await checkpoint.get()).data().status, 'verified');
+  assert.equal((await markerRef(admin, 'payments', 'lost-refund').get()).exists, false);
+  now = dueAt;
+  const repair = await job.sweep({ maxDocuments: 500 });
+  assert.deepEqual(repair.outcome, ['incomplete']);
+  assert.equal(repair.metrics.audits, 1);
+  assert.equal(repair.metrics.repairWrites, 3);
+  assert.equal((await checkpoint.get()).data().status, 'dirty');
+  assert.equal((await job.sweep({ maxDocuments: 500 })).metrics.audits, 0);
+  now += integrityDay;
+  assert.deepEqual((await job.sweep({ maxDocuments: 500 })).outcome, ['verified']);
+  assert.equal(financial((await snapshot('2025-11')).data().values).digital.net, -500);
+  assert.equal(financial((await snapshot('2025-10')).data().values).digital.net, 1025);
+  await writer.quarantine('contracts', [order]);
+  await checkpoint.update({ nextCheckAt: now });
+  assert.deepEqual((await job.sweep({ maxDocuments: 500 })).outcome, ['held']);
+  await assert.rejects(publisher.consolidate(period('2025-11')), { code: 'report-projection-held' });
 });
 
 it('P31 publishes the closed annual product catalog from every monthly page and fences a stale revision', async () => {

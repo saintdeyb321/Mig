@@ -1,13 +1,10 @@
 import { FieldPath } from 'firebase-admin/firestore';
 import { hash, stable } from './contributions.js';
-import { accumulateAtom, activeBucket, blankDay, identityOf, monthState, sourceRecord } from './projectionStore.js';
+import { accumulateAtom, activeBucket, blankDay, checkBackfillLease, identityOf, monthState, sourceRecord } from './projectionStore.js';
 import { checkVector, collections, dayInLima, failReport, groupDays, keyOf, maxProductPages, maxSummaryBytes,
-  mergeProducts, monthInLima, productPageSize, rankProducts, schemaVersion, sourceTypes, total, validMonth, validScopePart } from './summaryModel.js';
+  integrityDay, mergeProducts, monthInLima, productPageSize, rankProducts, schemaVersion, sourceTypes, total, validMonth, validScopePart } from './summaryModel.js';
 
 const PAGE = 100;
-const MANUAL_LEASE = 86400000;
-const AUTO_RECHECK = 15 * 60000;
-const AUTO_LEASE = 60 * 60000;
 const MAX_ANNUAL_INPUT_PAGES = maxProductPages * 3;
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 export function monthWindow(month) {
@@ -35,32 +32,42 @@ export function projectionFromRecords(businessId, periodKey, entries) {
 }
 
 export function createConsolidation(database, { documentId = () => FieldPath.documentId(), clock = Date.now } = {}) {
-  async function readEvidence({ businessId, periodKey, maxDocuments }) {
+  async function readEvidence({ businessId, periodKey, maxDocuments }, { lease } = {}) {
     assertScope(businessId, periodKey, maxDocuments);
     const { start, end } = monthWindow(periodKey);
     return database.runTransaction(async raw => {
-      const budget = { operations: 0, documents: 0, pointReads: 0 };
-      const count = (operation, documents, points = 0) => {
-        budget.operations += operation;
+      const budget = { operations: 0, documents: 0, pointReads: 0, byCollection: {} };
+      const count = (collection, documents, points = 0) => {
+        const scope = budget.byCollection[collection] ??= { documents: 0, pointReads: 0 };
+        scope.documents += documents;
+        scope.pointReads += points;
         budget.documents += documents;
         budget.pointReads += points;
         if (budget.documents + budget.pointReads > maxDocuments) throw failReport('report-budget', 'Se agotó el presupuesto de origen.');
       };
       const tx = {
-        async get(ref) { count(1, 0, 1); return raw.get(ref); },
-        async getAll(...refs) { count(1, 0, refs.length); return raw.getAll(...refs); },
+        async get(ref) { budget.operations++; count(ref.parent.id, 0, 1); return raw.get(ref); },
+        async getAll(...refs) {
+          budget.operations++;
+          for (const ref of refs) count(ref.parent.id, 0, 1);
+          return raw.getAll(...refs);
+        },
       };
+      await checkBackfillLease(tx, lease, clock);
       const state = await tx.get(monthState(database, businessId, periodKey));
       const through = state.readTime?.toMillis() ?? clock();
       if (through < +start) throw failReport('report-summary-pending', 'El mes todavía no ha comenzado.');
-      const scan = async query => {
+      const hold = await tx.get(database.collection(collections.state).doc(keyOf('hold', businessId)));
+      if (hold.exists) throw failReport('report-projection-held', 'La cobertura del negocio está en revisión.');
+      const scan = async (scope, query) => {
         const rows = [];
         let cursor;
         do {
           const size = Math.min(PAGE, maxDocuments - budget.documents - budget.pointReads);
           if (size < 1) throw failReport('report-budget', 'Falta una página para verificar el fin del origen.');
+          budget.operations++;
           const page = await raw.get((cursor ? query.startAfter(cursor) : query).limit(size));
-          count(1, page.size);
+          count(scope, page.size);
           rows.push(...page.docs);
           if (page.size < size) return rows;
           const next = page.docs.at(-1);
@@ -71,72 +78,85 @@ export function createConsolidation(database, { documentId = () => FieldPath.doc
       };
       const tenant = source => database.collection(source).where('businessId', '==', businessId);
       const upper = new Date(Math.min(+end, through));
-      const range = (source, field, first = start, iso = false) => scan(tenant(source)
+      const range = (source, field, first = start, iso = false) => scan(source, tenant(source)
         .where(field, '>=', iso ? first.toISOString() : first)
         .where(field, '<=', iso ? upper.toISOString() : upper).orderBy(field).orderBy(documentId()));
       const primary = {
-        sales: await Promise.all([range('sales', 'confirmedAt'), range('sales', 'createdAt'), range('sales', 'createdAt', start, true)]),
+        sales: [await range('sales', 'confirmedAt'), await range('sales', 'createdAt'), await range('sales', 'createdAt', start, true)],
         payments: [await range('payments', 'occurredAt')], pos_voids: [await range('pos_voids', 'occurredAt')],
         // Embedded ledger dates can be more recent than their order. There is no safe date predicate on that history.
-        contracts: [await scan(tenant('contracts').orderBy(documentId()))],
-        cash_sessions: await Promise.all(['openedAt', 'closedAt'].flatMap(field => {
-          const first = field === 'openedAt' ? new Date(+start - 14 * 3600000) : start;
-          return [range('cash_sessions', field, first), range('cash_sessions', field, first, true)];
-        })),
+        contracts: [await scan('contracts', tenant('contracts').orderBy(documentId()))],
+        cash_sessions: [],
       };
-      const old = await scan(tenant(collections.contributions).where('months', 'array-contains', periodKey).orderBy(documentId()));
-      const previous = old.map(snap => snap.data());
-      const entries = [], candidates = [];
+      for (const field of ['openedAt', 'closedAt']) {
+        const first = field === 'openedAt' ? new Date(+start - 14 * 3600000) : start;
+        primary.cash_sessions.push(await range('cash_sessions', field, first), await range('cash_sessions', field, first, true));
+      }
+      const old = await scan(collections.contributions, tenant(collections.contributions).where('months', 'array-contains', periodKey).orderBy(documentId()));
+      const previous = new Map(old.map(snap => {
+        const row = snap.data();
+        return [keyOf(row.source, row.sourceId), row];
+      }));
+      const entries = [], candidates = [], repairs = [];
+      const inMonth = atom => atom.day.startsWith(periodKey + '-');
       for (const source of sourceTypes) {
-        const proposed = primary[source].flat().map(row => row.id);
-        const retained = new Set(previous.filter(row => row.source === source).map(row => row.sourceId));
-        const ids = [...new Set([...proposed, ...retained])].sort();
+        const proposed = new Map(primary[source].flat().map(row => [row.id, row]));
+        const retained = new Set([...previous.values()].filter(row => row.source === source).map(row => row.sourceId));
+        const ids = [...new Set([...proposed.keys(), ...retained])].sort();
         for (const id of ids) {
-          const record = await sourceRecord(database, tx, source, id, businessId, through);
+          const record = await sourceRecord(database, tx, source, id, businessId, through, proposed.get(id));
           if (!record) throw failReport('report-evidence', 'Movimiento desapareció del corte.');
-          const participates = record.atoms.some(atom => atom.day.startsWith(periodKey + '-'));
-          if (participates) entries.push({ source, id, atoms: record.atoms });
-          if (participates || retained.has(id)) candidates.push({ source, id });
+          const atoms = record.atoms.filter(inMonth);
+          if (atoms.length) entries.push({ source, id, atoms });
+          if (atoms.length || retained.has(id)) {
+            candidates.push({ source, id });
+            const prior = previous.get(keyOf(source, id));
+            if (stable(prior?.atoms.filter(inMonth) ?? []) !== stable(atoms)) repairs.push({ source, id });
+          }
         }
       }
-      const stored = await scan(tenant(collections.days).where('periodKey', '==', periodKey).orderBy(documentId()));
-      const seenBranches = await scan(tenant('branches').orderBy(documentId()));
+      const stored = await scan(collections.days, tenant(collections.days).where('periodKey', '==', periodKey).orderBy(documentId()));
+      const seenBranches = await scan('branches', tenant('branches').orderBy(documentId()));
       const branchIds = new Set(seenBranches.map(doc => doc.id));
       const projection = projectionFromRecords(businessId, periodKey, entries);
       if (projection.buckets.some(row => !branchIds.has(row.branchId))) throw failReport('report-evidence', 'Hay movimientos de una sede sin evidencia del negocio.');
-      const hold = await tx.get(database.collection(collections.state).doc(keyOf('hold', businessId)));
       return { ...projection, stored: stored.map(doc => doc.data()),
-        branchIds: [...branchIds].sort(), candidates, epoch: state.data()?.epoch ?? 0, state: state.data(), through,
-        blocked: hold.data()?.blocked === true, budget };
+        branchIds: [...branchIds].sort(), candidates, repairs, epoch: state.data()?.epoch ?? 0, state: state.data(), through,
+        budget };
     }, { readOnly: true });
   }
 
-  async function markIncomplete({ businessId, periodKey }, epoch, code) {
+  async function markIncomplete({ businessId, periodKey }, expected, code, lease, checkpoint) {
     return database.runTransaction(async tx => {
+      checkpoint.attempts++;
+      checkpoint.pointReads += lease ? 2 : 1;
       const ref = monthState(database, businessId, periodKey), current = (await tx.get(ref)).data();
-      if ((current?.epoch ?? 0) !== epoch) return false;
-      tx.set(ref, { kind: 'month', businessId, periodKey, epoch, status: 'incomplete', issue: code,
-        nextCheckAt: clock() + AUTO_RECHECK, mode: current?.mode ?? 'automatic' }, { merge: true });
+      await checkBackfillLease(tx, lease, clock);
+      if ((current?.epoch ?? 0) !== (expected?.epoch ?? 0) || current?.revision !== expected?.revision
+        || current?.validUntil !== expected?.validUntil || current?.status !== expected?.status) return false;
+      tx.set(ref, { kind: 'month', businessId, periodKey, epoch: expected?.epoch ?? 0, status: 'incomplete', issue: code,
+        nextCheckAt: clock() + integrityDay, mode: current?.mode ?? 'automatic' }, { merge: true });
       return true;
     });
   }
 
-  async function consolidate(input, { manual = false } = {}) {
+  async function consolidate(input, { manual = false, repair = false, lease } = {}) {
     const { businessId, periodKey } = input;
     assertScope(businessId, periodKey, input.maxDocuments);
     const ref = monthState(database, businessId, periodKey);
+    const checkpoint = { pointReads: 1, attempts: 0 };
     const initial = (await ref.get()).data();
     let evidence;
-    try { evidence = await readEvidence(input); }
+    try { evidence = await readEvidence(input, { lease }); }
     catch (error) {
-      await markIncomplete(input, initial?.epoch ?? 0, safeIssue(error));
+      if (!['report-projection-held', 'report-backfill-lease'].includes(error.code)) await markIncomplete(input, initial, safeIssue(error), lease, checkpoint);
       throw error;
     }
-    if (evidence.blocked) throw failReport('report-evidence', 'La cobertura del negocio está en revisión.');
     const { epoch, buckets, products, budget } = evidence;
     const ordered = rows => rows.filter(activeBucket).sort((a, b) => compare(identityOf(a), identityOf(b)));
-    if (stable(ordered(evidence.stored)) !== stable(buckets)) {
-      await markIncomplete(input, epoch, 'report-checkpoint-drift');
+    if (evidence.repairs.length || stable(ordered(evidence.stored)) !== stable(buckets)) {
+      const marked = await markIncomplete(input, evidence.state, 'report-checkpoint-drift', lease, checkpoint);
+      if (repair && marked) return { status: 'incomplete', budget, checkpoint, writes: 1, repairs: evidence.repairs, through: evidence.through };
       throw failReport('report-checkpoint-drift', 'La proyección no coincide con el corte de origen.');
     }
     const { end } = monthWindow(periodKey);
@@ -146,14 +166,15 @@ export function createConsolidation(database, { documentId = () => FieldPath.doc
     const contentHash = hash([facts, products, allBranches]);
     const checkedAt = clock();
     const mode = manual ? 'manual' : 'automatic';
-    if (evidence.state?.status === 'verified' && evidence.state.mode === mode && evidence.state.contentHash === contentHash
-      && evidence.state.nextCheckAt > checkedAt && evidence.state.validUntil > checkedAt) {
-      return { status: 'verified', revision: evidence.state.revision, budget, writes: 0 };
-    }
     const closed = calculatedThrough === +end;
-    const recheckAfter = manual ? MANUAL_LEASE * (closed ? 7 : 1) : closed ? MANUAL_LEASE : AUTO_RECHECK;
-    const expiresAt = checkedAt + (manual ? recheckAfter : closed ? 2 * MANUAL_LEASE : AUTO_LEASE);
-    const revision = hash([epoch, contentHash, evidence.through]);
+    const sameProjection = evidence.state?.status === 'verified' && evidence.state.mode === mode
+      && evidence.state.contentHash === contentHash && evidence.state.closed === closed;
+    if (sameProjection && evidence.state.nextCheckAt > checkedAt && evidence.state.validUntil > checkedAt) {
+      return { status: 'verified', revision: evidence.state.revision, budget, checkpoint, writes: 0 };
+    }
+    const recheckAfter = integrityDay * (closed ? (manual ? 7 : 14) : 1);
+    const expiresAt = checkedAt + recheckAfter;
+    const revision = sameProjection ? evidence.state.revision : hash([epoch, contentHash, evidence.through]);
     const stateId = ref.id, writes = [];
     for (const branchId of ['global', ...allBranches]) {
       if (!validScopePart(branchId)) throw failReport('report-evidence', 'Sede de consolidación inválida.');
@@ -173,20 +194,24 @@ export function createConsolidation(database, { documentId = () => FieldPath.doc
     }
     if (writes.length >= 399) throw failReport('report-budget', 'El lote mensual excede su presupuesto de publicación.');
     const state = { kind: 'month', businessId, periodKey, epoch, revision, status: 'verified', issue: null, contentHash, validUntil: expiresAt,
-      nextCheckAt: checkedAt + recheckAfter, mode };
+      nextCheckAt: expiresAt, closed, mode };
     await database.runTransaction(async tx => {
+      checkpoint.attempts++;
+      checkpoint.pointReads += lease ? 3 : 2;
       const [latest, hold] = await tx.getAll(ref, database.collection(collections.state).doc(keyOf('hold', businessId)));
+      await checkBackfillLease(tx, lease, clock);
       const current = latest.data();
-      if (hold.data()?.blocked || (current?.epoch ?? 0) !== epoch || (current?.revision ?? null) !== (evidence.state?.revision ?? null)) {
+      if (hold.exists || (current?.epoch ?? 0) !== epoch || current?.revision !== evidence.state?.revision
+        || current?.validUntil !== evidence.state?.validUntil || current?.status !== evidence.state?.status) {
         throw failReport('report-checkpoint-race', 'El corte cambió durante la consolidación.');
       }
       for (const [target, data] of writes) tx.set(target, data);
       tx.set(ref, state);
     });
-    return { status: 'verified', revision, budget, writes: writes.length + 1 };
+    return { status: 'verified', revision, budget, checkpoint, writes: writes.length + 1 };
   }
 
-  async function publishYearProducts({ businessId, year, asOf = clock() }) {
+  async function publishYearProducts({ businessId, year, asOf = clock() }, metrics = { pointReads: 0, checkpoints: 0 }) {
     const now = monthInLima(asOf);
     if (!/^\d{4}$/.test(year) || year > now.slice(0, 4) || !validScopePart(businessId)) throw failReport('report-evidence', 'Año o negocio inválido.');
     const count = year === now.slice(0, 4) ? Number(now.slice(-2)) : 12;
@@ -194,12 +219,15 @@ export function createConsolidation(database, { documentId = () => FieldPath.doc
     const states = months.map(month => monthState(database, businessId, month));
     const periodKey = 'year-' + year, ref = monthState(database, businessId, periodKey);
     return database.runTransaction(async tx => {
+      metrics.checkpoints += 1 + states.length;
       const [head, ...monthsState] = (await tx.getAll(ref, ...states)).map(doc => doc.data());
       if (monthsState.some(state => state?.status !== 'verified' || state.validUntil <= clock())) {
         throw failReport('report-summary-pending', 'Falta consolidar un mes transcurrido.');
       }
       const revisions = monthsState.map(state => state.revision), revision = hash(revisions);
-      if (head?.status === 'verified' && head.revision === revision) return { writes: 0 };
+      const expiresAt = Math.min(...monthsState.map(state => state.validUntil));
+      if (head?.status === 'verified' && head.revision === revision && head.validUntil === expiresAt) return { writes: 0 };
+      metrics.pointReads += months.length;
       const roots = (await tx.getAll(...months.map(month => database.collection(collections.months).doc(keyOf(businessId, 'global', month)))))
         .map(doc => doc.data());
       if (roots.some((root, i) => root?.revision !== revisions[i] || root.productPages < 1 || root.productPages > maxProductPages
@@ -211,6 +239,7 @@ export function createConsolidation(database, { documentId = () => FieldPath.doc
       }
       const inputs = roots.flatMap(root => Array.from({ length: root.productPages }, (_, page) =>
         database.collection(collections.products).doc(keyOf(businessId, 'global', root.periodKey, page))));
+      metrics.pointReads += inputs.length;
       const all = (await tx.getAll(...inputs)).map(doc => doc.data());
       const data = [];
       let offset = 0;
@@ -224,7 +253,6 @@ export function createConsolidation(database, { documentId = () => FieldPath.doc
         offset += root.productPages;
       }
       const products = mergeProducts(data);
-      const expiresAt = Math.min(...monthsState.map(state => state.validUntil));
       const branches = new Set(roots.flatMap(root => [...root.rows.map(row => row.branchId), ...(root.branchIds ?? [])]));
       const writes = [];
       for (const branchId of ['global', ...[...branches].sort()]) {

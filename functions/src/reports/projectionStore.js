@@ -4,6 +4,13 @@ import { blank, checkVector, collections, failReport, keyOf, maxSummaryBytes, mi
 export const monthState = (database, businessId, month) => database.collection(collections.state).doc(keyOf(businessId, month));
 export const markerRef = (database, source, id) => database.collection(collections.contributions).doc(hash([source, id]));
 export const identityOf = atom => keyOf(atom.branchId, atom.day);
+export async function checkBackfillLease(tx, lease, clock) {
+  if (!lease) return;
+  const current = (await tx.get(lease.ref)).data();
+  if (!current || current.token !== lease.token || !Number.isSafeInteger(current.leaseUntil) || current.leaseUntil <= clock()) {
+    throw failReport('report-backfill-lease', 'El permiso del backfill venció o cambió.');
+  }
+}
 const group = (map, key, make) => {
   if (!map.has(key)) map.set(key, make());
   return map.get(key);
@@ -25,8 +32,8 @@ export const blankDay = (businessId, atom) => ({ businessId, branchId: atom.bran
   periodKey: atom.day.slice(0, 7), values: blank(), products: [] });
 export const activeBucket = row => row.values.some(Boolean) || row.products.length > 0;
 
-export async function sourceRecord(database, tx, source, id, scope, through) {
-  const snap = await tx.get(database.collection(source).doc(id)), row = snap.data();
+export async function sourceRecord(database, tx, source, id, scope, through, snapshot) {
+  const snap = snapshot ?? await tx.get(database.collection(source).doc(id)), row = snap.data();
   if (!row) return null;
   if (scope && row.businessId !== scope) throw failReport('report-evidence', 'Cambio fuera del negocio pedido.');
   const related = {};
@@ -50,7 +57,7 @@ export async function sourceRecord(database, tx, source, id, scope, through) {
 }
 
 export function createProjectionStore(database, { clock = Date.now } = {}) {
-  async function sync(source, id, { businessId, month, observedAt } = {}) {
+  async function sync(source, id, { businessId, month, observedAt, lease } = {}) {
     if (!sourceTypes.includes(source) || typeof id !== 'string' || !id || id.includes('/')) throw failReport('report-evidence', 'Fuente inválida.');
     const through = observedAt ?? clock();
     let attempts = 0, pointReads = 0;
@@ -60,6 +67,7 @@ export function createProjectionStore(database, { clock = Date.now } = {}) {
         get(ref) { pointReads++; return raw.get(ref); },
         getAll(...refs) { pointReads += refs.length; return raw.getAll(...refs); },
       };
+      await checkBackfillLease(tx, lease, clock);
       const entries = [];
       const primary = await sourceRecord(database, tx, source, id, businessId, through);
       if (!primary) {
@@ -122,7 +130,7 @@ export function createProjectionStore(database, { clock = Date.now } = {}) {
       for (const [i, periodKey] of months.entries()) {
         const prior = documents[days.length + i].data();
         raw.set(stateRefs[i], { kind: 'month', businessId: tenant, periodKey, status: 'dirty',
-          epoch: (prior?.epoch ?? 0) + 1, nextCheckAt: clock(), revision: prior?.revision ?? null,
+          epoch: (prior?.epoch ?? 0) + 1, nextCheckAt: prior?.nextCheckAt ?? clock(), revision: prior?.revision ?? null,
           mode: prior?.mode ?? (month ? 'manual' : 'automatic') }, { merge: true });
       }
       return { writes, changed: true, periods: months };

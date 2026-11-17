@@ -7,6 +7,7 @@ export const schemaVersion = 2;
 export const productPageSize = 250;
 export const maxProductPages = 24;
 export const maxSummaryBytes = 480 * 1024;
+export const integrityDay = 24 * 60 * 60 * 1000;
 export const fields = ['saleCash', 'saleDigital', 'voidCash', 'voidDigital', 'advanceCash', 'advanceDigital',
   'paymentCash', 'paymentDigital', 'refundCash', 'refundDigital', 'tickets', 'voids', 'advances', 'payments', 'refunds',
   'created', 'pending', 'delivered', 'createdCancelled', 'debt', 'cancelled', 'openings', 'closings', 'balanced', 'extra', 'short',

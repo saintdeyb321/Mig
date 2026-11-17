@@ -2,6 +2,7 @@
   "name": "migapos-tooling",
   "private": true,
   "type": "module",
+  "packageManager": "npm@11.16.0",
   "scripts": {
     "test": "npm run test:spark && npm run test:spark:rules",
     "test:spark": "node --test --test-concurrency=1 tests/session-recovery.test.mjs tests/spark-mode.test.mjs tests/spark-tooling.test.mjs tests/ui-security.test.mjs tests/spark-startup.browser.test.mjs tests/spark-local.browser.test.mjs tests/backups.test.mjs tests/backups.browser.test.mjs tests/p15-session.browser.test.mjs",

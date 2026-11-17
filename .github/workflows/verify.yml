@@ -39,6 +39,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Use the lockfile npm version
+        run: |
+          npm install --global npm@11.16.0 --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = "11.16.0"
       - name: Install locked dependencies
         run: |
           npm ci --no-audit --no-fund
