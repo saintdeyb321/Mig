@@ -28,7 +28,7 @@ export default function Reports({
     timeFilter,
     setTimeFilter,
     refreshReport,
-    maxProductQty, updatedAt, warning, requestHistorical
+    maxProductQty, updatedAt, warning
   } = useReports(user);
 
 
@@ -53,9 +53,9 @@ export default function Reports({
     } />;
   if (error && !hasData) return <div className="workspace-page max-w-7xl gap-3">
     {header}
-    {error.code === 'report-history-confirmation' ? <Alert variant="warning" title="Consulta histórica pendiente">
-      <p>Este período puede consultar miles de movimientos. Confirma para cargar las estadísticas.</p>
-      <Button className="mt-2" onClick={requestHistorical}>Consultar documentos históricos</Button>
+    {error.code === 'report-summary-pending' ? <Alert variant="warning" title="Resumen no disponible">
+      <p>Pendiente de actualización administrativa. Comprueba también tu conexión.</p>
+      {updatedAt && <p>Último corte verificado {new Date(updatedAt).toLocaleString('es-PE', { timeZone: 'America/Lima' })} (Lima).</p>}
     </Alert> : error.code === 'report-limit' ? <Alert variant="warning" title="El período supera el límite de lectura">
       Selecciona un período menor. No se calcularon totales parciales.
     </Alert> : <FirestoreQueryError error={error} area="reports" user={user} onRetry={refreshReport} />}

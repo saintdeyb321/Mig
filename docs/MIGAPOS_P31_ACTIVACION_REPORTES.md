@@ -1,14 +1,18 @@
-# Activación y reversión de reportes consolidados P31
+# Activación manual de reportes consolidados en Firebase Spark
 
-## Estado local
+## Alcance y estado
 
-- `REPORT_SUMMARIES_ENABLED` controla el backend. El gate independiente `VITE_REPORT_EXPORT_SUMMARIES_ENABLED` controla exclusivamente Excel/PDF y queda deshabilitado por defecto. El antiguo gate web `VITE_REPORT_SUMMARIES_ENABLED` carece de consumidores. Día y semana conservan el detalle; el botón principal de mes y año exige snapshots verificados.
-- PDF/XLSX consolidados leen todas las sedes. Con el gate apagado, datos ausentes, cobertura incompleta o revisión vencida, muestran «Resumen no disponible». La acción adicional «Exportar historial del período» exige confirmación de su costo potencial, conserva los límites documentales y utiliza otra entrada de caché. El dashboard conserva sus estadísticas documentales y la confirmación previa de períodos largos.
-- V2 se guarda en colecciones nuevas con sufijo `_v1` y conserva V1 como oráculo SHADOW. El flujo automático necesita Blaze y despliegue explícito de las funciones de reportes. Spark admite publicación manual mediante un operador con acceso administrativo autorizado. [Eventos Firestore](https://firebase.google.com/docs/functions/firestore-events) · [Cuotas de Functions](https://firebase.google.com/docs/functions/quotas).
+El único gate web `VITE_REPORT_EXPORT_SUMMARIES_ENABLED` habilita Dashboard y exportaciones de mes/año. Queda OFF por defecto. El Dashboard respeta la sede activa y Excel/PDF consultan el alcance global autorizado. Hoy/semana conservan sus lectores y auditorías detalladas.
 
-## Publicación manual bajo autorización del propietario
+El escritor es `functions/scripts/report-backfill.mjs`, ejecutado manualmente por un operador autorizado. `REPORT_SUMMARIES_ENABLED` permanece OFF y `firebase.json` carece de configuración de Functions. El CLI reutiliza el motor P31 local con Admin SDK. Sus credenciales administrativas se gestionan fuera del repositorio y del navegador.
 
-1. Revisar presupuesto, permisos IAM mínimos del operador y servicio, CI del cambio, y catálogo de índices de la base `(default)`. Conservar copia de las Rules publicadas. Publicar los cambios de Rules y crear estos compuestos de ámbito **COLLECTION**. Confirmar estado **Habilitado** antes de habilitar la lectura.
+Mes/año muestran «Resumen no disponible» si el gate está apagado o falta cobertura, vigencia o revisión compatible. El catálogo anual requiere todos los meses transcurridos, incluidos los vacíos. Un mes ausente requiere consolidación y no equivale a cero. Los lectores no disponen de una ruta alternativa de movimientos.
+
+## Revisión y publicación manual de configuración
+
+1. Revisar pruebas locales y CI del cambio. Sigue pendiente el bloqueo preexistente de `picomatch`, `GHSA-fc5q-39xc-vjpf`. La auditoría sigue siendo obligatoria. Un resultado local no acredita CI remota ni configuración publicada.
+2. En Firebase Console, abrir el proyecto `migapos`, Firestore `(default)`. Guardar las Rules realmente publicadas, con fecha y procedencia comprobadas. Publicar la política local solo después de autorización del propietario y verificar accesos por negocio y sede.
+3. Comparar el conjunto activo de índices antes de publicar. Conservar los índices históricos. Estos seis compuestos P31 de ámbito **COLLECTION** continúan declarados:
 
    | Colección | Campos en orden |
    | --- | --- |
@@ -19,30 +23,69 @@
    | `report_source_contributions_v1` | `businessId ASC, months CONTAINS, __name__ ASC` |
    | `report_projection_state_v1` | `kind ASC, mode ASC, nextCheckAt ASC, __name__ ASC` |
 
-   Los dos índices de proyección respaldan el generador y la cola de integridad. Los cuatro de `cash_sessions`/`payments` se conservan en el archivo para revisión del conjunto existente; la interfaz de auditoría P31 fue retirada. El lector de exportaciones usa IDs deterministas y no requiere compuestos nuevos. Aplicar las exenciones adicionales del archivo para buckets, contribuciones, snapshots y páginas de productos. Las Rules permiten puntos de lectura únicamente a cuentas activas con licencia y alcance autorizado. Checkpoints, marcadores y buckets son privados. Las cinco colecciones carecen de escritura de cliente.
+   El compuesto de contribuciones respalda el backfill. El de cola automática queda archivado, sin programación en esta operación Spark. Los cuatro de caja/pagos se conservan para compatibilidad del conjunto existente. Los lectores por ID carecen de necesidad de índices nuevos. El índice P29 de `contracts` ya declara `businessId ASC, status ASC, voidedAt DESC, __name__ DESC`, de ámbito COLLECTION. Revisar su estado remoto. Esperar **Habilitado** para los índices necesarios en cada consulta administrativa.
+4. Verificar las siete exenciones P31 del archivo local para cuerpos de buckets, contribuciones, snapshots y páginas de productos. Las cinco colecciones deniegan escritura de cliente. El dueño del mismo negocio puede leer el global; la cuenta autorizada de sede solo puede leer su sede. Marcadores, buckets y checkpoints permanecen privados.
 
-2. Ejecutar el generador administrativo primero en ensayo. El CLI `functions/scripts/report-backfill.mjs` valida proyecto, negocio, un mes o año y los límites explícitos. Para acceso autorizado fuera de localhost requiere `--authorize-project` con el mismo identificador y credenciales externas del operador. El modo por defecto es dry-run. `--apply` requiere presupuesto de escrituras para cada ejecución mensual. Procesar cada mes transcurrido, incluidos los vacíos, y reanudar hasta `verified`. Solo después publicar el catálogo consolidado del año con `--year YYYY --apply`. La proyección falla si excede el límite, cambia el corte o falta evidencia histórica.
+## Ensayo en el emulador existente
 
-   Ejemplo de ensayo local con el emulador existente y `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080`:
+Usar `demo-migapos`, sin credenciales reales, con el emulador local ya instalado:
 
-   ```powershell
-   node functions/scripts/report-backfill.mjs --project demo-migapos --business negocio-ensayo --month 2026-10 --documents 1000
-   ```
+```powershell
+$env:FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080'
+$env:GCLOUD_PROJECT = 'demo-migapos'
+node scripts/spark-emulator-guard.mjs
+node functions/scripts/report-backfill.mjs --project demo-migapos --business negocio-ensayo --month 2026-10 --documents 1000
+node functions/scripts/report-backfill.mjs --project demo-migapos --business negocio-ensayo --month 2026-10 --documents 1000 --writes 1500 --limit 100 --apply
+```
 
-3. Para automatizar tras aprobar Blaze, configurar `REPORT_SUMMARIES_ENABLED=true` y `REPORT_MAX_SOURCE_DOCUMENTS` como presupuesto por escaneo. Seleccionar solamente estas funciones: `reportSalesProjection`, `reportPaymentProjection`, `reportVoidProjection`, `reportContractProjection`, `reportCashProjection` y `reconcileReportProjection`. Registrar los meses históricos y vacíos en la cola programada con `--automatic --apply` en modo autorizado, incluidos los publicados previamente en modo manual. Verificar revisiones mensuales, meses transcurridos y catálogos exactos en un piloto. Habilitar `VITE_REPORT_EXPORT_SUMMARIES_ENABLED` únicamente tras validar esas cifras y los accesos reales. Con publicación manual en Spark, el corte visible corresponde al último trabajo del operador; al caducar se requiere otra generación autorizada.
-4. Si el escritor detecta datos incompatibles, la revisión queda incompleta o se activa la cuarentena del negocio. Investigar la fuente original con acceso administrativo autorizado. Una cuarentena se libera manualmente solo después de revisar los movimientos afectados y mantener los lectores deshabilitados hasta reconstruir cada período comprometido.
+El primer comando administrativo es dry-run y escribe cero documentos. `--documents` limita cada escaneo a entre 1 y 40.000 intentos/retornos según el contador del generador. `--writes` limita cada lote aplicado a entre 402 y 200.000 escrituras; se reserva margen para publicar antes de empezar una fuente. `--limit` admite de 1 a 500 fuentes por ejecución. Repetir una respuesta `paused` con los mismos argumentos hasta `verified`. Presupuestar todos los escaneos y reintentos de esos lotes.
 
-El dry-run de frontend pasó en un árbol limpio con Node 22 y npm 11. Regenerar su lockfile produjo el mismo SHA-256. El simulador local de resolución anterior reprodujo `Missing: glob@10.5.0` en Functions. Allí el override por rango alternaba entre dos grafos incompatibles al regenerar el lockfile. Acotar el override al consumidor `rimraf` conservó `glob@14.0.3` y el lockfile exacto. La validación de CI exige el SDK de Admin para las pruebas y comprueba que Spark carece de Functions publicables en `firebase.json`. El aviso de `uuid@9.0.1` no se reprodujo localmente. Validar la instalación completa en CI antes de habilitar. La auditoría local detectó un bloqueo separado de `picomatch` en raíz y frontend (`GHSA-fc5q-39xc-vjpf`).
+Las pruebas ejecutan CLI y motor en el emulador para comprobar dry-run, presupuesto, reanudación, idempotencia, publicación global/sede, mes vacío, pagos legacy, anulación entre meses, catálogo anual y caducidad. La evidencia de operaciones y documentos por colección se guarda en `.release/`.
 
-## Presupuesto y reversión
+## Producción, solo después de aprobación expresa
 
-- Cada contribución actualiza día, marcador y `epoch` en la misma transacción. Un cambio deja el mes `dirty` sin adelantar la verificación ni renovar `validUntil`. La entrega de eventos y los pagos embebidos carecen de un cursor global que permita demostrar que llegaron todos los cambios. Hasta comprobar cobertura exhaustiva, el lector muestra «Resumen no disponible».
-- El scheduler revisa la cola cada 5 minutos. Un checkpoint privado reserva como máximo un intento de escaneo exhaustivo por negocio cada 24 horas, aunque estén pendientes varios meses. El próximo control vence a las 24 horas para un mes abierto o 14 días para uno cerrado automático. El modo manual conserva su vigencia de 1 o 7 días. Los períodos en espera caducan por hora de servidor. Una revalidación con los mismos datos conserva la revisión y registra el nuevo corte.
-- El control paginado reutiliza las lecturas de origen de su corte, incluidas las de contratos históricos. Si detecta movimientos omitidos, corrige hasta 14 contribuciones divergentes y exige otro control exhaustivo antes de publicar. Si el origen excede el presupuesto, la cobertura se pierde. Para volúmenes que excedan la capacidad de la cola, usar backfill administrativo con presupuesto explícito o mantener los períodos pendientes.
-- Exportación consolidada en fixtures: mes 1 documento + páginas de productos, año hasta 12 + páginas consolidadas. La página inicial de productos ubica el Top 5 anual. PDF y XLSX comparten preparación dentro de su sesión y corte. El dashboard sigue utilizando documentos de movimientos tras confirmar la consulta histórica. `dailyStatsRepository.getDailyStats()` recupera las ventas mediante `getSalesInPeriod()` antes de agruparlas; su cantidad de retornos depende de los tickets encontrados.
-- Emulador, 100 tickets: 300 escrituras de contribución y 7 para publicar el negocio y dos sedes. Una ejecución observó 410 intentos de lectura puntual en 103 intentos transaccionales, incluido un evento duplicado. La prueba de origen pasó de 117 operaciones y 102 intentos puntuales en P31 a 17 operaciones y 2 intentos puntuales. Ambos cortes devolvieron 100 ventas, 100 marcadores, 2 buckets y 2 sedes.
-- Emulador, 24 horas simuladas con 500 contratos y sin movimientos: 288 consultas vacías de cola, 0 documentos de origen, 0 escrituras. Al vencer, una verificación leyó 500 contratos y 1 sede, más accesos de checkpoint, frente a los ~48.000 retornos de contratos diarios estimados con el calendario anterior. La reserva y publicación de ese corte escribieron 6 documentos.
-- Las Rules de un punto de lectura pueden consultar el perfil, la licencia, el negocio, el checkpoint y la cuarentena, además de la sede asignada para un cajero. Las consultas de cola sin resultados y las evaluaciones de reglas pueden tener cargos. Los recuentos del emulador separan operaciones y documentos, sin medir esos cargos.
-- Los lectores recorren hasta 24 páginas de productos publicados por alcance, de 250 filas cada una. La consolidación anual admite hasta 72 páginas fuente en total. Si el presupuesto de escaneo, un documento o el límite de publicación se exceden, el período queda pendiente de verificación.
-- Las cifras del emulador no son facturación ni una medición de producción. Verificar contención del estado mensual y buckets con distribución real autorizada, así como recurrencia de lecturas antes de activar. Las alertas presupuestarias requieren seguimiento del operador. [Precios Firestore](https://firebase.google.com/docs/firestore/pricing).
-- Reversión: volver a deshabilitar el gate web y suspender la programación y los triggers de reportes en el backend autorizado. Conservar fuentes, Rules de bloqueo de escrituras y documentos de proyección para diagnóstico. El historial detallado bajo demanda sigue disponible.
+Estos ejemplos son instrucciones para el operador. Requieren respaldo, identidad administrativa de mínimo privilegio, credenciales externas y un entorno controlado. Usar una sesión distinta de la del ensayo, con `FIRESTORE_EMULATOR_HOST` ausente y el proyecto `migapos` verificado. Sustituir los marcadores por el negocio y presupuestos medidos. Proyecto y `--authorize-project` deben coincidir. Iniciar con dry-run:
+
+```powershell
+node functions/scripts/report-backfill.mjs --project migapos --business '<ID_REAL>' --month YYYY-MM --documents N --authorize-project migapos
+```
+
+Revisar las fuentes y lecturas del resultado antes de autorizar escritura:
+
+```powershell
+node functions/scripts/report-backfill.mjs --project migapos --business '<ID_REAL>' --month YYYY-MM --documents N --writes N --limit 100 --authorize-project migapos --apply
+```
+
+Procesar cada mes desde enero hasta el mes actual para el año solicitado, incluidos los vacíos. Para un año cerrado se necesitan doce meses. Repetir lotes pausados hasta certificar cada mes. Solo entonces publicar el catálogo anual exacto global y de sedes:
+
+```powershell
+node functions/scripts/report-backfill.mjs --project migapos --business '<ID_REAL>' --year YYYY --authorize-project migapos --apply
+```
+
+Comprobar por ID los snapshots globales y de sede, `coverage`, `sourceProof`, `revision`, `calculatedThrough`, `evidenceThrough`, `validUntil`, cantidades, canales y productos. Validar una venta/anulación intermes, un contrato antiguo con pago legacy, pago mixto, reembolso y caja vencida sin conteo. El catálogo anual debe conciliar con todas las revisiones mensuales.
+
+Solo después de comprobar cobertura, accesos, presupuesto y CI, el propietario podrá configurar `VITE_REPORT_EXPORT_SUMMARIES_ENABLED=true` y autorizar build y publicación manual. `REPORT_SUMMARIES_ENABLED` continúa OFF. Hosting no publica automáticamente Rules ni índices. La web debe apuntar a `migapos`, Hosting `migapos-peru`, sin emuladores ni credenciales administrativas.
+
+## Rutina operativa, caducidad y recuperación
+
+- Asignar un operador antes de habilitar el gate. Regenerar el mes activo antes de la jornada de consulta y después de los cambios que deban aparecer en el corte. Regenerar el catálogo anual cuando cambie una revisión mensual. La vigencia manual es de 24 horas para mes abierto y 7 días para mes cerrado. El cliente también limita la vigencia de su caché y revalida al volver a la vista o cambiar de período.
+- Priorizar meses afectados por pagos, reembolsos y anulaciones tardíos, además de la cohorte original de un pedido cuyo estado cambió. Una caja puede afectar meses de apertura, cierre y vencimiento distintos. Reconstruir todos los períodos comprometidos y después el catálogo anual.
+- Spark manual refleja el último corte administrativo. Su disponibilidad depende de que un operador sostenga la rutina. Una venta no actualiza instantáneamente el mes. Si el costo o la intervención manual resultan insostenibles, mantener gate OFF y períodos pendientes.
+- Ante errores, conservar fuentes originales, revisar el código del fallo y reanudar el comando idempotente. Un token vencido requiere nueva ejecución. Una cuarentena requiere revisión administrativa y reconstrucción de todos los meses afectados antes de liberarla.
+- La reversión consiste en deshabilitar el gate y publicar ese build tras autorización. Mes/año quedarán como «Resumen no disponible»; hoy/semana conservan su ruta documental. Preservar fuentes, proyecciones y denegación de escrituras de cliente.
+
+## Medición y límites
+
+El Dashboard mensual suele requerir un snapshot de su scope. El anual utiliza hasta doce snapshots y una página de catálogo para el ranking exacto. Excel/PDF añaden las páginas de productos globales, hasta 24 de 250 filas. Ambos formatos reutilizan el mismo corte vigente. Un fallo nunca dispara consultas de movimientos.
+
+`dailyStatsRepository.getDailyStats()` descarga tickets con `getSalesInPeriod()` y luego los agrupa. Sus filas diarias no acreditan una lectura Firestore por día. El benchmark documental local conserva ese motor únicamente como oráculo. Las métricas de fixtures/emulador separan consultas, documentos retornados, lecturas puntuales, escrituras y reintentos. Rules e índices pueden generar cargos adicionales; estos números no son facturación del proyecto.
+
+El backfill verifica el corte completo de fuentes, incluidos contratos legacy. Repetir un lote consume nuevas lecturas de verificación aunque sus contribuciones sean idempotentes. Medir el presupuesto compartido de Spark antes de cada ejecución. El código, un build o un gate habilitado no crean snapshots.
+
+## Evidencia local de esta implementación
+
+- Node: 150 comprobaciones focalizadas aprobadas. Chromium: 10 regresiones aprobadas, con descarga y reimportación de XLSX y generación de PDF en el navegador. Rules P31: 6 casos aprobados en `demo-migapos`, incluido el CLI real y accesos global/sede. La auditoría npm sigue bloqueada por `GHSA-fc5q-39xc-vjpf` en raíz/frontend. Los avisos bajos quedan visibles.
+- Fixtures web de noviembre: Dashboard mes 1 documento de snapshot de sede; Excel/PDF mes 2 documentos globales, incluidos productos; Dashboard año 12 documentos y Excel/PDF año 12, para once meses más catálogo. Alternar PDF/Excel reutiliza datos. Los espías comprobaron cero llamadas a lectores originales, también con gate OFF, ausencia, caducidad, cobertura incompleta, permiso denegado y catálogo ausente.
+- CLI dry-run: 16 operaciones de verificación, 5 documentos retornados y 3 intentos puntuales, con 0 escrituras. Primer apply limitado a una fuente: 5 escrituras y estado `paused`. La reanudación publica doce meses, dos sedes y el global, incluidos meses vacíos. Las fuentes originales conservan contenido y fecha de actualización.
+- Las doce reanudaciones del fixture registraron 398 operaciones de escaneo, 99 documentos retornados y 86 intentos puntuales. Las transacciones observadas del proceso padre, incluida una repetición idempotente, escribieron 7 marcadores, 7 buckets, 45 checkpoints, 36 snapshots y 36 páginas de productos. Se contabilizan aparte las 5 escrituras iniciales del CLI y las 4 del catálogo anual; repetir el catálogo escribió 0. Estos contadores de escaneo no incluyen todas las lecturas de las transacciones de contribución ni las lecturas del propio test para comprobar resultados.
+- Evidencia: `.release/reportes-spark-node.log`, `.release/reportes-spark-browser.log`, `.release/reportes-spark-rules.log` y `.release/reportes-spark-manual-metrics.json`. Los XLSX y PDF reales están en `.release/qa-p29/p31-*`. Lint, build/PWA, `check:build`, inventario y diff-check se validan localmente. La aceptación remota y la activación administrativa siguen pendientes.

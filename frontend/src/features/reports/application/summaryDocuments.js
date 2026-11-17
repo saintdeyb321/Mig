@@ -64,7 +64,6 @@ export function buildSummaryWorkbook(XLSX, view, { period, business, branchesMap
       .map(([label, value, tone]) => ({ label, value, tone, format: 'money' })),
     ...[['TICKETS COMPLETADOS', overview.Tickets], ['TICKETS ANULADOS', overview['Tickets anulados']], ['PEDIDOS ANULADOS', overview['Pedidos anulados']]]
       .map(([label, value]) => ({ label, value, tone: /ANULADOS/.test(label) && value ? 'danger' : 'ivory', format: 'count' })),
-    { label: 'Detalle disponible en la exportación histórica adicional', tone: 'info', note: true },
     { label: evidence, tone: 'warning', note: true, height: 24 },
   ];
   XLSX.utils.book_append_sheet(workbook, createOverviewSheet(XLSX, blocks), 'Resumen_Financiero');
@@ -133,7 +132,7 @@ export function managementSummaryReportHtml(view, { period, business, branchesMa
   th,td{font-size:11px;padding:4px}td{overflow-wrap:anywhere}}</style>
   <main><h1>${title}</h1><p>${escape(business)} · ${visibleDay(period.start)} – ${visibleDay(period.end)}</p>
   <p>Fuente resumida verificada${view.mode === 'manual' ? ' · Publicación administrativa' : ''} · Actualizado hasta ${cutoff(view)} (Lima)</p>
-  <p>${view.closed ? 'Período cerrado' : 'Período en curso'} · Detalle disponible en la exportación histórica adicional</p>
+  <p>${view.closed ? 'Período cerrado' : 'Período en curso'}</p>
   <section class="cards">${Object.entries(overview).map(([label, value]) => `<div class="card">${label}<strong>${label.endsWith('(S/)') ? cashFormat(value) : value}</strong></div>`).join('')}</section>
   <section><h2>Ajustes por canal</h2>${table(['Movimiento', 'Efectivo (S/)', 'Yape/Plin (S/)'],
     [['Cobros registrados', 'collections'], ['Anulaciones de mostrador', 'posCompensations'], ['Reembolsos contables', 'contractRefunds']]

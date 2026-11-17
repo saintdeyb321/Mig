@@ -7,7 +7,8 @@ import { collections, blank, financial, get, keyOf, mergeProducts, total, rankPr
 import { reportingFunctions } from '../functions/src/reports/entry.js';
 import { buildMonthlySnapshotV1 } from '../frontend/src/features/reports/domain/monthlySnapshot.js';
 import { reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
-import { exportReportSourceForPeriod } from '../frontend/src/features/reports/application/reportSources.js';
+import { reportSourceForPeriod } from '../frontend/src/features/reports/application/reportSources.js';
+import { createSummaryReportResource } from '../frontend/src/features/reports/application/reportResource.js';
 import { createVerifiedSummaryReader } from '../frontend/src/features/reports/infrastructure/summaryReader.js';
 import { buildSummaryView } from '../frontend/src/features/reports/application/summaryView.js';
 import { buildSummaryWorkbook, managementSummaryReportHtml } from '../frontend/src/features/reports/application/summaryDocuments.js';
@@ -152,7 +153,7 @@ it('P31 final uses only point reads, reuses PDF/XLSX and blocks stale, partial, 
   const data = presentation('2026-11'), november = root('2026-11', data), id = keyOf(businessId, 'global', '2026-11');
   documents.set(collections.months + '/' + id, november);
   documents.set(collections.products + '/' + id + ':0', productPage('2026-11', [november.revision], data));
-  const source = exportReportSourceForPeriod(args.period, () => assert.fail('No se deben crear lectores de detalle.'),
+  const source = reportSourceForPeriod(args.period, () => assert.fail('No se deben crear lectores de detalle.'),
     { enabled: true, readSummary: () => read({ ...args, resources }) });
   assert.equal(source.representation, 'snapshots');
   assert.equal((await source.readSummary()).verified, true);
@@ -194,7 +195,7 @@ it('P31 final uses only point reads, reuses PDF/XLSX and blocks stale, partial, 
   await assert.rejects(run({ period: reportPeriod('todo', epoch) }), { code: 'report-summary-pending' });
 });
 
-it('P31 export routing blocks long periods without a verified source and isolates explicit historical reads', async () => {
+it('P31 dashboard and export routing require verified snapshots for every long period', async () => {
   let constructed = 0, historicalReads = 0, snapshotReads = 0;
   const reads = () => {
     constructed++;
@@ -203,23 +204,65 @@ it('P31 export routing blocks long periods without a verified source and isolate
   const readSummary = async () => { snapshotReads++; return 'verified'; };
   for (const filter of ['mes', 'todo']) {
     const period = reportPeriod(filter, epoch);
-    await assert.rejects(exportReportSourceForPeriod(period, reads, { readSummary, enabled: false }).readSummary(),
+    await assert.rejects(reportSourceForPeriod(period, reads, { readSummary, enabled: false }).readSummary(),
       { code: 'report-summary-pending' });
-    const source = exportReportSourceForPeriod(period, reads, { readSummary, enabled: true });
+    const source = reportSourceForPeriod(period, reads, { readSummary, enabled: true });
     assert.equal(source.representation, 'snapshots');
     assert.equal(await source.readSummary(), 'verified');
-    const missing = exportReportSourceForPeriod(period, reads, { enabled: true,
+    const missing = reportSourceForPeriod(period, reads, { enabled: true,
       readSummary: async () => { throw Object.assign(new Error('Missing'), { code: 'report-summary-pending' }); } });
     await assert.rejects(missing.readSummary(), { code: 'report-summary-pending' });
+    await assert.rejects(reportSourceForPeriod(period, reads, { enabled: true,
+      readSummary: async () => { throw Object.assign(new Error('Offline'), { code: 'unavailable' }); } }).readSummary(),
+    error => error.code === 'report-summary-pending' && error.cause.code === 'unavailable');
     assert.equal(constructed, 0);
   }
   assert.equal(snapshotReads, 2);
   assert.equal(historicalReads, 0);
-  for (const filter of ['hoy', 'semana', 'mes', 'todo']) {
-    const source = exportReportSourceForPeriod(reportPeriod(filter, epoch), reads, { acceptHistorical: true });
+  for (const filter of ['hoy', 'semana']) {
+    const source = reportSourceForPeriod(reportPeriod(filter, epoch), reads);
     assert.equal(await source.exportReads.exportSnapshot(), 'history');
   }
-  assert.equal(historicalReads, 4);
+  assert.equal(historicalReads, 2);
+});
+
+it('P31 dashboard summary resource deduplicates, expires, aborts and hides unavailable or superseded data', async () => {
+  const period = reportPeriod('mes', epoch), states = [];
+  const data = { ...presentation('2026-11'), expiresAt: epoch + 20000 };
+  let resolveRead, reads = 0, clock = epoch;
+  const resource = createSummaryReportResource({ key: 'scope:revision', period, now: () => clock,
+    readSummary: () => { reads++; return new Promise(resolve => { resolveRead = resolve; }); }, onState: state => states.push(state) });
+  const duplicate = resource.refresh();
+  await Promise.resolve();
+  assert.equal(reads, 1);
+  resolveRead(data);
+  await Promise.all([resource.ready, duplicate]);
+  assert.equal(states.at(-1).model.verified, true);
+  clock = data.expiresAt;
+  const stale = resource.refresh();
+  await Promise.resolve();
+  resolveRead(data);
+  await stale;
+  assert.equal(states.at(-1).model, null);
+  assert.equal(states.at(-1).queryError.code, 'report-summary-pending');
+  resource.close();
+  let observedSignal;
+  const closed = createSummaryReportResource({ key: 'new-identity', period, now: () => epoch,
+    readSummary: ({ signal }) => { observedSignal = signal; return new Promise(resolve => { resolveRead = resolve; }); },
+    onState: state => states.push(state) });
+  await Promise.resolve();
+  closed.close();
+  assert.equal(observedSignal.aborted, true);
+  const count = states.length;
+  resolveRead(data);
+  await closed.ready;
+  assert.equal(states.length, count);
+  let abandonedReads = 0;
+  const abandoned = createSummaryReportResource({ key: 'unmounted', period,
+    readSummary: async () => { abandonedReads++; return data; }, onState: () => {} });
+  abandoned.close();
+  await abandoned.ready;
+  assert.equal(abandonedReads, 0);
 });
 
 it('P31 annual consolidated XLSX and PDF reconcile intermonth voids, cash, orders and every product to the monthly oracle', () => {

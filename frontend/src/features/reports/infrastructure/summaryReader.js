@@ -12,24 +12,25 @@ const validDay = day => typeof day === 'string' && /^\d{4}-\d\d-\d\d$/.test(day)
   && Number.isFinite(Date.parse(day)) && new Date(day).toISOString().slice(0, 10) === day;
 
 export function createVerifiedSummaryReader(database, { sdk = { doc, getDocFromServer }, now = Date.now, currentUid } = {}) {
-  return async function readVerifiedSummary({ resources, uid, identityKey, businessId, branchId, period, revision = 0, includeProducts = false }) {
+  return async function readVerifiedSummary({ resources, uid, identityKey, businessId, branchId, period, revision = 0, includeProducts = false, signal: requestSignal }) {
     const signal = resources.signal;
-    const current = () => {
+    const identity = () => {
       signal.throwIfAborted();
       if (!uid || !identityKey || currentUid() !== uid) throw new DOMException('Cambió la identidad del reporte.', 'AbortError');
     };
+    const current = () => { identity(); requestSignal?.throwIfAborted(); };
     current();
     if (!validScopePart(businessId) || !validScopePart(branchId)) throw pending();
     const reference = checkedRead(sdk.getDocFromServer, 'report-summaries', signal);
     const read = async (collection, id) => {
-      current();
+      identity();
       let snapshot;
       try { snapshot = await reference(sdk.doc(database, collection, id)); }
       catch (error) {
         if (error.code === 'permission-denied' || error.cause?.code === 'permission-denied') throw pending();
         throw error;
       }
-      current();
+      identity();
       if (snapshot.metadata?.fromCache || snapshot.metadata?.hasPendingWrites || !snapshot.exists()) throw pending();
       return snapshot.data();
     };

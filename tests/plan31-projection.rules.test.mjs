@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { after, before, it } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { collection, doc, getDocFromServer, getDocsFromServer, setDoc } from 'firebase/firestore';
 import { createProjectionStore, markerRef, monthState } from '../functions/src/reports/projectionStore.js';
 import { createConsolidation } from '../functions/src/reports/consolidation.js';
 import { createReportBackfill } from '../functions/src/reports/backfill.js';
-import { collections, financial, integrityDay, keyOf, monthInLima } from '../functions/src/reports/summaryModel.js';
+import { collections, financial, get, integrityDay, keyOf, monthInLima } from '../functions/src/reports/summaryModel.js';
+import { hash } from '../functions/src/reports/contributions.js';
 
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080');
 assert.equal(process.env.GCLOUD_PROJECT, 'demo-migapos');
@@ -257,4 +260,113 @@ it('P31 backfill pauses and resumes idempotently with an explicit dry-run and so
   assert.equal((await monthDoc.get()).data().revision, published.revision);
   await backfill.resume(plan, { dryRun: false, limit: 2, maxWrites: 1500, manual: false });
   assert.equal((await monthDoc.get()).data().mode, 'automatic');
+});
+
+it('Spark manual CLI publishes scoped empty months, intermonth evidence and the annual catalog without altering sources', { timeout: 120000 }, async t => {
+  await env.clearFirestore();
+  const businessId = 'p31-manual', branchId = 'manual-center', secondId = 'manual-workshop';
+  const batch = admin.batch(), set = (collection, id, data) => batch.set(admin.collection(collection).doc(id), data);
+  set('licenses', businessId, { businessId, status: 'activa', expiry: new Date('2099-01-01') });
+  set('tenants', businessId, { businessId, status: 'active' });
+  set('branches', branchId, { businessId, status: 'activo' });
+  set('branches', secondId, { businessId, status: 'activo' });
+  set('users', 'manual-owner', { businessId, role: 'dueño', status: 'activo' });
+  set('users', 'manual-cashier', { businessId, branchId, role: 'cajero', status: 'activo' });
+  const jan = new Date('2025-01-05T12:00:00-05:00'), jul = new Date('2025-07-05T12:00:00-05:00');
+  const sale = { ...baseSale(businessId, branchId, 20), confirmedAt: jan };
+  set('sales', 'manual-original', sale);
+  set('sales', 'manual-mixed', { ...baseSale(businessId, secondId, 17), confirmedAt: jul, payment: 'mixto', splitPayments: { efectivo: 9, yape: 8 } });
+  set('pos_voids', 'manual-original', { businessId, branchId, saleId: 'manual-original', occurredAt: jul,
+    authority: 'pos-compensation', amount: -20, cashAmount: -20, digitalAmount: 0, items: sale.items });
+  set('contracts', 'manual-order', { businessId, branchId, createdAt: jan, status: 'cancelado', voidedAt: jul,
+    total: 10.25, balance: 0, paidTotal: 10.25, payments: [{ amount: '10.25', method: 'yape/plin', date: jul.toISOString(), branchId }] });
+  set('payments', 'manual-refund', { businessId, branchId, sourceId: 'manual-order', sourceType: 'contract',
+    type: 'refund', method: 'yape', amount: -5, occurredAt: jul });
+  set('cash_sessions', 'manual-expiry', { businessId, branchId, status: 'expired_unreconciled', openingAmount: 100,
+    openedAt: new Date('2025-01-31T20:00:00-05:00'), expiredAt: new Date('2025-02-01T10:00:00-05:00') });
+  await batch.commit();
+  const sources = async () => Promise.all(['sales', 'payments', 'contracts', 'pos_voids', 'cash_sessions'].map(async name => {
+    const snapshot = await admin.collection(name).where('businessId', '==', businessId).get();
+    return snapshot.docs.map(doc => [doc.id, hash(doc.data()), doc.updateTime.toMillis()]).sort();
+  }));
+  const originals = await sources();
+  const cli = async (...args) => {
+    const result = await promisify(execFile)(process.execPath, ['functions/scripts/report-backfill.mjs', '--project', 'demo-migapos',
+      '--business', businessId, ...args], { timeout: 30000, maxBuffer: 1024 * 1024, windowsHide: true,
+      env: { ...process.env, GOOGLE_APPLICATION_CREDENTIALS: '', GCE_METADATA_HOST: '127.0.0.1:9' } });
+    return JSON.parse(result.stdout.trim());
+  };
+  const dry = await cli('--month', '2025-01', '--documents', '1000');
+  assert.equal(dry.writes, 0);
+  assert.equal((await admin.collection(collections.months).get()).size, 0);
+  await assert.rejects(cli('--month', '2025-01', '--documents', '1'), error => /report-budget|presupuesto de origen/.test(error.stderr));
+  const applied = await cli('--month', '2025-01', '--documents', '1000', '--writes', '1500', '--limit', '1', '--apply');
+  assert.equal(applied.status, 'paused');
+  const writesByCollection = {}, sourceBudgets = [];
+  const measured = { collection: name => admin.collection(name), async runTransaction(callback, options) {
+    let committed;
+    const result = await admin.runTransaction(async transaction => {
+      const writes = {};
+      const proxy = new Proxy(transaction, { get(target, property) {
+        if (['set', 'update', 'delete'].includes(property)) return (reference, ...args) => {
+          writes[reference.parent.id] = (writes[reference.parent.id] ?? 0) + 1;
+          return target[property](reference, ...args);
+        };
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      } });
+      const value = await callback(proxy);
+      committed = writes;
+      return value;
+    }, options);
+    for (const [name, count] of Object.entries(committed)) writesByCollection[name] = (writesByCollection[name] ?? 0) + count;
+    return result;
+  } };
+  const job = createReportBackfill(measured);
+  for (let i = 1; i <= 12; i++) {
+    const periodKey = '2025-' + String(i).padStart(2, '0');
+    let result;
+    do {
+      result = await job.resume({ businessId, periodKey, maxDocuments: 1000 }, { dryRun: false, maxWrites: 1500, limit: 20 });
+      sourceBudgets.push({ month: periodKey, before: result.budget, publication: result.publicationBudget });
+    } while (result.status === 'paused');
+    assert.equal(result.status, 'verified');
+    const global = await assertSucceeds(getDocFromServer(point('manual-owner', collections.months, keyOf(businessId, 'global', periodKey))));
+    const local = await assertSucceeds(getDocFromServer(point('manual-cashier', collections.months, keyOf(businessId, branchId, periodKey))));
+    assert.equal(global.data().mode, 'manual');
+    if (i === 1) assert.equal(financial(global.data().values).net, 2000);
+    if (i === 2) { assert.equal(financial(local.data().values).net, 0); assert.equal(get(local.data().values, 'expired'), 1); }
+    if (i === 7) {
+      assert.equal(financial(global.data().values).net, 225);
+      assert.equal(financial(local.data().values).net, -1475);
+      assert.equal(get(global.data().values, 'cancelled'), 1);
+      assert.equal(get(global.data().values, 'refunds'), 1);
+    }
+    if (i === 3) { assert.equal(financial(global.data().values).net, 0); assert.deepEqual(global.data().rows, []); }
+  }
+  const yearly = await cli('--year', '2025', '--apply');
+  assert.ok(yearly.writes > 0);
+  assert.equal((await cli('--year', '2025', '--apply')).writes, 0);
+  await assertSucceeds(getDocFromServer(point('manual-owner', collections.products, keyOf(businessId, 'global', 'year-2025', 0))));
+  await assertSucceeds(getDocFromServer(point('manual-cashier', collections.products, keyOf(businessId, branchId, 'year-2025', 0))));
+  await assertFails(getDocFromServer(point('manual-cashier', collections.months, keyOf(businessId, 'global', '2025-07'))));
+  const input = { businessId, periodKey: '2025-07', maxDocuments: 1000 };
+  const before = (await admin.collection(collections.months).doc(keyOf(businessId, 'global', input.periodKey)).get()).data().revision;
+  const repeated = await job.resume(input, { dryRun: false, maxWrites: 1500 });
+  assert.equal(repeated.status, 'verified');
+  assert.equal((await admin.collection(collections.months).doc(keyOf(businessId, 'global', input.periodKey)).get()).data().revision, before);
+  assert.deepEqual(await sources(), originals);
+  await monthState(admin, businessId, '2025-07').update({ validUntil: 0 });
+  await assertFails(getDocFromServer(point('manual-owner', collections.months, keyOf(businessId, 'global', '2025-07'))));
+  const parentSourceBudget = { operations: 0, documents: 0, pointReads: 0, byCollection: {} };
+  for (const row of sourceBudgets) for (const budget of [row.before, row.publication].filter(Boolean)) {
+    for (const key of ['operations', 'documents', 'pointReads']) parentSourceBudget[key] += budget[key];
+    for (const [name, reads] of Object.entries(budget.byCollection)) {
+      const total = parentSourceBudget.byCollection[name] ??= { documents: 0, pointReads: 0 };
+      total.documents += reads.documents;
+      total.pointReads += reads.pointReads;
+    }
+  }
+  t.diagnostic('P31_MANUAL ' + JSON.stringify({ dryRun: dry.budget, cliAppliedWrites: applied.writes, writesByCollection,
+    annualWrites: yearly.writes, parentSourceBudget }));
 });

@@ -2,11 +2,42 @@ import { reportViewModel } from './reportViewModel.js';
 import { aggregateReport } from '../domain/reportTotals.js';
 import { reportDiagnostic } from '../../../core/errors/diagnostics.js';
 import { getFirebaseErrorCode } from '../../../core/errors/firebaseErrors.js';
+import { buildSummaryView } from './summaryView.js';
 
 export const REPORT_TTL = 30000;
 export const reportTTL = period => ['mes', 'todo'].includes(period.filter ?? period.key?.split(':')[0]) ? 15 * 60 * 1000 : 2 * 60 * 1000;
 export const reportCacheKey = ({ identityKey, businessId, branchId, period }) => JSON.stringify([identityKey, businessId, branchId, period.key]);
 export const reportRevision = (resources, businessId) => resources.cell(`report-revision:${businessId}`, 0);
+export function createSummaryReportResource({ key, period, readSummary, onState, now = Date.now }) {
+  const controller = new AbortController();
+  let pending = null, expiry, lastCutoff;
+  const unavailable = error => {
+    if (controller.signal.aborted) return;
+    onState({ key, model: null, isLoading: false, updatedAt: lastCutoff,
+      queryError: { code: 'report-summary-pending', cause: error } });
+  };
+  async function refresh() {
+    if (controller.signal.aborted || pending) return pending;
+    clearTimeout(expiry);
+    onState({ key, model: null, isLoading: true });
+    pending = Promise.resolve().then(async () => {
+      try {
+        controller.signal.throwIfAborted();
+        const data = await readSummary({ signal: controller.signal });
+        controller.signal.throwIfAborted();
+        if (data.verified !== true || !Number.isFinite(data.expiresAt) || data.expiresAt <= now()) throw new Error('El resumen caducó o está incompleto.');
+        const model = buildSummaryView(data, period);
+        lastCutoff = data.calculatedThrough;
+        onState({ key, model, isLoading: false, updatedAt: lastCutoff });
+        expiry = setTimeout(() => unavailable(new Error('El resumen caducó.')), Math.max(0, data.expiresAt - now()));
+      } catch (error) { unavailable(error); }
+      finally { pending = null; }
+    });
+    return pending;
+  }
+  const ready = refresh();
+  return { ready, refresh, close() { controller.abort(); clearTimeout(expiry); } };
+}
 export function createReportCache({ ttl = REPORT_TTL, max = 12, now = Date.now } = {}) {
   const entries = new Map();
   return {

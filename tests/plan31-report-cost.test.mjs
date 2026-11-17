@@ -87,7 +87,13 @@ function scenario(period, records, scope = branchId) {
     getSessionsInPeriod: createCashAuditPeriodReader(database, { sdk: sdk('cash') }),
     getContractAuditDocuments: createPaymentRepository(database, { sdk: sdk('contractAudit') }).getContractAuditDocuments,
   });
-  const source = reportSourceForPeriod(period, read(resources, businessId, scope, period));
+  const readers = read(resources, businessId, scope, period);
+  // Retain the original document engine as a local cost/parity oracle. Long periods never select it in the app.
+  const source = ['hoy', 'semana'].includes(period.filter) ? reportSourceForPeriod(period, readers) : {
+    kind: 'document-oracle', representation: 'documents',
+    dashboardReads: { readSales: readers.sales, readPayments: readers.payments, readContracts: readers.contracts, readVoids: readers.voids },
+    exportReads: { exportSnapshot: readers.exportSnapshot, withContractAudit: readers.withContractAudit },
+  };
   return { source, calls, resources, sdk,
     async dashboard() {
       let state;
@@ -124,8 +130,8 @@ it('P31-A counts queries and returned documents per module and per dashboard/exp
       const records = volumeRecords(period, movements);
       const { dashboard, warmPdf, warmXlsx } = await observe(period, records, async reader => {
         const detailed = ['hoy', 'semana'].includes(filter);
-        assert.equal(reader.source.kind, detailed ? 'detailed' : 'summary');
-        assert.equal(reader.source.representation, detailed ? 'documents' : 'document-fallback');
+        assert.equal(reader.source.kind, detailed ? 'detailed' : 'document-oracle');
+        assert.equal(reader.source.representation, 'documents');
         const state = await reader.dashboard();
         assert.equal(state.error, null);
         assert.equal(state.model.summary.posTicketCount, records.sales.length);

@@ -51,6 +51,7 @@ export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', f
           (fixture.summaries ??= []).push({ businessId, branchId, filter: period.filter });
           const sdk = { doc: (_db, name, id) => name + '/' + id, getDocFromServer: async path => {
             (fixture.summaryPoints ??= []).push(path);
+            if (fixture.summaryHold) await new Promise(resolve => { (fixture.pendingSummaries ??= []).push(resolve); });
             if (fixture.summaryFault) throw Object.assign(new Error('Snapshot unavailable'), { code: fixture.summaryFault });
             const data = fixture.summaryDocuments?.[path];
             return { metadata: { fromCache: false, hasPendingWrites: false }, exists: () => !!data, data: () => data };

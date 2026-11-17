@@ -15,7 +15,7 @@ const statusMessages = {
 };
 
 function errorCopy({ kind, error, offline }, diagnostic) {
-  if (error.code === 'report-summary-pending') return ['Resumen no disponible', 'Falta habilitar o verificar el resumen del período. La exportación histórica requiere una autorización adicional.'];
+  if (error.code === 'report-summary-pending') return ['Resumen no disponible', 'Comprueba la conexión o solicita la actualización administrativa del período.'];
   if (error.code === 'report-timeout') return [kind === 'module-load' ? 'No se pudo preparar Excel' : 'No se pudo completar la consulta',
     'La respuesta tardó más de lo esperado. Comprueba la conexión y vuelve a intentar.'];
   if (error.code === 'report-stale') return ['Los datos del informe caducaron', 'Vuelve a preparar el informe para verificar los movimientos.'];
@@ -84,7 +84,7 @@ function ExportSales({ user }) {
   const [format, setFormat] = useState('pdf');
   const headingId = useId(), periodId = useId(), formatId = useId(), noticeId = useId();
   const actionRef = useRef(null);
-  const { isExporting, failure, phase, html, expiresAt, expired, exportData, closePreview, fetchedAt, reused, provisional, historical, summaryPeriod } = useExportSales(user, timeFilter, format);
+  const { isExporting, failure, phase, html, expiresAt, expired, exportData, closePreview, fetchedAt, reused, provisional, summaryPeriod } = useExportSales(user, timeFilter, format);
   const diagnostic = ['data-read', 'contract-audit'].includes(failure?.kind) ? queryErrorDiagnostic(failure.error, 'reports') : null;
   const code = diagnostic?.code || failure?.error?.code
     || (failure?.kind === 'integrity' ? 'report-integrity' : failure?.kind === 'document' ? 'report-document' : '');
@@ -132,7 +132,7 @@ function ExportSales({ user }) {
     </form>
     <p role="status" aria-atomic="true" className={statusMessages[phase] || fetchedAt ? 'mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-muted' : 'sr-only'}>
       {phase === 'started' && <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-success" />}{statusMessages[phase]}
-      {fetchedAt && <span>{provisional ? 'Conciliación histórica pendiente' : historical ? 'Consulta histórica autorizada' : reused ? 'Datos reutilizados' : 'Datos consultados'}
+      {fetchedAt && <span>{provisional ? 'Conciliación histórica pendiente' : reused ? 'Datos reutilizados' : 'Datos consultados'}
         {' · '}{new Date(fetchedAt).toLocaleString('es-PE', { timeZone: 'America/Lima', dateStyle: 'short', timeStyle: 'short' })} (Lima)</span>}
     </p>
     {error && <Alert variant="danger" title={error[0]} className="mt-2">
@@ -142,7 +142,7 @@ function ExportSales({ user }) {
         <p>Etapa {failure.kind}{failure.kind === 'module-load' ? ' · xlsx-js-style' : ''}{/^[a-z-]{1,48}$/.test(code) ? ' · ' + code : ''}.</p>
         {admin && diagnostic?.url && <a href={diagnostic.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center font-bold underline">Revisar índice en Firebase Console</a>}
       </details>
-      <Button variant="secondary" size="sm" className="mt-2 min-h-11" onClick={() => exportData({ acceptHistorical: historical })}>Reintentar</Button>
+      <Button variant="secondary" size="sm" className="mt-2 min-h-11" onClick={() => exportData()}>Reintentar</Button>
     </Alert>}
     <details className="group mt-1 text-xs text-muted">
       <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 font-semibold">Detalles de exportación<ChevronDown aria-hidden="true" className="size-3.5 shrink-0 group-open:rotate-180" /></summary>
@@ -150,10 +150,6 @@ function ExportSales({ user }) {
         <p>Hoy y semana consultan los movimientos del período. Mes y año requieren resúmenes verificados del servidor.</p>
         <p>Incluye ventas, compensaciones POS y pagos del período. Una compensación contable no acredita entrega física de efectivo ni devolución digital.</p>
         <p>Hoy y semana separan los movimientos de los artículos por ticket. El resumen mensual agrupa por día y el anual por mes.</p>
-        {summaryPeriod && <div className="space-y-2">
-          <p>La exportación histórica adicional puede consultar hasta 10 000 movimientos, 500 referencias de pedidos y las cajas del período. Puede consumir miles de lecturas de Firestore.</p>
-          <Button variant="secondary" disabled={isExporting} onClick={() => exportData({ acceptHistorical: true })}>Exportar historial del período</Button>
-        </div>}
       </div>
     </details>
     {html && <ReportPreview html={html} expiresAt={expiresAt} expired={expired} onClose={closePreview} />}
