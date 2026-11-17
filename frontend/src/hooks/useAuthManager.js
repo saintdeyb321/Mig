@@ -25,6 +25,7 @@ export const useAuthManager = () => {
       if (!firebaseUser) { setState({ uid: null, status: 'anonymous', profile: null }); return; }
       session.current = createProfileSession({ user: firebaseUser, subscribe: subscribeProfile,
         readInvite: getInviteFromServer, acceptInvite: acceptInvitedProfile, readProfile: getProfileFromServer,
+        project: auth.app?.options.projectId,
         refreshCredentials: () => firebaseUser.getIdToken(true),
         withinShift: userData => isWithinShift(userData), onState: next => {
           if (active && auth.currentUser?.uid === next.uid) {

@@ -1,6 +1,6 @@
 import { reportTTL } from './reportResource.js';
 
-export function createSessionReportReads({ getSalesInPeriod, getContractsInPeriod, getPaymentsInPeriod, getContractAuditDocuments, readVoidsInPeriod, getSessionsInPeriod }) {
+export function createSessionReportReads({ getSalesInPeriod, getContractsInPeriod, getCancelledContractCount, getPaymentsInPeriod, getContractAuditDocuments, readVoidsInPeriod, getSessionsInPeriod }) {
   return function sessionReportReads(resources, businessId, branchId, period, { identityKey, revision } = {}) {
     const key = JSON.stringify([businessId, branchId, period.start, period.end]);
     const exportKey = JSON.stringify([key, period.key, identityKey, revision]);
@@ -26,8 +26,9 @@ export function createSessionReportReads({ getSalesInPeriod, getContractsInPerio
     const payments = () => readFinancial('payments', () => getPaymentsInPeriod(businessId, period.startDate, period.endDate, branchId, { requireMigrated: true, maxRows: 10000, signal }));
     const voids = () => readFinancial('voids', () => readVoidsInPeriod(businessId, period.startDate, period.endDate, branchId, { signal }));
     const sessions = () => resources.read(`report:cash:${key}`, () => getSessionsInPeriod(businessId, period.startDate, period.endDate, branchId, { signal }), ttl);
+    const cancelledContracts = () => resources.read(`report:cancelled-contract-count:${key}`, () => getCancelledContractCount(businessId, period, { signal }), ttl);
     const loadSnapshot = async assertAuthorized => {
-      const supplementary = () => [payments(), contracts(), voids(), sessions()];
+      const supplementary = () => [payments(), contracts(), voids(), sessions(), cancelledContracts()];
       const parallel = ['hoy', 'semana'].includes(period.filter);
       const results = parallel ? await Promise.all([sales(), ...supplementary()]) : [await sales()];
       assertAuthorized();
@@ -35,13 +36,14 @@ export function createSessionReportReads({ getSalesInPeriod, getContractsInPerio
       if (!parallel) results.push(...await Promise.all(supplementary()));
       assertAuthorized();
       const [{ rows: tickets, startedAt: salesStart }, { rows: ledger, startedAt: paymentsStart }, orders,
-        { rows: adjustments, startedAt: voidsStart }, cash] = results;
+        { rows: adjustments, startedAt: voidsStart }, cash, cancelledContractCount] = results;
       if (tickets.length + ledger.length + adjustments.length > 10000) {
         throw new Error('Demasiados movimientos para exportar. Selecciona un período menor.');
       }
-      const loadedAt = Math.min(Date.now(), ...['sales', 'payments', 'contracts', 'voids', 'cash']
+      const loadedAt = Math.min(Date.now(), ...['sales', 'payments', 'contracts', 'voids', 'cash', 'cancelled-contract-count']
         .map(kind => resources.readLoadedAt(`report:${kind}:${key}`) ?? 0));
-      return { sales: tickets, payments: ledger, contracts: orders, voids: adjustments, sessions: cash, loadedAt, cashReferenceAsOf: Math.min(salesStart, paymentsStart, voidsStart) };
+      return { sales: tickets, payments: ledger, contracts: orders, voids: adjustments, sessions: cash, cancelledContractCount, loadedAt,
+        cashReferenceAsOf: Math.min(salesStart, paymentsStart, voidsStart) };
     };
     const withContractAudit = async ({ payments: rows, contracts: created, loadedAt }, isCurrent = () => true) => {
       signal.throwIfAborted();

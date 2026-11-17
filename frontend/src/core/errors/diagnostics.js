@@ -19,8 +19,8 @@ function storeDiagnostic(event, key, log) {
 
 const accessVerdicts = new Set(['active', 'loading', 'offline-unverified', 'network-error', 'permission-denied',
   'auth-unverified', 'configuration-error', 'suspended', 'expired', 'tenant-missing-confirmed', 'license-missing-confirmed']);
-export function reportAccessDiagnostic(source, verdict, { license, tenant, identityMatches, environment }, { now = Date.now(), log = console } = {}) {
-  if (!['watch', 'manual', 'online', 'resume'].includes(source) || !accessVerdicts.has(verdict)) return;
+export function reportAccessDiagnostic(source, verdict, { license, tenant, identityMatches, environment, project, version }, { now = Date.now(), log = console } = {}) {
+  if (!['watch', 'manual', 'online', 'resume', 'recovery'].includes(source) || !accessVerdicts.has(verdict)) return;
   const describe = record => {
     const raw = String(record?.error?.code ?? '').replace(/^(firestore|auth)\//, '');
     return { present: record?.received && !record.error && record.metadata ? Boolean(record.data) : null,
@@ -30,6 +30,8 @@ export function reportAccessDiagnostic(source, verdict, { license, tenant, ident
   };
   storeDiagnostic({ area: 'license', source, verdict, identityMatches: identityMatches === true,
     environment: ['production', 'emulator', 'staging'].includes(environment) ? environment : 'unknown',
+    project: typeof project === 'string' && /^[a-z][a-z0-9-]{4,29}$/.test(project) ? project : null,
+    version: typeof version === 'string' && /^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(version) ? version : null,
     license: describe(license), tenant: describe(tenant), at: now }, `access:${source}:${verdict}`, log);
 }
 export const diagnosticSnapshot = () => events.map(event => ({ ...event }));

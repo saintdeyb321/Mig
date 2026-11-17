@@ -39,6 +39,8 @@ add('payments-session', 'Cobros por caja', 'payments', payments, 'getPaymentsByS
 scoped('payments-period', 'Reportes/Excel cobros', 'payments', payments, 'getPaymentsInPeriod', period('occurredAt'), [asc('occurredAt'), asc('__name__')], 2);
 add('contracts-by-ids', 'Auditoría de cobros', 'contracts', payments, 'getContractAuditDocuments', [eq('businessId'), ['__name__', 'in']], [], 2, 'automatic', 'Lotes de 10 IDs; índice simple businessId incluye __name__. Revisar exenciones simples remotas si hay error.');
 scoped('contracts-period', 'Reportes/Excel contratos', 'contracts', source('contracts', 'contractPeriodRepository'), 'createContractPeriodReader', period('createdAt'), [asc('createdAt'), asc('__name__')], 2);
+add('contracts-cancelled-count', 'Reportes/Excel pedidos anulados', 'contracts', source('contracts', 'contractPeriodRepository'), 'createContractCancellationCountReader',
+  [eq('businessId'), eq('status'), ...period('voidedAt')], [desc('voidedAt'), desc('__name__')], 2, 'composite', 'Agregación global por negocio sin descargar documentos.');
 add('contracts-legacy', 'Cobros históricos', 'contracts', source('payments', 'sparkLegacyPayments'), 'createSparkLegacyPaymentReader', [eq('businessId')], [asc('__name__')], 2, 'automatic', 'Solo lectura hasta 500 contratos; IDs individuales usan getDoc.');
 const notices = source('notifications', 'notificationQueryRepository');
 add('notifications-unread', 'Notificaciones', 'notifications', notices, 'subscribeUnreadNotifications', [eq('businessId'), eq('userId'), eq('readAt')], [desc('createdAt')]);
@@ -64,7 +66,7 @@ export const reviewedSDKQueryCounts = {
   [source('catalog', 'catalogRepository')]: 2, [source('users', 'userRepository')]: 2,
   [source('branches', 'branchRepository')]: 1, [source('cash-register', 'cashRegisterRepository')]: 1,
   [source('cash-register', 'cashQueryRepository')]: 2, [source('contracts', 'contractQueryRepository')]: 3,
-  [source('contracts', 'contractPeriodRepository')]: 1, [source('sales', 'salesRepository')]: 1,
+  [source('contracts', 'contractPeriodRepository')]: 2, [source('sales', 'salesRepository')]: 1,
   [source('sales', 'salesQueryRepository')]: 2, [source('payments', 'paymentQueryRepository')]: 2,
   [source('sales', 'posVoidQueryRepository')]: 1,
   [source('payments', 'sparkLegacyPayments')]: 1, [source('notifications', 'notificationQueryRepository')]: 3,

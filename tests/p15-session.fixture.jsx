@@ -16,7 +16,9 @@ const makeUser = uid => ({ uid, emailVerified: true, providerData: [{ providerId
   } });
 const owner = { role: 'dueño', businessId: 'tenant-a', status: 'activo' };
 const boot = sessionStorage.getItem('p15:boot') || 'healthy';
-const fixture = window.__p15 = { bootId: crypto.randomUUID(), user: makeUser('owner-a'), profile: owner, watchMode: boot, readMode: 'healthy',
+const fixture = window.__p15 = { bootId: crypto.randomUUID(), user: makeUser('owner-a'), profile: owner, watchMode: boot,
+  readMode: sessionStorage.getItem('p15:direct') || 'healthy', hold: sessionStorage.getItem('p15:hold') === 'yes',
+  elapsed: Number(sessionStorage.getItem('p15:elapsed') || 0),
   online: true, visible: true, reads: [], token: 0, logouts: 0, observers: new Set(), watches: [], recoverStream: true };
 Object.defineProperty(navigator, 'onLine', { get: () => fixture.online });
 Object.defineProperty(document, 'visibilityState', { get: () => fixture.visible ? 'visible' : 'hidden' });
@@ -55,7 +57,13 @@ fixture.changeProfile = profile => {
 fixture.subscribe = (kind, id, next, fail) => {
   const watch = { kind, id, next, fail, active: true };
   fixture.watches.push(watch);
-  queueMicrotask(() => { if (watch.active) emit(watch, kind === 'profile' ? 'healthy' : fixture.watchMode); });
+  queueMicrotask(() => {
+    if (!watch.active) return;
+    const mode = kind === 'profile' ? 'healthy' : fixture.watchMode;
+    if (mode !== 'cache-then-stale') { emit(watch, mode); return; }
+    emit(watch, 'cache');
+    setTimeout(() => { if (watch.active) emit(watch, 'stale'); }, 30);
+  });
   return () => { watch.active = false; };
 };
 fixture.publish = mode => {

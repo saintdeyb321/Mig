@@ -1,4 +1,5 @@
 import { checkedRead } from '../../../core/firebase/readDiagnostics.js';
+import { withQueryContext } from '../../../core/firebase/queryErrors.js';
 import * as firestoreSDK from 'firebase/firestore';
 
 export function createContractPeriodReader(database, { sdk = firestoreSDK } = {}) {
@@ -19,5 +20,24 @@ export function createContractPeriodReader(database, { sdk = firestoreSDK } = {}
       } while (cursor);
     }
     return [...rows.values()];
+  };
+}
+
+export function createContractCancellationCountReader(database, { sdk = firestoreSDK } = {}) {
+  const { collection, query, where, orderBy, getCountFromServer, Timestamp } = sdk;
+  return async (businessId, { startDate, endDate } = {}, { signal } = {}) => {
+    if (typeof businessId !== 'string' || !businessId.trim() || !(startDate instanceof Date) || !(endDate instanceof Date)
+      || !Number.isFinite(+startDate) || !Number.isFinite(+endDate) || endDate < startDate) throw new Error('Período de anulaciones de pedidos inválido.');
+    signal?.throwIfAborted();
+    let snapshot;
+    try {
+      snapshot = await getCountFromServer(query(collection(database, 'contracts'), where('businessId', '==', businessId),
+        where('status', '==', 'cancelado'), where('voidedAt', '>=', Timestamp.fromDate(startDate)),
+        where('voidedAt', '<=', Timestamp.fromDate(endDate)), orderBy('voidedAt', 'desc')));
+    } catch (error) { throw withQueryContext(error, 'reports'); }
+    signal?.throwIfAborted();
+    const { count } = snapshot.data();
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error('El total de pedidos anulados no es verificable.');
+    return count;
   };
 }

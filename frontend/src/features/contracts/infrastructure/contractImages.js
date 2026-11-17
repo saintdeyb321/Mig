@@ -5,13 +5,14 @@ import offlineDB from '../../../offlineDB.js';
 import { safeImageUrl } from '../../../shared/security/html.js';
 import { imageCanvas, MAX_RASTER_INPUT_BYTES } from '../../../shared/images/raster.js';
 import { createContractMediaRepository, imageHash } from './contractMediaRepository.js';
-import { contractMediaId, LOCAL_IMAGE, MAX_CONTRACT_IMAGES, MAX_CONTRACT_IMAGE_BYTES, MAX_CONTRACT_IMAGE_DIMENSION,
-  MEDIA_PREFIX, TARGET_CONTRACT_IMAGE_BYTES } from '../application/contractImagePolicy.js';
+import { contractMediaId, LOCAL_IMAGE, MAX_CONTRACT_IMAGES, MAX_HISTORICAL_CONTRACT_IMAGES, MAX_CONTRACT_IMAGE_BYTES, MAX_CONTRACT_IMAGE_DIMENSION,
+  MEDIA_PREFIX, TARGET_CONTRACT_IMAGE_BYTES, validateContractMediaStaging } from '../application/contractImagePolicy.js';
 
 export { MAX_CONTRACT_IMAGES };
 export const MAX_IMAGE_BYTES = MAX_RASTER_INPUT_BYTES;
 const imageKey = (uid, reference) => `contract-image:${uid}:${reference}`;
 const jobPrefix = ({ uid, businessId, contractId }) => `contract-media:${uid}:${businessId}:${contractId}:`;
+const MAX_MEDIA_JOBS = MAX_HISTORICAL_CONTRACT_IMAGES * 2;
 const sameScope = (a, b) => a.uid === b.uid && a.businessId === b.businessId && a.contractId === b.contractId && a.branchId === b.branchId;
 const media = createContractMediaRepository(db, { currentUser: () => auth.currentUser,
   readDocument: (...path) => getDoc(doc(getServerReadDatabase(), ...path)) });
@@ -79,14 +80,12 @@ async function legacyPhoto(scope, reference, thumbnails = false) {
 
 export async function stageContractMediaJobs(scope, { files = [], removeIds = [], migration = [], orderId }, signal) {
   assertActive(scope, signal);
-  if (files.length + migration.length > MAX_CONTRACT_IMAGES || removeIds.length > MAX_CONTRACT_IMAGES) {
-    throw new Error(`Máximo ${MAX_CONTRACT_IMAGES} fotos por pedido.`);
-  }
   const prefix = jobPrefix(scope), jobs = [];
   if (orderId) {
     const staged = await readContractMediaJobs(scope);
     if (staged.length) return staged;
   }
+  validateContractMediaStaging({ files, migration, removeIds });
   for (const input of [...files.map(file => ({ file })), ...migration.map(legacyRef => ({ legacyRef }))]) {
     assertActive(scope, signal);
     const file = input.file ?? await legacyPhoto(scope, input.legacyRef);
@@ -104,8 +103,8 @@ export async function stageContractMediaJobs(scope, { files = [], removeIds = []
           const staged = await readContractMediaJobs(scope);
           if (staged.length) return staged;
         }
-        const existing = await offlineDB.settings.where('id').startsWith(prefix).limit(41).count();
-        if (existing + jobs.length > MAX_CONTRACT_IMAGES * 2) {
+        const existing = await offlineDB.settings.where('id').startsWith(prefix).limit(MAX_MEDIA_JOBS + 1).count();
+        if (existing + jobs.length > MAX_MEDIA_JOBS) {
           throw Object.assign(new Error('Revisa las fotos pendientes de este pedido antes de adjuntar más.'), { code: 'media-pending-limit' });
         }
         await offlineDB.settings.bulkPut(jobs);
@@ -128,7 +127,7 @@ export async function availableLegacyPhotos(scope, references) {
 
 export async function readContractMediaJobs(scope) {
   assertActive(scope);
-  const jobs = await offlineDB.settings.where('id').startsWith(jobPrefix(scope)).limit(40).toArray();
+  const jobs = await offlineDB.settings.where('id').startsWith(jobPrefix(scope)).limit(MAX_MEDIA_JOBS).toArray();
   assertActive(scope);
   return jobs.filter(row => sameScope(scope, row));
 }
@@ -136,24 +135,19 @@ export async function readContractMediaJobs(scope) {
 export async function finishContractMediaJobs(scope, { jobs, pending, signal } = {}) {
   const local = jobs ?? await readContractMediaJobs(scope);
   if (local.some(job => !sameScope(scope, job))) throw new Error('Las fotos pendientes pertenecen a otro alcance.');
-  let remaining = local.length, error, parent;
   const matchingPending = pending && local.find(job => !job.remove && job.mediaId === pending.id);
-  if (pending) {
-    try {
-      assertActive(scope, signal);
-      parent = (await media.resume(scope, pending.id, { signal, expectedHash: matchingPending?.sha256 })).parent;
-      if (matchingPending) { await offlineDB.settings.delete(matchingPending.id); remaining--; }
-    } catch (cause) { return { remaining: remaining + (matchingPending ? 0 : 1), error: cause }; }
-  }
-  // Removals are explicit and come first so replacing a photo can free a slot at the limit.
-  const ordered = [...local].sort((a, b) => Number(Boolean(b.remove)) - Number(Boolean(a.remove)));
+  const resume = pending && { mediaId: pending.id, id: matchingPending?.id, sha256: matchingPending?.sha256 };
+  // Explicit removals can free a slot for a reservation carried over from the old limit.
+  const ordered = [...local.filter(job => job.remove), ...(resume ? [resume] : []), ...local.filter(job => !job.remove && job !== matchingPending)];
+  let remaining = ordered.length, error, parent;
   for (const job of ordered) {
-    if (job === matchingPending) continue;
     try {
       assertActive(scope, signal);
-      parent = job.remove ? await media.remove(scope, job.mediaId, signal) : (await media.upload(scope, job, signal)).parent;
+      parent = job.remove ? await media.remove(scope, job.mediaId, signal)
+        : job === resume ? (await media.resume(scope, job.mediaId, { signal, expectedHash: job.sha256 })).parent
+          : (await media.upload(scope, job, signal)).parent;
       assertActive(scope, signal);
-      await offlineDB.settings.delete(job.id);
+      if (job.id) await offlineDB.settings.delete(job.id);
       remaining--;
     } catch (cause) { error = cause; break; }
   }
@@ -188,7 +182,7 @@ export async function resolveContractImageUrls(images, { scope = {}, thumbnails 
           if (!blob) throw new Error('Foto histórica no disponible; vuelve a adjuntarla desde el archivo original.');
           assertActive(identity, signal);
           if (mediaId && (!cached || cached.until <= Date.now()) && verifiedBlobs) {
-            if (verifiedBlobs.size >= MAX_CONTRACT_IMAGES) verifiedBlobs.delete(verifiedBlobs.keys().next().value);
+            if (verifiedBlobs.size >= MAX_HISTORICAL_CONTRACT_IMAGES) verifiedBlobs.delete(verifiedBlobs.keys().next().value);
             verifiedBlobs.set(mediaId, { blob, until: Date.now() + 30000 });
           }
           const url = URL.createObjectURL(blob);

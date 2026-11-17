@@ -210,11 +210,11 @@ const ContractDetailsModal = ({
                 </div>
               </div>
 
-              <div className="grid min-w-0 gap-4 rounded-2xl border border-accent/15 bg-linear-to-br from-panel to-accent-soft/45 p-4 shadow-card">
+              <div className="@container grid min-w-0 gap-4 rounded-2xl border border-accent/15 bg-linear-to-br from-panel to-accent-soft/45 p-4 shadow-card">
                 <h3 className="border-b border-accent/15 pb-3 text-sm font-bold text-brand-deep">Fotos de Referencia</h3>
                 <div className="min-w-0">
-                   {allImages.length > 0 ? <div className={cn("grid gap-2 min-h-30", allImages.length > 1 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1")}>
-                        {allImages.map((img, idx) => <button key={idx} type="button" className="min-w-0 overflow-hidden rounded-xl focus-visible:ring-2 focus-visible:ring-focus" onClick={() => setSelectedImageIndex(idx)} aria-label={`Ampliar fotografía ${idx + 1}`}><img src={img} alt={`Referencia ${idx + 1}`} title="Haz clic para ampliar" className="w-full h-full max-h-45 object-cover rounded-xl border border-line cursor-zoom-in motion-reduce:transition-none transition-colors hover:border-primary/40 hover:bg-primary-soft/40" /></button>)}
+                   {allImages.length > 0 ? <div role="group" aria-label="Fotos de referencia" className="ui-scroll grid max-h-64 min-w-0 grid-cols-2 gap-2 overflow-y-auto overscroll-contain p-1 @min-[20rem]:grid-cols-3">
+                        {allImages.map((img, idx) => <button key={idx} type="button" className="aspect-square min-w-0 cursor-zoom-in overflow-hidden rounded-xl border border-line focus-visible:ring-2 focus-visible:ring-focus" onClick={() => setSelectedImageIndex(idx)} aria-label={`Ampliar fotografía ${idx + 1}`}><img src={img} loading="lazy" alt={`Referencia ${idx + 1}`} className="size-full object-cover" /></button>)}
                       </div> : <div className="grid min-h-28 place-content-center gap-2 rounded-xl border border-accent/15 bg-panel/85 text-center text-sm text-muted">
                         <span className="text-3xl">🎂</span>
                         <p>{imagesLoading ? 'Cargando fotos…' : imageReferences.length ? 'Fotos no disponibles' : 'Sin referencia'}</p>

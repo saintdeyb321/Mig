@@ -1,12 +1,12 @@
 import { createContractMediaRepository, imageHash } from '../frontend/src/features/contracts/infrastructure/contractMediaRepository.js';
 import { planLegacyPayments } from '../functions/src/contracts/domain/legacyPaymentPlan.js';
-import { createContractPeriodReader } from '../frontend/src/features/contracts/infrastructure/contractPeriodRepository.js';
+import { createContractCancellationCountReader, createContractPeriodReader } from '../frontend/src/features/contracts/infrastructure/contractPeriodRepository.js';
 import { createContractQueryRepository } from '../frontend/src/features/contracts/infrastructure/contractQueryRepository.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { before, beforeEach, after, describe, it } from 'node:test';
 import { createHash } from 'node:crypto';
-import { initializeTestEnvironment, assertFails } from '@firebase/rules-unit-testing';
+import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, updateDoc, writeBatch, runTransaction, serverTimestamp, Timestamp, setLogLevel } from 'firebase/firestore';
 import * as sdk from 'firebase/firestore';
 import { createSalesPeriodReader, createSalesSessionReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
@@ -1201,7 +1201,28 @@ describe('P18 private contract media', () => {
     await batch.commit();
   });
 
-  it('publishes 0, 1 and 4 independent Bytes after creation with a date and advance; only origin and owner can open them', async () => {
+  it('P30 aggregates cancelled orders for the owner without opening cross-branch or cross-tenant reads', async () => {
+    await seedAccounts();
+    const period = reportPeriod('semana', '2026-11-12T12:00:00-05:00');
+    const cancellation = { businessId, branchId, status: 'cancelado', voidedAt: Timestamp.fromDate(period.startDate) };
+    await env.withSecurityRulesDisabled(async ctx => {
+      const db = ctx.firestore(), batch = writeBatch(db);
+      [
+        { ...cancellation, createdAt: Timestamp.fromMillis(+period.startDate - 1000) },
+        { ...cancellation, branchId: target, paidTotal: 0, voidedAt: Timestamp.fromDate(period.endDate) },
+        { ...cancellation, voidedAt: Timestamp.fromMillis(+period.endDate + 1) },
+        { ...cancellation, businessId: 'foreign' },
+        { businessId, branchId, status: 'cancelado' },
+      ].forEach((contract, index) => batch.set(doc(db, 'contracts', 'p30-count-' + index), contract));
+      await batch.commit();
+    });
+    const ownerCount = createContractCancellationCountReader(env.authenticatedContext('p18-owner').firestore(), { sdk });
+    assert.equal(await ownerCount(businessId, period), 2);
+    await assertFails(ownerCount('foreign', period));
+    await assertFails(createContractCancellationCountReader(database(), { sdk })(businessId, period));
+  });
+
+  it('P30 publishes 0, 1, 4 and 6 private Bytes after creation with a date and advance; Rules deny the seventh', async () => {
     await seedAccounts();
     const db = database(), counts = { transactionReads:0, serverReads:0, writes:0 };
     const counted = { ...sdk, runTransaction: (db, work) => sdk.runTransaction(db, tx => work({
@@ -1210,7 +1231,7 @@ describe('P18 private contract media', () => {
       update: (...args) => { counts.writes++; return tx.update(...args); },
     })), getDocFromServer: ref => { counts.serverReads++; return sdk.getDocFromServer(ref); } };
     const repo = createContractMediaRepository(db, { sdk: counted, currentUser: () => ({ uid }) });
-    for (const count of [0, 1, 4]) {
+    for (const count of [0, 1, 4, 6]) {
       const scope = await create(String(count), { initialPayment: count === 4, lostResponse: count === 4 });
       const ids = [];
       for (let i = 0; i < count; i++) {
@@ -1245,10 +1266,16 @@ describe('P18 private contract media', () => {
       await assertFails(sdk.getDocs(sdk.collection(freshOwner, 'contracts', scope.contractId, 'media')));
       await assertFails(updateDoc(doc(db, path), { width: 2 }));
       await assertFails(sdk.deleteDoc(doc(db, path)));
+      if (count === 6) {
+        const seventh = await photo();
+        await assertFails(createContractMediaRepository(db, { sdk, currentUser: () => ({ uid }) }).upload(scope, seventh));
+        assert.equal((await inspect(`contracts/${scope.contractId}/media/${seventh.mediaId}`)).exists(), false);
+        assert.deepEqual((await getDoc(doc(db, 'contracts', scope.contractId))).data().mediaIds, ids);
+      }
     }
     const receipts = await sdk.getDocs(sdk.query(sdk.collection(db, 'payments'), sdk.where('businessId', '==', businessId), sdk.where('branchId', '==', branchId)));
     assert.equal(receipts.size, 1);
-    assert.deepEqual(counts, { transactionReads:10, serverReads:10, writes:15 });
+    assert.deepEqual(counts, { transactionReads:22, serverReads:22, writes:33 });
   });
 
   it('keeps product and branch images in bounded Base64 and exposes updates across authorized accounts', async () => {
@@ -1274,7 +1301,7 @@ describe('P18 private contract media', () => {
     await seedAccounts();
     const contractId = 'aaaaaaaa-1111-4111-8111-000000000020';
     const legacy = Array.from({ length: 20 }, () => `local-image:${businessId}:${contractId}:${crypto.randomUUID()}`);
-    await assertFails(create('20', { referenceImages: legacy }));
+    await assert.rejects(create('20', { referenceImages: legacy }), /Máximo 6 imágenes/);
     const scope = await create('20');
     await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'contracts', scope.contractId), { referenceImages: legacy }));
     const db = database();
@@ -1282,6 +1309,9 @@ describe('P18 private contract media', () => {
     await assertFails(repo.upload(scope, await photo()));
     const job = await photo({ legacyRef: legacy[0] });
     const parent = doc(db, 'contracts', scope.contractId), image = doc(db, 'contracts', scope.contractId, 'media', job.mediaId);
+    await assertSucceeds(updateDoc(parent, { details: 'Editar sin tocar fotos históricas', updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(parent, { referenceImages: [...legacy].reverse(), updatedAt: serverTimestamp() }));
+    assert.deepEqual((await getDoc(parent)).data().referenceImages, legacy);
     const raw = async (fields = {}, pending = {}, parentOnly = false) => {
       const batch = writeBatch(db), rawBytes = new Uint8Array(await job.blob.arrayBuffer());
       if (!parentOnly) batch.set(image, { businessId, originBranchId:branchId, version:1, contentType:'image/webp',
@@ -1332,5 +1362,36 @@ describe('P18 private contract media', () => {
     assert.deepEqual((await getDoc(parent)).data().mediaIds, []);
     assert.equal((await inspect(image.path)).exists(), false);
     assert.deepEqual((await getDoc(parent)).data().referenceImages, legacy.slice(1));
+    const retained = legacy.slice(1).filter((_, index) => index !== 4);
+    await assertSucceeds(updateDoc(parent, { referenceImages: retained, updatedAt: serverTimestamp() }));
+    assert.deepEqual((await getDoc(parent)).data().referenceImages, retained);
+  });
+
+  it('P30 preserves an old seventh reservation and resumes only after an explicit removal frees a slot', async () => {
+    await seedAccounts();
+    const scope = await create('37');
+    const job = await photo();
+    const legacy = Array.from({ length: 6 }, () => `local-image:${businessId}:${scope.contractId}:${crypto.randomUUID()}`);
+    const bytes = new Uint8Array(await job.blob.arrayBuffer());
+    await env.withSecurityRulesDisabled(async context => {
+      const db = context.firestore(), batch = writeBatch(db);
+      batch.set(doc(db, 'contracts', scope.contractId, 'media', job.mediaId), { businessId, originBranchId: branchId,
+        createdBy: uid, createdAt: serverTimestamp(), width: 1, height: 1, version: 1,
+        contentType: job.blob.type, byteLength: bytes.length, data: sdk.Bytes.fromUint8Array(bytes), sha256: job.sha256 });
+      batch.update(doc(db, 'contracts', scope.contractId), { referenceImages: legacy, mediaRevision: 1,
+        pendingMedia: { id: job.mediaId, legacyRef: null, sha256: job.sha256 } });
+      await batch.commit();
+    });
+    const db = database(), parent = doc(db, 'contracts', scope.contractId);
+    const repo = createContractMediaRepository(db, { sdk, currentUser: () => ({ uid }) });
+    await assertFails(repo.resume(scope, job.mediaId));
+    assert.deepEqual((await getDoc(parent)).data().referenceImages, legacy);
+    assert.equal((await getDoc(parent)).data().pendingMedia.id, job.mediaId);
+    await assertSucceeds(updateDoc(parent, { referenceImages: legacy.slice(1), updatedAt: serverTimestamp() }));
+    await repo.resume(scope, job.mediaId);
+    const finished = (await getDoc(parent)).data();
+    assert.deepEqual(finished.mediaIds, [job.mediaId]);
+    assert.deepEqual(finished.referenceImages, legacy.slice(1));
+    assert.equal(finished.pendingMedia, null);
   });
 });

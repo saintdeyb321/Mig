@@ -10,6 +10,7 @@ import { buildContractLedgerReport } from '../frontend/src/features/reports/appl
 import { buildSalesWorkbook, MAX_EXPORT_ROWS, writeSalesWorkbook } from '../frontend/src/features/reports/application/salesWorkbook.js';
 import { cashReviewPresentation, managementReportHtml } from '../frontend/src/features/reports/application/managementReportHtml.js';
 import { createCashPeriodReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
+import { createContractCancellationCountReader } from '../frontend/src/features/contracts/infrastructure/contractPeriodRepository.js';
 import { createSalesPeriodReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
 import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
 import { createSheet } from '../frontend/src/utils/excelHelpers.js';
@@ -461,9 +462,11 @@ it('P27 starts all weekly sources together and retains them across a canceled wa
   const resources = createSessionResources(), calls = [], pending = [];
   const read = kind => (businessId, _start, _end, scope) => {
     calls.push([kind, businessId, typeof scope === 'string' ? scope : scope.branchId]);
-    return new Promise(resolve => pending.push(() => resolve(kind === 'sales' ? Array(6000).fill({}) : [])));
+    const result = { sales: Array(6000).fill({}), count: 2 }[kind] ?? [];
+    return new Promise(resolve => pending.push(() => resolve(result)));
   };
   const factory = createSessionReportReads({ getSalesInPeriod: read('sales'), getContractsInPeriod: read('contracts'),
+    getCancelledContractCount: (business, period) => read('count')(business, period.startDate, period.endDate, 'global'),
     getPaymentsInPeriod: read('payments'), readVoidsInPeriod: read('voids'), getSessionsInPeriod: read('cash') });
   const scope = ['tenant-a', 'global', reportPeriod('semana', date('12')), { identityKey: 'operator', revision: 1 }];
   try {
@@ -471,16 +474,20 @@ it('P27 starts all weekly sources together and retains them across a canceled wa
     let authorized = true;
     const first = assert.rejects(reader.exportSnapshot(() => authorized), { name: 'AbortError' });
     await tick();
-    assert.deepEqual(calls.map(([kind]) => kind).sort(), ['cash', 'contracts', 'payments', 'sales', 'voids']);
+    assert.deepEqual(calls.map(([kind]) => kind).sort(), ['cash', 'contracts', 'count', 'payments', 'sales', 'voids']);
     assert.ok(calls.every(([, businessId, branchId]) => businessId === 'tenant-a' && branchId === 'global'));
     reader.discardSnapshot(); // A retry cannot evict readings that the session still owns.
     const retry = factory(resources, ...scope).exportSnapshot();
     authorized = false;
     await tick();
-    assert.equal(calls.length, 5);
+    assert.equal(calls.length, 6);
     pending.forEach(release => release());
     const [, repeated] = await Promise.all([first, retry]);
     assert.equal(repeated.sales.length, 6000);
+    assert.equal(repeated.cancelledContractCount, 2);
+    assert.equal((await reader.exportSnapshot()).cancelledContractCount, 2);
+    await reader.withContractAudit(repeated);
+    assert.equal(calls.filter(([kind]) => kind === 'count').length, 1);
   } finally { resources.close(); }
 });
 
@@ -491,13 +498,64 @@ it('P27 retains the annual sales gate without complementary reads', async () => 
   const factory = createSessionReportReads({ getSalesInPeriod: async () => {
     salesCalls++;
     throw Object.assign(Error('Demasiados tickets'), { code: 'report-limit' });
-  }, getContractsInPeriod: unexpected, getPaymentsInPeriod: unexpected, readVoidsInPeriod: unexpected, getSessionsInPeriod: unexpected });
+  }, getContractsInPeriod: unexpected, getCancelledContractCount: unexpected, getPaymentsInPeriod: unexpected,
+  readVoidsInPeriod: unexpected, getSessionsInPeriod: unexpected });
   try {
     const reader = factory(resources, 'tenant-a', 'global', reportPeriod('todo', date('12')));
     await assert.rejects(reader.exportSnapshot(), { code: 'report-limit' });
     await assert.rejects(reader.exportSnapshot(), { code: 'report-limit' });
     assert.equal(salesCalls, 1);
   } finally { resources.close(); }
+});
+
+it('P30 counts each cancelled order once by server cancellation date and preserves signed adjustments in XLSX', async () => {
+  const week = reportPeriod('semana', date('12'));
+  const cancelled = { businessId: 'tenant-a', status: 'cancelado' };
+  const orders = [
+    { ...cancelled, id: 'older', createdAt: new Date(+week.startDate - 1), voidedAt: week.startDate },
+    { ...cancelled, id: 'without-payment', voidedAt: week.endDate, paidTotal: 0 },
+    { ...cancelled, voidedAt: new Date(+week.endDate + 1) },
+    { ...cancelled, businessId: 'other', voidedAt: week.startDate },
+    { ...cancelled, status: 'pendiente', voidedAt: week.startDate },
+    cancelled,
+  ];
+  const sdk = {
+    collection: (_, name) => name, query: (name, ...filters) => ({ name, filters }),
+    where: (...filter) => filter, orderBy: (...order) => order, Timestamp: { fromDate: value => value },
+    getCountFromServer: async ({ name, filters }) => {
+      assert.equal(name, 'contracts');
+      assert.deepEqual(filters.slice(1), [['status', '==', 'cancelado'], ['voidedAt', '>=', week.startDate],
+        ['voidedAt', '<=', week.endDate], ['voidedAt', 'desc']]);
+      assert.deepEqual(filters[0].slice(0, 2), ['businessId', '==']);
+      return { data: () => ({ count: orders.filter(row => row.businessId === filters[0][2] && row.status === 'cancelado'
+        && row.voidedAt >= week.startDate && row.voidedAt <= week.endDate).length }) };
+    },
+  };
+  const read = createContractCancellationCountReader({}, { sdk });
+  const cancelledContractCount = await read('tenant-a', week);
+  assert.equal(cancelledContractCount, 2);
+  assert.equal(await read('empty-business', week), 0);
+  await assert.rejects(read('tenant-a', { ...week, startDate: new Date(NaN) }));
+  const failure = Object.assign(new Error('missing index'), { code: 'failed-precondition' });
+  const unavailable = createContractCancellationCountReader({}, { sdk: { ...sdk, getCountFromServer: async () => { throw failure; } } });
+  await assert.rejects(unavailable('tenant-a', week), { code: failure.code });
+  const refunds = [-60, -51].map((amount, index) => ({ ...payments[2], id: 'refund-' + index, sourceId: 'older', amount }));
+  const tickets = [10, 17].map((total, index) => ({ ...sales[1], id: 'pos-' + index, total, items: [{ ...item, price: total }] }));
+  const voids = tickets.map(ticket => ({ ...base, id: ticket.id, saleId: ticket.id, authority: 'pos-compensation',
+    reason: 'Anulación de prueba', amount: -ticket.total, cashAmount: -ticket.total, digitalAmount: 0, items: ticket.items, occurredAt: date('12') }));
+  const options = { period: week, stats: [], payments: refunds, sales: tickets, voids, cancelledContractCount };
+  const workbook = build(options).workbook;
+  const readKpis = workbook => Object.fromEntries(XLSX.utils.sheet_to_json(workbook.Sheets.Resumen_Financiero, { header: 1 })
+    .filter(row => typeof row[0] === 'string' && typeof row[1] === 'number'));
+  const summary = readKpis(XLSX.read(writeSalesWorkbook(XLSX, workbook), { type: 'array' }));
+  const labels = Object.keys(summary);
+  assert.equal(labels[labels.indexOf('TICKETS ANULADOS') + 1], 'PEDIDOS ANULADOS');
+  assert.equal(summary['TICKETS ANULADOS'], 2);
+  assert.equal(summary['PEDIDOS ANULADOS'], 2);
+  assert.equal(summary['Reembolsos de pedidos'], -111);
+  assert.equal(summary['Anulaciones de mostrador'], -27);
+  assert.equal(readKpis(build({ ...options, cancelledContractCount: 0 }).workbook)['PEDIDOS ANULADOS'], 0);
+  assert.throws(() => build({ ...options, cancelledContractCount: -1 }), /no es verificable/);
 });
 
 describe('Phase 7 bounded data and lifecycle', () => {

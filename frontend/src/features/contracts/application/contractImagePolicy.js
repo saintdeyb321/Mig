@@ -1,4 +1,5 @@
-export const MAX_CONTRACT_IMAGES = 20;
+export const MAX_CONTRACT_IMAGES = 6;
+export const MAX_HISTORICAL_CONTRACT_IMAGES = 20;
 export const TARGET_CONTRACT_IMAGE_BYTES = 100 * 1024;
 export const MAX_CONTRACT_IMAGE_BYTES = 160 * 1024;
 export const MAX_CONTRACT_IMAGE_DIMENSION = 960;
@@ -12,6 +13,16 @@ export function contractMediaId(reference) {
 }
 
 export function fitsContractImageLimit(images, savedImages = []) {
-  return images.length <= MAX_CONTRACT_IMAGES || (Array.isArray(savedImages) && images.length === savedImages.length
-    && images.every((image, index) => image === savedImages[index]));
+  if (images.length <= MAX_CONTRACT_IMAGES) return true;
+  if (!Array.isArray(savedImages) || images.length > savedImages.length) return false;
+  let retained = 0;
+  for (const image of savedImages) if (image === images[retained] && ++retained === images.length) return true;
+  return false;
+}
+
+export function validateContractMediaStaging({ files, migration, removeIds }) {
+  if (files.length > MAX_CONTRACT_IMAGES) throw new Error(`Máximo ${MAX_CONTRACT_IMAGES} fotos por pedido.`);
+  if (migration.length > MAX_HISTORICAL_CONTRACT_IMAGES || removeIds.length > MAX_HISTORICAL_CONTRACT_IMAGES) {
+    throw new Error('Hay demasiadas fotos históricas en esta operación. Divide los cambios y vuelve a intentar.');
+  }
 }

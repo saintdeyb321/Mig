@@ -46,13 +46,16 @@ it('P15 recovers a persisted identity after a stale access stream without removi
         assert.ok(!result.exceptionDetails, result.exceptionDetails?.exception?.description);
         return result.result.value;
       };
-      const until = async (fn, message, ...args) => {
-        for (let i = 0; i < 60; i++) {
+      const waitFor = attempts => async (fn, message, ...args) => {
+        for (let i = 0; i < attempts; i++) {
           if (await evaluate(fn, ...args)) return;
           await delay(50);
         }
-        assert.fail(`${message}: ${JSON.stringify(await evaluate(() => ({ text: document.body.innerText, watches: window.__p15.watches.map(watch => watch.kind), reads: window.__p15.reads.map(row => row.kind) })))}`);
+        assert.fail(`${message}: ${JSON.stringify(await evaluate(() => ({ text: document.body?.innerText,
+          state: document.readyState, path: location.pathname, worker: navigator.serviceWorker.controller?.scriptURL,
+          watches: window.__p15?.watches.map(watch => watch.kind), reads: window.__p15?.reads.map(row => row.kind) })))}`);
       };
+      const until = waitFor(60), untilBoot = waitFor(160);
       const ready = (business = 'tenant-a') => until(business => document.querySelector('#business-ready')?.textContent === business
         && window.__p15.canWrite(), 'The verified owner can operate', business);
       const restricted = text => until(text => document.querySelector('h1')?.textContent.includes(text), text, text);
@@ -69,15 +72,31 @@ it('P15 recovers a persisted identity after a stale access stream without removi
       const draft = () => evaluate(async () => (await window.__p15.draft()).data);
       assert.equal(await draft(), 'synthetic-encrypted-sentinel');
 
-      // Reload the page with a persisted synthetic Auth identity and the same browser storage.
+      // Update the fixture worker and reload with the same synthetic Auth identity and storage.
+      const worker = async version => {
+        await evaluate(async version => { await navigator.serviceWorker.register('/__ui-sw.js?v=' + version, { scope: location.pathname }); }, version);
+        await until(async version => (await navigator.serviceWorker.getRegistration())?.active?.scriptURL.endsWith('?v=' + version),
+          'Fixture worker activates', version);
+      };
+      await worker(1);
+      await worker(2);
       const previousBoot = await evaluate(() => {
-        sessionStorage.setItem('p15:boot', 'stale');
+        sessionStorage.setItem('p15:boot', 'cache-then-stale');
+        sessionStorage.setItem('p15:hold', 'yes');
         return window.__p15.bootId;
       });
       await page.send('Page.reload');
-      await until(previous => window.__p15?.bootId !== previous && !!window.__p15?.bootId, 'F5 booted a new document', previousBoot);
-      await restricted('Configuración no encontrada');
-      await retry();
+      await untilBoot(previous => window.__p15?.bootId !== previous && !!window.__p15?.bootId, 'F5 booted a new document', previousBoot);
+      assert.match(await evaluate(() => navigator.serviceWorker.controller?.scriptURL), /\?v=2$/);
+      await until(() => window.__p15.pending?.length === 2, 'P30 verifies the stale first snapshot once');
+      assert.deepEqual(await evaluate(() => window.__p15.reads.map(row => row.kind)), ['profile', 'license', 'tenant']);
+      assert.equal(await evaluate(() => window.__p15.canWrite()), false);
+      assert.equal(await draft(), 'synthetic-encrypted-sentinel');
+      await evaluate(() => {
+        sessionStorage.removeItem('p15:hold');
+        window.__p15.hold = false;
+        window.__p15.pending.splice(0).forEach(resolve => resolve());
+      });
       await ready();
       assert.equal(await draft(), 'synthetic-encrypted-sentinel');
       assert.equal(await evaluate(() => window.__p15.watches.filter(watch => watch.kind === 'profile').length), 1);
@@ -219,6 +238,26 @@ it('P15 recovers a persisted identity after a stale access stream without removi
       assert.equal(await evaluate(() => window.__p15.canWrite()), false, 'A different tab cannot grant this tab access');
       assert.equal(await evaluate(async () => (await window.__p15.other.__p15.draft()).data), 'synthetic-encrypted-sentinel');
       await evaluate(() => window.__p15.other.close());
+
+      const lastBoot = await evaluate(() => {
+        sessionStorage.setItem('p15:boot', 'stale');
+        sessionStorage.setItem('p15:direct', 'absent');
+        sessionStorage.setItem('p15:elapsed', String(window.__p15.elapsed + 60000));
+        return window.__p15.bootId;
+      });
+      await page.send('Page.reload');
+      await untilBoot(last => !!window.__p15?.bootId && window.__p15.bootId !== last, 'The final reload uses genuinely missing server records', lastBoot);
+      await restricted('Configuración no encontrada');
+      assert.deepEqual(await evaluate(() => window.__p15.reads.map(row => row.kind)), ['profile', 'license', 'tenant']);
+      await evaluate(() => {
+        window.__p15.elapsed += 60000;
+        window.dispatchEvent(new Event('online'));
+        window.dispatchEvent(new Event('focus'));
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      assert.equal(await evaluate(() => window.__p15.reads.length), 3, 'Focus and duplicate online events do not loop after confirmed absence');
+      assert.equal(await evaluate(() => window.__p15.canWrite()), false);
+      assert.equal(await draft(), 'synthetic-encrypted-sentinel');
     },
   });
 });

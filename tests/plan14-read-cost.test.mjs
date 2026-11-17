@@ -5,7 +5,7 @@ import { createSessionResources } from '../frontend/src/core/session/sessionReso
 import { createSessionReportReads } from '../frontend/src/features/reports/application/sessionReportReads.js';
 import { createSalesPeriodReader } from '../frontend/src/features/sales/infrastructure/salesQueryRepository.js';
 import { createPosVoidReader } from '../frontend/src/features/sales/infrastructure/posVoidQueryRepository.js';
-import { createContractPeriodReader } from '../frontend/src/features/contracts/infrastructure/contractPeriodRepository.js';
+import { createContractPeriodReader, createContractCancellationCountReader } from '../frontend/src/features/contracts/infrastructure/contractPeriodRepository.js';
 import { createPaymentRepository } from '../frontend/src/features/payments/infrastructure/paymentQueryRepository.js';
 import { createSparkLegacyPaymentReader } from '../frontend/src/features/payments/infrastructure/sparkLegacyPayments.js';
 import { compatiblePayments } from '../frontend/src/features/payments/application/compatiblePayments.js';
@@ -14,7 +14,7 @@ import { reportPeriod } from '../frontend/src/features/reports/domain/reportPeri
 
 const DAY = 86400000, YEAR_START = Date.parse('2026-01-01T05:00:00Z');
 const branches = ['centro', 'taller'];
-const counts = () => ({ queries: 0, documents: 0, emptyQueries: 0, payloadBytes: 0, salesDocuments: 0 });
+const counts = () => ({ queries: 0, aggregations: 0, documents: 0, emptyQueries: 0, payloadBytes: 0, salesDocuments: 0 });
 
 function fixtureSdk(metrics) {
   const items = [{ id: 'pan', name: 'Pan de prueba', category: 'Panadería', price: 10.05, cost: 3, qty: 1 }];
@@ -22,6 +22,7 @@ function fixtureSdk(metrics) {
     Timestamp, collection: (_db, name) => name, documentId: () => 'id', where: (field, op, value) => ({ field, op, value }),
     orderBy: field => ({ order: field }), limit: limit => ({ limit }), startAfter: after => ({ after }),
     query: (name, ...filters) => ({ name, filters }),
+    async getCountFromServer() { metrics.aggregations++; return { data: () => ({ count: 0 }) }; },
     async getDocsFromServer({ name, filters }) {
       const field = filters.find(filter => filter.order)?.order;
       const from = filters.find(filter => filter.op === '>=')?.value;
@@ -73,6 +74,7 @@ it('P14 R10/R11: measures 20 independent tenants using the actual paginated read
       const read = createSessionReportReads({
         getSalesInPeriod: createSalesPeriodReader(database, { sdk }),
         getContractsInPeriod: createContractPeriodReader(database, { sdk }),
+        getCancelledContractCount: createContractCancellationCountReader(database, { sdk }),
         readVoidsInPeriod: createPosVoidReader(database, { sdk }).inPeriod,
         getSessionsInPeriod: createCashAuditPeriodReader(database, { sdk }),
         getContractAuditDocuments: payments.getContractAuditDocuments,
@@ -117,6 +119,7 @@ it('P14 R10/R11: measures 20 independent tenants using the actual paginated read
         resources.close();
       }
       assert.equal(cold.salesDocuments, 20 * (filter === 'todo' ? 10001 : expectedSales * 2));
+      assert.equal(cold.aggregations, filter === 'todo' ? 0 : 20);
       assert.equal(cold.documents, cold.salesDocuments + 20 * (filter === 'todo' ? 0 : expectedSessions * 2));
       console.log(JSON.stringify({ filter, branchId, tenants: 20, salesPerTenant: expectedSales, ...cold,
         postDashboardQueries, postDashboardDocs, coldMs: Math.round(coldMs), warmMs: Math.round(warmMs * 100) / 100, cacheHits, warmQueries: 0 }));

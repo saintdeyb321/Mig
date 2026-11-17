@@ -1,5 +1,5 @@
 import { confirmedWrite } from '../../../core/firebase/confirmedWrite.js';
-import { createContractPeriodReader } from './contractPeriodRepository.js';
+import { createContractCancellationCountReader, createContractPeriodReader } from './contractPeriodRepository.js';
 import { db, auth } from '../../../core/firebase/client';
 import { createSparkContractsRepository } from './sparkContractsRepository.js';
 const spark = createSparkContractsRepository(db, { currentUser: () => auth.currentUser });
@@ -14,3 +14,4 @@ export const cancelContractDocument = confirmedWrite(payload => spark.cancel(pay
 export const markContractDelivered = confirmedWrite(contractId => spark.deliver(contractId));
 
 export const getContractsInPeriod = createContractPeriodReader(db);
+export const getCancelledContractCount = createContractCancellationCountReader(db);

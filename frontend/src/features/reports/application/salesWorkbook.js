@@ -81,7 +81,7 @@ export function writeSalesWorkbook(XLSX, workbook) {
 
 const periodNames = { hoy: 'Hoy', semana: 'Semana', mes: 'Mes', todo: 'Año' };
 
-function summarySheet(XLSX, view, { business, scopeName, dateRange, periodName, showChannelEvidence, hasNegativeChannel }) {
+function summarySheet(XLSX, view, { business, scopeName, dateRange, periodName, showChannelEvidence, hasNegativeChannel, cancelledContractCount }) {
   const metrics = view.summary;
   const { cash, digital } = metrics.channels;
   const review = cashReviewPresentation(view.cashEvents);
@@ -107,6 +107,7 @@ function summarySheet(XLSX, view, { business, scopeName, dateRange, periodName, 
     space, row('TICKETS COMPLETADOS', metrics.posTicketCount, 'mixed', 'count', { bold: true }),
     row('PAGOS DE PEDIDOS · CANTIDAD', metrics.contractPaymentCount, 'product', 'count'),
     row('TICKETS ANULADOS', metrics.voidedTicketCount, metrics.voidedTicketCount ? 'danger' : 'ivory', 'count'),
+    ...(cancelledContractCount === undefined ? [] : [row('PEDIDOS ANULADOS', cancelledContractCount, cancelledContractCount > 0 ? 'danger' : 'ivory', 'count')]),
     ...(view.cashEvents.length ? [
       space, row('CAJAS QUE REQUIEREN REVISIÓN', review.totalCount, review.totalCount ? 'warning' : 'info', 'count', { bold: true }),
       row('Sobrante confirmado', differenceBySign(1), differenceBySign(1) > 0 ? 'warning' : undefined, 'money'),
@@ -160,7 +161,10 @@ function orderAuditRows(payments) {
 }
 
 export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = [], voids = [], contracts = [], sessions = [], branchesMap = {}, people, model: prepared, period,
-  businessId, business, branchId = 'global', loadedAt, cashReferenceAsOf, detailed = ['hoy', 'semana'].includes(period.filter), now = new Date() }) {
+  businessId, business, branchId = 'global', loadedAt, cashReferenceAsOf, cancelledContractCount, detailed = ['hoy', 'semana'].includes(period.filter), now = new Date() }) {
+  if (cancelledContractCount !== undefined && (!Number.isSafeInteger(cancelledContractCount) || cancelledContractCount < 0)) {
+    throw new Error('El total de pedidos anulados no es verificable.');
+  }
   const scope = { businessId, branchId, period };
   const scopedSales = reportRows(sales ?? [], scope, row => row.createdAt);
   const scopedPayments = reportRows(payments, scope);
@@ -186,7 +190,7 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
     const sheet = createSheet(XLSX, rows, schema, options);
     XLSX.utils.book_append_sheet(wb, sheet, uniqueSheetName(name, wb.SheetNames));
   };
-  XLSX.utils.book_append_sheet(wb, summarySheet(XLSX, view, { business, scopeName, dateRange: range, periodName,
+  XLSX.utils.book_append_sheet(wb, summarySheet(XLSX, view, { business, scopeName, dateRange: range, periodName, cancelledContractCount,
     showChannelEvidence: model.branches.size > 0,
     hasNegativeChannel: [...model.branches.values()].some(({ channels }) => channels.cash.net < 0 || channels.digital.net < 0),
   }), 'Resumen_Financiero');

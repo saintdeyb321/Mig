@@ -104,7 +104,7 @@ const ContractFormModal = ({
     e.currentTarget.value = '';
     if (files.length === 0) return;
     if (images.length + files.length > MAX_CONTRACT_IMAGES) {
-      return toast.error(`Máximo ${MAX_CONTRACT_IMAGES} imágenes de referencia por pedido.`);
+      return toast.error(`Puedes adjuntar hasta ${MAX_CONTRACT_IMAGES} fotos por pedido.`);
     }
     if (files.some(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || !/\.(jpe?g|png|webp)$/i.test(file.name) || file.size > 5 * 1024 * 1024)) {
       return toast.error('Usa imágenes JPEG, PNG o WebP de hasta 5 MB. Se comprimen para adjuntarlas al pedido.');
@@ -142,7 +142,7 @@ const ContractFormModal = ({
     const existingImages = images.filter(img => img.type === 'existing').map(img => img.value);
     const newImageFiles = images.filter(img => img.type === 'new').map(img => img.file);
     if (!fitsContractImageLimit([...existingImages, ...newImageFiles], savedImages)) {
-      return toast.error(`Reduce la selección a ${MAX_CONTRACT_IMAGES} fotos para guardar los cambios en las referencias.`);
+      return toast.error(`Conserva o retira fotos antiguas. Puedes añadir fotos cuando queden menos de ${MAX_CONTRACT_IMAGES}.`);
     }
     const finalData = {
       ...formData,
@@ -201,14 +201,14 @@ const ContractFormModal = ({
                 <FormField label="Descripción exacta" required>
                   <Textarea name="details" value={formData.details} onChange={handleChange} required disabled={isProcessing} className="min-h-32" placeholder="Ej: Torta de chocolate, 2 pisos, relleno de fresa…" />
                 </FormField>
-                <div className="min-w-0 space-y-2.5 rounded-2xl border border-accent/20 bg-linear-to-br from-panel to-accent-soft/65 p-3">
+                <div className="@container min-w-0 space-y-2.5 rounded-2xl border border-accent/20 bg-linear-to-br from-panel to-accent-soft/65 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-bold text-brand-deep">
                     <span className="flex items-center gap-2"><Images aria-hidden="true" className="size-4 text-accent" />Fotos de referencia</span>
                     <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent tabular-nums">
-                      {overImageLimit ? `${images.length} fotos existentes` : `${images.length}/${MAX_CONTRACT_IMAGES}`}
+                      {overImageLimit ? `${images.length} fotos antiguas` : `${images.length}/${MAX_CONTRACT_IMAGES}`}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-2">
+                  <div role="group" aria-label="Miniaturas de referencia" className="grid min-w-0 grid-cols-2 gap-2 @min-[20rem]:grid-cols-3">
                     {images.map((_image, idx) => <div key={idx} className="relative aspect-square min-w-0 rounded-xl border border-accent/15 bg-panel shadow-xs">
                       {displayedImages[idx] ? <img src={displayedImages[idx]} alt={`Referencia ${idx + 1}`} className="size-full rounded-[inherit] object-cover" />
                         : <span className="absolute inset-x-1 bottom-2 text-center text-xs text-muted">{loadingImages ? 'Cargando…' : 'No disponible aquí'}</span>}
@@ -223,7 +223,7 @@ const ContractFormModal = ({
                   <p className="text-xs leading-relaxed text-muted">Hasta {MAX_CONTRACT_IMAGES} fotos · JPEG, PNG o WebP · archivo original de hasta 5 MiB por foto.</p>
                   <p className="text-xs text-muted">Las fotos nuevas estarán disponibles en otros dispositivos autorizados cuando se confirme su subida. Si se interrumpe, reintenta desde el pedido en este dispositivo.</p>
                   {imageError && <p role="status" className="text-xs text-warning">{imageError.message}</p>}
-                  {overImageLimit && <p className="rounded-lg bg-warning-soft px-2 py-1.5 text-xs text-warning">Puedes conservar las fotos anteriores. Para cambiar la selección, redúcela a {MAX_CONTRACT_IMAGES} como máximo.</p>}
+                  {overImageLimit && <p className="text-xs text-muted">Puedes conservar o retirar las fotos antiguas. Para añadir otra, deja menos de {MAX_CONTRACT_IMAGES}.</p>}
                 </div>
               </div>
             </SectionCard>

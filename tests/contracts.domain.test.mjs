@@ -7,6 +7,7 @@ import { legacyPaymentPlan, remainingIncomePayments } from '../functions/src/con
 import { migrationOptions } from '../functions/scripts/migrateLegacyContracts.mjs';
 import { cleanupUnreferencedImages } from '../frontend/src/features/contracts/application/imageCleanup.js';
 import { mergeContractPages } from '../frontend/src/features/contracts/application/contractCommands.js';
+import { fitsContractImageLimit, validateContractMediaStaging } from '../frontend/src/features/contracts/application/contractImagePolicy.js';
 const legacy = payments => ({ businessId: 'tenant', branchId: 'branch', total: 100, payments });
 describe('Contract financial invariants', () => {
   it('partial migration and a batch racing the report preserve every movement exactly once', async () => {
@@ -72,4 +73,16 @@ describe('Contract financial invariants', () => {
   it('history page merges preserve unique authoritative IDs', () => {
     assert.deepEqual(mergeContractPages([{ id: 'a' }, { id: 'b', old: true }], [{ id: 'b' }, { id: 'c' }]), [{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
   });
+});
+it('P30 only adds up to six new photos and preserves ordered legacy references and staging capacity', () => {
+  const historical = Array.from({ length: 20 }, (_, index) => `reference-${index}`);
+  assert.equal(fitsContractImageLimit(historical.slice(0, 6)), true);
+  assert.equal(fitsContractImageLimit(historical.slice(0, 7)), false);
+  assert.equal(fitsContractImageLimit(historical, historical), true);
+  assert.equal(fitsContractImageLimit(historical.filter((_, index) => index !== 4), historical), true);
+  assert.equal(fitsContractImageLimit([...historical].reverse(), historical), false);
+  assert.equal(fitsContractImageLimit([...historical.slice(0, 6), 'new'], historical), false);
+  assert.doesNotThrow(() => validateContractMediaStaging({ files: historical.slice(0, 6), migration: historical, removeIds: historical }));
+  assert.throws(() => validateContractMediaStaging({ files: historical.slice(0, 7), migration: [], removeIds: [] }), /Máximo 6/);
+  assert.throws(() => validateContractMediaStaging({ files: [], migration: [], removeIds: [...historical, 'extra'] }), /demasiadas fotos históricas/);
 });

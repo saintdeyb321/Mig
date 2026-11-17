@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readViewPreference, writeViewPreference } from '../frontend/src/core/session/viewPreference.js';
 import { it } from 'node:test';
 import { profileAccess, licenseAccess, accessErrorState } from '../frontend/src/core/session/accessState.js';
-import { createProfileSession } from '../frontend/src/core/session/profileSession.js';
+import { createAccessRecovery, createProfileSession } from '../frontend/src/core/session/profileSession.js';
 import { reportAccessDiagnostic } from '../frontend/src/core/errors/diagnostics.js';
 import { salesHistoryPresentation } from '../frontend/src/features/sales/application/recentSales.js';
 import { createNotificationRepository, projectFinancialNotice } from '../frontend/src/features/notifications/infrastructure/notificationQueryRepository.js';
@@ -12,6 +12,52 @@ const server = { fromCache: false, hasPendingWrites: false };
 const cached = { fromCache: true, hasPendingWrites: false };
 const owner = { role: 'dueño', businessId: 'tenant', status: 'activo' };
 const confirmation = { acceptedTerms: true, acknowledgedPrivacy: true };
+
+it('P30 budgets recovery for a verified scope and blocks a second attempt inside 30 seconds', () => {
+  let time = 0;
+  const recovery = createAccessRecovery('p30-unit', () => time);
+  assert.equal(recovery.take(), false);
+  recovery.confirm();
+  assert.equal(recovery.take(), true);
+  assert.equal(recovery.take(), false);
+  recovery.confirm();
+  time = 29999;
+  assert.equal(recovery.take(), false);
+  time++;
+  assert.equal(recovery.take(), true);
+  assert.equal(createAccessRecovery('p30-other-unit', () => time).take(), false);
+});
+
+it('P30 rereads an anomalous missing profile once and keeps genuine absence blocked', async () => {
+  let next, reads = 0, refreshes = 0, returned = owner;
+  const states = [];
+  const session = createProfileSession({ user: { uid: 'p30-known' }, project: 'demo-migapos',
+    subscribe: (_, receive) => { next = receive; return () => {}; },
+    readProfile: async uid => { assert.equal(uid, 'p30-known'); reads++; return { data: returned, metadata: server }; },
+    refreshCredentials: async () => { refreshes++; }, withinShift: () => true, onState: state => states.push(state) });
+  try {
+    const idle = () => new Promise(resolve => setImmediate(resolve));
+    next(null, server);
+    await idle();
+    assert.equal(reads, 0);
+    assert.equal(states.at(-1).status, 'profile-not-found-confirmed');
+    next(owner, server);
+    assert.equal(states.at(-1).profile.accessVerified, true);
+    next(null, server);
+    assert.equal(states.at(-1).profile, null);
+    await idle();
+    assert.equal(states.at(-1).profile.accessVerified, true);
+    assert.equal(reads, 1);
+    assert.equal(refreshes, 1);
+    returned = null;
+    next(null, server);
+    await idle();
+    assert.equal(reads, 1);
+    assert.equal(states.at(-1).status, 'profile-not-found-confirmed');
+    assert.equal(await session.recheck(), null);
+    assert.equal(states.at(-1).profile, null);
+  } finally { session.close(); }
+});
 const acceptedProfile = (uid, profile = owner) => ({ ...profile, legalAcceptance: legalAcceptanceMarker(legalAcceptanceEvidence({ ...profile, uid, id: 'A'.repeat(20) }, legalPublication)) });
 
 it('Plan08 integrates confirmed and uncertain history while preserving rejections in secondary review', () => {

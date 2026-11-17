@@ -139,7 +139,8 @@ function Fixture() {
   control = { show: async (name, nextRole = role) => { window.__p09.renderError = null; setView(name); setRole(nextRole); update(n => n + 1); await frames(); }, setBranchId };
   const views = { pos: POS, auth: Auth, categories: Categories, products: Products, agenda: Agenda, reports: Reports, export: ExportSales, settings: Settings, users: Users, branches: Branches, contracts: Contracts, history: History, superadmin: SuperAdmin, backup: BackupPanel, dialogs: DialogProbe,
     operationalHistory: () => <><ExportSales user={user} /><History user={user} /></>,
-    contractform: () => <ContractFormModal activeLocations={[branch]} onClose={() => setView('contracts')} onSubmit={forbidden} isProcessing={false} /> };
+    contractform: () => <ContractFormModal activeLocations={[branch]} contractToEdit={model.photoForm} user={user}
+      onClose={() => setView('contracts')} onSubmit={forbidden} isProcessing={false} /> };
   for (const kind of ['details','cancel','photo','quota','business','cash-open','cash-close','cash-summary']) views[kind] = props => <SpecializedModal {...props} kind={kind} />;
   const View = views[view];
   const page = <RenderBoundary key={view + ':' + role + ':' + (view === 'pos' ? '' : revision)}><View user={user} businessId="p09-tenant" /></RenderBoundary>;

@@ -50,6 +50,11 @@ export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', f
           getPaymentsInPeriod: async (business, start, _end, branchId) => (await window.__excelFixture.read('contracts', day(start), branchId, business)).payments,
           getContractsInPeriod: (business, start, _end, branchId) => ['secondary', 'v3'].includes(window.__excelFixture.reference)
             ? window.__excelFixture.read('orders', day(start), branchId, business) : [],
+          getCancelledContractCount: async business => {
+            const fixture = window.__excelFixture;
+            (fixture.countBusinesses ??= []).push(business);
+            return fixture.cancelledContractCount ?? 0;
+          },
           getContractAuditDocuments: business => window.__excelFixture.read('audit', '', 'global', business),
           readVoidsInPeriod: (business, start, _end, branchId) => window.__excelFixture.read('voids', day(start), branchId, business),
           getSessionsInPeriod: (business, start, _end, branchId) => window.__excelFixture.read('cash', day(start), branchId, business),

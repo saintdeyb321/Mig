@@ -57,7 +57,7 @@ async function reload(page, ev, options) {
 }
 const offline = (page, offline) => page.send('Network.emulateNetworkConditions', { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
 
-async function workbook(downloads, previous, { net, cash, digital, label, artifact, detailed = true, empty = false, branches = ['Centro', 'Taller'], orders = true, cashAudit = true }) {
+async function workbook(downloads, previous, { net, cash, digital, label, artifact, detailed = true, empty = false, branches = ['Centro', 'Taller'], orders = true, cashAudit = true, cancelledOrders }) {
   const filename = await until(async () => (await downloadNames(downloads)).find(name => !previous.includes(name)), `Missing download ${label}`);
   assert.match(filename, new RegExp(`^Reporte_${label}_\\d{4}-\\d{2}-\\d{2}\\.xlsx$`));
   const bytes = await readFile(join(downloads, filename));
@@ -72,6 +72,14 @@ async function workbook(downloads, previous, { net, cash, digital, label, artifa
   assert.match(book.Props.Subject, /\d{2}\/\d{2}\/\d{4}/);
   const netRow = Object.keys(cover).find(key => cover[key]?.v === 'INGRESO NETO REGISTRADO').slice(1);
   assert.equal(cover['B' + netRow].s.fgColor.rgb, net < 0 ? 'FBDADA' : 'A9F08A');
+  if (cancelledOrders !== undefined) {
+    const voidsRow = Number(Object.keys(cover).find(key => cover[key]?.v === 'TICKETS ANULADOS').slice(1));
+    const ordersRow = voidsRow + 1;
+    assert.equal(cover['A' + ordersRow].v, 'PEDIDOS ANULADOS');
+    assert.equal(cover['B' + ordersRow].t, 'n');
+    assert.equal(cover['B' + ordersRow].v, cancelledOrders);
+    assert.equal(cover['B' + ordersRow].s.fgColor.rgb, 'FBDADA');
+  }
   assert.match(cover['B' + netRow].z, /S\//);
   assert.equal(summary['Total neto registrado (S/)'], net);
   assert.equal(summary['Neto en efectivo (S/)'], cash);
@@ -375,7 +383,7 @@ it('P27 prepares a global weekly PDF in a background tab and reuses it after cha
   await runExcelFixture({ async inspectPage(page, { responses, downloads }) {
     const ev = evaluate(page);
     await ev(() => {
-      Object.assign(window.__excelFixture, { reference: 'secondary', readDelay: 40 });
+      Object.assign(window.__excelFixture, { reference: 'secondary', readDelay: 40, cancelledContractCount: 2 });
       window.__excelFixture.loadPersonnel();
       window.__excelFixture.setScope({ branchId: 'taller' });
     });
@@ -438,16 +446,18 @@ it('P27 prepares a global weekly PDF in a background tab and reuses it after cha
     await closePreview(ev);
     await select(ev, 1)('excel');
     await click(page)(primary);
-    await workbook(downloads, [], { net: 28, cash: 9, digital: 19, label: 'Semanal_Detallado', artifact: 'global-semanal' });
+    await workbook(downloads, [], { net: 28, cash: 9, digital: 19, label: 'Semanal_Detallado', artifact: 'global-semanal', cancelledOrders: 2 });
     const timing = await ev(() => ({ reads: window.__excelFixture.reads, sources: window.__excelFixture.timings,
       stages: performance.getEntriesByType('measure').filter(item => item.name.startsWith('migapos:report:'))
         .map(({ name, duration }) => ({ name, ms: duration })) }));
-    assert.equal(timing.reads, 5, 'Warm PDF and Excel reuse five verified sources, including the known order');
+    assert.equal(timing.reads, 5, 'Warm PDF and Excel reuse five verified document sources');
+    assert.equal(await ev(() => window.__excelFixture.countBusinesses.length), 1, 'Warm PDF and Excel also share one aggregate');
     await ev(() => window.__excelFixture.setScope({ businessId: 'other-p27-business' }));
     await select(ev, 1)('pdf');
     await click(page)(primary);
     await previewReady(ev);
     assert.deepEqual(await ev(() => window.__excelFixture.calls.slice(5).map(call => call.businessId)), Array(5).fill('other-p27-business'));
+    assert.equal(await ev(() => window.__excelFixture.countBusinesses.at(-1)), 'other-p27-business');
     await closePreview(ev);
     await writeFile(resolve(artifacts, 'tiempos-semanal.json'), JSON.stringify({ coldMs: cold, warmMs: warm, ...timing }, null, 2));
     await ev(html => { document.open(); document.write(html); document.close(); }, preview.html);

@@ -834,7 +834,16 @@ service cloud.firestore {
         ? (balance == 0 ? 'entregado' : 'entregado_con_deuda')
         : (balance == 0 ? 'listo_para_entrega' : (previous == 'en_produccion' ? 'en_produccion' : 'pendiente'));
     }
-    function contractFields(d, id) {
+    function contractPhotoCount(d) {
+      return d.get('referenceImages', []).size() + d.get('mediaIds', []).size();
+    }
+    function preservesHistoricalPhotos(old, next) {
+      let before = old.get('referenceImages', []);
+      return next.get('mediaIds', []) == old.get('mediaIds', [])
+        && (next.referenceImages == before || (next.referenceImages.size() < before.size()
+          && next.referenceImages == before.removeAll(before.removeAll(next.referenceImages))));
+    }
+    function contractFields(d, id, old) {
       return cents(d.subtotal) && cents(d.deliveryCost) && cents(d.total)
         && d.total == (math.round(d.subtotal * 100) + math.round(d.deliveryCost * 100)) / 100.0
         && d.clientName is string && d.clientName.size() > 0 && d.clientName.size() <= 200
@@ -842,9 +851,10 @@ service cloud.firestore {
         && d.deliveryType is string && d.deliveryType.size() > 0 && d.deliveryType.size() <= 150
         && d.deliveryAddress is string && d.deliveryAddress.size() <= 1000
         && (d.deliveryDate == null || d.deliveryDate is timestamp)
-        && d.referenceImages is list && d.referenceImages.size() + d.get('mediaIds', []).size() <= 20
-        && (d.get('pendingMedia', null) == null || d.referenceImages == resource.data.referenceImages)
-        && d.referenceImages.join('|').matches('^(local-image:' + d.businessId + ':' + id + ':[A-Za-z0-9_-]{36}[|]?){0,20}$');
+        && d.referenceImages is list
+        && (old != null && contractPhotoCount(old) > 6 ? preservesHistoricalPhotos(old, d)
+          : contractPhotoCount(d) <= 6 && d.referenceImages.join('|').matches('^(local-image:' + d.businessId + ':' + id + ':[A-Za-z0-9_-]{36}[|]?){0,6}$'))
+        && (d.get('pendingMedia', null) == null || d.pendingMedia.legacyRef == null || d.referenceImages == resource.data.referenceImages);
     }
     function contractBalance(d) {
       return d.paidByMethod.keys().hasOnly(['efectivo', 'yape', 'plin'])
@@ -933,10 +943,10 @@ service cloud.firestore {
       return old.status != 'cancelado' && old.get('pendingMedia', null) == null
         && pending.keys().hasOnly(['id', 'legacyRef', 'sha256']) && validMediaId(pending.id)
         && !(pending.id in old.get('mediaIds', []))
-        && (pending.legacyRef == null ? legacy.size() + old.get('mediaIds', []).size() < 20
-          : pending.legacyRef is string && pending.legacyRef in legacy
+        && (pending.legacyRef == null ? contractPhotoCount(old) < 6
+          : pending.legacyRef is string && legacy.removeAll([pending.legacyRef]).size() == legacy.size() - 1
             && pending.legacyRef.matches('^local-image:' + old.businessId + ':' + id + ':[A-Za-z0-9_-]{36}$')
-            && legacy.size() + old.get('mediaIds', []).size() <= 20)
+            && contractPhotoCount(old) <= 20)
         && next.diff(old).affectedKeys().hasOnly(['pendingMedia', 'mediaRevision'])
         && !exists(path) && getAfter(path).data.createdAt == request.time && pending.sha256 == getAfter(path).data.sha256;
     }
@@ -946,7 +956,8 @@ service cloud.firestore {
       let ids = old.get('mediaIds', []);
       let media = get(mediaPath(id, pending.id)).data;
       return next.get('pendingMedia', null) == null
-        && !(pending.id in ids) && ids.size() + legacy.size() - (pending.legacyRef == null ? 0 : 1) < 20
+        && !(pending.id in ids) && (pending.legacyRef == null ? contractPhotoCount(old) < 6
+          : contractPhotoCount(old) <= 20 && legacy.removeAll([pending.legacyRef]).size() == legacy.size() - 1)
         && media.businessId == old.businessId && media.originBranchId == old.branchId && media.version == 1 && media.sha256 == pending.sha256
         && next.mediaIds == ids.concat([pending.id])
         && next.get('referenceImages', []) == (pending.legacyRef == null ? legacy : legacy.removeAll([pending.legacyRef]))
@@ -968,9 +979,9 @@ service cloud.firestore {
       return cashActor(old.businessId, old.branchId)
         && next.mediaRevision is int && next.mediaRevision == old.get('mediaRevision', 0) + 1
         && next.mediaRevision <= 9007199254740991
-        && (next.get('pendingMedia', null) != null ? reserveContractMedia(id, old, next)
-          : old.get('pendingMedia', null) != null ? publishContractMedia(id, old, next)
-          : removeContractMedia(id, old, next));
+        && (next.get('pendingMedia', null) == old.get('pendingMedia', null) ? removeContractMedia(id, old, next)
+          : next.get('pendingMedia', null) != null ? reserveContractMedia(id, old, next)
+          : publishContractMedia(id, old, next));
     }
     function initialContractPayment(d, id) {
       let p = getAfter(/databases/$(database)/documents/payments/$(d.lastPaymentId)).data;
@@ -990,7 +1001,7 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/spark_contract_operations/$(d.createOperationId)).data.contractId == id
         && !exists(/databases/$(database)/documents/spark_contract_operations/$(d.createOperationId))
         && d.creatorName is string && d.creatorName.size() <= 250 && d.contractNumber.matches('^PED-[A-F0-9]{8}$') && d.contractId == d.contractNumber
-        && contractFields(d, id) && d.referenceImages.size() == 0 && contractBalance(d) && d.status == projectedContractStatus(d.balance, 'pendiente')
+        && contractFields(d, id, null) && d.referenceImages.size() == 0 && contractBalance(d) && d.status == projectedContractStatus(d.balance, 'pendiente')
         && (d.lastPaymentId == null ? d.ledgerVersion == 0 && d.paidTotal == 0 : initialContractPayment(d, id))
         && (!crossPickup(d) || pickupSynchronized(id, d, d.deliveryType));
     }
@@ -1025,7 +1036,7 @@ service cloud.firestore {
         && (!contractTerminal(old) || d.deliveryType == old.deliveryType)
         && (positiveContractPayment(id, d, old) || cancelSparkContract(id, d, old)
           || (d.diff(old).affectedKeys().hasOnly(['clientName', 'clientPhone', 'deliveryDate', 'details', 'deliveryType', 'deliveryAddress', 'deliveryCost', 'subtotal', 'total', 'referenceImages', 'balance', 'status', 'updatedAt'])
-            && contractFields(d, id)
+            && contractFields(d, id, old)
             && (d.referenceImages == old.get('referenceImages', []) || (old.get('referenceImages', []).hasAll(d.referenceImages)
               && d.referenceImages.toSet().size() == d.referenceImages.size()))
             && contractBalance(d) && d.status == projectedContractStatus(d.balance, old.status))

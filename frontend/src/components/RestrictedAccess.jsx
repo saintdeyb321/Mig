@@ -13,7 +13,7 @@ const accessMessages = {
   'tenant-missing-confirmed': ['Configuración no encontrada', 'El servidor no devolvió los registros de negocio y licencia esperados. Esto no demuestra una eliminación: el administrador debe revisar la configuración y el proyecto.'],
   'permission-denied': ['Lectura no autorizada', 'Firestore rechazó la lectura de acceso. Revisa con el administrador el perfil, negocio y Rules realmente publicadas. Tu sesión Google sigue iniciada.'],
   'auth-unverified': ['Credenciales sin confirmar', 'No se pudieron confirmar las credenciales de la cuenta. Vuelve a comprobar el acceso. Los datos pendientes del dispositivo se conservan.'],
-  'offline-unverified': ['Acceso sin verificar', 'Solo hay información local o cambios sin confirmar. Espera la conexión con el servidor o vuelve a comprobar. Los datos pendientes del dispositivo se conservan.'],
+  'offline-unverified': ['Acceso sin verificar', 'El servidor aún no confirma el acceso. Esta comprobación no demuestra una pérdida de datos. Revisa la conexión y vuelve a comprobar. Los datos pendientes del dispositivo se conservan.'],
   'network-error': ['Conexión pendiente', 'No se pudo confirmar el acceso con Firestore. Revisa Internet y reintenta; no es una confirmación de que tu cuenta o negocio hayan desaparecido.'],
   'configuration-error': ['Configuración pendiente', 'El acceso no se pudo validar con la configuración recibida. Pide al administrador que revise perfil, negocio y licencia.'],
   'suspended': ['Acceso suspendido', 'El perfil, negocio o licencia tienen una suspensión confirmada. Contacta al administrador; puedes reintentar después de la regularización.'],

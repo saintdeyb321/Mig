@@ -26,6 +26,87 @@ const moduleMocks = { ...mockHooks,
     export const subscribeSaleAcknowledgement=()=>()=>{};export const reviewDraftSaleTransaction=()=>window.__p09.forbidden();export const confirmDraftSaleTransaction=()=>window.__p09.forbidden();`,
 };
 
+it('P30 limits new photos to six and keeps twenty historical photos usable across viewports', { timeout: 90000 }, async () => {
+  const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6F8kAAAAASUVORK5CYII=';
+  await runBrowserFixture({ htmlFile: new URL('./plan09.browser.html', import.meta.url), route: '/p30-photos',
+    fixture: { css: await readBrowserBuildCss() },
+    moduleMocks: { ...moduleMocks, [path('features/contracts/hooks/useContractImageUrls.js')]:
+      'export function useContractImageUrls(references){return {urls:references.filter(ref=>ref.startsWith("data:image/png;")),loading:false,error:null};}' },
+    async inspectPage(page) {
+      const evaluate = async (callback, ...args) => {
+        const result = await page.send('Runtime.evaluate', { expression: `(${callback})(...${JSON.stringify(args)})`,
+          awaitPromise: true, returnByValue: true });
+        assert.ok(!result.exceptionDetails, result.exceptionDetails?.exception?.description);
+        return result.result.value;
+      };
+      for (const [width, height] of [[320, 640], [375, 667], [667, 375], [768, 560], [1280, 720]]) {
+        await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 768 });
+        const fresh = await evaluate(async image => {
+          const model = window.__p09;
+          model.photoForm = null;
+          await model.show('contractform');
+          const group = document.querySelector('[aria-label="Miniaturas de referencia"]');
+          const field = group.querySelector('input[type="file"]');
+          const select = count => {
+            const files = new DataTransfer(), bytes = Uint8Array.from(atob(image), char => char.charCodeAt(0));
+            for (let i = 0; i < count; i++) files.items.add(new File([bytes], 'foto-' + i + '.png', { type: 'image/png' }));
+            field.files = files.files;
+            field.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+          select(7);
+          await model.frames();
+          const rejected = group.querySelectorAll('img').length;
+          select(6);
+          await model.frames();
+          const dialog = group.closest('[role="dialog"]'), bounds = dialog.getBoundingClientRect();
+          const footer = dialog.querySelector('[type="submit"]').getBoundingClientRect();
+          const tiles = [...group.children].map(tile => tile.getBoundingClientRect());
+          return { rejected, count: group.querySelectorAll('img').length, hasUpload: !!group.querySelector('input'),
+            fits: document.documentElement.scrollWidth <= innerWidth + 1 && dialog.scrollWidth <= dialog.clientWidth + 1
+              && bounds.left >= 0 && bounds.right <= innerWidth + 1 && footer.top >= 0 && footer.bottom <= innerHeight + 1
+              && tiles.every(tile => tile.left >= bounds.left && tile.right <= bounds.right),
+            columns: tiles.filter(tile => Math.abs(tile.top - tiles[0].top) < 1).length };
+        }, image);
+        assert.equal(fresh.rejected, 0);
+        assert.equal(fresh.count, 6);
+        assert.equal(fresh.hasUpload, false);
+        assert.ok(fresh.fits, JSON.stringify({ width, height, ...fresh }));
+        assert.ok(width < 400 ? fresh.columns === 2 : [2, 3].includes(fresh.columns), JSON.stringify({ width, ...fresh }));
+
+        const historical = await evaluate(async image => {
+          const model = window.__p09;
+          const referenceImages = Array.from({ length: 20 }, (_, i) => 'data:image/png;base64,' + image + '#reference-' + i);
+          model.photoForm = { clientName: 'Una referencia extensa '.repeat(8), details: 'Detalles extensos '.repeat(20),
+            total: 50, subtotal: 50, referenceImages };
+          await model.show('contractform');
+          const form = document.querySelector('[aria-label="Miniaturas de referencia"]'), panel = form.closest('[role="dialog"]');
+          const original = form.querySelectorAll('img').length;
+          const hasHistoricalCount = panel.textContent.includes('20 fotos antiguas');
+          form.querySelector('[aria-label="Quitar foto 5"]').click();
+          await model.frames();
+          const refs = [...form.querySelectorAll('img')].map(img => img.getAttribute('src'));
+          const canOnlyRemove = !form.querySelector('input') && panel.textContent.includes('19 fotos antiguas');
+          model.deliveryContract = { referenceImages };
+          await model.show('details');
+          const list = document.querySelector('[aria-label="Fotos de referencia"]'), gallery = list.closest('[role="dialog"]');
+          const fits = list.clientHeight <= 257 && list.scrollHeight > list.clientHeight && list.scrollWidth <= list.clientWidth + 1
+            && gallery.scrollWidth <= gallery.clientWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1;
+          const count = list.querySelectorAll('button').length;
+          list.querySelector('[aria-label="Ampliar fotografía 20"]').click();
+          await model.frames();
+          const before = document.body.textContent.includes('Imagen 20 de 20');
+          document.querySelector('[aria-label="Foto siguiente"]').click();
+          await model.frames();
+          return { original, hasHistoricalCount, canOnlyRemove, preservedOrder: refs.length === 19 && refs[4] === referenceImages[5],
+            fits, count, before, wraps: document.body.textContent.includes('Imagen 1 de 20') };
+        }, image);
+        assert.deepEqual(historical, { original: 20, hasHistoricalCount: true, canOnlyRemove: true, preservedOrder: true,
+          fits: true, count: 20, before: true, wraps: true }, `${width}×${height}`);
+      }
+    },
+  });
+});
+
 it('P28 confirms delivery with both balance states, preserves focus and prevents duplicate submissions', { timeout: 60000 }, async context => {
   await runBrowserFixture({ htmlFile: new URL('./plan09.browser.html', import.meta.url), route: '/p28-delivery',
     fixture: { css: await readBrowserBuildCss() }, moduleMocks,
