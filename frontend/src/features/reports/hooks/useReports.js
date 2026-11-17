@@ -3,6 +3,7 @@ import { useTenantData } from '../../branches/context/TenantContext';
 import { reportPeriod, reportDay } from '../domain/reportPeriod.js';
 import { emptyMetrics } from '../domain/reportTotals.js';
 import { createReportCache, reportCacheKey, createReportResource, invalidateReportScope, REPORT_TTL } from '../application/reportResource.js';
+import { reportSourceForPeriod } from '../application/reportSources.js';
 
 import { useSessionResources, useSessionState } from '../../../core/session/sessionResourceHooks.js';
 import { sessionReportReads } from '../infrastructure/sessionReportReads.js';
@@ -29,8 +30,9 @@ export const useReports = user => {
   useEffect(() => {
     if (!user?.businessId || !activeBranchId) return;
     const reads = sessionReportReads(resources, user.businessId, activeBranchId, period);
+    const source = reportSourceForPeriod(period, reads);
     const current = createReportResource({ key, businessId: user.businessId, branchId: activeBranchId, period, cache,
-      readSales: reads.sales, readContracts: reads.contracts, readPayments: reads.payments, readVoids: reads.voids,
+      ...source.dashboardReads,
       onState: setState });
     resource.current = current;
     const timer = setInterval(() => { setDay(reportDay(new Date())); }, REPORT_TTL);

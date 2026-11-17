@@ -352,7 +352,8 @@ describe('Hosting policy and conservative cleanup', () => {
       'docs/MIGAPOS-P25-V3-BORDES-Y-TEXTOS-EXCEL.md',
       'docs/MIGAPOS_P26_PLAN_REPORTES_GERENCIALES.md', 'docs/MIGAPOS_P26_REPORTES_OPTIMIZADO.md',
       'docs/MIGAPOS_P27_PLAN_CIERRE_REPORTES_CAJA.md', 'docs/MIGAPOS_P28_V2_HEAD_350ba123.md',
-      'docs/MIGAPOS_P29_V2_CAJA_NOTIFICACIONES_EXCEL.md', 'docs/MIGAPOS_P30_PLAN_RESUMEN_FOTOS_ACCESO.md'];
+      'docs/MIGAPOS_P29_V2_CAJA_NOTIFICACIONES_EXCEL.md', 'docs/MIGAPOS_P30_PLAN_RESUMEN_FOTOS_ACCESO.md',
+      'docs/MIGAPOS_P31_AUDITORIA_ARQUITECTURA_REPORTES_BAJO_COSTO.md'];
     assert.deepEqual(markdown.filter(path => !allowedMarkdown.includes(path)), [], 'Documentos Markdown inesperados en el inventario local');
   });
 });

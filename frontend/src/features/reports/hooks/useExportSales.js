@@ -12,6 +12,7 @@ import { reportViewModel } from '../application/reportViewModel.js';
 import { aggregateReport, assertPosReportDetail } from '../domain/reportTotals.js';
 import { reportRevision, reportTTL } from '../application/reportResource.js';
 import { createReportExportCache } from '../application/reportExportCache.js';
+import { reportSourceForPeriod } from '../application/reportSources.js';
 import { employeeReportName, profileReportName, reportLabel } from '../application/reportNames.js';
 import { prepareReportPrint } from '../../../shared/printing/printDocument.js';
 
@@ -102,7 +103,8 @@ export function useExportSales(user, filter, format) {
     const validScope = () => scope.active && isAuthorized();
     if (!validScope()) return;
     const period = reportPeriod(filter), key = period.key;
-    const reads = sessionReportReads(resources, businessId, branchId, period, { identityKey, revision });
+    const source = reportSourceForPeriod(period, sessionReportReads(resources, businessId, branchId, period, { identityKey, revision }));
+    const reads = source.exportReads;
     const controller = new AbortController(), run = { scope, controller };
     processing.current = run;
     let phase = 'data-read', timedOut = false;
@@ -111,7 +113,7 @@ export function useExportSales(user, filter, format) {
     const update = next => { phase = next; setState({ scope, phase }); };
     let entry = cache.get(key);
     let cached = !!entry;
-    const detailed = ['hoy', 'semana'].includes(filter);
+    const detailed = source.kind === 'detailed';
     const printable = format === 'pdf';
     const remote = async (name, load) => {
       update(name);
