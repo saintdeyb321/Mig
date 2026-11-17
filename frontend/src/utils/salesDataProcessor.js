@@ -42,7 +42,7 @@ export function processSales(sales, payments = [], scope = {}, prepared, people)
       Movimiento: sale.voided ? 'VENTA POS ANULADA' : 'VENTA POS',
       'Medio de pago': paymentLabel(sale.payment, sale.splitPayments),
       [MOVEMENT_AMOUNT]: sale.voided ? 0 : amount(sale.total),
-      Estado: sale.voided ? 'Anulada · por revisar' : paired ? 'Anulada' : 'Completada',
+      Estado: sale.voided ? 'ANULADO · POR REVISAR' : paired ? 'ANULADO' : 'Completada',
       Observaciones: sale.voided ? ['Anulación histórica sin comprobante vinculado. Conciliación pendiente.', reportNote(sale.voidReason, sale.id, sale.saleId, sale.voidedBy),
         employeeReportName(people, sale.voidedBy, sale.voidedByName)].filter(Boolean).join(' · ')
         : paired ? 'Cobro original. El ajuste se registra por separado en su fecha.' : '',
@@ -55,7 +55,7 @@ export function processSales(sales, payments = [], scope = {}, prepared, people)
       Referencia: reportLabel(row.ticketNumber ?? row.receiptNumber, 'Venta de mostrador', row.saleId, row.id),
       Movimiento: 'COMPENSACIÓN POS',
       'Medio de pago': `Efectivo ${row.cashAmount.toFixed(2)} · Yape/Plin ${row.digitalAmount.toFixed(2)}`,
-      [MOVEMENT_AMOUNT]: row.amount, Estado: 'Anulación registrada',
+      [MOVEMENT_AMOUNT]: row.amount, Estado: 'ANULADO',
       Observaciones: [reportNote(row.reason, row.userId, row.saleId, row.id), 'Compensación contable sin evidencia de desembolso.'].filter(Boolean).join(' · '),
       Responsable: employeeReportName(people, row.userId, row.actorName, row.cashierName) });
     groups.push({ branchId: row.branchId, timestamp: toMillisSafe(row.occurredAt), id: `void:${row.id}`, movement, items: row.items, sign: -1 });
@@ -81,7 +81,7 @@ export function groupedTicketRows(groups, rowLimit) {
     }));
     rows.push({ 'Precio unitario': sign === -1 ? 'TOTAL AJUSTE' : 'TOTAL TICKET',
       [ITEM_SUBTOTAL]: ticketTotal ?? movement[MOVEMENT_AMOUNT],
-      _kind: sign === -1 ? 'adjustment-total' : movement.Estado.startsWith('Anulada') ? 'void-total' : 'ticket-total' });
+      _kind: sign === -1 ? 'adjustment-total' : movement.Estado.startsWith('ANULADO') ? 'void-total' : 'ticket-total' });
   }
   return rows;
 }

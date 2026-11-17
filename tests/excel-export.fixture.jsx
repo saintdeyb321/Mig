@@ -93,6 +93,7 @@ const readData = async (kind, day, branchId, businessId = user.businessId) => {
   if (kind === 'sales') {
     if (fixture.negative) return [];
     const rows = [sale('cash', 'efectivo', 20), yape, sale('mixed', 'mixto', 20, { splitPayments: { efectivo: 8, yape: 12 } })];
+    if (fixture.mixedCompensation) rows.push(sale('historical', 'efectivo', 6, { voided: true }));
     if (fixture.multi) rows.push(sale('cash-taller', 'efectivo', 12, { branchId: secondBranch.id }));
     if (fixture.dense) return [branch, secondBranch, ...extraBranches].flatMap(site => Array.from({ length: 18 }, (_, index) =>
       sale(`${site.id}-${index}`, 'efectivo', 10, { branchId: site.id, items: [{ id: 'product-' + index % 5,
@@ -102,6 +103,9 @@ const readData = async (kind, day, branchId, businessId = user.businessId) => {
   if (kind === 'contracts') return { contracts: [], payments: fixture.negative || fixture.dense ? [] : [{ ...base, id: 'advance', sourceId: orderId,
     type: 'advance', amount: 15, method: 'yape', occurredAt: at(day, '11') }] };
   if (kind === 'audit') return [{ ...base, id: orderId, contractNumber: 'PED-2026-0034', clientName: 'Clienta de ensayo' }];
+  if (kind === 'voids' && fixture.mixedCompensation) return [{ ...base, id: 'mixed', saleId: 'mixed', userId: user.uid,
+    authority: 'pos-compensation', amount: -20, cashAmount: -8, digitalAmount: -12,
+    items: sale('mixed', 'mixto', 20).items, occurredAt: at(day, '12'), reason: 'Anulación mixta' }];
   if (kind === 'voids') return fixture.compensated || fixture.negative || fixture.fault === 'integrity'
     ? [{ ...base, id: yape.id, saleId: yape.id, userId: user.uid, authority: 'pos-compensation', amount: -30,
       cashAmount: 0, digitalAmount: fixture.fault === 'integrity' ? -29 : -30, items: yape.items, occurredAt: at(day, '12'), reason: 'Motivo de ensayo' }] : [];

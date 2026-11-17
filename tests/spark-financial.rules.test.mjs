@@ -184,6 +184,66 @@ describe('SPARK-4 integrated financial Rules', () => {
     assert.equal((await repo.markAllNotificationsRead(businessId, 'manager', notices)).confirmedIds.length, 12);
     assert.ok((await inspect('notifications/' + notices.at(-1).id)).data().readAt.toDate());
   });
+  it('P29 limits cancellation evidence and its idempotent read marker to the authorized owner', async () => {
+    const orderId = 'p29-old-order', ownerUid = 'manager', otherOwner = 'manager-peer', foreignOwner = 'manager-foreign';
+    const order = { businessId, branchId, sparkContractVersion: 1, status: 'cancelado', contractNumber: 'PED-P29',
+      createdAt: Timestamp.fromDate(new Date('2023-01-01T00:00:00Z')), voidedAt: Timestamp.now(),
+      cancelOperationId: 'p29-single-operation', voidedBy: uid, voidReason: 'Cancelado con dos reversos contables', total: 100 };
+    await env.withSecurityRulesDisabled(async ctx => {
+      const db = ctx.firestore(), batch = writeBatch(db);
+      for (const user of [ownerUid, otherOwner, foreignOwner]) batch.set(doc(db, 'users', user), {
+        businessId: user === foreignOwner ? 'foreign' : businessId, role: 'dueño', status: 'activo',
+      });
+      batch.set(doc(db, 'tenants', 'foreign'), { businessId: 'foreign', status: 'active' });
+      batch.set(doc(db, 'licenses', 'foreign'), { businessId: 'foreign', status: 'activa', expiry: Timestamp.fromMillis(Date.now() + 86400000) });
+      batch.set(doc(db, 'contracts', orderId), order);
+      batch.set(doc(db, 'contracts', 'p29-open'), { ...order, status: 'pendiente' });
+      batch.set(doc(db, 'contracts', 'p29-foreign'), { ...order, businessId: 'foreign' });
+      batch.set(doc(db, 'contracts', 'p29-no-operation'), { ...order, cancelOperationId: null });
+      batch.set(doc(db, 'contracts', 'p29-legacy'), { ...order, sparkContractVersion: 0 });
+      batch.set(doc(db, 'contracts', 'p29-bad-time'), { ...order, voidedAt: 'not-a-timestamp' });
+      for (const [method, amount] of [['efectivo', -40], ['yape', -60]]) batch.set(doc(db, 'payments', `p29-refund-${method}`),
+        { businessId, branchId, sourceId: orderId, type: 'refund', method, amount, occurredAt: order.voidedAt });
+      await batch.commit();
+    });
+    const ownerDb = env.authenticatedContext(ownerUid).firestore(), foreignDb = env.authenticatedContext(foreignOwner).firestore();
+    const cancellationQuery = db => sdk.query(sdk.collection(db, 'contracts'), sdk.where('businessId', '==', businessId),
+      sdk.where('status', '==', 'cancelado'), sdk.orderBy('voidedAt', 'desc'), sdk.limit(30));
+    assert.ok((await sdk.getDocsFromServer(cancellationQuery(ownerDb))).docs.some(row => row.id === orderId));
+    await assertFails(sdk.getDocsFromServer(cancellationQuery(database())));
+    await assertFails(sdk.getDocsFromServer(cancellationQuery(foreignDb)));
+
+    const readInbox = (db, user, options) => new Promise((resolve, reject) => {
+      const done = (error, rows) => { clearTimeout(timer); stop(); if (error) reject(error); else resolve(rows); };
+      const timer = setTimeout(() => done(Error('P29 owner evidence timed out')), 10000);
+      const stop = createNotificationRepository(db, { sdk }).subscribeUnreadNotifications(businessId, user,
+        (rows, meta) => { if (!meta.fromCache) done(null, rows); }, done, options);
+    });
+    const notices = await readInbox(ownerDb, ownerUid, { owner: true });
+    assert.equal(notices.length, 1);
+    const [notice] = notices;
+    assert.equal(notice.id, `read_contract-cancel_${orderId}_${ownerUid}`);
+    assert.equal(notice.metadata.actorId, uid);
+    assert.equal(notice.metadata.amount, undefined);
+    assert.deepEqual(await readInbox(database(), uid), []);
+    const repository = createNotificationRepository(ownerDb, { sdk });
+    await repository.markNotificationRead(notice);
+    await repository.markNotificationRead(notice);
+    assert.deepEqual(await readInbox(ownerDb, ownerUid, { owner: true }), []);
+    const peerDb = env.authenticatedContext(otherOwner).firestore();
+    assert.equal((await readInbox(peerDb, otherOwner, { owner: true })).length, 1);
+    await assertFails(getDoc(doc(peerDb, 'notifications', notice.id)));
+    await assertFails(getDoc(doc(foreignDb, 'notifications', notice.id)));
+
+    const marker = { ...notice.readMarker, readAt: serverTimestamp(), authority: 'read-marker' };
+    const write = (db, sourceId, userId = ownerUid, extra = {}) => setDoc(doc(db, 'notifications', `read_contract-cancel_${sourceId}_${userId}`),
+      { ...marker, sourceId, userId, ...extra });
+    for (const id of ['p29-open', 'p29-foreign', 'p29-no-operation', 'p29-legacy', 'p29-bad-time', 'p29-absent']) await assertFails(write(ownerDb, id));
+    await assertFails(write(database(), orderId, uid));
+    await assertFails(write(foreignDb, orderId, foreignOwner, { businessId: 'foreign' }));
+    await assertFails(write(peerDb, orderId, otherOwner, { message: 'Falso reembolso', amount: 100 }));
+    await assertFails(setDoc(doc(peerDb, 'notifications', 'p29-false-id'), { ...marker, userId: otherOwner }));
+  });
   it('Plan07 rejects 9, 12, 15 and 16 product writes atomically with the current eight-line Rules protocol', async () => {
     const rows = Array.from({ length: 16 }, (_, index) => ({ ...products[0], id: `plan07-bound-${index}` }));
     await env.withSecurityRulesDisabled(async ctx => { const batch = writeBatch(ctx.firestore()); for (const row of rows) batch.set(doc(ctx.firestore(), 'products', row.id), row); await batch.commit(); });

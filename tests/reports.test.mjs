@@ -113,8 +113,20 @@ it('Plan05 accounts an immutable POS refund once with negative detailed items an
     digital: { collections: 25, posCompensations: -25, contractRefunds: 0, net: 0 },
   });
   assert.ok(model.products.every(row => row.qty === 0 && row.revenue === 0));
-  const copy = XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
+  const bytes = writeSalesWorkbook(XLSX, workbook);
+  const copy = XLSX.read(bytes, { type: 'array', cellStyles: true });
+  assertWorkbookBorders(XLSX, copy, bytes);
   const details = rows(copy, copy.SheetNames.find(name => name.startsWith('Detalle_')));
+  assert.deepEqual(details.filter(row => row.Movimiento).map(row => [row.Movimiento, row.Estado, row['Importe neto movimiento (S/)']]),
+    [['VENTA POS', 'ANULADO', 40], ['COMPENSACIÓN POS', 'ANULADO', -40]]);
+  assert.match(details.find(row => row.Movimiento === 'VENTA POS')['Medio de pago'], /^MIXTO/);
+  assert.deepEqual(details.filter(row => /^TOTAL /.test(row['Precio unitario'])).map(row => [row['Precio unitario'], row['Subtotal (S/)']]),
+    [['TOTAL TICKET', 0], ['TOTAL AJUSTE', -40]]);
+  for (const address of ['D2', 'D5']) {
+    assert.equal(copy.Sheets.Detalle_Centro[address].s.fgColor.rgb, 'FBDADA');
+    assert.equal(workbook.Sheets.Detalle_Centro[address].s.font.color.rgb.slice(-6), '991B1B');
+    assert.equal(workbook.Sheets.Detalle_Centro[address].s.font.bold, true);
+  }
   const summary = new Map(Object.entries(readOverview(XLSX, copy)));
   assert.equal(summary.get('Compensaciones POS · Yape / Plin'), -25);
   assert.equal(summary.get('Neto por Yape/Plin (S/)'), 0);
@@ -191,6 +203,8 @@ describe('Phase 7 canonical financial reports', () => {
     const result = processSales(sales, [...payments].reverse(), scope).groupsByBranch.b1;
     const firstRows = result.map(group => group.movement);
     assert.deepEqual(firstRows.map(row => row.Hora), ['10:00', '11:00', '14:00']);
+    assert.deepEqual(firstRows.map(row => [row.Movimiento, row.Estado]),
+      [['VENTA POS', 'Completada'], ['VENTA POS', 'Completada'], ['VENTA POS ANULADA', 'ANULADO · POR REVISAR']]);
   });
   it('every POS detail row uses the same columns', () => {
     const result = processSales(sales, payments, scope).groupsByBranch;

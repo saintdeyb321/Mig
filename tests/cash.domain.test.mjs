@@ -21,6 +21,17 @@ describe('Cash financial calculations', () => {
     assert.equal(closingProjection(totals, 43).status, 'closed');
     assert.equal(closingProjection(totals, null).difference, null);
   });
+  it('P29 preserves the exact count and separate refund evidence after cancellations', () => {
+    const refunded = { type: 'refund', method: 'efectivo', amount: -100 };
+    const totals = calculateCashTotals({ openingAmount: 0 }, [{ payment: 'efectivo', total: 83.30 }],
+      [{ type: 'advance', method: 'efectivo', amount: 100 }, refunded]);
+    assert.deepEqual([totals.expectedCash, totals.contractCash, totals.hasUnverifiedDisbursements], [83.30, 0, true]);
+    assert.deepEqual([83.30, 70, 90].map(count => closingProjection(totals, count).difference), [0, -13.30, 6.70]);
+    const olderRefund = calculateCashTotals({ openingAmount: 100 }, [], [{ ...refunded, amount: -50 }]);
+    assert.equal(olderRefund.hasUnverifiedDisbursements, true);
+    assert.equal(olderRefund.expectedCash, 50);
+    assert.deepEqual([50, 100].map(count => closingProjection(olderRefund, count).difference), [0, 50]);
+  });
   it('rejects unverifiable methods and preserves money precision', () => {
     assert.throws(() => calculateCashTotals({ openingAmount: 0 }, [{ payment: 'mixto', total: 20, splitPayments: { efectivo: 1, yape: 2 } }], []), { code: 'invalid-ledger' });
     const totals = calculateCashTotals({ openingAmount: 0 }, [], [{ type: 'payment', method: 'efectivo', amount: 0.1 }, { type: 'payment', method: 'efectivo', amount: 0.2 }]);

@@ -178,12 +178,13 @@ try {
 
   showCash({ openingAmount: 11, posCash: 106.30, contractCash: 0, posCompensationCount: 1, posCompensationCash: -106.30,
     posCompensationDigital: 0, posCompensationTotal: -106.30, expectedAmount: 11, declaredAmount: 11, difference: 0, hasUnverifiedDisbursements: true });
-  await wait(() => text().includes('Por revisar'));
-  check(!rootElement.innerText.includes('Coincide') && !rootElement.innerText.includes('Sobran') && !rootElement.innerText.includes('Faltan'), 'zero-difference cash with unverified refunds is not presented as physically reconciled');
+  await wait(() => text().includes('El conteo coincide'));
+  check(rootElement.innerText.includes('El efectivo contado coincide con la referencia calculada.') && !rootElement.innerText.includes('Sobran')
+    && !rootElement.innerText.includes('Faltan') && rootElement.querySelector('details').textContent.includes('no demuestran entrega de efectivo'), 'zero-difference cash matches the reference and keeps unverified refunds separate');
   check(rootElement.innerText.includes('Referencia calculada') && rootElement.innerText.includes('Dinero contado') && !rootElement.innerText.includes('conciliación') && !rootElement.querySelector('details').open && rootElement.querySelector('details').textContent.includes('Fondo inicial'), 'primary cash count is commercial and simple while opening and technical detail stay accessible and collapsed');
   showCash({ openingAmount: 0, posCash: 0, contractCash: 0, posCompensationCount: 1, posCompensationCash: -9, posCompensationTotal: -9,
     expectedAmount: -9, declaredAmount: 0, difference: 9, hasUnverifiedDisbursements: true });
-  await wait(() => rootElement.innerText.includes('S/ -9.00') && rootElement.innerText.includes('Por revisar'));
+  await wait(() => rootElement.innerText.includes('S/ -9.00') && rootElement.innerText.includes('Referencia de caja por verificar'));
   check(rootElement.innerText.includes('S/ -9.00') && !rootElement.innerText.includes('Sobran') && rootElement.querySelector('details').textContent.includes('referencia negativa'), 'a negative reference stays visible with its accessible explanation, without claiming a physical surplus');
 
   showCash(null);

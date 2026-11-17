@@ -1276,13 +1276,16 @@ service cloud.firestore {
     function financialNoticeRead(id) {
       let n = request.resource.data;
       let source = n.sourceType == 'pos-void' ? get(/databases/$(database)/documents/pos_voids/$(n.sourceId)).data
+        : n.sourceType == 'contract-cancel' ? get(/databases/$(database)/documents/contracts/$(n.sourceId)).data
         : get(/databases/$(database)/documents/cash_sessions/$(n.sourceId)).data;
-      return owner() && tenantEnabled(currentBusiness()) && n.sourceType in ['pos-void', 'cash-close', 'cash-expiry']
+      return owner() && tenantEnabled(currentBusiness()) && n.sourceType in ['pos-void', 'cash-close', 'cash-expiry', 'contract-cancel']
         && id == 'read_' + n.sourceType + '_' + n.sourceId + '_' + request.auth.uid
         && n == {'businessId': currentBusiness(), 'userId': request.auth.uid, 'sourceType': n.sourceType,
           'sourceId': n.sourceId, 'authority': 'read-marker', 'readAt': request.time}
         && source.businessId == currentBusiness()
         && (n.sourceType == 'pos-void' ? source.authority == 'pos-compensation' && source.protocol == 1 && source.saleId == n.sourceId && source.occurredAt is timestamp
+          : n.sourceType == 'contract-cancel' ? source.sparkContractVersion == 1 && source.status == 'cancelado'
+            && source.voidedAt is timestamp && source.cancelOperationId is string
           : source.runtime == 'spark' && (n.sourceType == 'cash-expiry'
             ? source.status == 'expired_unreconciled' && source.expiredAt is timestamp && source.recoveredAt is timestamp
             : source.status in ['closed','closed_with_discrepancy'] && source.closedAt is timestamp));

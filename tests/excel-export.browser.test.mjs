@@ -9,7 +9,7 @@ import { runExcelFixture } from './helpers/excelExportHarness.mjs';
 import { assertWorkbookBorders, readOverview, reportHeader, tableRows } from './helpers/reportWorkbook.mjs';
 
 const XLSX = createRequire(new URL('../frontend/package.json', import.meta.url))('xlsx-js-style');
-const artifacts = fileURLToPath(new URL('../.release/qa-p28/', import.meta.url));
+const artifacts = fileURLToPath(new URL('../.release/qa-p29/', import.meta.url));
 const card = '.export-toolbar';
 const primary = card + ' button[type="submit"]';
 const retry = card + ' [role="alert"] button';
@@ -661,6 +661,47 @@ it('P27 downloads a compact XLSX with borders only on data, nine tickets, two br
       assert.deepEqual([row['Efectivo contado (S/)'], row['Diferencia (S/)']], ['No declarado', 'No calculable']);
     }
     assert.deepEqual(await ev(() => window.__excelFixture.calls.map(call => call.kind).sort()), ['cash', 'contracts', 'orders', 'sales', 'voids']);
+  } });
+});
+
+it('P29 preserves mixed payment reversals and colors only the visible cancellation state in real XLSX', { timeout: 90000 }, async () => {
+  await mkdir(artifacts, { recursive: true });
+  await runExcelFixture({ async inspectPage(page, { downloads }) {
+    const ev = evaluate(page);
+    await ev(() => { window.__excelFixture.mixedCompensation = true; });
+    await select(ev, 1)('excel');
+    await click(page)(primary);
+    const [filename] = await workbook(downloads, [], { net: 65, cash: 20, digital: 45, label: 'Diario_Detallado', artifact: 'anulacion-mixta' });
+    const bytes = await readFile(join(downloads, filename));
+    const book = XLSX.read(bytes, { type: 'buffer', cellStyles: true, cellNF: true });
+    const sheet = book.Sheets.Detalle_Centro, allRows = tableRows(XLSX, book, 'Detalle_Centro');
+    const original = allRows.find(row => row.Movimiento === 'VENTA POS' && row['Medio de pago'].startsWith('MIXTO'));
+    const adjustment = allRows.find(row => row.Movimiento === 'COMPENSACIÓN POS');
+    const historical = allRows.find(row => row.Movimiento === 'VENTA POS ANULADA');
+    assert.deepEqual([original.Estado, adjustment.Estado, historical.Estado], ['ANULADO', 'ANULADO', 'ANULADO · POR REVISAR']);
+    assert.deepEqual([original['Importe neto movimiento (S/)'], adjustment['Importe neto movimiento (S/)'], historical['Importe neto movimiento (S/)']], [20, -20, 0]);
+    assert.deepEqual([original.Cantidad, adjustment.Cantidad, historical.Cantidad], [1, -1, 0]);
+    assert.match(adjustment['Medio de pago'], /Efectivo -8.00 · Yape\/Plin -12.00/);
+
+    const archive = XLSX.CFB.read(bytes, { type: 'buffer' });
+    const xml = path => Buffer.from(XLSX.CFB.find(archive, path).content).toString('utf8');
+    const styles = xml('/xl/styles.xml');
+    const fonts = [...styles.matchAll(/<font>([\s\S]*?)<\/font>/g)].map(match => match[1]);
+    const fontIds = [...styles.match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/)[1].matchAll(/<xf\b[^>]*\bfontId="(\d+)"/g)].map(match => Number(match[1]));
+    const cells = xml(`/xl/worksheets/sheet${book.SheetNames.indexOf('Detalle_Centro') + 1}.xml`);
+    const canceled = Object.keys(sheet).filter(address => /^D\d+$/.test(address) && sheet[address].v.startsWith('ANULADO'));
+    assert.equal(canceled.length, 3);
+    for (const address of canceled) {
+      assert.equal(sheet[address].s.fgColor.rgb, 'FBDADA');
+      const style = Number(cells.match(new RegExp(`<c r="${address}"[^>]*\\bs="(\\d+)"`))[1]);
+      assert.match(fonts[fontIds[style]], /rgb="(?:FF)?991B1B"/i);
+      assert.match(fonts[fontIds[style]], /<b\b/);
+      const row = Number(address.slice(1));
+      const adjustmentRow = sheet[`L${row}`].v === 'COMPENSACIÓN POS';
+      assert.deepEqual([sheet[`H${row + 1}`].v, sheet[`I${row + 1}`].v], adjustmentRow ? ['TOTAL AJUSTE', -20] : ['TOTAL TICKET', 0]);
+    }
+    assert.ok(Object.entries(sheet).some(([address, cell]) => /^D\d+$/.test(address) && cell.v === 'Completada' && cell.s.fgColor.rgb === 'A9F08A'));
+    assert.deepEqual([readOverview(XLSX, book)['Compensaciones POS · Efectivo'], readOverview(XLSX, book)['Compensaciones POS · Yape / Plin']], [-8, -12]);
   } });
 });
 

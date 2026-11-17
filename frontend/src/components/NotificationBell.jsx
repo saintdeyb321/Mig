@@ -7,12 +7,12 @@ import { toDateSafe } from '../core/dates/dateValues';
 import { Badge, Button, Card, Dialog, EmptyState, IconButton, cn } from '../shared/ui';
 
 const noticeStyles = {
-  voided: { label: 'Anulación confirmada', icon: Ban, surface: 'border-danger/25 border-l-danger bg-danger-soft', badge: 'danger', amount: 'text-danger' },
+  danger: { icon: Ban, surface: 'border-danger/25 border-l-danger bg-danger-soft', badge: 'danger', amount: 'text-danger' },
   cash: { label: 'Cuadre por revisar', icon: ClipboardCheck, surface: 'border-warning/25 border-l-warning bg-warning-soft', badge: 'warning', amount: 'text-warning' },
   info: { label: 'Información', icon: Info, surface: 'border-primary/25 border-l-primary bg-primary-soft/45', badge: 'primary', amount: 'text-primary' },
 };
-const when = value => toDateSafe(value)?.toLocaleString('es-PE', {
-  timeZone: 'America/Lima', dateStyle: 'medium', timeStyle: 'short',
+const when = (value, exact = false) => toDateSafe(value)?.toLocaleString('es-PE', {
+  timeZone: 'America/Lima', dateStyle: 'medium', timeStyle: exact ? 'medium' : 'short', ...(exact && { hourCycle: 'h23' }),
 }) ?? 'No verificada';
 const soles = value => Number.isFinite(value) ? `S/ ${value.toFixed(2)}` : 'No verificado';
 
@@ -106,21 +106,24 @@ export function NotificationBell({ user, alerts = [], confirmedUnreadCount = nul
         const metadata = notification.metadata ?? {};
         const evidence = notification.authority === 'evidence-projection';
         const voided = evidence && notification.sourceType === 'pos-void';
+        const contractCancel = evidence && notification.sourceType === 'contract-cancel';
         const cashClose = evidence && notification.sourceType === 'cash-close';
         const logical = notification.authority === 'logical-expiry';
         const cashExpiry = (evidence || logical) && notification.sourceType === 'cash-expiry';
-        // The close projection carries an estimate, but drops the flags that distinguish provisional counts.
-        const style = voided ? noticeStyles.voided : cashClose || cashExpiry ? noticeStyles.cash : noticeStyles.info;
-        const Icon = style.icon;
-        const amount = voided ? metadata.amount : cashClose ? metadata.difference : null;
-        const differenceLabel = amount > 0 ? 'Sobrante estimado' : amount < 0 ? 'Faltante estimado' : 'Diferencia estimada';
+        const difference = cashClose && Number.isFinite(metadata.difference) ? metadata.difference : 0;
+        const style = voided || contractCancel || difference < 0 ? noticeStyles.danger : cashClose || cashExpiry ? noticeStyles.cash : noticeStyles.info;
+        const Icon = cashClose ? ClipboardCheck : style.icon;
+        const amount = voided ? metadata.amount : difference !== 0 ? Math.abs(difference) : null;
+        const label = voided ? 'Anulación de venta' : contractCancel ? 'Pedido cancelado' : difference < 0 ? 'Falta efectivo'
+          : difference > 0 ? 'Sobra efectivo' : cashExpiry ? 'Sin arqueo · requiere revisión' : style.label;
+        const differenceLabel = metadata.estimated ? 'Diferencia estimada' : 'Diferencia registrada';
         const date = toDateSafe(notification.createdAt);
         const actor = notification.actorDisplayName ?? 'Responsable del negocio';
         const branch = businessBranches.find(row => row.id === notification.branchId)?.name || 'Sucursal no disponible';
         return <Card key={notification.id} as="article" className={cn('space-y-3 border-l-4 p-3.5 sm:p-4', style.surface)}>
           <header className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0 space-y-1.5">
-              <Badge variant={style.badge}><Icon aria-hidden="true" className="size-3.5" />{cashExpiry ? 'Sin arqueo · requiere revisión' : style.label}</Badge>
+              <Badge variant={style.badge}><Icon aria-hidden="true" className="size-3.5" />{label}</Badge>
               <h3 className="text-sm font-bold text-ink">{notification.title}</h3>
             </div>
             {Number.isFinite(amount) && <dl className={cn('ml-auto text-right', style.amount)}>
@@ -130,6 +133,7 @@ export function NotificationBell({ user, alerts = [], confirmedUnreadCount = nul
           </header>
           <dl className="grid gap-x-3 gap-y-2 rounded-lg border border-line bg-panel/85 p-2.5 text-xs xs:grid-cols-2">
             {cashExpiry && <div><dt className="text-muted">Negocio</dt><dd className="font-semibold">{settings?.companyData?.razonSocial || user?.businessName || 'Tu negocio'}</dd></div>}
+            {contractCancel && metadata.contractNumber && <div><dt className="text-muted">Pedido</dt><dd className="font-semibold wrap-anywhere">{metadata.contractNumber}</dd></div>}
             <div><dt className="text-muted">Sede</dt><dd className="font-semibold">{branch}</dd></div>
             <div><dt className="text-muted">Responsable</dt><dd className="font-semibold">{cashClose || cashExpiry ? notification.responsibleDisplayName ?? 'Responsable del turno' : actor}</dd></div>
             {cashClose && metadata.actorId !== metadata.responsibleId && <div><dt className="text-muted">Cierre registrado por</dt><dd className="font-semibold">{actor}</dd></div>}
@@ -144,7 +148,7 @@ export function NotificationBell({ user, alerts = [], confirmedUnreadCount = nul
             <p className="whitespace-pre-wrap pb-2 wrap-anywhere">{metadata.reason}</p>
           </details>}
           <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2">
-            {date && !cashExpiry && <time dateTime={date.toISOString()} className="text-xs text-muted">{when(date)}</time>}
+            {date && !cashExpiry && <time dateTime={date.toISOString()} className="text-xs text-muted">{when(date, contractCancel)}</time>}
             {cashExpiry && onOpenCashAudit && <Button variant="secondary" size="sm" onClick={() => { close(); onOpenCashAudit(); }}>Ir a auditoría de caja</Button>}
             {!logical && <Button variant="secondary" size="sm" className="ml-auto" onClick={() => markAsRead(notification.id)} disabled={isMarkingRead}>Marcar como leída</Button>}
           </footer>

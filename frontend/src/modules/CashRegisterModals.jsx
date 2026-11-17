@@ -17,32 +17,35 @@ function cashAmount(text) {
 }
 
 export function CashCountSummary({ summary }) {
-  const provisional = summary.hasUnverifiedDisbursements || summary.expectedAmount < 0;
-  const amount = value => `S/ ${Number(value ?? 0).toFixed(2)}`;
+  const { expectedAmount, declaredAmount, difference } = summary;
+  const calculable = Number.isFinite(expectedAmount) && expectedAmount >= 0 && Number.isFinite(declaredAmount)
+    && Number.isFinite(difference) && (difference !== 0 || declaredAmount === expectedAmount);
+  const amount = value => Number.isFinite(value) ? `S/ ${value.toFixed(2)}` : 'No calculable';
   const collected = summary.posCash + (summary.contractCashCollected ?? summary.contractCash);
-  const result = provisional ? 'Por revisar' : summary.difference === 0 ? 'Coincide'
-    : summary.difference > 0 ? `Sobran ${amount(summary.difference)}` : `Faltan ${amount(-summary.difference)}`;
-  const resultTone = provisional || summary.difference > 0 ? 'border-warning/30 bg-warning-soft text-warning'
-    : summary.difference < 0 ? 'border-danger/30 bg-danger-soft text-danger' : 'border-finance-line bg-success-soft text-success';
+  const result = !calculable ? 'Referencia de caja por verificar' : difference === 0 ? 'El conteo coincide'
+    : difference > 0 ? `Sobran ${amount(difference)}` : `Faltan ${amount(-difference)}`;
+  const resultTone = !calculable || difference > 0 ? 'border-warning/30 bg-warning-soft text-warning'
+    : difference < 0 ? 'border-danger/30 bg-danger-soft text-danger' : 'border-finance-line bg-success-soft text-success';
   const groups = [
     ['Fondo inicial', [['Fondo de apertura', summary.openingAmount]]],
     ['Cobros y medios de pago', [['Cobros en efectivo registrados', collected], ['Ventas POS en efectivo', summary.posCash], ['Contratos en efectivo (neto)', summary.contractCash], ['Yape / Plin (neto)', summary.digitalTotal]]],
     ['Anulaciones y compensaciones', [['Anulaciones en efectivo', summary.posCompensationCash], ['Anulaciones Yape / Plin', summary.posCompensationDigital], ['Tickets anulados (importe registrado)', summary.posCompensationTotal]]],
-    ['Referencia y diferencia', [['Referencia de caja', summary.expectedAmount], [provisional ? 'Diferencia estimada' : 'Diferencia declarada', summary.difference]]],
+    ['Referencia y diferencia', [['Referencia de caja', expectedAmount], ['Diferencia calculada', calculable ? difference : null]]],
   ];
   return <>
     <dl className="grid grid-cols-2 gap-2 text-sm">
       <div className="rounded-xl border border-stellar/25 bg-stellar-soft p-3">
-        <dt className="text-xs font-semibold text-stellar">{provisional ? 'Referencia calculada' : 'Dinero esperado'}</dt>
-        <dd className="mt-1 text-xl font-extrabold tabular-nums">{amount(summary.expectedAmount)}</dd>
+        <dt className="text-xs font-semibold text-stellar">Referencia calculada</dt>
+        <dd className="mt-1 text-xl font-extrabold tabular-nums">{amount(expectedAmount)}</dd>
       </div>
       <div className="rounded-xl border border-line bg-canvas p-3">
         <dt className="text-xs font-semibold text-muted">Dinero contado</dt>
-        <dd className="mt-1 text-xl font-extrabold tabular-nums">{amount(summary.declaredAmount)}</dd>
+        <dd className="mt-1 text-xl font-extrabold tabular-nums">{amount(declaredAmount)}</dd>
       </div>
       <div className={cn('col-span-2 rounded-xl border p-3', resultTone)}>
         <dt className="text-sm font-semibold">Resultado del conteo</dt><dd className="mt-1 text-2xl font-extrabold tabular-nums">{result}</dd>
-        <dd className="mt-1 text-sm">{provisional ? 'Cuadre provisional: hay anulaciones o devoluciones por verificar. Revísalo con el dueño.' : summary.difference === 0 ? 'El conteo coincide con los movimientos registrados.' : 'Deja una observación para revisar la diferencia.'}</dd>
+        <dd className="mt-1 text-sm">{!calculable ? 'Revisa la referencia y el importe contado antes de interpretar el resultado.' : difference === 0
+          ? 'El efectivo contado coincide con la referencia calculada.' : 'Deja una observación para revisar la diferencia.'}</dd>
       </div>
     </dl>
     <details className="group rounded-xl border border-line bg-subtle/50 px-3 text-xs text-muted">
@@ -58,8 +61,8 @@ export function CashCountSummary({ summary }) {
         })}
         <div className="space-y-2 rounded-lg bg-warning-soft p-3 text-warning">
           <h3 className="font-semibold">Aclaraciones</h3>
-          {summary.posCompensationCount > 0 && <p>{summary.posCompensationCount} tickets anulados. Las compensaciones registradas no acreditan una entrega física de efectivo ni una devolución digital.</p>}
-          {summary.expectedAmount < 0 && <p>La referencia negativa de {amount(summary.expectedAmount)} no es un saldo físico ni un sobrante.</p>}
+          {summary.hasUnverifiedDisbursements && <p>Los ajustes contables se revisan por separado; no demuestran entrega de efectivo.</p>}
+          {expectedAmount < 0 && <p>La referencia negativa de {amount(expectedAmount)} no es un saldo físico ni un sobrante.</p>}
           <p>Los gastos o entregas de dinero no registrados quedan fuera de esta referencia. Indícalos en observaciones.</p>
           <p>Cierre operativo con conciliación pendiente. La referencia del navegador no certifica el saldo físico ni la entrega de dinero.</p>
         </div>
@@ -193,8 +196,8 @@ export const CashRegisterModals = ({
       <form onSubmit={submit(handleFinalSave)} className="flex min-h-0 flex-col">
         <div className="ui-scroll min-h-0 space-y-3 overflow-y-auto overscroll-contain p-3 sm:p-5">
           <CashCountSummary summary={tempSummary} />
-          {(tempSummary.difference !== 0 || tempSummary.hasUnverifiedDisbursements) && <FormField label="Observaciones para el dueño" required={tempSummary.difference !== 0} className="rounded-xl border border-warning/20 bg-warning-soft/60 p-3" hint="Si devolviste dinero de una venta de otro turno, indícalo aquí. No registres otro ticket para compensar.">
-            <Textarea rows={2} className="min-h-16" value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder="Indica si hubo entrega de dinero o movimientos de otro turno." required={tempSummary.difference !== 0} />
+          {tempSummary.difference !== 0 && <FormField label="Observaciones para el dueño" required className="rounded-xl border border-warning/20 bg-warning-soft/60 p-3" hint="Si devolviste dinero de una venta de otro turno, indícalo aquí. No registres otro ticket para compensar.">
+            <Textarea rows={2} className="min-h-16" value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder="Indica si hubo entrega de dinero o movimientos de otro turno." required />
           </FormField>}
         </div>
         <DialogFooter className="static m-0 grid grid-cols-2 gap-2 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:m-0 sm:px-5">

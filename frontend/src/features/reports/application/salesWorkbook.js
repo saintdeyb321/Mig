@@ -21,9 +21,10 @@ const countColumns = new Set(['Cantidad', productQuantity, labels.tickets, label
 const movementTones = { 'VENTA POS': 'success', 'VENTA POS ANULADA': 'muted',
   'COMPENSACIÓN POS': 'muted', 'REEMBOLSO CONTABLE PEDIDO': 'danger',
   'ADELANTO PEDIDO': 'info', 'ABONO PEDIDO': 'info' };
+const voidedTicket = row => row.Movimiento === 'VENTA POS' && row.Estado === 'ANULADO';
 const columnOptions = {
   Fecha: { width: 12, format: 'date', tone: 'info' }, Hora: { width: 10, format: row => row?._timeWithSeconds ? 'timeSeconds' : 'time', tone: 'info' },
-  Movimiento: { width: 21, tone: (value, row) => row.Estado === 'Anulada' ? 'muted' : movementTones[value] },
+  Movimiento: { width: 21, tone: (value, row) => voidedTicket(row) ? 'muted' : movementTones[value] },
   Referencia: { width: 18, tone: 'info' },
   Producto: { width: 33, tone: 'product' }, Cantidad: { width: 10, tone: 'value' }, [productQuantity]: { width: 16, tone: 'value' },
   'Precio unitario': { width: 14, tone: 'value' }, [ITEM_SUBTOTAL]: { width: 15, tone: 'value' },
@@ -38,7 +39,7 @@ const columnOptions = {
   [labels.pos]: { width: 23, tone: 'mixed' }, [labels.orders]: { width: 22, tone: 'product' },
   [productSales]: { width: 18, tone: 'value' },
   [labels.tickets]: { width: 11 },
-  [MOVEMENT_AMOUNT]: { width: 18, tone: (_, row) => row.Estado === 'Anulada' ? 'muted' : 'value' },
+  [MOVEMENT_AMOUNT]: { width: 18, tone: (_, row) => voidedTicket(row) ? 'muted' : 'value' },
   'Neto Movimiento (S/)': { width: 17, tone: 'success' }, Pagado: { width: 16, tone: 'success' },
   Saldo: { width: 16, tone: value => value > 0 ? 'warning' : undefined },
   'Fondo inicial (S/)': { width: 14, tone: 'info' }, 'Efectivo esperado (S/)': { width: 17 },
@@ -180,7 +181,8 @@ export function buildSalesWorkbook(XLSX, { stats = [], sales = null, payments = 
   wb.Props = { Title: 'Informe de ventas', Subject: `${periodName} · ${range}`, CreatedDate: now };
   const append = (name, rows, { omit = [], columns = Object.keys(rows[0]), ...options } = {}) => {
     const schema = schemaFor(columns, omit);
-    if (name.startsWith('Detalle_')) schema.Estado.width = 14;
+    if (name.startsWith('Detalle_')) schema.Estado = { ...schema.Estado, width: 14,
+      tone: value => ['ANULADO', 'ANULADO · POR REVISAR'].includes(value) ? 'danger' : columnOptions.Estado.tone(value) };
     const sheet = createSheet(XLSX, rows, schema, options);
     XLSX.utils.book_append_sheet(wb, sheet, uniqueSheetName(name, wb.SheetNames));
   };

@@ -55,6 +55,7 @@ export function createNotificationRepository(database, { sdk = firestoreSDK, cur
         ['pos-void', 'pos_voids', 'occurredAt', NOTIFICATION_LIMIT],
         ['cash-close', 'cash_sessions', 'closedAt', NOTIFICATION_LIMIT],
         ['cash-expiry', 'cash_sessions', 'recoveredAt', 10],
+        ['contract-cancel', 'contracts', 'voidedAt', NOTIFICATION_LIMIT],
       ] : [];
       const evidence = new Map(sources.map(([type]) => [type, { current: false, rows: [], markers: new Map() }]));
       const stops = [];
@@ -131,6 +132,7 @@ export function createNotificationRepository(database, { sdk = firestoreSDK, cur
           }
         };
         stops.push(listen(query(collection(database, name), where('businessId', '==', businessId),
+          ...(type === 'contract-cancel' ? [where('status', '==', 'cancelado')] : []),
           orderBy(field, 'desc'), limit(size)), snapshot => {
           if (!active()) return;
           source.current = confirmed(snapshot.metadata) && snapshot.docs.every(row => confirmed(row.metadata));
@@ -164,9 +166,16 @@ export function createNotificationRepository(database, { sdk = firestoreSDK, cur
 
 // Evidence stays immutable. These are bounded read-only views, never client-created financial alerts.
 export function projectFinancialNotice(type, source, businessId, userId) {
-  if (source.businessId !== businessId || !source.id || !source.userId || !source.branchId) return null;
+  if (source.businessId !== businessId || !source.id || !source.branchId || (type !== 'contract-cancel' && !source.userId)) return null;
   let title, message, createdAt, metadata;
-  if (type === 'pos-void') {
+  if (type === 'contract-cancel') {
+    if (source.sparkContractVersion !== 1 || source.status !== 'cancelado' || !toMillisSafe(source.voidedAt)
+      || ![source.id, source.branchId, source.voidedBy, source.cancelOperationId].every(value => typeof value === 'string' && value.trim())) return null;
+    title = 'Pedido cancelado'; createdAt = source.voidedAt;
+    message = 'Pedido anulado. Revisa los reembolsos registrados; el registro no confirma que el cliente haya recibido el dinero.';
+    metadata = { contractNumber: typeof source.contractNumber === 'string' ? source.contractNumber.trim() : '',
+      reason: typeof source.voidReason === 'string' ? source.voidReason : '', actorId: source.voidedBy };
+  } else if (type === 'pos-void') {
     if (source.authority !== 'pos-compensation' || source.protocol !== 1 || source.saleId !== source.id || !(source.amount < 0) || !Number.isFinite(source.amount) || !toMillisSafe(source.occurredAt)) return null;
     title = 'Ticket anulado'; createdAt = source.occurredAt;
     message = `Compensación contable de S/ ${(-source.amount).toFixed(2)}. No acredita entrega física de dinero; requiere revisión.`;
@@ -179,13 +188,21 @@ export function projectFinancialNotice(type, source, businessId, userId) {
       openingAmount: Number.isFinite(source.openingAmount) ? source.openingAmount : null };
   } else {
     if (type !== 'cash-close' || source.runtime !== 'spark' || !['closed','closed_with_discrepancy'].includes(source.status) || !source.closedBy || !toMillisSafe(source.closedAt)) return null;
-    const difference = source.closeEstimate?.difference;
-    const valid = source.closeEstimate?.authority === 'client-estimate' && source.reconciliationPending === true && Number.isFinite(difference);
-    if (valid && difference === 0 && source.userId === userId && source.closedBy === userId) return null;
-    const uncertainCash = source.closeEstimate?.hasUnverifiedDisbursements || source.closeEstimate?.expectedCash < 0;
-    title = uncertainCash ? 'Cierre con compensaciones por revisar' : valid && difference < 0 ? 'Diferencia negativa estimada en caja' : valid && difference > 0 ? 'Diferencia positiva estimada en caja' : 'Cierre de caja registrado';
-    message = 'Estimación operativa del cierre; conciliación pendiente. No certifica el saldo de caja.';
-    createdAt = source.closedAt; metadata = { ...(valid ? { difference } : {}), responsibleId:source.userId, actorId:source.closedBy, closeId:source.id };
+    const reconciled = source.reconciliationPending === false && source.requiresFinancialReview !== true;
+    const estimated = (source.reconciliationPending === true || source.requiresFinancialReview === true)
+      && source.closeEstimate?.authority === 'client-estimate';
+    const reference = reconciled ? (source.expectedCash ?? source.expectedAmount) : estimated ? source.closeEstimate.expectedCash : null;
+    const difference = reconciled ? source.difference : estimated ? source.closeEstimate.difference : null;
+    const valid = Number.isFinite(reference) && reference >= 0 && Number.isFinite(source.declaredAmount) && source.declaredAmount >= 0
+      && Number.isFinite(difference) && (difference !== 0 || source.declaredAmount === reference);
+    if (valid && difference === 0 && source.status === 'closed') return null;
+    const discrepant = valid && difference !== 0;
+    title = discrepant ? (difference < 0 ? 'Cierre con faltante' : 'Cierre con sobrante') : 'Referencia de caja por verificar';
+    message = discrepant ? (estimated ? 'Diferencia estimada del conteo. La conciliación sigue pendiente.' : 'Diferencia registrada en el cierre de caja.')
+      : valid ? 'El estado del cierre indica una diferencia, pero el importe registrado es cero. Revisa la auditoría.'
+        : 'El cierre no tiene una referencia calculable. Revisa los importes en la auditoría de caja.';
+    createdAt = source.closedAt;
+    metadata = { ...(discrepant ? { difference, estimated } : {}), responsibleId: source.userId, actorId: source.closedBy, closeId: source.id };
   }
   return { id:`read_${type}_${source.id}_${userId}`, businessId, branchId:source.branchId, userId, sourceType:type, sourceId:source.id,
     title, message, createdAt, actorName:metadata.actorId, metadata, authority:'evidence-projection',

@@ -32,10 +32,21 @@ it('Plan06 projects confirmed refunds and estimated close differences without cl
   assert.equal(projectFinancialNotice('pos-void',{...refund,amount:NaN},'tenant','owner'),null);
   const close={id:'shift',businessId:'tenant',branchId:'branch',userId:'cashier',closedBy:'manager',runtime:'spark',status:'closed_with_discrepancy',
     closedAt:'2026-10-29T12:00:00Z',reconciliationPending:true};
-  for(const [difference,title] of [[-2,'Diferencia negativa estimada'],[2,'Diferencia positiva estimada'],[0,'Cierre']]) {
-    const item=projectFinancialNotice('cash-close',{...close,closeEstimate:{authority:'client-estimate',difference}},'tenant','owner');
-    assert.ok(item.title.startsWith(title));assert.equal(item.metadata.responsibleId,'cashier');assert.equal(item.metadata.actorId,'manager');assert.match(item.message,/conciliación pendiente/);
+  for(const [difference,title] of [[-2,'Cierre con faltante'],[2,'Cierre con sobrante']]) {
+    const item=projectFinancialNotice('cash-close',{...close,declaredAmount:83.30+difference,closeEstimate:{authority:'client-estimate',expectedCash:83.30,difference,hasUnverifiedDisbursements:true}},'tenant','owner');
+    assert.equal(item.title,title);assert.equal(item.metadata.responsibleId,'cashier');assert.equal(item.metadata.actorId,'manager');
+    assert.equal(item.metadata.difference,difference);assert.equal(item.metadata.estimated,true);assert.match(item.message,/conciliación sigue pendiente/);
   }
+  const exact = { ...close, status:'closed', declaredAmount:83.30, closeEstimate:{authority:'client-estimate',expectedCash:83.30,difference:0,hasUnverifiedDisbursements:true} };
+  for(const actor of ['owner','cashier']) assert.equal(projectFinancialNotice('cash-close',{...exact,closedBy:actor},'tenant','owner'),null);
+  assert.equal(projectFinancialNotice('cash-close',{...exact,status:'closed_with_discrepancy'},'tenant','owner').metadata.difference,undefined);
+  for (const changes of [{expectedCash:-3},{expectedCash:NaN},{expectedCash:null},{difference:null},{authority:'cache'}]) {
+    const warning=projectFinancialNotice('cash-close',{...exact,closeEstimate:{...exact.closeEstimate,...changes}},'tenant','owner');
+    assert.equal(warning.title,'Referencia de caja por verificar');assert.equal(warning.metadata.difference,undefined);
+  }
+  const reconciled={...exact,declaredAmount:90,expectedCash:83.30,difference:6.70,reconciliationPending:false,requiresFinancialReview:false};
+  assert.equal(projectFinancialNotice('cash-close',reconciled,'tenant','owner').metadata.difference,6.70);
+  assert.equal(projectFinancialNotice('cash-close',reconciled,'tenant','owner').metadata.estimated,false);
   assert.equal(projectFinancialNotice('cash-close',{...close,status:'open'},'tenant','owner'),null);
 });
 
@@ -48,15 +59,15 @@ it('P24 verifies the inbox only after current evidence and acknowledgements agre
   const repository=createNotificationRepository({}, {sdk, currentUser: () => ({ uid })});
   const stop=repository.subscribeUnreadNotifications('tenant','owner',(rows, meta)=>states.push({rows, meta}),error=>assert.fail(error.message),{owner:true});
   const snapshot=(docs, metadata=server, rowMetadata=metadata)=>({docs:docs.map(data=>({id:data.id,metadata:rowMetadata,data:()=>data})),metadata});
-  const [legacy, evidence, close, expiry] = listeners;
+  const [legacy, evidence, close, expiry, orders] = listeners;
   const ticket = id => ({ id, saleId:id, businessId:'tenant',branchId:'branch',userId:'cashier',authority:'pos-compensation',
     protocol:1,amount:-6,reason:'Devolución verificada',occurredAt:'2026-10-29T12:00:00Z' });
   const old = Array.from({ length: 14 }, (_, i) => ticket('old-' + i));
   const read = id => ({ id: 'read_pos-void_' + id + '_owner', readAt: 'SERVER' });
   const markers = old.map(row => read(row.id));
-  [legacy, close, expiry].forEach(listener => listener.next(snapshot([])));
+  [legacy, close, expiry, orders].forEach(listener => listener.next(snapshot([])));
   evidence.next(snapshot(old,cached));
-  assert.equal(listeners.length,4,'Cached evidence does not start marker listeners');
+  assert.equal(listeners.length,5,'Cached evidence does not start marker listeners');
   evidence.next(snapshot(old));
   const firstBatch=listeners.at(-1);
   assert.deepEqual(firstBatch.ref.filters, [['businessId','==','tenant'],['userId','==','owner'],['sourceType','==','pos-void'],
@@ -91,7 +102,7 @@ it('P24 verifies the inbox only after current evidence and acknowledgements agre
   legacy.next(snapshot([]));
   assert.deepEqual(states.at(-1),{rows:[],meta:{fromCache:false}});
   evidence.next(snapshot([...old,ticket('new')]));
-  assert.equal(listeners.length,6,'An unchanged ID set reuses the query');
+  assert.equal(listeners.length,7,'An unchanged ID set reuses the query');
   assert.equal(states.at(-1).rows.length,0);
   uid = 'another-owner';
   const count=states.length;
@@ -99,6 +110,50 @@ it('P24 verifies the inbox only after current evidence and acknowledgements agre
   await assert.rejects(repository.markNotificationRead(notice),{code:'session-changed'});
   stop();listeners.forEach(l=>l.next(snapshot([])));
   assert.equal(states.length,count);assert.ok(listeners.every(l=>l.stopped));
+});
+
+it('P29 opens one bounded owner cancellation stream and projects one notice from confirmed contract evidence', () => {
+  const subscriptions = [], views = [];
+  const sdk = { collection: (_, name) => ({ name }), query: (ref, ...filters) => ({ ...ref, filters }),
+    where: (...args) => args, orderBy: (...args) => args, limit: n => n,
+    onSnapshot: (ref, _options, next) => {
+      const item = { ref, next, stopped: false }; subscriptions.push(item); return () => { item.stopped = true; };
+    } };
+  const repo = createNotificationRepository({}, { sdk });
+  const snap = (rows, metadata = server) => ({ metadata, docs: rows.map(({ id, ...data }) => ({ id, metadata, data: () => data })) });
+  const stop = repo.subscribeUnreadNotifications('tenant', 'owner', (rows, meta) => views.push({ rows, meta }), assert.fail, { owner: true });
+  assert.equal(subscriptions.length, 5);
+  const stream = subscriptions.find(({ ref }) => ref.name === 'contracts');
+  assert.deepEqual(stream.ref.filters, [['businessId', '==', 'tenant'], ['status', '==', 'cancelado'], ['voidedAt', 'desc'], 30]);
+  subscriptions.filter(item => item !== stream).forEach(item => item.next(snap([])));
+  const contract = { id: 'order', businessId: 'tenant', branchId: 'branch', status: 'cancelado', sparkContractVersion: 1,
+    voidedBy: 'cashier', contractNumber: 'PED-P29', voidReason: 'Solicitud del cliente', cancelOperationId: 'cancelled-once',
+    voidedAt: '2026-11-16T05:05:36Z', createdAt: '2023-01-01T00:00:00Z', total: 100, paidByMethod: { efectivo: 0, yape: 0 } };
+  const other = { ...contract, id: 'foreign', businessId: 'foreign' };
+  const invalid = [{ ...contract, status: 'pendiente' }, { ...contract, cancelOperationId: null }, { ...contract, voidedBy: '' },
+    { ...contract, voidedAt: 'invalida' }, { ...contract, sparkContractVersion: 0 }, { ...contract, branchId: '' }, other];
+  invalid.forEach(row => assert.equal(projectFinancialNotice('contract-cancel', row, 'tenant', 'owner'), null));
+  stream.next(snap([contract], cached));
+  assert.equal(subscriptions.length, 5);
+  stream.next(snap([contract, other]));
+  const marker = subscriptions.at(-1);
+  assert.equal(marker.ref.name, 'notifications');
+  assert.deepEqual(marker.ref.filters.at(-1), ['sourceId', 'in', ['order']]);
+  marker.next(snap([]));
+  const [notice] = views.at(-1).rows;
+  assert.deepEqual(views.at(-1).rows.map(row => row.id), ['read_contract-cancel_order_owner']);
+  assert.deepEqual(notice.metadata, { contractNumber: 'PED-P29', reason: contract.voidReason, actorId: 'cashier' });
+  assert.equal(notice.createdAt, contract.voidedAt);
+  assert.match(notice.message, /no confirma que el cliente haya recibido el dinero/);
+  marker.next(snap([{ id: notice.id, readAt: 'SERVER' }]));
+  assert.deepEqual(views.at(-1).rows, []);
+  stream.next(snap([contract]));
+  assert.equal(subscriptions.length, 6);
+  assert.deepEqual(views.at(-1).rows, []);
+  stop();
+  assert.ok(subscriptions.every(item => item.stopped));
+  repo.subscribeUnreadNotifications('tenant', 'cashier', () => {}, assert.fail)();
+  assert.deepEqual(subscriptions.slice(6).map(item => item.ref.name), ['notifications']);
 });
 
 it('Plan05 persists only valid view filters across reloads within the same account and branch', () => {

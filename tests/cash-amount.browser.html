@@ -3,6 +3,9 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { CashRegisterModals } from '/src/modules/CashRegisterModals.jsx';
+import { NotificationBell } from '/src/components/NotificationBell.jsx';
+import { TenantContext } from '/src/features/branches/context/TenantContext.js';
+import { projectFinancialNotice, projectLogicalCashExpiry } from '/src/features/notifications/infrastructure/notificationQueryRepository.js';
 const root = createRoot(document.getElementById('root'));
 const checks = [], calls = [];
 const check = (ok, label) => { if (!ok) throw Error(label); checks.push(label); };
@@ -98,6 +101,74 @@ try {
   renderRecovery({ id: replacementId, status: 'open', serverConfirmed: true, sparkLockVerified: true });
   await wait(() => recoveryDismissals === 1 && !document.querySelector('[role="dialog"]'));
   check(recoveryAttempts === 1, 'server-confirmed replacement closes the modal without another write');
+  const cases = [
+    [83.30, 83.30, 0, 'El conteo coincide', 'text-success', false],
+    [50, 50, 0, 'El conteo coincide', 'text-success', false],
+    [50, 100, 50, 'Sobran S/ 50.00', 'text-warning', true],
+    [83.30, 70, -13.30, 'Faltan S/ 13.30', 'text-danger', true],
+    [83.30, 90, 6.70, 'Sobran S/ 6.70', 'text-warning', true],
+    [-5, 0, 5, 'Referencia de caja por verificar', 'text-warning', true],
+    [NaN, 0, null, 'Referencia de caja por verificar', 'text-warning', true],
+  ];
+  const closings = [];
+  for (const [index, [expectedAmount, declared, difference, label, color, noteRequired]] of cases.entries()) {
+    root.render(React.createElement(CashRegisterModals, { ...props, key: `p29-close-${index}`, showCloseModal: true, showOpenModal: false,
+      calculateClose: async declaredAmount => ({ openingAmount: 100, posCash: 83.30, contractCash: -50, expectedAmount,
+        declaredAmount, difference, hasUnverifiedDisbursements: true }),
+      confirmClose: async (summary, note) => { closings.push({ summary, note }); return false; } }));
+    await wait(() => document.querySelector('[role="dialog"] input[type="number"]'));
+    const input = document.querySelector('[role="dialog"] input[type="number"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, String(declared));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await tick();
+    document.querySelector('[role="dialog"] form').requestSubmit();
+    await wait(() => document.querySelector('.cash-confirm-dialog'));
+    const dialog = document.querySelector('.cash-confirm-dialog');
+    const panel = [...dialog.querySelectorAll('dt')].find(node => node.textContent === 'Resultado del conteo').parentElement;
+    const textarea = dialog.querySelector('textarea');
+    check(panel.querySelector('dd').textContent === label && panel.classList.contains(color), `P29 cash color and label: ${label}`);
+    check(Boolean(textarea?.required) === noteRequired && (noteRequired || !textarea), `P29 observation requirement: ${label}`);
+    if (!noteRequired) {
+      const reminder = 'Los ajustes contables se revisan por separado';
+      check(!dialog.innerText.includes(reminder), 'P29 hides the refund-evidence note until details open');
+      dialog.querySelector('details').open = true;
+      check(dialog.innerText.includes(reminder), 'P29 keeps the evidence warning inside the detail');
+      dialog.querySelector('form').requestSubmit();
+      await wait(() => closings.length === index + 1);
+      check(closings.at(-1).summary.hasUnverifiedDisbursements && closings.at(-1).note === '', 'P29 passes the unchanged evidence flag and no mandatory note to close');
+    } else {
+      dialog.querySelector('form').requestSubmit();
+      await tick();
+      check(closings.length === 2, 'P29 closure still rejects a required observation left empty');
+    }
+  }
+  const user = { uid: 'owner', role: 'dueño', businessId: 'tenant' }, read = [];
+  const createdAt = '2026-11-16T05:05:36Z', base = { businessId: 'tenant', branchId: 'branch' };
+  const contract = projectFinancialNotice('contract-cancel', { ...base, id: 'order', status: 'cancelado', sparkContractVersion: 1,
+    voidedAt: createdAt, voidedBy: 'cashier', cancelOperationId: 'once', contractNumber: 'PED-P29', voidReason: '<img src="fake">', total: 100 }, 'tenant', user.uid);
+  const original = projectFinancialNotice('pos-void', { ...base, id: 'sale', saleId: 'sale', userId: 'cashier', authority: 'pos-compensation',
+    protocol: 1, amount: -20, occurredAt: createdAt }, 'tenant', user.uid);
+  const close = difference => projectFinancialNotice('cash-close', { ...base, id: `close-${difference}`, closedAt: createdAt,
+    runtime: 'spark', status: 'closed', closedBy: 'cashier', userId: 'cashier', declaredAmount: 83.3 + (difference ?? 0),
+    reconciliationPending: true, closeEstimate: { authority: 'client-estimate', expectedCash: 83.3, difference } }, 'tenant', user.uid);
+  const expiry = projectLogicalCashExpiry({ ...base, id: 'expiry', userId: 'cashier', status: 'open', runtime: 'spark', durationHours: 14,
+    openedAt: '2026-11-15T09:00:00Z' }, 'tenant', user.uid, Date.parse(createdAt));
+  const alerts = [contract, original, close(-13.30), close(6.70), close(null), expiry].map(notice => ({ ...notice, actorDisplayName: 'Ana de prueba' }));
+  root.render(React.createElement(TenantContext.Provider, { value: { businessBranches: [{ id: 'branch', name: 'Sede Centro' }] } },
+    React.createElement(NotificationBell, { user, alerts, confirmedUnreadCount: 5, isAdmin: true, isOpen: true, onClose: () => {},
+      markAsRead: id => read.push(id) })));
+  await wait(() => document.querySelectorAll('[role="dialog"] article').length === 6);
+  const [orderCard, saleCard, shortage, surplus, unknown, expired] = document.querySelectorAll('[role="dialog"] article');
+  check(orderCard.classList.contains('border-l-danger') && saleCard.classList.contains('border-l-danger'), 'P29 cancelations have red cards');
+  check(orderCard.innerText.includes('PED-P29') && orderCard.innerText.includes('Ana de prueba') && orderCard.innerText.includes('Sede Centro')
+    && orderCard.querySelector('time').textContent.includes('00:05:36'), 'P29 uses the verified cancellation timestamp in Lima and shows order context');
+  check(!orderCard.querySelector('img') && orderCard.innerText.includes('<img src="fake">') && !orderCard.querySelector('header dl'), 'P29 renders the reason as text and shows no inferred amount');
+  check(shortage.classList.contains('border-l-danger') && shortage.innerText.includes('Falta efectivo') && shortage.querySelector('header dd').textContent === 'S/ 13.30', 'P29 shortage shows a red positive magnitude');
+  check(surplus.classList.contains('border-l-warning') && surplus.querySelector('header dd').textContent === 'S/ 6.70', 'P29 surplus shows the positive amount in amber');
+  check(unknown.classList.contains('border-l-warning') && !unknown.querySelector('header dl') && !unknown.innerText.includes('Falta efectivo'), 'P29 missing reference is a warning without an inferred shortage');
+  check(expired.classList.contains('border-l-warning') && expired.innerText.includes('Sin arqueo'), 'P29 expiry stays amber and remains distinct from a shortage');
+  [...orderCard.querySelectorAll('button')].find(button => button.textContent === 'Marcar como leída').click();
+  check(read.length === 1 && read[0] === contract.id, 'P29 marks exactly the displayed cancellation ID');
   result = { ok: true, checks };
 } catch (error) { result = { ok: false, checks, error: error.stack }; }
 root.unmount();
