@@ -1,4 +1,4 @@
-import { blank, dayInLima, financial, get, groupDays, total } from '../../../../../functions/src/reports/summaryModel.js';
+import { blank, financial, get, groupDays, total } from '../../../../../functions/src/reports/summaryModel.js';
 import { chartSkeleton } from '../domain/reportPeriod.js';
 
 const soles = cents => cents / 100;
@@ -15,15 +15,18 @@ export function summaryMetrics(values) {
 export function buildSummaryView(data, period) {
   const values = total(data.rows);
   const bucket = row => period.filter === 'todo' ? row.day.slice(0, 7) : row.day;
-  const evolution = groupDays(data.rows, bucket);
-  const byDate = new Map(evolution.map(row => [row.key, row.values]));
-  const latest = dayInLima(data.calculatedThrough);
-  const chartData = chartSkeleton(period).filter(day => day.rawDate <= latest.slice(0, day.rawDate.length))
-    .map(day => {
+  const recorded = groupDays(data.rows, bucket);
+  const byDate = new Map(recorded.map(row => [row.key, row.values]));
+  // Only elapsed months require verified coverage. Future calendar slots never
+  // request or certify future snapshots.
+  const calendar = chartSkeleton(period);
+  const evolution = period.filter === 'todo'
+    ? calendar.map(day => ({ key: day.rawDate, values: byDate.get(day.rawDate) ?? blank() })) : recorded;
+  const chartData = calendar.map(day => {
       const values = byDate.get(day.rawDate);
       return values ? { ...day, ventas: soles(financial(values).net), ordenes: get(values, 'tickets'),
         pagos: get(values, 'advances') + get(values, 'payments') } : day;
-    });
+  });
   const groups = groupDays(data.rows, row => JSON.stringify([row.branchId, bucket(row)]))
     .map(row => { const [branchId, date] = JSON.parse(row.key); return { branchId, date, values: row.values }; });
   const byBranch = new Map(groupDays(data.rows, row => row.branchId).map(row => [row.key, row.values]));

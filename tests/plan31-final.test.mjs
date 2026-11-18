@@ -3,10 +3,10 @@ import { it } from 'node:test';
 import { createRequire } from 'node:module';
 import { normalizeContribution, legacyPayments } from '../functions/src/reports/contributions.js';
 import { monthWindow, projectionFromRecords } from '../functions/src/reports/consolidation.js';
-import { collections, blank, financial, get, keyOf, mergeProducts, total, rankProducts } from '../functions/src/reports/summaryModel.js';
+import { collections, blank, expectedMonths, financial, get, keyOf, mergeProducts, total, rankProducts } from '../functions/src/reports/summaryModel.js';
 import { reportingFunctions } from '../functions/src/reports/entry.js';
 import { buildMonthlySnapshotV1 } from '../frontend/src/features/reports/domain/monthlySnapshot.js';
-import { reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
+import { chartSkeleton, reportDay, reportPeriod } from '../frontend/src/features/reports/domain/reportPeriod.js';
 import { reportSourceForPeriod } from '../frontend/src/features/reports/application/reportSources.js';
 import { createSummaryReportResource } from '../frontend/src/features/reports/application/reportResource.js';
 import { createVerifiedSummaryReader } from '../frontend/src/features/reports/infrastructure/summaryReader.js';
@@ -24,6 +24,33 @@ const coverage = { sparkSales: true, legacySales: true, migratedLedger: true, le
   createdContracts: true, contractCancellations: true, cashSessions: true };
 const sale = (id, date, total, extra = {}) => ({ ...branch, id, confirmedAt: date, createdAt: date, status: 'confirmed',
   payment: 'efectivo', total, items: [{ id: 'pan', name: 'Pan', price: total, qty: 1 }], ...extra });
+
+it('P31 periods retain full Lima calendar boundaries and only require elapsed annual snapshots', () => {
+  for (const [instant, start, end, days] of [
+    ['2026-11-17T12:00:00-05:00', '2026-11-01', '2026-11-30', 30],
+    ['2026-01-15T12:00:00-05:00', '2026-01-01', '2026-01-31', 31],
+    ['2026-07-31T23:59:59-05:00', '2026-07-01', '2026-07-31', 31],
+    ['2024-02-29T12:00:00-05:00', '2024-02-01', '2024-02-29', 29],
+    ['2025-02-15T12:00:00-05:00', '2025-02-01', '2025-02-28', 28],
+    ['2026-12-31T23:59:59-05:00', '2026-12-01', '2026-12-31', 31],
+    ['2027-01-01T04:59:59.999Z', '2026-12-01', '2026-12-31', 31],
+    ['2027-01-01T05:00:00.000Z', '2027-01-01', '2027-01-31', 31],
+  ]) {
+    const period = reportPeriod('mes', instant);
+    assert.deepEqual([period.start, period.end], [start, end]);
+    assert.equal(+period.endDate - +period.startDate + 1, days * 86400000);
+    assert.equal(reportDay(period.startDate), start);
+    assert.equal(reportDay(period.endDate), end);
+    assert.equal(chartSkeleton(period).length, days);
+    const year = reportPeriod('todo', instant), parts = start.split('-');
+    assert.deepEqual([year.start, year.end], [parts[0] + '-01-01', parts[0] + '-12-31']);
+    const months = expectedMonths(year, +new Date(instant));
+    assert.equal(months.length, Number(parts[1]));
+    assert.equal(months.at(-1), start.slice(0, 7));
+    assert.equal(chartSkeleton(year).length, 12);
+  }
+  assert.equal(expectedMonths(reportPeriod('todo', '2024-11-01T12:00:00-05:00'), epoch).length, 12);
+});
 
 function sample() {
   const paid = sale('first', oct, 30.05, { payment: 'mixto', splitPayments: { efectivo: 10.05, plin: 20 } });
@@ -154,7 +181,7 @@ it('P31 final uses only point reads, reuses PDF/XLSX and blocks stale, partial, 
   documents.set(collections.months + '/' + id, november);
   documents.set(collections.products + '/' + id + ':0', productPage('2026-11', [november.revision], data));
   const source = reportSourceForPeriod(args.period, () => assert.fail('No se deben crear lectores de detalle.'),
-    { enabled: true, readSummary: () => read({ ...args, resources }) });
+    { readSummary: () => read({ ...args, resources }) });
   assert.equal(source.representation, 'snapshots');
   assert.equal((await source.readSummary()).verified, true);
   assert.equal(calls.length, 1);
@@ -168,7 +195,8 @@ it('P31 final uses only point reads, reuses PDF/XLSX and blocks stale, partial, 
     finally { resources.close(); }
   };
   for (const mutation of [{ status: 'dirty' }, { validUntil: epoch }, { coverage: {} }, { branchId: 'taller' }, { values: blank() },
-    { rows: [{ ...november.rows[0], day: '2026-11-31' }] }, { rows: [{ ...november.rows[0], values: [Infinity] }] }]) {
+    { rows: [{ ...november.rows[0], day: '2026-11-31' }] }, { rows: [{ ...november.rows[0], day: '2026-11-30' }] },
+    { rows: [{ ...november.rows[0], values: [Infinity] }] }]) {
     documents.set(collections.months + '/' + id, { ...november, ...mutation });
     await assert.rejects(run(), { code: 'report-summary-pending' });
   }
@@ -190,12 +218,18 @@ it('P31 final uses only point reads, reuses PDF/XLSX and blocks stale, partial, 
   const year = await run({ period: reportPeriod('todo', epoch), includeProducts: true });
   assert.equal(calls.length - before, 12, 'Once meses y una página consolidada de productos');
   assert.equal(year.closed, false);
+  const annualView = buildSummaryView(year, reportPeriod('todo', epoch));
+  assert.equal(annualView.chartData.length, 12);
+  assert.equal(annualView.evolution.length, 12);
+  assert.deepEqual(annualView.chartData.at(-1), chartSkeleton(reportPeriod('todo', epoch)).at(-1));
+  assert.deepEqual(annualView.evolution.at(-1), { key: '2026-12', values: blank() });
+  assert.equal(calls.some(path => path.endsWith(':2026-12')), false, 'Future chart slots must not read future snapshots');
   assert.ok(calls.every(path => path.startsWith(collections.months + '/') || path.startsWith(collections.products + '/')));
   documents.delete(collections.months + '/' + keyOf(businessId, 'global', '2026-03'));
   await assert.rejects(run({ period: reportPeriod('todo', epoch) }), { code: 'report-summary-pending' });
 });
 
-it('P31 dashboard and export routing require verified snapshots for every long period', async () => {
+it('P31 dashboard and export routing use verified snapshots without a frontend activation gate', async () => {
   let constructed = 0, historicalReads = 0, snapshotReads = 0;
   const reads = () => {
     constructed++;
@@ -204,15 +238,15 @@ it('P31 dashboard and export routing require verified snapshots for every long p
   const readSummary = async () => { snapshotReads++; return 'verified'; };
   for (const filter of ['mes', 'todo']) {
     const period = reportPeriod(filter, epoch);
-    await assert.rejects(reportSourceForPeriod(period, reads, { readSummary, enabled: false }).readSummary(),
+    await assert.rejects(reportSourceForPeriod(period, reads).readSummary(),
       { code: 'report-summary-pending' });
-    const source = reportSourceForPeriod(period, reads, { readSummary, enabled: true });
+    const source = reportSourceForPeriod(period, reads, { readSummary });
     assert.equal(source.representation, 'snapshots');
     assert.equal(await source.readSummary(), 'verified');
-    const missing = reportSourceForPeriod(period, reads, { enabled: true,
+    const missing = reportSourceForPeriod(period, reads, {
       readSummary: async () => { throw Object.assign(new Error('Missing'), { code: 'report-summary-pending' }); } });
     await assert.rejects(missing.readSummary(), { code: 'report-summary-pending' });
-    await assert.rejects(reportSourceForPeriod(period, reads, { enabled: true,
+    await assert.rejects(reportSourceForPeriod(period, reads, {
       readSummary: async () => { throw Object.assign(new Error('Offline'), { code: 'unavailable' }); } }).readSummary(),
     error => error.code === 'report-summary-pending' && error.cause.code === 'unavailable');
     assert.equal(constructed, 0);

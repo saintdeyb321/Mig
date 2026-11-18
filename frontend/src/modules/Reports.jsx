@@ -54,7 +54,7 @@ export default function Reports({
   if (error && !hasData) return <div className="workspace-page max-w-7xl gap-3">
     {header}
     {error.code === 'report-summary-pending' ? <Alert variant="warning" title="Resumen no disponible">
-      <p>Pendiente de actualización administrativa. Comprueba también tu conexión.</p>
+      <p>No hay cobertura verificada vigente para este período. Comprueba también tu conexión.</p>
       {updatedAt && <p>Último corte verificado {new Date(updatedAt).toLocaleString('es-PE', { timeZone: 'America/Lima' })} (Lima).</p>}
     </Alert> : error.code === 'report-limit' ? <Alert variant="warning" title="El período supera el límite de lectura">
       Selecciona un período menor. No se calcularon totales parciales.

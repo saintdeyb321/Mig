@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { after, before, it } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { collection, doc, getDocFromServer, getDocsFromServer, setDoc } from 'firebase/firestore';
+import { collection, doc, getDocFromServer, getDocsFromServer, runTransaction, setDoc } from 'firebase/firestore';
 import { createProjectionStore, markerRef, monthState } from '../functions/src/reports/projectionStore.js';
 import { createConsolidation } from '../functions/src/reports/consolidation.js';
 import { createReportBackfill } from '../functions/src/reports/backfill.js';
@@ -108,6 +108,66 @@ it('P31 Rules protects direct summary and product IDs, and measures 100 authorit
     sourceOperations: published.budget.operations, sourceDocuments: published.budget.documents, sourcePointReads: published.budget.pointReads,
     readsByCollection: published.budget.byCollection,
     elapsedMs: Date.now() - started }));
+});
+
+it('P31 normal Spark credentials cannot certify a partial legacy rebuild or port the trusted writer unchanged', async t => {
+  await env.clearFirestore();
+  const businessId = 'p31-normal-coverage', branchId = 'normal-site', id = 'legacy-21-payments';
+  const batch = admin.batch();
+  const set = (collection, id, data) => batch.set(admin.collection(collection).doc(id), data);
+  set('users', 'coverage-owner', { businessId, role: 'dueño', status: 'activo' });
+  set('users', 'coverage-cashier', { businessId, branchId, role: 'cajero', status: 'activo' });
+  set('licenses', businessId, { businessId, status: 'activa', expiry: new Date('2099-01-01') });
+  set('tenants', businessId, { businessId, status: 'active' });
+  set('branches', branchId, { businessId, status: 'activo' });
+  const payments = Array.from({ length: 21 }, (_, index) => ({ amount: '1.05', method: index % 2 ? 'yape' : 'efectivo',
+    branchId, date: `2025-10-${String(index + 1).padStart(2, '0')}T12:00:00-05:00` }));
+  set('contracts', id, { businessId, branchId, createdAt: new Date('2025-09-05T12:00:00-05:00'), status: 'pendiente',
+    total: 50, paidTotal: 22.05, balance: 27.95, payments });
+  await batch.commit();
+  const original = await admin.collection('contracts').doc(id).get();
+  const writer = createProjectionStore(admin);
+  const first = await writer.sync('contracts', id);
+  const repeated = await writer.sync('contracts', id);
+  assert.equal(first.pointReads, 47, '1 contract + 21 ledger slots + 1 marker + 22 days + 2 month checkpoints');
+  assert.equal(first.writes, 25);
+  assert.equal(repeated.writes, 0);
+  assert.equal(repeated.pointReads, 23);
+  const publisher = createConsolidation(admin);
+  for (const periodKey of ['2025-09', '2025-10']) {
+    await publisher.consolidate({ businessId, periodKey, maxDocuments: 1000 }, { manual: true });
+  }
+  const snapshotId = keyOf(businessId, branchId, '2025-10');
+  const snapshot = (await admin.collection(collections.months).doc(snapshotId).get()).data();
+  assert.equal(snapshot.status, 'verified');
+  assert.equal(financial(snapshot.values).net, 2205);
+  const references = [markerRef(admin, 'contracts', id), monthState(admin, businessId, '2025-10'),
+    admin.collection(collections.days).doc(keyOf(businessId, branchId, '2025-10-01'))];
+  for (const uid of ['coverage-owner', 'coverage-cashier']) {
+    const client = env.authenticatedContext(uid).firestore();
+    await assertSucceeds(getDocFromServer(doc(client, 'contracts', id)));
+    await assertSucceeds(getDocFromServer(doc(client, collections.months, snapshotId)));
+    // Complete, valid bodies from the trusted fixture, not deliberately malformed mocks.
+    for (const reference of references) {
+      const body = (await reference.get()).data();
+      await assertFails(getDocFromServer(doc(client, reference.path)));
+      await assertFails(setDoc(doc(client, reference.path), body));
+    }
+    await assertFails(setDoc(doc(client, collections.months, snapshotId), snapshot));
+    await assertFails(setDoc(doc(client, collections.months, snapshotId + '-omitted'), {
+      ...snapshot, values: snapshot.values.map(() => 0), rows: [], coverage: snapshot.coverage,
+    }));
+    await assertFails(runTransaction(client, async tx => {
+      await tx.get(doc(client, 'contracts', id));
+      tx.set(doc(client, collections.months, snapshotId), snapshot);
+    }));
+  }
+  const preserved = await admin.collection('contracts').doc(id).get();
+  assert.equal(hash(preserved.data()), hash(original.data()));
+  assert.ok(preserved.updateTime.isEqual(original.updateTime));
+  t.diagnostic('P31_NORMAL_WRITER ' + JSON.stringify({ firstPointReads: first.pointReads, firstWrites: first.writes,
+    repeatPointReads: repeated.pointReads, repeatWrites: repeated.writes, normalClientWrites: 0,
+    trustedWriterRequired: true, sourceDocumentsModified: 0 }));
 });
 
 it('P31 idles for 24 hours with 500 contracts and rotates due audits within a single tenant budget', async t => {

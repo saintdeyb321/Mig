@@ -447,7 +447,7 @@ function summaryDocumentsFixture(now) {
 
 it('P31 exports verified global monthly and annual PDF/XLSX without historical reads or dashboard additions', { timeout: 90000 }, async () => {
   await mkdir(artifacts, { recursive: true });
-  await runExcelFixture({ summary: true, mode: 'preview', async inspectPage(page, { downloads }) {
+  await runExcelFixture({ summary: false, mode: 'preview', async inspectPage(page, { downloads }) {
     const ev = evaluate(page);
     await ev(documents => {
       const fixture = window.__excelFixture;
@@ -530,7 +530,7 @@ it('P31 exports verified global monthly and annual PDF/XLSX without historical r
   } });
 });
 
-it('P31 gate OFF and missing snapshots block dashboard and exports without historical options', { timeout: 90000 }, async () => {
+it('P31 missing snapshots block dashboard and exports without a gate or historical options', { timeout: 90000 }, async () => {
   await runExcelFixture({ oldSummary: true, async inspectPage(page, { downloads, responses }) {
     const ev = evaluate(page), press = click(page), error = alert(ev);
     await select(ev)('mes');
@@ -539,8 +539,8 @@ it('P31 gate OFF and missing snapshots block dashboard and exports without histo
     await error('Resumen no disponible');
     assert.equal(await ev(() => window.__excelFixture.reads), 0);
     assert.deepEqual(await ev(() => window.__excelFixture.readerCalls ?? {}), {});
-    assert.equal(await ev(() => window.__excelFixture.summaryPoints?.length ?? 0), 0);
-    assert.deepEqual(responses, [], 'A disabled summary must not load the Excel generator');
+    assert.equal(await ev(() => window.__excelFixture.summaryPoints?.length ?? 0), 1);
+    assert.deepEqual(responses, [], 'A missing summary must not load the Excel generator');
     assert.deepEqual(await downloadNames(downloads), []);
     await ev(() => {
       sessionStorage.setItem('migapos:report-filter:original:centro', 'mes');
@@ -554,7 +554,7 @@ it('P31 gate OFF and missing snapshots block dashboard and exports without histo
     await press(primary);
     await error('Resumen no disponible');
     await ev(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Este año').click());
-    assert.equal(await ev(() => window.__excelFixture.summaryPoints?.length ?? 0), 0);
+    assert.ok((await ev(() => window.__excelFixture.summaryPoints?.length ?? 0)) > 1);
   } });
   await runExcelFixture({ summary: true, async inspectPage(page, { downloads }) {
     const ev = evaluate(page), error = alert(ev);

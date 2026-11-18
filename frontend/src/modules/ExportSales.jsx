@@ -15,7 +15,7 @@ const statusMessages = {
 };
 
 function errorCopy({ kind, error, offline }, diagnostic) {
-  if (error.code === 'report-summary-pending') return ['Resumen no disponible', 'Comprueba la conexión o solicita la actualización administrativa del período.'];
+  if (error.code === 'report-summary-pending') return ['Resumen no disponible', 'Comprueba la conexión y la cobertura verificada del período.'];
   if (error.code === 'report-timeout') return [kind === 'module-load' ? 'No se pudo preparar Excel' : 'No se pudo completar la consulta',
     'La respuesta tardó más de lo esperado. Comprueba la conexión y vuelve a intentar.'];
   if (error.code === 'report-stale') return ['Los datos del informe caducaron', 'Vuelve a preparar el informe para verificar los movimientos.'];

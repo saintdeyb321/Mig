@@ -1,7 +1,7 @@
 import { doc, getDocFromServer } from 'firebase/firestore';
 import { checkedRead } from '../../../core/firebase/readDiagnostics.js';
 import { collections, expectedMonths, keyOf, schemaVersion, validScopePart, failReport, maxProductPages,
-  productPageSize, checkVector, monthInLima, total, rankProducts } from '../../../../../functions/src/reports/summaryModel.js';
+  productPageSize, checkVector, dayInLima, monthInLima, total, rankProducts } from '../../../../../functions/src/reports/summaryModel.js';
 
 const ttl = 30000;
 const pending = () => failReport('report-summary-pending', 'Resumen no disponible. Falta verificar o actualizar el período.');
@@ -93,7 +93,7 @@ function validateRoot(root, { businessId, branchId, month, asOf }) {
   for (const row of root.rows) {
     const id = keyOf(row.branchId, row.day);
     if (!validScopePart(row.branchId) || row.branchId === 'global' || (branchId !== 'global' && row.branchId !== branchId)
-      || !validDay(row.day) || !row.day.startsWith(month + '-') || keys.has(id)) throw pending();
+      || !validDay(row.day) || !row.day.startsWith(month + '-') || row.day > dayInLima(root.calculatedThrough) || keys.has(id)) throw pending();
     keys.add(id);
     checkVector(row.values);
   }

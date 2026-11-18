@@ -7,18 +7,17 @@
  * @typedef {{kind: 'summary', representation: 'snapshots', readSummary: Function}} SummaryReportSource
  */
 
-export const reportExportSummariesEnabled = import.meta.env?.VITE_REPORT_EXPORT_SUMMARIES_ENABLED === 'true';
 export const isSummaryPeriod = period => ['mes', 'todo'].includes(period.filter);
 
 /** @returns {DetailedReportSource | SummaryReportSource} */
-export function reportSourceForPeriod(period, reads, { readSummary, enabled = reportExportSummariesEnabled } = {}) {
+export function reportSourceForPeriod(period, reads, { readSummary } = {}) {
   if (isSummaryPeriod(period)) return { kind: 'summary', representation: 'snapshots', readSummary: async options => {
-    if (!enabled || !readSummary) throw Object.assign(new Error('Resumen no disponible. Pendiente de actualización administrativa.'),
+    if (!readSummary) throw Object.assign(new Error('Resumen no disponible. Falta una fuente verificada.'),
       { code: 'report-summary-pending' });
     try { return await readSummary(options); }
     catch (error) {
       if (error.name === 'AbortError' || error.code === 'report-summary-pending') throw error;
-      throw Object.assign(new Error('Resumen no disponible. Comprueba la conexión o solicita actualización administrativa.'),
+      throw Object.assign(new Error('Resumen no disponible. Comprueba la conexión y la cobertura del período.'),
         { code: 'report-summary-pending', cause: error });
     }
   } };
