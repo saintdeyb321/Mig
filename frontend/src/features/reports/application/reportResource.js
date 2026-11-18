@@ -14,7 +14,8 @@ export function createSummaryReportResource({ key, period, readSummary, onState,
   const unavailable = error => {
     if (controller.signal.aborted) return;
     onState({ key, model: null, isLoading: false, updatedAt: lastCutoff,
-      queryError: { code: 'report-summary-pending', cause: error } });
+      queryError: { code: ['report-bootstrap-required', 'report-history-unverified', 'report-integrity'].includes(error.code)
+        ? error.code : 'report-summary-pending', cause: error } });
   };
   async function refresh() {
     if (controller.signal.aborted || pending) return pending;

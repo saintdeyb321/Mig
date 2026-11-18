@@ -45,6 +45,7 @@ export async function runExcelFixture({ mode = 'dev', inspectPage, fault = '', f
       if (id === main) return `import ${JSON.stringify(entry)};`;
       if (matches('reports/infrastructure/summaryRepository.js', id)) return `
         import { createVerifiedSummaryReader } from './summaryReader.js';
+        export async function prepareReportHistory() { throw new Error('Migration is not part of this isolated export fixture.'); }
         export async function readVerifiedSummary(args) {
           const { businessId, branchId, period } = args;
           const fixture = window.__excelFixture;

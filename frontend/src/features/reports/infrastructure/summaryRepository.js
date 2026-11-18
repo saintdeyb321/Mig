@@ -1,4 +1,6 @@
 import { auth, db } from '../../../core/firebase/client.js';
-import { createVerifiedSummaryReader } from './summaryReader.js';
+import { createSparkSummaryReader } from './sparkSummaryReader.js';
+import { createSparkReportMigration } from './sparkReportMigration.js';
 
-export const readVerifiedSummary = createVerifiedSummaryReader(db, { currentUid: () => auth.currentUser?.uid });
+export const readVerifiedSummary = createSparkSummaryReader(db, { currentUid: () => auth.currentUser?.uid });
+export const prepareReportHistory = createSparkReportMigration(db, { currentUid: () => auth.currentUser?.uid });

@@ -25,7 +25,8 @@ export function createBranchWriter(database, { sdk = firestore, currentUser } = 
       }
       if (inventory) tx.update(licenseRef, { ...inventory,
         branchQuotaBranchId: id, branchQuotaUpdatedAt: sdk.serverTimestamp() });
-      if (create) tx.set(ref, { ...data, sparkCashVersion: 1, branchLifecycleVersion: 1 });
+      if (create) tx.set(ref, { ...data, sparkCashVersion: 1, branchLifecycleVersion: 1,
+        reportProtocol: 1, reportHistory: 'new-branch', reportSince: sdk.serverTimestamp(), createdAt: sdk.serverTimestamp() });
       else tx.update(ref, data);
     });
     return id;

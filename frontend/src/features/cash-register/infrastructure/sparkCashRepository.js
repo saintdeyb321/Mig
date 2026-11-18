@@ -1,6 +1,7 @@
 import { isBranchOperational } from '../../branches/domain/branchPolicy.js';
 import { cashExpiryWindow, NEW_CASH_DURATION_HOURS } from '../domain/cashExpiry.js';
 import * as firestore from 'firebase/firestore';
+import { runSparkReportTransaction } from '../../reports/infrastructure/sparkReportTransaction.js';
 
 export async function cashLockId(businessId, branchId) {
   if (![businessId, branchId].every(value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value))) throw new Error('Identificadores de sede/negocio no compatibles con el protocolo de caja Spark.');
@@ -9,7 +10,8 @@ export async function cashLockId(businessId, branchId) {
 }
 
 export function createSparkCashRepository(database, { currentUser, beforeRollover, sdk = firestore } = {}) {
-  const { doc, runTransaction, getDocFromServer, serverTimestamp, Timestamp } = sdk;
+  const { doc, getDocFromServer, serverTimestamp, Timestamp } = sdk;
+  const runTransaction = (db, work) => runSparkReportTransaction(db, sdk, work);
   const confirmed = snapshot => !snapshot.metadata?.fromCache && !snapshot.metadata?.hasPendingWrites;
   const deadline = session => {
     const window = cashExpiryWindow(session);

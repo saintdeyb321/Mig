@@ -16,7 +16,7 @@ export function reportSourceForPeriod(period, reads, { readSummary } = {}) {
       { code: 'report-summary-pending' });
     try { return await readSummary(options); }
     catch (error) {
-      if (error.name === 'AbortError' || error.code === 'report-summary-pending') throw error;
+      if (error.name === 'AbortError' || ['report-summary-pending', 'report-bootstrap-required', 'report-history-unverified', 'report-integrity'].includes(error.code)) throw error;
       throw Object.assign(new Error('Resumen no disponible. Comprueba la conexión y la cobertura del período.'),
         { code: 'report-summary-pending', cause: error });
     }

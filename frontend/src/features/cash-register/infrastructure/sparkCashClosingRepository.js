@@ -9,7 +9,8 @@ import { contractAmount } from '../../../../../functions/src/contracts/domain/co
 
 // A bounded client estimate is useful for counting cash; it is never a certified reconciliation.
 export function createSparkCashClosingRepository(database, { currentUser, readSales, readPayments, sdk = firestoreSDK } = {}) {
-  const { doc, getDocFromServer, runTransaction, serverTimestamp } = sdk;
+  const { doc, getDocFromServer, serverTimestamp } = sdk;
+  const runTransaction = (db, work) => runSparkReportTransaction(db, sdk, work);
   const who = () => { const uid = currentUser()?.uid; if (!uid) throw new Error('Inicia sesión.'); return uid; };
   async function preview(id, declaredAmount) {
     const uid = who(); contractAmount(declaredAmount);
@@ -87,3 +88,4 @@ export function createSparkCashClosingRepository(database, { currentUser, readSa
     return verifyClose();
   } };
 }
+import { runSparkReportTransaction } from '../../reports/infrastructure/sparkReportTransaction.js';

@@ -15,6 +15,9 @@ const statusMessages = {
 };
 
 function errorCopy({ kind, error, offline }, diagnostic) {
+  if (['report-bootstrap-required', 'report-history-unverified'].includes(error.code)) return ['Histórico pendiente de certificación',
+    'Prepara el inventario desde Dashboard en una sede física. No se exportan totales parciales como si fueran completos.'];
+  if (error.code === 'report-integrity') return ['No se pudo verificar el agregado', 'No se generó el informe. Comprueba la conexión y solicita revisar la integridad del agregado.'];
   if (error.code === 'report-summary-pending') return ['Resumen no disponible', 'Comprueba la conexión y la cobertura verificada del período.'];
   if (error.code === 'report-timeout') return [kind === 'module-load' ? 'No se pudo preparar Excel' : 'No se pudo completar la consulta',
     'La respuesta tardó más de lo esperado. Comprueba la conexión y vuelve a intentar.'];

@@ -1,4 +1,5 @@
 import { writeOperationNotice } from '../../notifications/infrastructure/sparkOperationNotice.js';
+import { runSparkReportTransaction } from '../../reports/infrastructure/sparkReportTransaction.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { canonicalSale, canonicalNewSale, sameSaleOperation, SaleError } from '../domain/saleModel.js';
 import { VERIFIED_ATOMIC_LINE_LIMIT, checkoutBlockReason } from '../domain/checkoutPolicy.js';
@@ -7,7 +8,8 @@ import { cashLockId } from '../../cash-register/infrastructure/sparkCashReposito
 
 export const SPARK_TICKET_LIMIT = VERIFIED_ATOMIC_LINE_LIMIT;
 export function createSparkSalesRepository(database, { currentUser, sdk = firestoreSDK, protocolVersion = 2 } = {}) {
-  const { doc, runTransaction, serverTimestamp, getDocFromServer } = sdk;
+  const { doc, serverTimestamp, getDocFromServer } = sdk;
+  const runTransaction = (db, work) => runSparkReportTransaction(db, sdk, work);
   const identity = sale => {
     if (currentUser()?.uid !== sale.userId) throw new SaleError('session-changed', 'La sesión cambió; conserva el pendiente para revisión.');
   };

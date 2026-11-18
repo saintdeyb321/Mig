@@ -93,7 +93,8 @@ export function createSparkAdministrationRepository(database, { currentUser, sdk
       tx.set(opRef, { ...input, expiry, createdAt });
       tx.set(doc(database, 'tenants', businessId), { businessId, businessName: input.businessName, ownerEmail, status: 'active', schemaVersion: 1, operationId, createdAt });
       tx.set(doc(database, 'licenses', businessId), { businessId, businessName: input.businessName, status: 'activa', tenantStatus: 'active', expiry, ...limits, activeBranchIds: [branchId], registeredBranchIds: [branchId], branchQuotaVersion: 1, registeredBranchQuotaVersion: 1, operationId, createdAt });
-      tx.set(doc(database, 'branches', branchId), { businessId, name: 'Sede Principal', address: 'Dirección por definir', phone: '', status: 'activo', sparkCashVersion: 1, branchLifecycleVersion: 1, operationId, createdAt });
+      tx.set(doc(database, 'branches', branchId), { businessId, name: 'Sede Principal', address: 'Dirección por definir', phone: '', status: 'activo', sparkCashVersion: 1, branchLifecycleVersion: 1,
+        reportProtocol: 1, reportHistory: 'new-branch', reportSince: createdAt, operationId, createdAt });
       tx.set(doc(database, 'settings', businessId), { businessId, operationId, companyData: { razonSocial: input.businessName, ruc: '', direccion: 'Dirección por definir', telefono: '' } });
       tx.set(inviteRef, { businessId, email: ownerEmail, firstName: input.firstName, lastName: input.lastName, role: 'dueño', branchId: 'global',
         shiftStart: null, shiftEnd: null, status: 'activo', createdAt, operationId });

@@ -4,7 +4,7 @@ import { reportPeriod, reportDay } from '../domain/reportPeriod.js';
 import { emptyMetrics } from '../domain/reportTotals.js';
 import { createReportCache, reportCacheKey, createReportResource, createSummaryReportResource, invalidateReportScope, reportRevision, REPORT_TTL } from '../application/reportResource.js';
 import { isSummaryPeriod, reportSourceForPeriod } from '../application/reportSources.js';
-import { readVerifiedSummary } from '../infrastructure/summaryRepository.js';
+import { readVerifiedSummary, prepareReportHistory } from '../infrastructure/summaryRepository.js';
 
 import { useSessionResources, useSessionState } from '../../../core/session/sessionResourceHooks.js';
 import { sessionReportReads } from '../infrastructure/sessionReportReads.js';
@@ -29,6 +29,10 @@ export const useReports = user => {
   const revision = useSyncExternalStore(revisionCell.subscribe, revisionCell.get);
   const summaryRevision = isSummaryPeriod(period) ? revision : 0;
   const stateKey = isSummaryPeriod(period) ? JSON.stringify([key, user?.uid, summaryRevision]) : key;
+  const historyScope = useRef(stateKey);
+  historyScope.current = stateKey;
+  const historyBusy = useRef(false);
+  const [historyState, setHistoryState] = useState(null);
   const [state, setState] = useState({ key: null, isLoading: true });
   const resource = useRef(null);
   useEffect(() => {
@@ -54,7 +58,21 @@ export const useReports = user => {
     cache.invalidate(key);
     if (!isSummaryPeriod(period)) return resource.current?.refresh(true);
   }, [resources, cache, user?.businessId, activeBranchId, key, period]);
+  const prepareHistory = async () => {
+    if (historyBusy.current || user?.role !== 'dueño' || !activeBranchId || activeBranchId === 'global') return;
+    historyBusy.current = true;
+    setHistoryState({ key: stateKey, busy: true });
+    try {
+      const result = await prepareReportHistory({ uid: user.uid, businessId: user.businessId, branchId: activeBranchId,
+        maxDocuments: 100, signal: resources.signal });
+      if (historyScope.current === stateKey) setHistoryState({ key: stateKey, busy: false, message: result.message });
+    } catch (error) {
+      if (historyScope.current === stateKey && !resources.signal.aborted) setHistoryState({ key: stateKey, busy: false, message: error.message });
+    } finally { historyBusy.current = false; }
+  };
   return { contractCounts: model?.contractCounts ?? { pending: 0, delivered: 0, cancelled: 0, withDebt: 0 }, summary: model?.summary ?? emptyMetrics(), topProducts: model?.topProducts ?? [], chartData: model?.chartData ?? [],
     hasData: Boolean(model), isRefreshing: current.isRefreshing === true, isLoading: current.isLoading, error: current.queryError ?? current.error, timeFilter, setTimeFilter, refreshReport, updatedAt: current.updatedAt,
+    prepareHistory, canPrepareHistory: user?.role === 'dueño' && activeBranchId !== 'global',
+    historyState: historyState?.key === stateKey ? historyState : null,
     warning: model?.view.warning, maxProductQty: Math.max(1, ...(model?.topProducts ?? []).map(row => row.qty)) };
 };

@@ -305,6 +305,155 @@ service cloud.firestore {
       return superadmin() ? platformDataReader() : (sameTenantResource() && branchAccess(resource.data.get('branchId', null)));
     }
 
+// Spark report induction: source -> daily aggregate -> monthly aggregate.
+    // Source revisions, server timestamps and before/after deltas prevent replay.
+    function reportZeros() { return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; }
+    function reportAdd(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3], a[4] + b[4], a[5] + b[5], a[6] + b[6], a[7] + b[7], a[8] + b[8], a[9] + b[9], a[10] + b[10], a[11] + b[11], a[12] + b[12], a[13] + b[13], a[14] + b[14], a[15] + b[15], a[16] + b[16], a[17] + b[17], a[18] + b[18], a[19] + b[19], a[20] + b[20], a[21] + b[21], a[22] + b[22], a[23] + b[23], a[24] + b[24], a[25] + b[25], a[26] + b[26], a[27] + b[27], a[28] + b[28], a[29] + b[29], a[30] + b[30], a[31] + b[31]]; }
+    function reportSubtract(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3], a[4] - b[4], a[5] - b[5], a[6] - b[6], a[7] - b[7], a[8] - b[8], a[9] - b[9], a[10] - b[10], a[11] - b[11], a[12] - b[12], a[13] - b[13], a[14] - b[14], a[15] - b[15], a[16] - b[16], a[17] - b[17], a[18] - b[18], a[19] - b[19], a[20] - b[20], a[21] - b[21], a[22] - b[22], a[23] - b[23], a[24] - b[24], a[25] - b[25], a[26] - b[26], a[27] - b[27], a[28] - b[28], a[29] - b[29], a[30] - b[30], a[31] - b[31]]; }
+    function reportDate(t) {
+      let d = t - duration.value(5, 'h');
+      return string(d.year()) + '-' + (d.month() < 10 ? '0' : '') + string(d.month())
+        + '-' + (d.day() < 10 ? '0' : '') + string(d.day());
+    }
+    function reportMonth(day) { return day.split('-')[0] + '-' + day.split('-')[1]; }
+    function reportState(d) {
+      return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, d.status in ['cancelado', 'entregado', 'entregado_con_deuda'] ? 0 : 1, d.status in ['entregado', 'entregado_con_deuda'] ? 1 : 0, d.status == 'cancelado' ? 1 : 0, d.status != 'cancelado' && d.balance > 0 ? 1 : 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    }
+    function reportFirst(kind, d, old) {
+      let captured = old != null && old.data.get('reporting', {}).get('version', 0) == 1;
+      let cash = kind == 'sales' ? (d.payment == 'efectivo' ? math.round(d.total * 100)
+        : d.payment == 'mixto' ? math.round(d.splitPayments.efectivo * 100) : 0) : 0;
+      return kind == 'sales' ? [cash, math.round(d.total * 100) - cash, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        : kind == 'pos_voids' ? [0, 0, math.round(d.cashAmount * 100), math.round(d.digitalAmount * 100), 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        : kind == 'contracts' ? reportSubtract(reportState(d), captured ? reportState(old.data) : reportZeros())
+        : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, captured ? 0 : 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    }
+    function reportOrderMoney(d, old) {
+      let prior = old == null ? {'efectivo': 0, 'yape': 0, 'plin': 0} : old.data.paidByMethod;
+      let cash = math.round(d.paidByMethod.efectivo * 100) - math.round(prior.efectivo * 100);
+      let digital = math.round(d.paidByMethod.yape * 100) + math.round(d.paidByMethod.plin * 100)
+        - math.round(prior.yape * 100) - math.round(prior.plin * 100);
+      let cancelled = old != null && d.status == 'cancelado' && old.data.status != 'cancelado';
+      return [0, 0, 0, 0, old == null ? cash : 0, old == null ? digital : 0, old != null && !cancelled ? cash : 0, old != null && !cancelled ? digital : 0, cancelled ? cash : 0, cancelled ? digital : 0, 0, 0, old == null && cash + digital > 0 ? 1 : 0, old != null && !cancelled && cash + digital > 0 ? 1 : 0, cancelled ? (prior.efectivo > 0 ? 1 : 0) + (prior.yape > 0 ? 1 : 0) + (prior.plin > 0 ? 1 : 0) : 0, 0, 0, 0, 0, 0, cancelled ? 1 : 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    }
+    function reportSecond(kind, d, old) {
+      return kind == 'contracts' ? reportOrderMoney(d, old)
+        : kind == 'cash_sessions' && d.status != 'open' ? reportFinalCash(d) : reportZeros();
+    }
+    function reportFinalCash(d) {
+      let closed = d.status in ['closed', 'closed_with_discrepancy'];
+      let expired = d.status == 'expired_unreconciled';
+      let difference = d.get('closeEstimate', {}).get('difference', 0);
+      return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (closed ? 1 : 0), 0, ((closed && difference != null && difference > 0) ? 1 : 0), ((closed && difference != null && difference < 0) ? 1 : 0), (expired ? 1 : 0), ((expired || (closed && (difference == null || difference != 0))) ? 1 : 0), (closed ? 1 : 0), 0, 0, 0];
+    }
+    function reportHasSource(data, kind, id, revision) {
+      return data.updatedAt == request.time
+        && data.sources.hasAny([{'collection': kind, 'id': id, 'revision': revision}]);
+    }
+    function reportCapture(kind, id, d, old) {
+      let branch = get(/databases/$(database)/documents/branches/$(d.branchId)).data;
+      let r = d.get('reporting', null);
+      let firstDay = kind == 'contracts' ? reportDate(d.createdAt)
+        : kind == 'cash_sessions' ? reportDate(d.openedAt) : reportDate(request.time);
+      let secondDay = kind == 'cash_sessions' && d.status == 'expired_unreconciled'
+        ? reportDate(d.expiredAt) : reportDate(request.time);
+      return branch.get('reportProtocol', 0) != 1 && r == null
+        || (r is map && r.keys().hasOnly(['version', 'revision', 'rows'])
+          && r.version == 1 && r.revision is int
+          && r.revision == (old == null ? 0 : old.data.get('reporting', {}).get('revision', 0)) + 1
+          && r.rows is list && r.rows.size() == 2
+          && r.rows[0] == {'day': firstDay, 'values': reportFirst(kind, d, old)}
+          && r.rows[1] == {'day': secondDay, 'values': reportSecond(kind, d, old)}
+          && reportHasSource(getAfter(/databases/$(database)/documents/spark_report_days_v1/$(d.businessId + ':' + d.branchId + ':' + firstDay)).data,
+            kind, id, r.revision));
+    }
+    function reportSourcePath(s) {
+      return /databases/$(database)/documents/$(s.collection)/$(s.id);
+    }
+    function reportFreshSource(s, d) {
+      let path = reportSourcePath(s);
+      let old = get(path);
+      let next = getAfter(path).data;
+      let clock = s.collection == 'sales' ? next.confirmedAt : s.collection == 'pos_voids' ? next.occurredAt
+        : s.collection == 'contracts' ? next.updatedAt
+        : next.status == 'open' ? next.openedAt : next.status == 'expired_unreconciled' ? next.recoveredAt : next.closedAt;
+      return s.keys().hasOnly(['collection', 'id', 'revision'])
+        && s.collection in ['sales', 'pos_voids', 'contracts', 'cash_sessions']
+        && next.businessId == d.businessId && next.branchId == d.branchId && clock == request.time
+        && next.reporting.version == 1 && s.revision == next.reporting.revision
+        && s.revision == (old == null ? 0 : old.data.get('reporting', {}).get('revision', 0)) + 1;
+    }
+    function reportSourceData(d, index) {
+      return d.sources.size() <= index ? null : getAfter(reportSourcePath(d.sources[index])).data;
+    }
+    function reportAt(source, day) {
+      return source == null ? reportZeros()
+        : reportAdd(source.reporting.rows[0].day == day ? source.reporting.rows[0].values : reportZeros(),
+          source.reporting.rows[1].day == day ? source.reporting.rows[1].values : reportZeros());
+    }
+    function reportRow(d, before, first, second, day, daily) {
+      let belongs = daily ? day == d.period : reportMonth(day) == d.period;
+      return belongs ? day in d.rows && d.rows[day] == reportAdd(before.rows.get(day, reportZeros()),
+        reportAdd(reportAt(first, day), reportAt(second, day))) : !(day in d.rows);
+    }
+    function reportItem(d, before, source, kind, index) {
+      return !(kind in ['sales', 'pos_voids']) || source.items.size() <= index
+        || reportRealItem(d, before, source.items[index], kind);
+    }
+    function reportRealItem(d, before, item, kind) {
+      let prior = before.products.get(item.id, [item.name, 0, 0]);
+      let sign = kind == 'pos_voids' ? -1 : 1;
+      return d.products[item.id] == [prior[0], prior[1] + sign * item.qty,
+        prior[2] + sign * math.round(item.price * 100) * item.qty];
+    }
+    function reportPairDay(d, source, entry, row) {
+      let day = source.reporting.rows[row].day;
+      let needed = row == 0 || source.reporting.rows[row].values != reportZeros();
+      return !needed || reportHasSource(getAfter(/databases/$(database)/documents/spark_report_days_v1/$(d.businessId + ':' + d.branchId + ':' + day)).data,
+        entry.collection, entry.id, entry.revision);
+    }
+    function reportDailyParents(d, source, entry) {
+      return reportHasSource(getAfter(/databases/$(database)/documents/spark_report_months_v1/$(d.businessId + ':' + d.branchId + ':' + reportMonth(d.period))).data,
+        entry.collection, entry.id, entry.revision)
+        && reportPairDay(d, source, entry, 0) && reportPairDay(d, source, entry, 1);
+    }
+    function reportAggregateWrite(id, daily) {
+      let d = request.resource.data;
+      let before = resource == null ? {'rows': {}, 'products': {}} : resource.data;
+      let first = reportSourceData(d, 0);
+      let second = reportSourceData(d, 1);
+      let days = [first.reporting.rows[0].day, first.reporting.rows[1].day].concat(
+        second == null ? [] : [second.reporting.rows[0].day, second.reporting.rows[1].day]);
+      let kind = d.sources[0].collection;
+      let productIds = kind in ['sales', 'pos_voids'] ? first.stockVersions.keys() : [];
+      return sameTenantIncoming() && tenantEnabled(d.businessId) && branchAccess(d.branchId)
+        && d.keys().hasOnly(['version', 'businessId', 'branchId', 'period', 'rows', 'products', 'sources', 'updatedAt'])
+        && d.version == 1 && d.updatedAt == request.time
+        && id == d.businessId + ':' + d.branchId + ':' + d.period
+        && d.period.matches(daily ? '^\\d{4}-\\d{2}-\\d{2}$' : '^\\d{4}-\\d{2}$')
+        && (daily ? d.period in days : d.period in [reportMonth(days[0]), reportMonth(days[1]),
+          reportMonth(days[days.size() - 1])])
+        && d.sources is list && d.sources.size() >= 1 && d.sources.size() <= 2
+        && reportFreshSource(d.sources[0], d)
+        && (second == null || (kind == 'cash_sessions' && d.sources[1].collection == 'cash_sessions'
+          && d.sources[0].id != d.sources[1].id && reportFreshSource(d.sources[1], d)))
+        && d.rows is map && d.rows.size() <= (daily ? 1 : 31) && d.products is map && d.products.size() <= 6000
+        && d.rows.diff(before.rows).affectedKeys().hasOnly(days)
+        && d.products.diff(before.products).affectedKeys().hasOnly(productIds)
+        && reportRow(d, before, first, second, days[0], daily) && reportRow(d, before, first, second, days[1], daily)
+        && (second == null || (reportRow(d, before, first, second, days[2], daily) && reportRow(d, before, first, second, days[3], daily)))
+        && reportItem(d, before, first, kind, 0) && reportItem(d, before, first, kind, 1)
+        && reportItem(d, before, first, kind, 2) && reportItem(d, before, first, kind, 3)
+        && reportItem(d, before, first, kind, 4) && reportItem(d, before, first, kind, 5)
+        && reportItem(d, before, first, kind, 6) && reportItem(d, before, first, kind, 7)
+        && (!daily || (reportDailyParents(d, first, d.sources[0])
+          && (second == null || reportDailyParents(d, second, d.sources[1]))));
+    }
+    function reportPointReader(id) {
+      let parts = id.split(':');
+      return activeUser() && parts.size() == 3 && parts[0] == currentBusiness()
+        && branchAccess(parts[1]) && parts[1] != 'global' && tenantEnabled(currentBusiness());
+    }
     function verifiedReportState(data) {
       let state = get(/databases/$(database)/documents/report_projection_state_v1/$(data.stateId)).data;
       let hold = 'hold:' + data.businessId;
@@ -385,8 +534,10 @@ service cloud.firestore {
       let d = request.resource.data;
       let op = provisioning(d);
       return newProvision(d) && id == op.branchId
-        && d == { 'businessId': op.businessId, 'name': 'Sede Principal', 'address': 'Dirección por definir',
-          'phone': '', 'status': 'activo', 'sparkCashVersion': 1, 'branchLifecycleVersion': 1, 'operationId': op.operationId, 'createdAt': request.time };
+        && d.diff({ 'businessId': op.businessId, 'name': 'Sede Principal', 'address': 'Dirección por definir',
+          'phone': '', 'status': 'activo', 'sparkCashVersion': 1, 'branchLifecycleVersion': 1, 'operationId': op.operationId, 'createdAt': request.time }).affectedKeys()
+          .hasOnly(['reportProtocol', 'reportHistory', 'reportSince'])
+        && (d.get('reportProtocol', 0) == 0 || (d.reportProtocol == 1 && d.reportHistory == 'new-branch' && d.reportSince == request.time));
     }
     function provisionSettings(id) {
       let d = request.resource.data;
@@ -523,7 +674,9 @@ service cloud.firestore {
       let d = request.resource.data;
       return tenantCreator() && validNamedRecord()
         && d.sparkCashVersion == 1 && d.branchLifecycleVersion == 1
-        && d.keys().hasOnly(['businessId', 'name', 'address', 'phone', 'status', 'yapeQrUrl', 'createdAt', 'updatedAt', 'sparkCashVersion', 'branchLifecycleVersion'])
+        && d.keys().hasOnly(['businessId', 'name', 'address', 'phone', 'status', 'yapeQrUrl', 'createdAt', 'updatedAt', 'sparkCashVersion', 'branchLifecycleVersion', 'reportProtocol', 'reportHistory', 'reportSince'])
+        && (d.get('reportProtocol', 0) == 0 || (d.reportProtocol == 1 && d.reportHistory == 'new-branch'
+          && d.reportSince == request.time && d.createdAt == request.time))
         && boundedBase64Image(d.get('yapeQrUrl', null), 393216)
         && branchInventoryChange(id, d, false, true);
     }
@@ -537,6 +690,12 @@ service cloud.firestore {
             (d.status == 'inactivo' && resource.data.get('branchLifecycleVersion', 0) == 1
               && !exists(/databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, id)))
               && branchInventoryChange(id, d, true, false))));
+    }
+    function reportBranchActivation() {
+      let d = request.resource.data;
+      return tenantManager() && businessUnchanged() && resource.data.get('reportProtocol', 0) != 1
+        && d.diff(resource.data).affectedKeys().hasOnly(['reportProtocol', 'reportHistory', 'reportSince'])
+        && d.reportProtocol == 1 && d.reportHistory == 'pending' && d.reportSince == request.time;
     }
 
     function cashLockId(businessId, branchId) {
@@ -577,7 +736,7 @@ service cloud.firestore {
       let d = request.resource.data;
       let lock = getAfter(/databases/$(database)/documents/active_cash_sessions/$(cashLockId(d.businessId, d.branchId))).data;
       return cashActor(d.businessId, d.branchId) && sessionId.matches('^[A-Za-z0-9_-]{16,100}$')
-        && d.keys().hasOnly(['businessId', 'branchId', 'userId', 'cashierName', 'status', 'openingAmount', 'openingNote', 'openedAt', 'syncedAt', 'runtime', 'durationHours'])
+        && d.keys().hasOnly(['businessId', 'branchId', 'userId', 'cashierName', 'status', 'openingAmount', 'openingNote', 'openedAt', 'syncedAt', 'runtime', 'durationHours', 'reporting'])
         && d.userId == request.auth.uid && d.status == 'open' && d.runtime == 'spark'
         && d.durationHours is int && d.durationHours == 14
         && d.openingAmount is number && d.openingAmount >= 0 && d.openingAmount <= 1000000000
@@ -624,7 +783,7 @@ service cloud.firestore {
         && before.get('closeEstimate', null) == null && before.get('difference', null) == null
         && request.time >= cashDeadline(before)
         && after.diff(before).affectedKeys().hasOnly(['status', 'expiredAt', 'recoveredAt', 'recoveredBy',
-          'recoveryReason', 'recoverySessionId', 'reconciliationPending', 'declaredAmount', 'difference'])
+          'recoveryReason', 'recoverySessionId', 'reconciliationPending', 'declaredAmount', 'difference', 'reporting'])
         && after.status == 'expired_unreconciled' && after.expiredAt == cashDeadline(before)
         && after.recoveredAt == request.time && after.recoveredBy == request.auth.uid
         && after.recoveryReason == 'shift-time-limit' && after.reconciliationPending == true
@@ -644,7 +803,7 @@ service cloud.firestore {
       return cashActor(previous.businessId, previous.branchId) && previous.runtime == 'spark' && previous.status == 'open'
         && (!previous.keys().hasAny(['durationHours']) || (validCashDuration(previous) && request.time < cashDeadline(previous)))
         && (previous.userId == request.auth.uid || currentRole() == 'dueño')
-        && d.diff(previous).affectedKeys().hasOnly(['status', 'declaredAmount', 'closingNote', 'closedAt', 'closedBy', 'reconciliationPending', 'closeEstimate'])
+        && d.diff(previous).affectedKeys().hasOnly(['status', 'declaredAmount', 'closingNote', 'closedAt', 'closedBy', 'reconciliationPending', 'closeEstimate', 'reporting'])
         && d.closedAt == request.time && d.closedBy == request.auth.uid && d.reconciliationPending == true
         && cents(d.declaredAmount) && d.closingNote is string && d.closingNote.size() <= 2000
         && d.closeEstimate.authority == 'client-estimate' && d.closeEstimate.reconciliationPending == true
@@ -721,7 +880,7 @@ service cloud.firestore {
     }
     function groupedSaleReceipt(d, id) {
       return saleContext(d) && d.keys().hasOnly(['saleId', 'localId', 'idempotencyKey', 'version', 'businessId', 'branchId', 'userId', 'sessionId',
-          'items', 'total', 'totalCost', 'grossProfit', 'payment', 'amountPaid', 'change', 'splitPayments', 'createdAt', 'queuedAt', 'origin', 'cashierName', 'productIds', 'stockVersions', 'confirmedAt', 'status', 'atomicProtocol'])
+          'items', 'total', 'totalCost', 'grossProfit', 'payment', 'amountPaid', 'change', 'splitPayments', 'createdAt', 'queuedAt', 'origin', 'cashierName', 'productIds', 'stockVersions', 'confirmedAt', 'status', 'atomicProtocol', 'reporting'])
         && d.saleId == id && d.localId == id && d.idempotencyKey == id && d.version == 1
         && d.origin == 'online' && d.status == 'confirmed' && d.confirmedAt == request.time
         && d.createdAt is string && d.createdAt.size() <= 40 && d.queuedAt is string && d.queuedAt.size() <= 40
@@ -741,7 +900,7 @@ service cloud.firestore {
       let total = math.round(first.price * 100) * first.qty + math.round(second.price * 100) * second.qty;
       let totalCost = math.round(first.cost * 100) * first.qty + math.round(second.cost * 100) * second.qty;
       return saleContext(d) && d.keys().hasOnly(['saleId', 'localId', 'idempotencyKey', 'version', 'businessId', 'branchId', 'userId', 'sessionId',
-          'items', 'total', 'totalCost', 'grossProfit', 'payment', 'amountPaid', 'change', 'splitPayments', 'createdAt', 'queuedAt', 'origin', 'cashierName', 'productIds', 'stockVersions', 'confirmedAt', 'status'])
+          'items', 'total', 'totalCost', 'grossProfit', 'payment', 'amountPaid', 'change', 'splitPayments', 'createdAt', 'queuedAt', 'origin', 'cashierName', 'productIds', 'stockVersions', 'confirmedAt', 'status', 'reporting'])
         && d.saleId == id && d.localId == id && d.idempotencyKey == id && d.version == 1
         && d.origin == 'online' && d.status == 'confirmed' && d.confirmedAt == request.time
         && d.createdAt is string && d.createdAt.size() <= 40 && d.queuedAt is string && d.queuedAt.size() <= 40
@@ -807,7 +966,7 @@ service cloud.firestore {
       return saleContext(v) && id == v.saleId
         && source.atomicProtocol == 2 && source.status == 'confirmed' && source.businessId == v.businessId && source.branchId == v.branchId
         && source.items.size() >= 1 && source.items.size() <= 8
-        && v.keys().hasOnly(['businessId', 'branchId', 'userId', 'sessionId', 'saleId', 'reason', 'amount', 'cashAmount', 'digitalAmount', 'items', 'stockVersions', 'protocol', 'authority', 'occurredAt'])
+        && v.keys().hasOnly(['businessId', 'branchId', 'userId', 'sessionId', 'saleId', 'reason', 'amount', 'cashAmount', 'digitalAmount', 'items', 'stockVersions', 'protocol', 'authority', 'occurredAt', 'reporting'])
         && v.items == source.items
         && v.reason is string && v.reason.size() >= 5 && v.reason.size() <= 1000
         && v.amount == -source.total && v.cashAmount == -cash && v.digitalAmount == -(math.round(source.total * 100) - math.round(cash * 100)) / 100.0
@@ -1010,7 +1169,7 @@ service cloud.firestore {
       return cashActor(d.businessId, d.branchId) && id.matches('^[A-Za-z0-9_-]{36}$')
         && d.keys().hasOnly(['clientName', 'clientPhone', 'deliveryDate', 'details', 'deliveryType', 'deliveryAddress', 'deliveryCost', 'subtotal', 'total', 'referenceImages',
           'businessId', 'branchId', 'contractNumber', 'contractId', 'paidTotal', 'balance', 'status', 'paidByMethod', 'ledgerVersion', 'lastPaymentId', 'sparkContractVersion',
-          'createdBy', 'creatorName', 'startDate', 'createdAt', 'updatedAt', 'paymentsMigrated', 'createOperationId', 'createRequestHash'])
+          'createdBy', 'creatorName', 'startDate', 'createdAt', 'updatedAt', 'paymentsMigrated', 'createOperationId', 'createRequestHash', 'reporting'])
         && d.sparkContractVersion == 1 && d.createdBy == request.auth.uid && d.createdAt == request.time
         && d.startDate == request.time && d.updatedAt == request.time && d.paymentsMigrated == true
         && d.createOperationId.matches('^[A-Za-z0-9_-]{36}$') && d.createRequestHash.matches('^[a-f0-9]{64}$')
@@ -1023,7 +1182,7 @@ service cloud.firestore {
     }
     function positiveContractPayment(id, d, old) {
       let p = getAfter(/databases/$(database)/documents/payments/$(d.lastPaymentId)).data;
-      return d.diff(old).affectedKeys().hasOnly(['paidTotal', 'balance', 'status', 'paidByMethod', 'ledgerVersion', 'lastPaymentId', 'updatedAt'])
+      return d.diff(old).affectedKeys().hasOnly(['paidTotal', 'balance', 'status', 'paidByMethod', 'ledgerVersion', 'lastPaymentId', 'updatedAt', 'reporting'])
         && d.ledgerVersion == old.ledgerVersion + 1 && p.sourceId == id && p.type == 'payment' && p.amount > 0
         && p.occurredAt == request.time && !exists(/databases/$(database)/documents/payments/$(d.lastPaymentId))
         && d.paidByMethod.diff(old.paidByMethod).affectedKeys().hasOnly([p.method])
@@ -1041,7 +1200,7 @@ service cloud.firestore {
         && d.paidByMethod == {'efectivo': 0, 'yape': 0, 'plin': 0} && d.ledgerVersion == old.ledgerVersion + 1
         && d.cancelOperationId.matches('^[A-Za-z0-9_-]{36}$') && d.voidedBy == request.auth.uid && d.voidedAt == request.time
         && d.voidReason is string && d.voidReason.size() > 0 && d.voidReason.size() <= 1000
-        && d.diff(old).affectedKeys().hasOnly(['paidTotal', 'balance', 'status', 'paidByMethod', 'ledgerVersion', 'cancelOperationId', 'voidReason', 'voidedBy', 'voidedAt', 'updatedAt'])
+        && d.diff(old).affectedKeys().hasOnly(['paidTotal', 'balance', 'status', 'paidByMethod', 'ledgerVersion', 'cancelOperationId', 'voidReason', 'voidedBy', 'voidedAt', 'updatedAt', 'reporting'])
         && refundSlot(id, d, old, 'efectivo') && refundSlot(id, d, old, 'yape') && refundSlot(id, d, old, 'plin');
     }
     function updateSparkContract(id) {
@@ -1051,12 +1210,12 @@ service cloud.firestore {
         && d.updatedAt == request.time
         && (!contractTerminal(old) || d.deliveryType == old.deliveryType)
         && (positiveContractPayment(id, d, old) || cancelSparkContract(id, d, old)
-          || (d.diff(old).affectedKeys().hasOnly(['clientName', 'clientPhone', 'deliveryDate', 'details', 'deliveryType', 'deliveryAddress', 'deliveryCost', 'subtotal', 'total', 'referenceImages', 'balance', 'status', 'updatedAt'])
+          || (d.diff(old).affectedKeys().hasOnly(['clientName', 'clientPhone', 'deliveryDate', 'details', 'deliveryType', 'deliveryAddress', 'deliveryCost', 'subtotal', 'total', 'referenceImages', 'balance', 'status', 'updatedAt', 'reporting'])
             && contractFields(d, id, old)
             && (d.referenceImages == old.get('referenceImages', []) || (old.get('referenceImages', []).hasAll(d.referenceImages)
               && d.referenceImages.toSet().size() == d.referenceImages.size()))
             && contractBalance(d) && d.status == projectedContractStatus(d.balance, old.status))
-          || (d.diff(old).affectedKeys().hasOnly(['balance', 'status', 'deliveredAt', 'deliveredBy', 'updatedAt'])
+          || (d.diff(old).affectedKeys().hasOnly(['balance', 'status', 'deliveredAt', 'deliveredBy', 'updatedAt', 'reporting'])
             && !old.keys().hasAny(['deliveredAt']) && d.deliveredAt == request.time && d.deliveredBy == request.auth.uid
             && d.status == projectedContractStatus(d.balance, 'entregado') && d.balance == old.balance))
         && (!pickupChanged(old, d) || pickupSynchronized(id, d, pickupBranch(d)));
@@ -1117,7 +1276,7 @@ service cloud.firestore {
         || (superadmin() ? platformDataReader() : tenantReader());
       allow list: if superadmin() ? platformDataReader() : tenantReader();
       allow create: if branchCreation(branchId) || provisionBranch(branchId);
-      allow update: if branchUpdate(branchId);
+      allow update: if branchUpdate(branchId) || reportBranchActivation();
       // Inactivate instead: financial history may reference this branch forever.
       allow delete: if false;
     }
@@ -1149,7 +1308,7 @@ service cloud.firestore {
       // Transactions must be able to check an absent receipt. Existing receipts stay tenant/branch scoped.
       allow get: if activeUser() && (resource == null || permittedFinancialResource());
       allow list: if permittedFinancialResource();
-      allow create: if sale(saleId);
+      allow create: if sale(saleId) && reportCapture('sales', saleId, request.resource.data, null);
       allow update, delete: if false;
     }
     match /pos_sale_groups/{groupId} {
@@ -1160,7 +1319,7 @@ service cloud.firestore {
     match /pos_voids/{saleId} {
       allow get: if activeUser() && (resource == null || permittedFinancialResource());
       allow list: if permittedFinancialResource();
-      allow create: if saleVoid(saleId);
+      allow create: if saleVoid(saleId) && reportCapture('pos_voids', saleId, request.resource.data, null);
       allow update, delete: if false;
     }
     match /pos_void_groups/{groupId} {
@@ -1186,8 +1345,8 @@ service cloud.firestore {
       // An absent document is used by the idempotent creation flow.
       allow get: if activeUser() && (resource == null || originContractReader() || platformDataReader());
       allow list: if superadmin() ? platformDataReader() : originContractReader();
-      allow create: if createSparkContract(contractId);
-      allow update: if updateSparkContract(contractId) || updateContractMedia(contractId);
+      allow create: if createSparkContract(contractId) && reportCapture('contracts', contractId, request.resource.data, null);
+      allow update: if (updateSparkContract(contractId) && reportCapture('contracts', contractId, request.resource.data, resource)) || updateContractMedia(contractId);
       allow delete: if false;
       match /media/{mediaId} {
         function parent() {
@@ -1246,6 +1405,28 @@ service cloud.firestore {
       allow delete: if owner() && businessId == currentBusiness() && tenantEnabled(businessId);
     }
 
+    match /spark_report_days_v1/{id} {
+      allow get: if reportPointReader(id);
+      allow create, update: if reportAggregateWrite(id, true);
+      allow list, delete: if false;
+    }
+    match /spark_report_months_v1/{id} {
+      allow get: if reportPointReader(id);
+      allow create, update: if reportAggregateWrite(id, false);
+      allow list, delete: if false;
+    }
+    match /spark_report_migrations_v1/{id} {
+      allow get: if owner() && reportPointReader(id);
+      allow create, update: if owner() && sameTenantIncoming() && tenantEnabled(currentBusiness())
+        && id == request.resource.data.businessId + ':' + request.resource.data.branchId + ':history'
+        && request.resource.data.keys().hasOnly(['businessId', 'branchId', 'source', 'cursor', 'processed', 'status', 'updatedAt'])
+        && request.resource.data.status == 'pending' && request.resource.data.updatedAt == request.time
+        && get(/databases/$(database)/documents/branches/$(request.resource.data.branchId)).data.businessId == currentBusiness()
+        && request.resource.data.source in ['sales', 'pos_voids', 'payments', 'contracts', 'cash_sessions', 'complete']
+        && (request.resource.data.cursor == null || (request.resource.data.cursor is string && request.resource.data.cursor.size() <= 1500))
+        && request.resource.data.processed is int && request.resource.data.processed >= 0;
+      allow list, delete: if false;
+    }
     match /report_month_snapshots_v1/{snapshotId} {
       allow get: if verifiedReportReader(resource.data) && resource.data.status == 'verified';
       allow list, create, update, delete: if false;
@@ -1273,9 +1454,10 @@ service cloud.firestore {
     match /cash_sessions/{sessionId} {
       allow get: if (resource == null && activeUser() && currentRole() in ['dueño', 'cajero'] && tenantEnabled(currentBusiness())) || permittedFinancialResource();
       allow list: if permittedFinancialResource();
-      allow create: if cashOpening(sessionId);
+      allow create: if cashOpening(sessionId) && reportCapture('cash_sessions', sessionId, request.resource.data, null);
       // Estimates remain explicitly uncertified; closing creates a barrier for new operations.
-      allow update: if request.resource.data.status == 'expired_unreconciled' ? cashExpiryRecovery(sessionId) : cashClosing(sessionId);
+      allow update: if (request.resource.data.status == 'expired_unreconciled' ? cashExpiryRecovery(sessionId) : cashClosing(sessionId))
+        && reportCapture('cash_sessions', sessionId, request.resource.data, resource);
       allow delete: if false;
     }
 

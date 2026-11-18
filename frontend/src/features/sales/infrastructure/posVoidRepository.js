@@ -1,10 +1,12 @@
 import * as firestore from 'firebase/firestore';
+import { runSparkReportTransaction } from '../../reports/infrastructure/sparkReportTransaction.js';
 import { cashLockId } from '../../cash-register/infrastructure/sparkCashRepository.js';
 import { canonicalSale, SaleError } from '../domain/saleModel.js';
 import { matchesPosVoidReceipt } from '../domain/posVoidReceipt.js';
 
 export function createPosVoidRepository(database, { sdk = firestore, currentUser } = {}) {
-  const { doc, runTransaction, serverTimestamp, getDocFromServer } = sdk;
+  const { doc, serverTimestamp, getDocFromServer } = sdk;
+  const runTransaction = (db, work) => runSparkReportTransaction(db, sdk, work);
   async function verify({ saleId, reason, businessId, branchId }) {
     const uid = currentUser()?.uid;
     if (!uid || !saleId || saleId.includes('/')) throw new SaleError('invalid-sale', 'Identidad o ticket inválido.');

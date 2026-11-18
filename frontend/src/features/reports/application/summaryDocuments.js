@@ -53,7 +53,8 @@ export function buildSummaryWorkbook(XLSX, view, { period, business, branchesMap
   const blocks = [
     { label: 'RESUMEN DEL NEGOCIO', tone: 'header', bold: true },
     { label: 'Negocio', value: business, tone: 'info' },
-    { label: 'Fuente resumida verificada', value: view.mode === 'manual' ? 'Publicación administrativa' : 'Consolidación de servidor', tone: 'info' },
+    { label: 'Fuente resumida verificada', value: view.mode === 'spark-incremental' ? 'Actualización transaccional Spark'
+      : view.mode === 'manual' ? 'Publicación administrativa' : 'Consolidación de servidor', tone: 'info' },
     { label: 'Actualizado hasta (Lima)', value: cutoff(view), tone: 'info' },
     { label: 'Estado del período', value: view.closed ? 'Cerrado' : 'En curso', tone: 'warning' },
     { label: 'INGRESO NETO REGISTRADO', value: overview['Neto (S/)'], format: 'money', tone: 'success', bold: true },
@@ -131,7 +132,7 @@ export function managementSummaryReportHtml(view, { period, business, branchesMa
   @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}.table{overflow:visible}main{padding:0}h2{break-after:avoid}
   th,td{font-size:11px;padding:4px}td{overflow-wrap:anywhere}}</style>
   <main><h1>${title}</h1><p>${escape(business)} · ${visibleDay(period.start)} – ${visibleDay(period.end)}</p>
-  <p>Fuente resumida verificada${view.mode === 'manual' ? ' · Publicación administrativa' : ''} · Actualizado hasta ${cutoff(view)} (Lima)</p>
+  <p>Fuente resumida verificada${view.mode === 'spark-incremental' ? ' · Actualización transaccional Spark' : view.mode === 'manual' ? ' · Publicación administrativa' : ''} · Actualizado hasta ${cutoff(view)} (Lima)</p>
   <p>${view.closed ? 'Período cerrado' : 'Período en curso'}</p>
   <section class="cards">${Object.entries(overview).map(([label, value]) => `<div class="card">${label}<strong>${label.endsWith('(S/)') ? cashFormat(value) : value}</strong></div>`).join('')}</section>
   <section><h2>Ajustes por canal</h2>${table(['Movimiento', 'Efectivo (S/)', 'Yape/Plin (S/)'],

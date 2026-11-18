@@ -28,7 +28,7 @@ export default function Reports({
     timeFilter,
     setTimeFilter,
     refreshReport,
-    maxProductQty, updatedAt, warning
+    maxProductQty, updatedAt, warning, prepareHistory, canPrepareHistory, historyState
   } = useReports(user);
 
 
@@ -53,7 +53,14 @@ export default function Reports({
     } />;
   if (error && !hasData) return <div className="workspace-page max-w-7xl gap-3">
     {header}
-    {error.code === 'report-summary-pending' ? <Alert variant="warning" title="Resumen no disponible">
+    {['report-bootstrap-required', 'report-history-unverified'].includes(error.code) ? <Alert variant="warning" title="Histórico pendiente de certificación">
+      <p>El período incluye datos anteriores al protocolo automático. No se presentarán totales incompletos como verificados.</p>
+      {canPrepareHistory ? <Button className="mt-2" disabled={historyState?.busy} onClick={prepareHistory}>
+        {historyState?.busy ? 'Preparando…' : 'Preparar histórico · hasta 100 documentos'}
+      </Button> : <p>El dueño puede preparar el inventario desde una sede física.</p>}
+      {historyState?.message && <p className="mt-2" role="status">{historyState.message}</p>}
+      <p className="mt-2">La preparación conserva el progreso; no certifica por sí sola la cobertura histórica.</p>
+    </Alert> : error.code === 'report-summary-pending' ? <Alert variant="warning" title="Resumen no disponible">
       <p>No hay cobertura verificada vigente para este período. Comprueba también tu conexión.</p>
       {updatedAt && <p>Último corte verificado {new Date(updatedAt).toLocaleString('es-PE', { timeZone: 'America/Lima' })} (Lima).</p>}
     </Alert> : error.code === 'report-limit' ? <Alert variant="warning" title="El período supera el límite de lectura">

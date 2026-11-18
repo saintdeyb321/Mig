@@ -1,4 +1,5 @@
 import { isBranchOperational } from '../../branches/domain/branchPolicy.js';
+import { runSparkReportTransaction } from '../../reports/infrastructure/sparkReportTransaction.js';
 import { writeOperationNotice } from '../../notifications/infrastructure/sparkOperationNotice.js';
 import * as firestoreSDK from 'firebase/firestore';
 import { commercialFields, contractAmount, paymentMethod, operationId, financialProjection } from '../../../../../functions/src/contracts/domain/contractModel.js';
@@ -17,7 +18,8 @@ const signature = async command => Array.from(new Uint8Array(await crypto.subtle
   .map(value => value.toString(16).padStart(2, '0')).join('');
 
 export function createSparkContractsRepository(database, { currentUser, sdk = firestoreSDK } = {}) {
-  const { doc, runTransaction, serverTimestamp, Timestamp, getDocFromServer } = sdk;
+  const { doc, serverTimestamp, Timestamp, getDocFromServer } = sdk;
+  const runTransaction = (db, work) => runSparkReportTransaction(db, sdk, work);
   const who = () => currentUser()?.uid || fail('Inicia sesión.');
   async function actor(tx, branchId, { cashRequired = true } = {}) {
     const uid = who(), profile = (await tx.get(doc(database, 'users', uid))).data();
