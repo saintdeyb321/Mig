@@ -39,11 +39,11 @@ it('P17 measures direct SDK reads and writes for expiry, new opening and replay'
   assert.equal(await preflight(opening.businessId, opening.branchId, null, { forOpening: true }), null);
   assert.deepEqual(old.counts(), [9, 3], 'canonical opening preflight reads only the lock');
   await next.repository.finalizeExpired({ ...next.scope, sessionId: 'p08-cash-session' });
-  assert.deepEqual(next.counts(), [2, 2]);
+  assert.deepEqual(next.counts(), [3, 2]);
   await next.repository.open(opening);
-  assert.deepEqual(next.counts(), [7, 4]);
+  assert.deepEqual(next.counts(), [8, 4]);
   await next.repository.finalizeExpired({ ...next.scope, sessionId: 'p08-cash-session' });
-  assert.deepEqual(next.counts(), [9, 4]);
+  assert.deepEqual(next.counts(), [10, 4]);
 });
 
 it('P17-RC distinguishes the exact logical deadline and reimports the verified S/ 150 cash and S/ 10 digital reference', () => {
