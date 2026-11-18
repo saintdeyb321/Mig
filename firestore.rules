@@ -305,7 +305,7 @@ service cloud.firestore {
       return superadmin() ? platformDataReader() : (sameTenantResource() && branchAccess(resource.data.get('branchId', null)));
     }
 
-// Spark report induction: source -> daily aggregate -> monthly aggregate.
+    // Spark report induction: source -> daily aggregate -> monthly aggregate.
     // Source revisions, server timestamps and before/after deltas prevent replay.
     function reportZeros() { return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; }
     function reportAdd(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3], a[4] + b[4], a[5] + b[5], a[6] + b[6], a[7] + b[7], a[8] + b[8], a[9] + b[9], a[10] + b[10], a[11] + b[11], a[12] + b[12], a[13] + b[13], a[14] + b[14], a[15] + b[15], a[16] + b[16], a[17] + b[17], a[18] + b[18], a[19] + b[19], a[20] + b[20], a[21] + b[21], a[22] + b[22], a[23] + b[23], a[24] + b[24], a[25] + b[25], a[26] + b[26], a[27] + b[27], a[28] + b[28], a[29] + b[29], a[30] + b[30], a[31] + b[31]]; }
@@ -316,139 +316,230 @@ service cloud.firestore {
         + '-' + (d.day() < 10 ? '0' : '') + string(d.day());
     }
     function reportMonth(day) { return day.split('-')[0] + '-' + day.split('-')[1]; }
-    function reportState(d) {
-      return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, d.status in ['cancelado', 'entregado', 'entregado_con_deuda'] ? 0 : 1, d.status in ['entregado', 'entregado_con_deuda'] ? 1 : 0, d.status == 'cancelado' ? 1 : 0, d.status != 'cancelado' && d.balance > 0 ? 1 : 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    }
-    function reportFirst(kind, d, old) {
-      let captured = old != null && old.data.get('reporting', {}).get('version', 0) == 1;
-      let cash = kind == 'sales' ? (d.payment == 'efectivo' ? math.round(d.total * 100)
-        : d.payment == 'mixto' ? math.round(d.splitPayments.efectivo * 100) : 0) : 0;
-      return kind == 'sales' ? [cash, math.round(d.total * 100) - cash, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        : kind == 'pos_voids' ? [0, 0, math.round(d.cashAmount * 100), math.round(d.digitalAmount * 100), 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-        : kind == 'contracts' ? reportSubtract(reportState(d), captured ? reportState(old.data) : reportZeros())
-        : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, captured ? 0 : 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    }
-    function reportOrderMoney(d, old) {
-      let prior = old == null ? {'efectivo': 0, 'yape': 0, 'plin': 0} : old.data.paidByMethod;
-      let cash = math.round(d.paidByMethod.efectivo * 100) - math.round(prior.efectivo * 100);
-      let digital = math.round(d.paidByMethod.yape * 100) + math.round(d.paidByMethod.plin * 100)
-        - math.round(prior.yape * 100) - math.round(prior.plin * 100);
-      let cancelled = old != null && d.status == 'cancelado' && old.data.status != 'cancelado';
-      return [0, 0, 0, 0, old == null ? cash : 0, old == null ? digital : 0, old != null && !cancelled ? cash : 0, old != null && !cancelled ? digital : 0, cancelled ? cash : 0, cancelled ? digital : 0, 0, 0, old == null && cash + digital > 0 ? 1 : 0, old != null && !cancelled && cash + digital > 0 ? 1 : 0, cancelled ? (prior.efectivo > 0 ? 1 : 0) + (prior.yape > 0 ? 1 : 0) + (prior.plin > 0 ? 1 : 0) : 0, 0, 0, 0, 0, 0, cancelled ? 1 : 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    }
-    function reportSecond(kind, d, old) {
-      return kind == 'contracts' ? reportOrderMoney(d, old)
-        : kind == 'cash_sessions' && d.status != 'open' ? reportFinalCash(d) : reportZeros();
-    }
-    function reportFinalCash(d) {
-      let closed = d.status in ['closed', 'closed_with_discrepancy'];
-      let expired = d.status == 'expired_unreconciled';
-      let difference = d.get('closeEstimate', {}).get('difference', 0);
-      return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (closed ? 1 : 0), 0, ((closed && difference != null && difference > 0) ? 1 : 0), ((closed && difference != null && difference < 0) ? 1 : 0), (expired ? 1 : 0), ((expired || (closed && (difference == null || difference != 0))) ? 1 : 0), (closed ? 1 : 0), 0, 0, 0];
-    }
     function reportHasSource(data, kind, id, revision) {
-      return data.updatedAt == request.time
-        && data.sources.hasAny([{'collection': kind, 'id': id, 'revision': revision}]);
+      return data.updatedAt == request.time && data.sources.hasAny([{'collection': kind, 'id': id, 'revision': revision}]);
     }
     function reportCapture(kind, id, d, old) {
       let branch = get(/databases/$(database)/documents/branches/$(d.branchId)).data;
-      let r = d.get('reporting', null);
-      let firstDay = kind == 'contracts' ? reportDate(d.createdAt)
-        : kind == 'cash_sessions' ? reportDate(d.openedAt) : reportDate(request.time);
-      let secondDay = kind == 'cash_sessions' && d.status == 'expired_unreconciled'
-        ? reportDate(d.expiredAt) : reportDate(request.time);
-      return branch.get('reportProtocol', 0) != 1 && r == null
-        || (r is map && r.keys().hasOnly(['version', 'revision', 'rows'])
-          && r.version == 1 && r.revision is int
-          && r.revision == (old == null ? 0 : old.data.get('reporting', {}).get('revision', 0)) + 1
-          && r.rows is list && r.rows.size() == 2
-          && r.rows[0] == {'day': firstDay, 'values': reportFirst(kind, d, old)}
-          && r.rows[1] == {'day': secondDay, 'values': reportSecond(kind, d, old)}
-          && reportHasSource(getAfter(/databases/$(database)/documents/spark_report_days_v1/$(d.businessId + ':' + d.branchId + ':' + firstDay)).data,
-            kind, id, r.revision));
+      return branch.get('reportProtocol', 0) == 1 ? reportCaptureRequired(kind, id, d, old) : !d.keys().hasAny(['reporting']);
     }
-    function reportSourcePath(s) {
-      return /databases/$(database)/documents/$(s.collection)/$(s.id);
+    function reportCaptureRequired(kind, id, d, old) {
+      // Calendar/version checks live in the mandatory monthly counterpart;
+      // source validation only links its revision to that same atomic chain.
+      let first = d.reporting.rows[0].day;
+      return reportHasSource(getAfter(/databases/$(database)/documents/spark_report_days_v1/$(d.businessId + ':' + d.branchId + ':' + first)).data,
+        kind, id, d.reporting.revision);
     }
-    function reportFreshSource(s, d) {
-      let path = reportSourcePath(s);
-      let old = get(path);
-      let next = getAfter(path).data;
-      let clock = s.collection == 'sales' ? next.confirmedAt : s.collection == 'pos_voids' ? next.occurredAt
-        : s.collection == 'contracts' ? next.updatedAt
-        : next.status == 'open' ? next.openedAt : next.status == 'expired_unreconciled' ? next.recoveredAt : next.closedAt;
-      return s.keys().hasOnly(['collection', 'id', 'revision'])
+    function reportPacket(kind, d, old) {
+      let r = d.reporting;
+      let today = reportDate(request.time);
+      let opened = kind == 'contracts' ? d.createdAt : kind == 'cash_sessions' ? d.openedAt : request.time;
+      let first = opened == request.time ? today : reportDate(opened);
+      let last = kind == 'cash_sessions' && d.status == 'expired_unreconciled' ? reportDate(d.expiredAt) : today;
+      // Advancement already validates version/revision against the source before.
+      return r.keys().hasOnly(['version', 'revision', 'rows']) && r.rows == [{'day': first}, {'day': last}];
+    }
+    function reportSourcePath(s) { return /databases/$(database)/documents/$(s.collection)/$(s.id); }
+    function reportOldSource(entry) { return exists(reportSourcePath(entry)) ? get(reportSourcePath(entry)).data : {}; }
+    function reportSourceClock(d, kind) {
+      return kind == 'sales' ? d.confirmedAt : kind == 'pos_voids' ? d.occurredAt : kind == 'contracts' ? d.updatedAt
+        : d.status == 'open' ? d.openedAt : d.status == 'expired_unreconciled' ? d.recoveredAt : d.closedAt;
+    }
+    function reportAdvanced(s, d, source, old) {
+      let r = source.get('reporting', {});
+      return source.businessId == d.businessId && source.branchId == d.branchId
+        && r.get('version', 0) == 1 && r.revision == s.revision
+        && r.revision == old.get('reporting', {}).get('revision', 0) + 1
+        && r.rows is list && r.rows.size() == 2 && reportSourceClock(source, s.collection) == request.time;
+    }
+    function reportEntry(s) {
+      return s is map && s.keys().hasOnly(['collection', 'id', 'revision'])
         && s.collection in ['sales', 'pos_voids', 'contracts', 'cash_sessions']
-        && next.businessId == d.businessId && next.branchId == d.branchId && clock == request.time
-        && next.reporting.version == 1 && s.revision == next.reporting.revision
-        && s.revision == (old == null ? 0 : old.data.get('reporting', {}).get('revision', 0)) + 1;
+        && s.id is string && s.id.size() > 0 && s.id.size() <= 1500 && !s.id.matches('.*[/].*') && s.revision is int && s.revision > 0;
     }
-    function reportSourceData(d, index) {
-      return d.sources.size() <= index ? null : getAfter(reportSourcePath(d.sources[index])).data;
+    function reportActor(d) {
+      let profile = currentUser();
+      return profile.businessId == d.businessId && profile.role != 'superadmin'
+        && (profile.role == 'dueño' || profile.get('branchId', null) == d.branchId) && tenantEnabled(d.businessId);
     }
-    function reportAt(source, day) {
-      return source == null ? reportZeros()
-        : reportAdd(source.reporting.rows[0].day == day ? source.reporting.rows[0].values : reportZeros(),
-          source.reporting.rows[1].day == day ? source.reporting.rows[1].values : reportZeros());
+    function reportWriteShape(id, d, full) {
+      // The source must advance in THIS commit (reportAdvanced). Its unchanged
+      // financial Rules enforce role, tenant, branch, license and cash shift.
+      // An existing receipt, or a standalone aggregate write, cannot authorize it.
+      return authenticated()
+        && d.keys().hasOnly(['version', 'businessId', 'branchId', 'period', 'rows', 'products', 'sources', 'updatedAt'])
+        && d.version == 1 && d.updatedAt == request.time && d.period is string && id == d.businessId + ':' + d.branchId + ':' + d.period
+        && d.rows is map && d.products is map && d.sources is list && d.sources.size() >= 1 && d.sources.size() <= 2
+        && (full ? reportMonthlyEntries(d.sources) : d.sources[0].keys().hasOnly(['collection', 'id', 'revision'])
+          && (d.sources.size() == 1 || (d.sources[1].keys().hasOnly(['collection', 'id', 'revision']) && d.sources[0].id != d.sources[1].id)));
     }
-    function reportRow(d, before, first, second, day, daily) {
-      let belongs = daily ? day == d.period : reportMonth(day) == d.period;
-      return belongs ? day in d.rows && d.rows[day] == reportAdd(before.rows.get(day, reportZeros()),
-        reportAdd(reportAt(first, day), reportAt(second, day))) : !(day in d.rows);
+    function reportMonthlyEntries(sources) {
+      return reportEntry(sources[0]) && (sources.size() == 1 || sources[0].collection == 'cash_sessions'
+        && reportEntry(sources[1]) && sources[1].collection == 'cash_sessions' && sources[0].id != sources[1].id);
     }
-    function reportItem(d, before, source, kind, index) {
-      return !(kind in ['sales', 'pos_voids']) || source.items.size() <= index
-        || reportRealItem(d, before, source.items[index], kind);
+    function reportSaleRow(base, d) {
+      let cash = d.payment == 'efectivo' ? math.round(d.total * 100) : d.payment == 'mixto' ? math.round(d.splitPayments.efectivo * 100) : 0;
+      return [base[0] + cash, base[1] + math.round(d.total * 100) - cash, base[2], base[3], base[4], base[5], base[6], base[7], base[8], base[9], base[10] + 1, base[11], base[12], base[13], base[14], base[15], base[16], base[17], base[18], base[19], base[20], base[21], base[22], base[23], base[24], base[25], base[26], base[27], base[28], base[29], base[30], base[31]];
     }
-    function reportRealItem(d, before, item, kind) {
-      let prior = before.products.get(item.id, [item.name, 0, 0]);
-      let sign = kind == 'pos_voids' ? -1 : 1;
-      return d.products[item.id] == [prior[0], prior[1] + sign * item.qty,
-        prior[2] + sign * math.round(item.price * 100) * item.qty];
+    function reportVoidRow(base, d) { return [base[0], base[1], base[2] + math.round(d.cashAmount * 100), base[3] + math.round(d.digitalAmount * 100), base[4], base[5], base[6], base[7], base[8], base[9], base[10], base[11] + 1, base[12], base[13], base[14], base[15], base[16], base[17], base[18], base[19], base[20], base[21], base[22], base[23], base[24], base[25], base[26], base[27], base[28], base[29], base[30], base[31]]; }
+    function reportContractRow(base, d, old, day) {
+      let cohort = reportContractState(d, old, day);
+      let prior = old.get('paidByMethod', {'efectivo': 0, 'yape': 0, 'plin': 0});
+      let paid = d.paidByMethod;
+      let cash = math.round(paid.efectivo * 100) - math.round(prior.efectivo * 100);
+      let digital = math.round(paid.yape * 100) + math.round(paid.plin * 100) - math.round(prior.yape * 100) - math.round(prior.plin * 100);
+      let created = old.size() == 0;
+      let cancelled = !created && d.status == 'cancelado' && old.get('status', '') != 'cancelado';
+      let advance = day == d.reporting.rows[1].day && created;
+      let payment = day == d.reporting.rows[1].day && !created && !cancelled;
+      let refund = day == d.reporting.rows[1].day && cancelled;
+      return [base[0], base[1], base[2], base[3], base[4] + (advance ? cash : 0), base[5] + (advance ? digital : 0), base[6] + (payment ? cash : 0), base[7] + (payment ? digital : 0), base[8] + (refund ? cash : 0), base[9] + (refund ? digital : 0), base[10], base[11], base[12] + ((advance && cash + digital > 0) ? 1 : 0), base[13] + ((payment && cash + digital > 0) ? 1 : 0), base[14] + (refund ? (prior.efectivo > 0 ? 1 : 0) + (prior.yape > 0 ? 1 : 0) + (prior.plin > 0 ? 1 : 0) : 0), base[15] + cohort[0], base[16] + cohort[1], base[17] + cohort[2], base[18] + cohort[3], base[19] + cohort[4], base[20] + (refund ? 1 : 0), base[21], base[22], base[23], base[24], base[25], base[26], base[27], base[28], base[29], base[30], base[31]];
+    }
+    function reportContractCounts(d) {
+      let status = d.status;
+      return [1, status in ['cancelado', 'entregado', 'entregado_con_deuda'] ? 0 : 1,
+        status in ['entregado', 'entregado_con_deuda'] ? 1 : 0, status == 'cancelado' ? 1 : 0,
+        status != 'cancelado' && d.balance > 0 ? 1 : 0];
+    }
+    function reportContractState(d, old, day) {
+      let next = reportContractCounts(d);
+      let prior = old.get('reporting', {}).get('version', 0) == 1 ? reportContractCounts(old) : [0, 0, 0, 0, 0];
+      return day == d.reporting.rows[0].day
+        ? [next[0] - prior[0], next[1] - prior[1], next[2] - prior[2], next[3] - prior[3], next[4] - prior[4]] : [0, 0, 0, 0, 0];
+    }
+    function reportCashDelta(d, old, day) {
+      let cohort = day == d.reporting.rows[0].day;
+      let event = day == d.reporting.rows[1].day;
+      let captured = old.get('reporting', {}).get('version', 0) == 1;
+      let closed = event && (d.status in ['closed', 'closed_with_discrepancy']);
+      let expired = event && d.status == 'expired_unreconciled';
+      let estimate = d.get('closeEstimate', {});
+      let difference = estimate is map ? estimate.get('difference', 0) : 0;
+      return [(cohort && !captured) ? 1 : 0, closed ? 1 : 0, (closed && difference > 0) ? 1 : 0,
+        (closed && difference < 0) ? 1 : 0, expired ? 1 : 0, (expired || (closed && difference != 0)) ? 1 : 0, closed ? 1 : 0];
+    }
+    function reportCashRow(base, a, b) { return [base[0], base[1], base[2], base[3], base[4], base[5], base[6], base[7], base[8], base[9], base[10], base[11], base[12], base[13], base[14], base[15], base[16], base[17], base[18], base[19], base[20], base[21] + a[0] + b[0], base[22] + a[1] + b[1], base[23], base[24] + a[2] + b[2], base[25] + a[3] + b[3], base[26] + a[4] + b[4], base[27] + a[5] + b[5], base[28] + a[6] + b[6], base[29], base[30], base[31]]; }
+    function reportExpectedRow(base, source, old, kind, day) {
+      return kind == 'sales' ? reportSaleRow(base, source) : kind == 'pos_voids' ? reportVoidRow(base, source)
+        : kind == 'contracts' ? reportContractRow(base, source, old, day)
+        : reportCashRow(base, reportCashDelta(source, old, day), [0, 0, 0, 0, 0, 0, 0]);
     }
     function reportPairDay(d, source, entry, row) {
       let day = source.reporting.rows[row].day;
-      let needed = row == 0 || source.reporting.rows[row].values != reportZeros();
-      return !needed || reportHasSource(getAfter(/databases/$(database)/documents/spark_report_days_v1/$(d.businessId + ':' + d.branchId + ':' + day)).data,
+      return d.period == day || reportHasSource(getAfter(/databases/$(database)/documents/spark_report_days_v1/$(d.businessId + ':' + d.branchId + ':' + day)).data,
         entry.collection, entry.id, entry.revision);
     }
     function reportDailyParents(d, source, entry) {
-      return reportHasSource(getAfter(/databases/$(database)/documents/spark_report_months_v1/$(d.businessId + ':' + d.branchId + ':' + reportMonth(d.period))).data,
-        entry.collection, entry.id, entry.revision)
-        && reportPairDay(d, source, entry, 0) && reportPairDay(d, source, entry, 1);
+      let monthly = getAfter(/databases/$(database)/documents/spark_report_months_v1/$(d.businessId + ':' + d.branchId + ':' + reportMonth(d.period))).data;
+      return reportHasSource(monthly, entry.collection, entry.id, entry.revision) && monthly.rows[d.period] == d.rows[d.period];
     }
-    function reportAggregateWrite(id, daily) {
-      let d = request.resource.data;
+    function reportDailyPair(d, before, first, old) {
+      let entry = d.sources[1];
+      let second = getAfter(reportSourcePath(entry)).data;
+      let previous = reportOldSource(entry);
+      return d.period in [second.reporting.rows[0].day, second.reporting.rows[1].day]
+        && d.rows[d.period] == reportRolloverRow(before.rows.get(d.period, reportZeros()), first, old, second, previous, d.period)
+        && reportHasSource(getAfter(/databases/$(database)/documents/spark_report_months_v1/$(d.businessId + ':' + d.branchId + ':' + reportMonth(d.period))).data,
+          entry.collection, entry.id, entry.revision);
+    }
+    function reportRolloverRow(base, first, old, second, previous, day) {
+      let openings = ((day == first.reporting.rows[0].day && old.get('reporting', {}).get('version', 0) != 1) ? 1 : 0)
+        + ((day == second.reporting.rows[0].day && previous.get('reporting', {}).get('version', 0) != 1) ? 1 : 0);
+      let expired = first.status == 'expired_unreconciled' ? first : second;
+      let expiry = day == expired.reporting.rows[1].day ? 1 : 0;
+      return [base[0], base[1], base[2], base[3], base[4], base[5], base[6], base[7], base[8], base[9], base[10], base[11], base[12], base[13], base[14], base[15], base[16], base[17], base[18], base[19], base[20], base[21] + openings, base[22], base[23], base[24], base[25], base[26] + expiry, base[27] + expiry, base[28], base[29], base[30], base[31]];
+    }
+    function reportDailyContents(d) {
       let before = resource == null ? {'rows': {}, 'products': {}} : resource.data;
-      let first = reportSourceData(d, 0);
-      let second = reportSourceData(d, 1);
-      let days = [first.reporting.rows[0].day, first.reporting.rows[1].day].concat(
-        second == null ? [] : [second.reporting.rows[0].day, second.reporting.rows[1].day]);
-      let kind = d.sources[0].collection;
-      let productIds = kind in ['sales', 'pos_voids'] ? first.stockVersions.keys() : [];
-      return sameTenantIncoming() && tenantEnabled(d.businessId) && branchAccess(d.branchId)
-        && d.keys().hasOnly(['version', 'businessId', 'branchId', 'period', 'rows', 'products', 'sources', 'updatedAt'])
-        && d.version == 1 && d.updatedAt == request.time
-        && id == d.businessId + ':' + d.branchId + ':' + d.period
-        && d.period.matches(daily ? '^\\d{4}-\\d{2}-\\d{2}$' : '^\\d{4}-\\d{2}$')
-        && (daily ? d.period in days : d.period in [reportMonth(days[0]), reportMonth(days[1]),
-          reportMonth(days[days.size() - 1])])
-        && d.sources is list && d.sources.size() >= 1 && d.sources.size() <= 2
-        && reportFreshSource(d.sources[0], d)
-        && (second == null || (kind == 'cash_sessions' && d.sources[1].collection == 'cash_sessions'
-          && d.sources[0].id != d.sources[1].id && reportFreshSource(d.sources[1], d)))
-        && d.rows is map && d.rows.size() <= (daily ? 1 : 31) && d.products is map && d.products.size() <= 6000
-        && d.rows.diff(before.rows).affectedKeys().hasOnly(days)
-        && d.products.diff(before.products).affectedKeys().hasOnly(productIds)
-        && reportRow(d, before, first, second, days[0], daily) && reportRow(d, before, first, second, days[1], daily)
-        && (second == null || (reportRow(d, before, first, second, days[2], daily) && reportRow(d, before, first, second, days[3], daily)))
-        && reportItem(d, before, first, kind, 0) && reportItem(d, before, first, kind, 1)
-        && reportItem(d, before, first, kind, 2) && reportItem(d, before, first, kind, 3)
-        && reportItem(d, before, first, kind, 4) && reportItem(d, before, first, kind, 5)
-        && reportItem(d, before, first, kind, 6) && reportItem(d, before, first, kind, 7)
-        && (!daily || (reportDailyParents(d, first, d.sources[0])
-          && (second == null || reportDailyParents(d, second, d.sources[1]))));
+      let entry = d.sources[0];
+      let first = getAfter(reportSourcePath(entry)).data;
+      let old = reportOldSource(entry);
+      return d.period.matches('^\\d{4}-\\d{2}-\\d{2}$') && d.rows.keys().hasOnly([d.period]) && d.rows.size() == 1 && d.products == before.products
+        // Both counterparts bind every source. Primary cash advancement and
+        // calendar are checked here; other source checks live in the monthly write.
+        && d.period in [first.reporting.rows[0].day, first.reporting.rows[1].day]
+        && (entry.collection != 'cash_sessions' || (reportAdvanced(entry, d, first, old) && reportPacket(entry.collection, first, old)))
+        && (d.sources.size() == 1 ? d.rows[d.period] == reportExpectedRow(before.rows.get(d.period, reportZeros()), first, old, entry.collection, d.period)
+          : reportDailyPair(d, before, first, old))
+        && reportDailyParents(d, first, entry);
     }
+    function reportDailyWrite(id) { let d = request.resource.data; return reportWriteShape(id, d, false) && reportDailyContents(d); }
+    function reportMonthlyRow(d, day) {
+      // Each mandatory daily write proves its exact row in the monthly parent.
+      // Here constrain membership; this month cannot absorb a different month.
+      return reportMonth(day) != d.period ? !(day in d.rows)
+        : day in d.rows;
+    }
+    function reportMonthlySource(d, entry, source, checkCashPacket) {
+      let old = reportOldSource(entry);
+      // Primary cash advancement is checked by its daily write; the new
+      // rollover opening uses reportNewCashSource. Other sources are checked here.
+      return (entry.collection == 'cash_sessions' && !checkCashPacket
+          || (reportAdvanced(entry, d, source, old) && reportPacket(entry.collection, source, old)))
+        && reportHasSource(getAfter(/databases/$(database)/documents/spark_report_days_v1/$(d.businessId + ':' + d.branchId + ':' + source.reporting.rows[0].day)).data,
+          entry.collection, entry.id, entry.revision)
+        && (source.reporting.rows[0].day == source.reporting.rows[1].day
+          || reportHasSource(getAfter(/databases/$(database)/documents/spark_report_days_v1/$(d.businessId + ':' + d.branchId + ':' + source.reporting.rows[1].day)).data,
+            entry.collection, entry.id, entry.revision));
+    }
+    function reportMonthlySingle(d, before, first) {
+      let a = first.reporting.rows[0].day;
+      let b = first.reporting.rows[1].day;
+      return d.period in [reportMonth(a), reportMonth(b)] && d.rows.diff(before.rows).affectedKeys().hasOnly([a, b])
+        && reportMonthlyRow(d, a) && (a == b || reportMonthlyRow(d, b));
+    }
+    function reportMonthlyPair(d, before, first) {
+      let second = getAfter(reportSourcePath(d.sources[1])).data;
+      // Canonical transaction order: expired predecessor, then new opening.
+      // The new opening's two slots are the same server day (reportPacket).
+      let days = [first.reporting.rows[0].day, first.reporting.rows[1].day, second.reporting.rows[0].day];
+      return first.status == 'expired_unreconciled' && second.status == 'open' && first.recoverySessionId == d.sources[1].id
+        && reportNewCashSource(d, d.sources[1], second)
+        && d.period in [reportMonth(days[0]), reportMonth(days[1]), reportMonth(days[2])]
+        && d.rows.diff(before.rows).affectedKeys().hasOnly(days) && reportMonthlyRow(d, days[0])
+        && (days[1] == days[0] || reportMonthlyRow(d, days[1]))
+        && (days[2] in [days[0], days[1]] || reportMonthlyRow(d, days[2]));
+    }
+    function reportNewCashSource(d, entry, source) {
+      let today = reportDate(request.time);
+      return entry.revision == 1 && !exists(reportSourcePath(entry))
+        && source.businessId == d.businessId && source.branchId == d.branchId && source.openedAt == request.time
+        && source.reporting == {'version': 1, 'revision': 1, 'rows': [{'day': today}, {'day': today}]}
+        && reportHasSource(getAfter(/databases/$(database)/documents/spark_report_days_v1/$(d.businessId + ':' + d.branchId + ':' + today)).data,
+          'cash_sessions', entry.id, 1);
+    }
+    function reportRealProduct(products, previous, item, sign) {
+      let prior = previous.get(item.id, [item.name, 0, 0]);
+      return products[item.id] == [prior[0], prior[1] + sign * item.qty, prior[2] + sign * math.round(item.price * 100) * item.qty];
+    }
+    function reportMonthlyProducts(d, before, source) {
+      let kind = d.sources[0].collection;
+      let products = d.products;
+      let previous = before.products;
+      // Every source item requires its same-commit stock debit/credit. Those
+      // writes validate its exact product contribution (reportStockProduct),
+      // distributing the checks without exceeding the 1,000-expression budget.
+      return (kind in ['sales', 'pos_voids']) ? products.size() <= 6000
+        && products.diff(previous).affectedKeys().hasOnly(source.stockVersions.keys())
+        : products == previous;
+    }
+    function reportStockProduct(source, index, sign) {
+      return !source.keys().hasAny(['reporting']) || reportStockProductRequired(source, index, sign);
+    }
+    function reportStockProductRequired(source, index, sign) {
+      let month = reportMonth(source.reporting.rows[0].day);
+      let path = /databases/$(database)/documents/spark_report_months_v1/$(source.businessId + ':' + source.branchId + ':' + month);
+      let previous = exists(path) ? get(path).data.products : {};
+      return reportRealProduct(getAfter(path).data.products, previous, source.items[index], sign);
+    }
+    function reportMonthlyContents(d) {
+      let before = resource == null ? {'rows': {}, 'products': {}} : resource.data;
+      let first = getAfter(reportSourcePath(d.sources[0])).data;
+      return d.period.matches('^\\d{4}-\\d{2}$') && d.rows.size() <= 31 && reportMonthlySource(d, d.sources[0], first, false)
+        && (d.sources.size() == 1 ? reportMonthlySingle(d, before, first) : reportMonthlyPair(d, before, first))
+        && reportMonthlyProducts(d, before, first);
+    }
+    function reportMonthlyWrite(id) { let d = request.resource.data; return reportWriteShape(id, d, true) && reportMonthlyContents(d); }
     function reportPointReader(id) {
       let parts = id.split(':');
       return activeUser() && parts.size() == 3 && parts[0] == currentBusiness()
@@ -934,24 +1025,30 @@ service cloud.firestore {
     }
     function debitAt(d, productId, index) {
       return d.items.size() > index && d.items[index].id == productId
-        && request.resource.data.stock[d.branchId] == resource.data.stock[d.branchId] - d.items[index].qty;
+        && request.resource.data.stock[d.branchId] == resource.data.stock[d.branchId] - d.items[index].qty
+        && reportStockProduct(d, index, 1);
     }
     function debit(productId) {
       let d = getAfter(/databases/$(database)/documents/sales/$(request.resource.data.posLastSaleId)).data;
+      let next = request.resource.data;
       return request.auth != null && d.userId == request.auth.uid && d.businessId == resource.data.businessId
         && d.confirmedAt == request.time && !exists(/databases/$(database)/documents/sales/$(d.saleId))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastSaleId', 'posSaleLineIndex'])
-        && request.resource.data.posStockVersion is map
-        && request.resource.data.posStockVersion.diff(resource.data.get('posStockVersion', {})).affectedKeys().hasOnly([d.branchId])
-        && request.resource.data.posStockVersion[d.branchId] is int
-        && request.resource.data.posStockVersion[d.branchId] > 0 && request.resource.data.posStockVersion[d.branchId] <= 9007199254740991
-        && request.resource.data.posStockVersion[d.branchId] == resource.data.get('posStockVersion', {}).get(d.branchId, 0) + 1
-        && request.resource.data.stock.diff(resource.data.stock).affectedKeys().hasOnly([d.branchId])
-        && request.resource.data.stock[d.branchId] is int && request.resource.data.stock[d.branchId] >= 0
-        && (debitAt(d, productId, 0) || debitAt(d, productId, 1)
-          || (d.get('atomicProtocol', 1) == 2 && request.resource.data.posSaleLineIndex is int
-            && request.resource.data.posSaleLineIndex >= 2 && request.resource.data.posSaleLineIndex < d.items.size()
-            && debitAt(d, productId, request.resource.data.posSaleLineIndex)));
+        && next.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastSaleId', 'posSaleLineIndex'])
+        && next.posStockVersion is map && next.stock is map && debitStock(d, productId, next, resource.data);
+    }
+    function debitStock(d, productId, next, old) {
+      let branch = d.branchId;
+      let version = next.posStockVersion.get(branch, null);
+      let stock = next.stock.get(branch, null);
+      let index = next.get('posSaleLineIndex', -1);
+      return next.posStockVersion.diff(old.get('posStockVersion', {})).affectedKeys().hasOnly([branch])
+        && version is int && version > 0 && version <= 9007199254740991
+        && version == old.get('posStockVersion', {}).get(branch, 0) + 1
+        && next.stock.diff(old.stock).affectedKeys().hasOnly([branch]) && stock is int && stock >= 0
+        && (d.get('atomicProtocol', 1) == 2
+          ? index is int && index >= 0 && index < d.items.size() && d.items[index].id == productId
+            && stock == old.stock[branch] - d.items[index].qty && reportStockProduct(d, index, 1)
+          : (debitAt(d, productId, 0) || debitAt(d, productId, 1)));
     }
 
     function voidGroupPresent(v, source) {
@@ -992,17 +1089,24 @@ service cloud.firestore {
     function credit(productId) {
       let v = getAfter(/databases/$(database)/documents/pos_voids/$(request.resource.data.posLastVoidSaleId)).data;
       let source = get(/databases/$(database)/documents/sales/$(v.saleId)).data;
-      let index = request.resource.data.posVoidLineIndex;
+      let next = request.resource.data;
+      let index = next.get('posVoidLineIndex', -1);
       return authenticated() && v.userId == request.auth.uid && v.businessId == resource.data.businessId && v.occurredAt == request.time
         && !exists(/databases/$(database)/documents/pos_voids/$(v.saleId))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastVoidSaleId', 'posVoidLineIndex'])
+        && next.diff(resource.data).affectedKeys().hasOnly(['stock', 'posStockVersion', 'posLastVoidSaleId', 'posVoidLineIndex'])
         && index is int && index >= 0 && index < source.items.size() && source.items[index].id == productId
-        && request.resource.data.stock.diff(resource.data.stock).affectedKeys().hasOnly([v.branchId])
-        && request.resource.data.stock[v.branchId] is int && request.resource.data.stock[v.branchId] >= 0 && request.resource.data.stock[v.branchId] <= 9007199254740991
-        && request.resource.data.stock[v.branchId] == resource.data.stock[v.branchId] + source.items[index].qty
-        && request.resource.data.posStockVersion.diff(resource.data.get('posStockVersion', {})).affectedKeys().hasOnly([v.branchId])
-        && request.resource.data.posStockVersion[v.branchId] is int && request.resource.data.posStockVersion[v.branchId] > 0 && request.resource.data.posStockVersion[v.branchId] <= 9007199254740991
-        && request.resource.data.posStockVersion[v.branchId] == resource.data.get('posStockVersion', {}).get(v.branchId, 0) + 1;
+        && next.stock is map && next.posStockVersion is map
+        && creditStock(v.branchId, source.items[index].qty, next, resource.data)
+        && reportStockProduct(v, index, -1);
+    }
+    function creditStock(branch, qty, next, old) {
+      let stock = next.stock.get(branch, null);
+      let version = next.posStockVersion.get(branch, null);
+      return next.stock.diff(old.stock).affectedKeys().hasOnly([branch])
+        && stock is int && stock >= 0 && stock <= 9007199254740991 && stock == old.stock[branch] + qty
+        && next.posStockVersion.diff(old.get('posStockVersion', {})).affectedKeys().hasOnly([branch])
+        && version is int && version > 0 && version <= 9007199254740991
+        && version == old.get('posStockVersion', {}).get(branch, 0) + 1;
     }
     function projectedContractStatus(balance, previous) {
       return previous in ['entregado', 'entregado_con_deuda']
@@ -1027,7 +1131,7 @@ service cloud.firestore {
         && d.deliveryAddress is string && d.deliveryAddress.size() <= 1000
         && (d.deliveryDate == null || d.deliveryDate is timestamp)
         && d.referenceImages is list
-        && (old != null && contractPhotoCount(old) > 6 ? preservesHistoricalPhotos(old, d)
+        && (contractPhotoCount(old) > 6 ? preservesHistoricalPhotos(old, d)
           : contractPhotoCount(d) <= 6 && d.referenceImages.join('|').matches('^(local-image:' + d.businessId + ':' + id + ':[A-Za-z0-9_-]{36}[|]?){0,6}$'))
         && (d.get('pendingMedia', null) == null || d.pendingMedia.legacyRef == null || d.referenceImages == resource.data.referenceImages);
     }
@@ -1164,6 +1268,17 @@ service cloud.firestore {
         && p.amount == d.paidTotal && p.businessId == d.businessId && p.branchId == d.branchId
         && p.occurredAt == request.time && d.paidByMethod[p.method] == p.amount;
     }
+    function contractOperationReceipt(id) {
+      let d = request.resource.data;
+      let contract = getAfter(/databases/$(database)/documents/contracts/$(d.contractId)).data;
+      return authenticated() && d.keys().hasOnly(['businessId', 'branchId', 'userId', 'contractId', 'requestHash', 'createdAt'])
+        && d.userId == request.auth.uid && d.createdAt == request.time
+        && contract.createOperationId == id && contract.createdAt == request.time && contract.createdBy == request.auth.uid
+        && contract.businessId == d.businessId && contract.branchId == d.branchId && contract.createRequestHash == d.requestHash
+        // Creation already requires this new immutable receipt. Validate capture
+        // here so a pickup + advance stays below the expression budget as well.
+        && reportCapture('contracts', d.contractId, contract, {});
+    }
     function createSparkContract(id) {
       let d = request.resource.data;
       return cashActor(d.businessId, d.branchId) && id.matches('^[A-Za-z0-9_-]{36}$')
@@ -1176,7 +1291,7 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/spark_contract_operations/$(d.createOperationId)).data.contractId == id
         && !exists(/databases/$(database)/documents/spark_contract_operations/$(d.createOperationId))
         && d.creatorName is string && d.creatorName.size() <= 250 && d.contractNumber.matches('^PED-[A-F0-9]{8}$') && d.contractId == d.contractNumber
-        && contractFields(d, id, null) && d.referenceImages.size() == 0 && contractBalance(d) && d.status == projectedContractStatus(d.balance, 'pendiente')
+        && contractFields(d, id, {}) && d.referenceImages.size() == 0 && contractBalance(d) && d.status == projectedContractStatus(d.balance, 'pendiente')
         && (d.lastPaymentId == null ? d.ledgerVersion == 0 && d.paidTotal == 0 : initialContractPayment(d, id))
         && (!crossPickup(d) || pickupSynchronized(id, d, d.deliveryType));
     }
@@ -1308,7 +1423,7 @@ service cloud.firestore {
       // Transactions must be able to check an absent receipt. Existing receipts stay tenant/branch scoped.
       allow get: if activeUser() && (resource == null || permittedFinancialResource());
       allow list: if permittedFinancialResource();
-      allow create: if sale(saleId) && reportCapture('sales', saleId, request.resource.data, null);
+      allow create: if sale(saleId) && reportCapture('sales', saleId, request.resource.data, {});
       allow update, delete: if false;
     }
     match /pos_sale_groups/{groupId} {
@@ -1319,7 +1434,7 @@ service cloud.firestore {
     match /pos_voids/{saleId} {
       allow get: if activeUser() && (resource == null || permittedFinancialResource());
       allow list: if permittedFinancialResource();
-      allow create: if saleVoid(saleId) && reportCapture('pos_voids', saleId, request.resource.data, null);
+      allow create: if saleVoid(saleId) && reportCapture('pos_voids', saleId, request.resource.data, {});
       allow update, delete: if false;
     }
     match /pos_void_groups/{groupId} {
@@ -1331,22 +1446,15 @@ service cloud.firestore {
     match /spark_contract_operations/{id} {
       allow get: if activeUser() && (resource == null || permittedFinancialResource());
       allow list: if permittedFinancialResource();
-      allow create: if authenticated() && request.resource.data.keys().hasOnly(['businessId', 'branchId', 'userId', 'contractId', 'requestHash', 'createdAt'])
-        && request.resource.data.userId == request.auth.uid && request.resource.data.createdAt == request.time
-        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.createOperationId == id
-        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.createdAt == request.time
-        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.createdBy == request.auth.uid
-        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.businessId == request.resource.data.businessId
-        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.branchId == request.resource.data.branchId
-        && getAfter(/databases/$(database)/documents/contracts/$(request.resource.data.contractId)).data.createRequestHash == request.resource.data.requestHash;
+      allow create: if contractOperationReceipt(id);
       allow update, delete: if false;
     }
     match /contracts/{contractId} {
       // An absent document is used by the idempotent creation flow.
       allow get: if activeUser() && (resource == null || originContractReader() || platformDataReader());
       allow list: if superadmin() ? platformDataReader() : originContractReader();
-      allow create: if createSparkContract(contractId) && reportCapture('contracts', contractId, request.resource.data, null);
-      allow update: if (updateSparkContract(contractId) && reportCapture('contracts', contractId, request.resource.data, resource)) || updateContractMedia(contractId);
+      allow create: if createSparkContract(contractId);
+      allow update: if (updateSparkContract(contractId) && reportCapture('contracts', contractId, request.resource.data, resource.data)) || updateContractMedia(contractId);
       allow delete: if false;
       match /media/{mediaId} {
         function parent() {
@@ -1407,12 +1515,12 @@ service cloud.firestore {
 
     match /spark_report_days_v1/{id} {
       allow get: if reportPointReader(id);
-      allow create, update: if reportAggregateWrite(id, true);
+      allow create, update: if reportDailyWrite(id);
       allow list, delete: if false;
     }
     match /spark_report_months_v1/{id} {
       allow get: if reportPointReader(id);
-      allow create, update: if reportAggregateWrite(id, false);
+      allow create, update: if reportMonthlyWrite(id);
       allow list, delete: if false;
     }
     match /spark_report_migrations_v1/{id} {
@@ -1454,10 +1562,10 @@ service cloud.firestore {
     match /cash_sessions/{sessionId} {
       allow get: if (resource == null && activeUser() && currentRole() in ['dueño', 'cajero'] && tenantEnabled(currentBusiness())) || permittedFinancialResource();
       allow list: if permittedFinancialResource();
-      allow create: if cashOpening(sessionId) && reportCapture('cash_sessions', sessionId, request.resource.data, null);
+      allow create: if cashOpening(sessionId) && reportCapture('cash_sessions', sessionId, request.resource.data, {});
       // Estimates remain explicitly uncertified; closing creates a barrier for new operations.
       allow update: if (request.resource.data.status == 'expired_unreconciled' ? cashExpiryRecovery(sessionId) : cashClosing(sessionId))
-        && reportCapture('cash_sessions', sessionId, request.resource.data, resource);
+        && reportCapture('cash_sessions', sessionId, request.resource.data, resource.data);
       allow delete: if false;
     }
 

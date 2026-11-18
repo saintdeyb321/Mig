@@ -65,6 +65,10 @@ add('pos-voids-ids', 'Compensaciones por ticket', 'pos_voids', source('sales', '
 const inventoryCollections = ['branches', 'categories', 'products', 'customers', 'sales', 'contracts', 'payments', 'cash_sessions', 'active_cash_sessions', 'users', 'invites', 'spark_contract_operations', 'alerts', 'audit_events', 'daily_stats', 'notifications', 'platform_jobs', 'platform_operations', 'platform_audit', 'owner_email_claims', 'pos_sale_groups', 'pos_voids', 'pos_void_groups', 'contract_pickups'];
 for (const collection of inventoryCollections) add(`backup-${collection}`, 'Inventario/exportación SaaS', collection, source('backups', 'backupRepository'), 'createBackupRepository', [eq('businessId')], [asc('__name__')], 3, 'automatic', 'Colecciones declaradas; settings/tenants/licenses se leen por ID. No collectionGroup.');
 add('backup-job-children', 'Subcolecciones conocidas', 'scopes / asset_sources', source('backups', 'backupRepository'), 'const path =', [], [asc('__name__')], 3, 'automatic', 'Ruta platform_jobs/{id}/(scopes|asset_sources), colección concreta; no colección group ni rutas desconocidas.');
+for (const collection of ['sales', 'pos_voids', 'payments', 'contracts', 'cash_sessions']) add(`report-history-${collection}`,
+  'Inventario histórico de reportes', collection, source('reports', 'sparkReportMigration'), 'createSparkReportMigration',
+  [eq('businessId'), eq('branchId')], [asc('__name__')], 2, 'equality-merge',
+  'Acción explícita del dueño; páginas de 1–50, presupuesto de 1–500 documentos, cursor reanudable. No certifica cobertura ni se ejecuta al abrir mes/año.');
 export const firestoreQueryCatalog = records;
 
 export const reviewedSDKQueryCounts = {
@@ -78,6 +82,7 @@ export const reviewedSDKQueryCounts = {
   [source('notifications', 'auditQueryRepository')]: 1, [source('notifications', 'alertRepository')]: 1,
   [source('customers', 'customerRepository')]: 1, [source('licenses', 'sparkAdministrationRepository')]: 3,
   [source('licenses', 'platformBusinessRepository')]: 1, [source('backups', 'backupRepository')]: 2,
+  [source('reports', 'sparkReportMigration')]: 1,
 };
 export const dynamicQueryReviews = {
   [source('sales', 'posVoidQueryRepository')]: 'Negocio/sede fijos; filtros por sesión o rango occurredAt, páginas <=200, máximo 10000; hasta 50 listeners documentales por ID con ausencia autorizada y scope comprobado.',
@@ -91,6 +96,7 @@ export const dynamicQueryReviews = {
   [source('notifications', 'auditQueryRepository')]: 'Sede/cursor opcionales; verificar reachability en esta versión.',
   [source('licenses', 'sparkAdministrationRepository')]: 'Cursor documental de licencias; propietario users/invites con filtros literales iguales.',
   [source('backups', 'backupRepository')]: 'name acotado a BACKUP_COLLECTIONS; path acotado a scopes/asset_sources bajo jobs leídos del negocio. No enumera subcolecciones desconocidas.',
+  [source('reports', 'sparkReportMigration')]: 'source acotado a sales/pos_voids/payments/contracts/cash_sessions; negocio y sede obligatorios, orden documental, páginas <=50 y máximo 500 documentos por acción explícita del dueño. Progreso pendiente, nunca certificado.',
   [source('payments', 'sparkLegacyPayments')]: 'Cursor de IDs de contratos; lectura individual por ID no precisa compuesto.',
 };
 export function queryIndexFields(record) {

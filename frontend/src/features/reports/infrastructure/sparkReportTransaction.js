@@ -42,6 +42,7 @@ export function reportContribution(collection, before, after, now) {
   }
   const eventDay = collection === 'cash_sessions' && after.status === 'expired_unreconciled'
     ? reportDay(timestamp(after.expiredAt, now)) : today;
+  if (day === eventDay) { first = plus(first, second); second = blank(); }
   return { version: 1, revision: (before?.reporting?.revision ?? 0) + 1,
     rows: [{ day, values: first }, { day: eventDay, values: second }] };
 }
@@ -68,7 +69,8 @@ export function runSparkReportTransaction(database, sdk, work) {
       const branch = (await get(sdk.doc(database, 'branches', after.branchId))).data();
       if (branch?.reportProtocol !== 1) continue;
       const reporting = reportContribution(collection, before, after, now);
-      write.data = { ...write.data, reporting };
+      write.data = { ...write.data, reporting: { version: reporting.version, revision: reporting.revision,
+        rows: reporting.rows.map(({ day }) => ({ day })) } };
       changes.push({ collection, id, after, reporting });
     }
     if (changes.length > 2 || (changes.length === 2 && changes.some(change => change.collection !== 'cash_sessions'))) {
@@ -76,7 +78,6 @@ export function runSparkReportTransaction(database, sdk, work) {
     }
     const buckets = new Map();
     for (const change of changes) for (const row of change.reporting.rows) {
-      if (!row.values.some(Boolean) && row.day !== change.reporting.rows[0].day) continue;
       for (const [collection, period] of [[sparkReportCollections.days, row.day], [sparkReportCollections.months, row.day.slice(0, 7)]]) {
         const id = `${change.after.businessId}:${change.after.branchId}:${period}`, key = `${collection}/${id}`;
         if (!buckets.has(key)) {
@@ -92,7 +93,7 @@ export function runSparkReportTransaction(database, sdk, work) {
     }
     for (const { collection, after, reporting } of changes) if (['sales', 'pos_voids'].includes(collection)) {
       const sign = collection === 'sales' ? 1 : -1, day = reporting.rows[0].day;
-      for (const { body } of buckets.values()) if (body.branchId === after.branchId && [day, day.slice(0, 7)].includes(body.period)) {
+      for (const { body } of buckets.values()) if (body.branchId === after.branchId && body.period === day.slice(0, 7)) {
         for (const item of after.items) {
           const old = body.products[item.id] ?? [item.name, 0, 0];
           body.products[item.id] = [old[0], old[1] + sign * item.qty, old[2] + sign * cents(item.price) * item.qty];

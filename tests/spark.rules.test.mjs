@@ -10,6 +10,7 @@ import { createSparkAdministrationRepository } from '../frontend/src/features/li
 import { acceptInvitation } from '../frontend/src/features/users/infrastructure/acceptInvitation.js';
 import { updateProductTransaction } from '../frontend/src/features/catalog/infrastructure/productWrites.js';
 import { cashLockId, createSparkCashRepository } from '../frontend/src/features/cash-register/infrastructure/sparkCashRepository.js';
+import { runSparkReportTransaction } from '../frontend/src/features/reports/infrastructure/sparkReportTransaction.js';
 import { createCashStateReader, createCashPeriodReader } from '../frontend/src/features/cash-register/infrastructure/cashQueryRepository.js';
 import { createHash } from 'node:crypto';
 import { recordLegalAcceptance } from '../frontend/src/features/legal/acceptanceRepository.js';
@@ -56,12 +57,13 @@ const rawBundle = (database, data, { omit, mutate = entries => entries } = {}) =
 };
 const cashRepository = (database, uid = 'owner') => createSparkCashRepository(database, { currentUser: () => ({ uid }), sdk });
 const rawCash = async (database, businessId, branchId, { userId = 'owner', sessionId = 'cash-opening-123456789', session = {}, lock = {}, omit, omitDuration = false } = {}) => {
-  const id = await cashLockId(businessId, branchId), timestamp = serverTimestamp(), batch = writeBatch(database);
+  const id = await cashLockId(businessId, branchId), timestamp = serverTimestamp();
   const opening = { businessId, branchId, userId, status: 'open', openingAmount: 20, openingNote: '', cashierName: 'Dueña Prueba', openedAt: timestamp, syncedAt: timestamp, runtime: 'spark', durationHours: 14, ...session };
   if (omitDuration) delete opening.durationHours;
-  if (omit !== 'session') batch.set(doc(database, 'cash_sessions', sessionId), opening);
-  if (omit !== 'lock') batch.set(doc(database, 'active_cash_sessions', id), { businessId, branchId, userId, sessionId, status: 'open', runtime: 'spark', updatedAt: timestamp, ...lock });
-  return batch.commit();
+  return runSparkReportTransaction(database, sdk, async tx => {
+    if (omit !== 'session') tx.set(doc(database, 'cash_sessions', sessionId), opening);
+    if (omit !== 'lock') tx.set(doc(database, 'active_cash_sessions', id), { businessId, branchId, userId, sessionId, status: 'open', runtime: 'spark', updatedAt: timestamp, ...lock });
+  });
 };
 
 before(async () => { env = await initializeTestEnvironment({ projectId: 'demo-migapos', firestore: { host: '127.0.0.1', port: 8080, rules: readFileSync('firestore.rules', 'utf8') } }); });
@@ -350,18 +352,20 @@ describe('Plan 14: recovery of an expired Spark cash lock', () => {
   };
   const rawRecovery = (database, setup, actor, { omit, previous, nextId = newId } = {}) => {
     const { businessId, branchId, openedAt, durationHours, lockPath, oldPath } = setup;
-    const batch = writeBatch(database), now = serverTimestamp();
-    if (omit !== 'previous') batch.update(doc(database, oldPath), {
-      status: 'expired_unreconciled', expiredAt: new Timestamp(openedAt.seconds + durationHours * 3600, openedAt.nanoseconds),
-      recoveredAt: now, recoveredBy: actor, recoveryReason: 'shift-time-limit', recoverySessionId: nextId,
-      reconciliationPending: true, declaredAmount: null, difference: null, ...previous,
+    const now = serverTimestamp();
+    return runSparkReportTransaction(database, sdk, async batch => {
+      await batch.get(doc(database, oldPath));
+      if (omit !== 'previous') batch.update(doc(database, oldPath), {
+        status: 'expired_unreconciled', expiredAt: new Timestamp(openedAt.seconds + durationHours * 3600, openedAt.nanoseconds),
+        recoveredAt: now, recoveredBy: actor, recoveryReason: 'shift-time-limit', recoverySessionId: nextId,
+        reconciliationPending: true, declaredAmount: null, difference: null, ...previous,
+      });
+      if (omit !== 'lock') batch.update(doc(database, lockPath), { sessionId: nextId, userId: actor, updatedAt: now });
+      if (omit !== 'new') batch.set(doc(database, 'cash_sessions', nextId), {
+        businessId, branchId, userId: actor, status: 'open', runtime: 'spark', durationHours: 14, openingAmount: 50,
+        openingNote: '', cashierName: 'Cajera', openedAt: now, syncedAt: now,
+      });
     });
-    if (omit !== 'lock') batch.update(doc(database, lockPath), { sessionId: nextId, userId: actor, updatedAt: now });
-    if (omit !== 'new') batch.set(doc(database, 'cash_sessions', nextId), {
-      businessId, branchId, userId: actor, status: 'open', runtime: 'spark', durationHours: 14, openingAmount: 50,
-      openingNote: '', cashierName: 'Cajera', openedAt: now, syncedAt: now,
-    });
-    return batch.commit();
   };
 
   it('rejects the lock replacement at 9h59m and allows it at the ten-hour boundary or later', async () => {
@@ -411,7 +415,8 @@ describe('Plan 14: recovery of an expired Spark cash lock', () => {
     const result = await Promise.allSettled([
       repo.open(setup.command), cashRepository(setup.database).open({ ...setup.command, sessionId: 'plan14-concurrent-owner-session' }),
     ]);
-    assert.equal(result.filter(item => item.status === 'fulfilled').length, 1);
+    assert.equal(result.filter(item => item.status === 'fulfilled').length, 1,
+      result.filter(item => item.status === 'rejected').map(item => item.reason?.message).join('\n'));
     const winner = result.find(item => item.status === 'fulfilled').value;
     const confirmed = winner.id === newId ? await repo.open(setup.command)
       : await cashRepository(setup.database).open({ ...setup.command, sessionId: winner.id });
